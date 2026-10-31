@@ -1,0 +1,299 @@
+//! 配置文件。示例见 gateway.example.toml。
+
+use crate::address;
+use crate::upstream::electrum::{self, Transport};
+use axum::http::{HeaderName, HeaderValue};
+use bitone_core::{Chain, Mode, Network};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer};
+use std::collections::{BTreeMap, HashMap};
+use std::net::{IpAddr, SocketAddr};
+use std::path::{Path, PathBuf};
+
+const COINGECKO_SIMPLE_PRICE: &str = "https://api.coingecko.com/api/v3/simple/price";
+
+#[derive(Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Config {
+    pub listen: SocketAddr,
+    /// 配置后同进程托管网页端静态文件，即自部署模式。
+    pub web_dir: Option<PathBuf>,
+    /// 一个上游一次查询的总时限，超时切换下一个。
+    pub upstream_timeout_ms: u64,
+    pub ws_poll_interval_ms: u64,
+    pub ws_heartbeat_ms: u64,
+    pub rate_limit_burst: f64,
+    pub rate_limit_per_second: f64,
+    /// 只有来自这些 IP 的请求才读 X-Forwarded-For。默认为空，不信任任何代理。
+    pub trusted_proxies: Vec<IpAddr>,
+    pub ws_max_connections_per_ip: usize,
+    pub prices: Option<PricesConfig>,
+    #[serde(deserialize_with = "networks")]
+    pub networks: HashMap<Network, NetworkConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetworkConfig {
+    pub upstreams: Vec<String>,
+    #[serde(default)]
+    pub tokens: Vec<String>,
+    /// TronGrid 的 API key，发给这个网络的全部上游。
+    pub tron_api_key: Option<String>,
+    /// EVM 的 Etherscan 兼容索引服务，只用于交易历史。节点查不到地址的历史。
+    pub indexer: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PricesConfig {
+    /// CoinGecko 的 simple/price 格式。
+    #[serde(default = "coingecko_simple_price")]
+    pub url: String,
+    pub api_key_header: Option<String>,
+    pub api_key: Option<String>,
+    /// `网络:合约` 到价格源资产 ID 的映射。原生币的合约写 `native`。
+    pub ids: BTreeMap<String, String>,
+}
+
+fn coingecko_simple_price() -> String {
+    COINGECKO_SIMPLE_PRICE.to_string()
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            listen: SocketAddr::from(([127, 0, 0, 1], 8787)),
+            web_dir: None,
+            upstream_timeout_ms: 10_000,
+            ws_poll_interval_ms: 15_000,
+            ws_heartbeat_ms: 30_000,
+            // 放宽阈值，运营商 NAT 下很多用户共用一个 IP。
+            rate_limit_burst: 1200.0,
+            rate_limit_per_second: 20.0,
+            trusted_proxies: Vec::new(),
+            ws_max_connections_per_ip: 64,
+            prices: None,
+            networks: HashMap::new(),
+        }
+    }
+}
+
+fn networks<'de, D: Deserializer<'de>>(deserializer: D) -> Result<HashMap<Network, NetworkConfig>, D::Error> {
+    HashMap::<String, NetworkConfig>::deserialize(deserializer)?
+        .into_iter()
+        .map(|(id, network)| match Network::from_id(&id) {
+            Some(known) => Ok((known, network)),
+            None => Err(D::Error::custom(format!("未知网络 {id}"))),
+        })
+        .collect()
+}
+
+fn check_url(url: &str, owner: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|_| format!("{owner} 的上游地址无效"))?;
+    if matches!(parsed.scheme(), "http" | "https") {
+        Ok(())
+    } else {
+        Err(format!("{owner} 的上游只支持 http 和 https"))
+    }
+}
+
+fn has_host_and_port(url: &str) -> bool {
+    reqwest::Url::parse(url).is_ok_and(|url| url.host_str().is_some() && url.port().is_some())
+}
+
+impl NetworkConfig {
+    fn validate(&self, network: Network) -> Result<(), String> {
+        let id = network.id();
+        for url in self.upstreams.iter().chain(&self.indexer) {
+            match electrum::transport(url) {
+                Some(_) if network.chain() != Chain::Bitcoin => return Err(format!("{id} 不支持 Electrum 上游")),
+                Some(Transport::TlsUnverified) if network.mode() == Mode::Mainnet => {
+                    return Err(format!("{id} 是主网，上游必须验证证书"));
+                }
+                Some(_) if !has_host_and_port(url) => return Err(format!("{id} 的 Electrum 上游要写主机和端口")),
+                Some(_) => {}
+                None => check_url(url, id)?,
+            }
+        }
+        if network.chain() == Chain::Bitcoin && !self.tokens.is_empty() {
+            return Err(format!("{id} 不支持代币"));
+        }
+        if let Some(token) = self.tokens.iter().find(|t| !address::is_valid(network, t)) {
+            return Err(format!("{id} 的代币地址无效: {token}"));
+        }
+        if self.indexer.is_some() && network.chain() != Chain::Evm {
+            return Err(format!("{id} 不需要 indexer"));
+        }
+        if let Some(key) = &self.tron_api_key {
+            if network.chain() != Chain::Tron {
+                return Err(format!("{id} 不是 TRON 网络"));
+            }
+            if HeaderValue::from_str(key).is_err() {
+                return Err(format!("{id} 的 tron_api_key 无效"));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl PricesConfig {
+    fn validate(&self) -> Result<(), String> {
+        check_url(&self.url, "prices")?;
+        match (&self.api_key_header, &self.api_key) {
+            (None, None) => {}
+            (Some(header), Some(key)) => {
+                if HeaderName::try_from(header.as_str()).is_err() || HeaderValue::from_str(key).is_err() {
+                    return Err("prices 的 API key 请求头无效".into());
+                }
+            }
+            _ => return Err("prices 的 api_key_header 和 api_key 要同时配置".into()),
+        }
+        for key in self.ids.keys() {
+            let (network, asset) = key
+                .split_once(':')
+                .ok_or_else(|| format!("价格键 {key} 应为 网络:合约"))?;
+            let network = Network::from_id(network).ok_or_else(|| format!("价格键 {key} 的网络未知"))?;
+            if network.mode() != Mode::Mainnet {
+                return Err(format!("价格键 {key} 不是主网资产"));
+            }
+            if asset != "native" && !address::is_valid(network, asset) {
+                return Err(format!("价格键 {key} 的合约地址无效"));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Config {
+    pub fn load(path: &Path) -> Result<Config, String> {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("读取配置 {} 失败: {e}", path.display()))?;
+        Config::parse(&text)
+    }
+
+    pub fn parse(text: &str) -> Result<Config, String> {
+        let mut config: Config = toml::from_str(text).map_err(|e| format!("配置格式错误: {e}"))?;
+        // 没有上游等于没有配置这个网络。
+        config.networks.retain(|_, network| !network.upstreams.is_empty());
+        config.validate()?;
+        Ok(config)
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if self.upstream_timeout_ms == 0 || self.ws_poll_interval_ms == 0 || self.ws_heartbeat_ms == 0 {
+            return Err("超时和间隔必须大于 0".into());
+        }
+        if self.rate_limit_burst < 1.0 || self.rate_limit_per_second <= 0.0 {
+            return Err("rate_limit_burst 至少为 1，rate_limit_per_second 必须大于 0".into());
+        }
+        if self.ws_max_connections_per_ip == 0 {
+            return Err("ws_max_connections_per_ip 至少为 1".into());
+        }
+        if let Some(dir) = &self.web_dir
+            && !dir.join("index.html").is_file()
+        {
+            return Err(format!("web_dir {} 里没有 index.html", dir.display()));
+        }
+        if let Some(prices) = &self.prices {
+            prices.validate()?;
+        }
+        self.networks
+            .iter()
+            .try_for_each(|(network, config)| config.validate(*network))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitone_core::manifest::Manifest;
+
+    const USDT: &str = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+
+    #[test]
+    fn example_config_is_valid() {
+        let config = Config::parse(include_str!("../gateway.example.toml")).unwrap();
+        assert_eq!(config.listen.to_string(), "127.0.0.1:8787");
+        assert!(config.trusted_proxies.is_empty(), "默认不信任任何代理");
+    }
+
+    /// 配置漏掉的网络和代币，网页端完全看不到，所以示例配置必须覆盖内置清单。
+    #[test]
+    fn example_config_covers_the_builtin_manifest() {
+        let config = Config::parse(include_str!("../gateway.example.toml")).unwrap();
+        for network in Network::ALL {
+            assert!(config.networks.contains_key(&network), "{}", network.id());
+        }
+        let ids = config.prices.unwrap().ids;
+        for asset in &Manifest::builtin().assets {
+            let network = Network::from_id(&asset.network).unwrap();
+            if asset.contract != "native" {
+                assert!(
+                    config.networks[&network].tokens.contains(&asset.contract),
+                    "{}",
+                    asset.key()
+                );
+            }
+            if network.mode() == Mode::Mainnet {
+                assert!(ids.contains_key(&asset.key()), "{}", asset.key());
+            }
+        }
+    }
+
+    #[test]
+    fn empty_upstreams_mean_not_configured() {
+        let config = Config::parse("[networks.bitcoin]\nupstreams = []").unwrap();
+        assert!(config.networks.is_empty());
+    }
+
+    #[test]
+    fn prices_url_defaults_to_coingecko() {
+        let config = Config::parse("[prices.ids]\n'bitcoin:native' = 'bitcoin'").unwrap();
+        assert_eq!(config.prices.unwrap().url, COINGECKO_SIMPLE_PRICE);
+    }
+
+    #[test]
+    fn accepts_the_optional_keys() {
+        let text = format!(
+            "trusted_proxies = ['10.0.0.1', '2001:db8::1']\n\
+             [prices]\napi_key_header = 'x-cg-demo-api-key'\napi_key = 'k'\n\
+             [prices.ids]\n'ethereum:{USDT}' = 'tether'\n\
+             [networks.tron]\nupstreams = ['http://a']\ntron_api_key = 'k'\n\
+             [networks.ethereum]\nupstreams = ['http://a']\nindexer = 'https://eth.blockscout.com/api'\n"
+        );
+        let config = Config::parse(&text).unwrap();
+        assert_eq!(config.trusted_proxies.len(), 2);
+        assert_eq!(config.networks[&Network::Tron].tron_api_key.as_deref(), Some("k"));
+    }
+
+    #[test]
+    fn rejects_bad_config() {
+        for text in [
+            "[networks.dogecoin]\nupstreams = ['http://a']",
+            "[networks.bitcoin]\nupstreams = ['ftp://a']",
+            "[networks.bitcoin]\nupstreams = ['http://a']\ntokens = ['x']",
+            "[networks.ethereum]\nupstreams = ['http://a']\ntokens = ['0x12']",
+            "[networks.ethereum]\nupstreams = ['http://a']\ntron_api_key = 'k'",
+            "[networks.tron]\nupstreams = ['http://a']\ntron_api_key = \"a\nb\"",
+            "[networks.tron]\nupstreams = ['http://a']\nindexer = 'http://b'",
+            "[networks.ethereum]\nupstreams = ['http://a']\nindexer = 'ftp://b'",
+            "web_dir = '/nonexistent/bitone'",
+            "ws_heartbeat_ms = 0",
+            "ws_max_connections_per_ip = 0",
+            "rate_limit_burst = 0",
+            "trusted_proxies = ['10.0.0.0/8']",
+            "trusted_proxies = ['not-an-ip']",
+            "typo = 1",
+            "[prices]",
+            "[prices.ids]\n'bitcoin' = 'bitcoin'",
+            "[prices.ids]\n'dogecoin:native' = 'dogecoin'",
+            "[prices.ids]\n'sepolia:native' = 'ethereum'",
+            "[prices.ids]\n'ethereum:0x12' = 'x'",
+            "[prices]\nurl = 'ftp://a'\n[prices.ids]\n'bitcoin:native' = 'bitcoin'",
+            "[prices]\napi_key = 'k'\n[prices.ids]\n'bitcoin:native' = 'bitcoin'",
+            "[prices]\napi_key_header = 'bad header'\napi_key = 'k'\n[prices.ids]\n'bitcoin:native' = 'bitcoin'",
+        ] {
+            assert!(Config::parse(text).is_err(), "{text}");
+        }
+    }
+}

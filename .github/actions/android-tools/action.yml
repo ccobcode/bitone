@@ -1,0 +1,14 @@
+name: Android tools
+description: JDK、NDK 和 cargo-ndk。
+
+runs:
+    using: composite
+    steps:
+        - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+          with:
+              distribution: microsoft
+              java-version: 21
+        - shell: bash
+          run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;29.0.14206865" > /dev/null
+        - shell: bash
+          run: cargo install cargo-ndk --locked

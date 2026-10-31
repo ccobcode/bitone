@@ -1,0 +1,28 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+bitone-core = { path = "crates/bitone-core" }
+bitone-signer = { path = "crates/bitone-signer" }
+bitcoin = { version = "0.32", default-features = false, features = ["std"] }
+minicbor = { version = "2", features = ["derive", "alloc"] }
+ur = "0.5"
+qrcode = { version = "0.14", default-features = false }
+sha3 = "0.10"
+thiserror = "2"
+zeroize = { version = "1", features = ["derive"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+strip = "debuginfo"
+panic = "abort"

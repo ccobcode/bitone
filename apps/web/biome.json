@@ -1,0 +1,38 @@
+{
+    "$schema": "https://biomejs.dev/schemas/2.6.4/schema.json",
+    "vcs": {
+        "enabled": true,
+        "clientKind": "git",
+        "useIgnoreFile": true,
+        "root": "../.."
+    },
+    "files": {
+        "includes": ["src/**", "!src/core/pkg", "!src/core/i18n.gen.json", "!src/styles/tokens.css"]
+    },
+    "formatter": {
+        "enabled": false
+    },
+    "css": {
+        "parser": {
+            "tailwindDirectives": true
+        }
+    },
+    "linter": {
+        "rules": {
+            "correctness": {
+                "useExhaustiveDependencies": {
+                    "level": "error",
+                    "options": {
+                        "hooks": [
+                            {
+                                "name": "useLive",
+                                "closureIndex": 0,
+                                "dependenciesIndex": 1
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
+}

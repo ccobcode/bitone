@@ -1,0 +1,8 @@
+# 另外还会跳过 .gitignore 里的文件
+pnpm-lock.yaml
+apps/web/pnpm-lock.yaml
+crates/bitone-core/assets/manifest.json
+apps/web/src/styles/tokens.css
+apps/web/src/core/i18n.gen.json
+apps/web/src/core/__fixtures__/
+apps/mobile/

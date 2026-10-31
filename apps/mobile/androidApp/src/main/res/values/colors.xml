@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动窗口的底色，和令牌 bg 一致。Compose 之外只有这一处用到颜色。 -->
+    <color name="window_bg">#0B0C10</color>
+    <color name="brand_ground">#0B0C10</color>
+</resources>

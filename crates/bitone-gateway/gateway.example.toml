@@ -1,0 +1,158 @@
+# 用法：bitone-gateway --config gateway.example.toml
+# 这是配置模板。本地要填 key 时复制成仓库根目录的 gateway.local.toml，这个文件不进 Git。
+# 上游能看到查询的地址。介意的话换成自己的节点。
+# 下面的键除 networks 外都可以省略，这里写的就是默认值。
+
+listen = "127.0.0.1:8787"
+
+# 自部署：取消注释后同进程托管网页端，目录里要有 index.html。
+# web_dir = "/srv/bitone/web"
+
+upstream_timeout_ms = 10000
+ws_poll_interval_ms = 15000
+ws_heartbeat_ms = 30000
+rate_limit_burst = 1200
+rate_limit_per_second = 20
+ws_max_connections_per_ip = 64
+
+# 部署在反向代理或负载均衡后面时，填代理的 IP。
+# 只有来自这些 IP 的请求才读 X-Forwarded-For，默认不信任任何代理。
+trusted_proxies = []
+
+# 价格上游是 CoinGecko 的 simple/price 格式。删掉这一段后 /v1/prices 返回空。
+# 键是 网络:合约，只接受主网资产，值是 CoinGecko 的资产 ID。
+# 测试网资产由网页端按同链同符号的主网资产计价。
+[prices]
+url = "https://api.coingecko.com/api/v3/simple/price"
+# api_key_header = "x-cg-demo-api-key"
+# api_key = "你的 key"
+
+[prices.ids]
+"bitcoin:native" = "bitcoin"
+"ethereum:native" = "ethereum"
+"ethereum:0xdAC17F958D2ee523a2206206994597C13D831ec7" = "tether"
+"ethereum:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" = "usd-coin"
+"bsc:native" = "binancecoin"
+"bsc:0x55d398326f99059fF775485246999027B3197955" = "tether"
+"bsc:0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d" = "usd-coin"
+"polygon:native" = "polygon-ecosystem-token"
+"polygon:0xc2132D05D31c914a87C6611C10748AEb04B58e8F" = "tether"
+"polygon:0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" = "usd-coin"
+"tron:native" = "tron"
+"tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" = "tether"
+"tron:TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8" = "usd-coin"
+"solana:native" = "solana"
+"solana:Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" = "tether"
+"solana:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" = "usd-coin"
+
+# 每个网络配一个或多个上游，失败时切换下一个。没有配置的网络不对外提供。
+# 网络标识见 docs/03-system.md 第 5 节。
+# tokens 是查询余额的代币，没有列出的代币网页端看不到。
+
+# Bitcoin 优先用 Electrum 协议：一个连接批量查询，不用自己存区块。Esplora 只做备用。
+# ssl:// 验证证书，ssl-insecure:// 不验证，只允许测试网，tcp:// 只用于同机或内网的服务器。
+# 自建 electrs 或 Fulcrum 时把地址写在最前面，其他不用改。
+# 公共服务器由志愿者运营，能看到查询的地址。
+
+[networks.bitcoin]
+upstreams = [
+    "ssl://electrum.blockstream.info:50002",
+    "ssl://fulcrum.grey.pw:51002",
+    "ssl://electrum.acinq.co:50002",
+    "https://blockstream.info/api",
+    "https://mempool.space/api",
+]
+
+[networks.btc-testnet4]
+upstreams = [
+    "ssl://blackie.c3-soft.com:57010",
+    "ssl://mempool.space:40002",
+    "https://blockstream.info/testnet4/api",
+    "https://mempool.space/testnet4/api",
+]
+
+[networks.btc-signet]
+upstreams = [
+    "ssl://mempool.space:60602",
+    "ssl-insecure://signet-electrumx.wakiyamap.dev:50002",
+    "https://blockstream.info/signet/api",
+    "https://mempool.space/signet/api",
+]
+
+[networks.btc-testnet3]
+upstreams = [
+    "ssl-insecure://testnet.qtornado.com:51002",
+    "https://blockstream.info/testnet/api",
+    "https://mempool.space/testnet/api",
+]
+
+# EVM 的交易历史要配 indexer，格式是 Etherscan 的 account 接口，Blockscout 也兼容。
+# 节点查不到地址的历史，不配置时 history 返回 upstream_unavailable。
+# BSC、Polygon 和它们的测试网没有免费的公共索引器，所以没有配置，交易记录只显示本地记录。
+[networks.ethereum]
+upstreams = ["https://ethereum-rpc.publicnode.com", "https://eth.drpc.org"]
+indexer = "https://api.routescan.io/v2/network/mainnet/evm/1/etherscan/api"
+tokens = [
+  "0xdAC17F958D2ee523a2206206994597C13D831ec7", # USDT
+  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", # USDC
+]
+
+[networks.sepolia]
+upstreams = ["https://ethereum-sepolia-rpc.publicnode.com"]
+indexer = "https://api.routescan.io/v2/network/testnet/evm/11155111/etherscan/api"
+tokens = ["0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"] # USDC
+
+[networks.hoodi]
+upstreams = ["https://ethereum-hoodi-rpc.publicnode.com"]
+indexer = "https://api.routescan.io/v2/network/testnet/evm/560048/etherscan/api"
+
+[networks.bsc]
+upstreams = ["https://bsc-rpc.publicnode.com"]
+tokens = [
+  "0x55d398326f99059fF775485246999027B3197955", # USDT
+  "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", # USDC
+]
+
+[networks.bsc-testnet]
+upstreams = ["https://bsc-testnet-rpc.publicnode.com"]
+
+[networks.polygon]
+upstreams = ["https://polygon-bor-rpc.publicnode.com"]
+tokens = [
+  "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", # USDT
+  "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", # USDC
+]
+
+[networks.amoy]
+upstreams = ["https://polygon-amoy-bor-rpc.publicnode.com"]
+tokens = ["0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582"] # USDC
+
+# tron_api_key 放在 TRON-PRO-API-KEY 请求头里，发给这个网络的全部上游。
+[networks.tron]
+upstreams = ["https://api.trongrid.io"]
+# tron_api_key = "你的 key"
+tokens = [
+  "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", # USDT
+  "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8", # USDC
+]
+
+[networks.tron-nile]
+upstreams = ["https://nile.trongrid.io"]
+tokens = ["TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"] # USDT
+
+[networks.tron-shasta]
+upstreams = ["https://api.shasta.trongrid.io"]
+
+[networks.solana]
+upstreams = ["https://api.mainnet-beta.solana.com"]
+tokens = [
+  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", # USDT
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # USDC
+]
+
+[networks.solana-devnet]
+upstreams = ["https://api.devnet.solana.com"]
+tokens = ["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"] # USDC
+
+[networks.solana-testnet]
+upstreams = ["https://api.testnet.solana.com"]
