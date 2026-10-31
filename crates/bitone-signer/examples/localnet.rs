@@ -3,7 +3,7 @@
 //! 用的是公开的测试助记词,只能用在本地节点上.
 
 use bitcoin::secp256k1::{Message, Secp256k1, SecretKey};
-use bitone_core::address::{parse_solana_address, solana_address, tron_address};
+use bitone_core::address::{parse_solana_address, parse_tron_address, solana_address, tron_address};
 use bitone_core::keys::PublicKeys;
 use bitone_core::manifest::{Asset, Manifest};
 use bitone_core::protocol::VERSION;
@@ -17,6 +17,12 @@ const SOLANA: Network = Network::SolanaDevnet;
 const SOLANA_PATH: &str = "m/44'/1'/0'/0'";
 const TRON: Network = Network::TronNile;
 const TRON_PATH: &str = "m/44'/1'/0'/0/0";
+/// TRON 交易引用区块时取 blockID 的这两段.
+const REF_BLOCK_BYTES: std::ops::Range<usize> = 6..8;
+const REF_BLOCK_HASH: std::ops::Range<usize> = 8..16;
+const TRON_VALIDITY_MS: u64 = 30 * 60 * 1000;
+/// 交易末尾是 65 字节的签名,这个位置落在签名中间.
+const SIGNATURE_BYTE_FROM_END: usize = 20;
 
 fn wallet() -> (Wallet, PublicKeys) {
     let wallet = Wallet::new(&[0u8; 16], "").expect("测试助记词有效");
@@ -162,6 +168,21 @@ fn transaction(raw_data: &[u8], compact: &[u8], recovery: u8) -> Vec<u8> {
     out
 }
 
+/// 标准输入是 `getnowblock` 的结果,输出 ref_block_bytes ref_block_hash expiration timestamp.
+fn tron_block_params() {
+    let block: serde_json::Value = serde_json::from_reader(std::io::stdin()).expect("区块 JSON");
+    let id = unhex_vec(block["blockID"].as_str().expect("有 blockID"));
+    let timestamp = block["block_header"]["raw_data"]["timestamp"]
+        .as_u64()
+        .expect("有时间戳");
+    println!(
+        "{} {} {} {timestamp}",
+        hex(&id[REF_BLOCK_BYTES]),
+        hex(&id[REF_BLOCK_HASH]),
+        timestamp + TRON_VALIDITY_MS
+    );
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -169,6 +190,22 @@ fn main() {
     match args.as_slice() {
         ["solana-address"] => println!("{}", solana_payer()),
         ["tron-address"] => println!("{}", tron_owner()),
+        ["tron-block"] => tron_block_params(),
+        ["tron-abi-address", address] => {
+            println!("{:0>64}", hex(&parse_tron_address(address).expect("地址有效")));
+        }
+        ["tron-base58", payload] => println!("{}", bitcoin::base58::encode_check(&unhex_vec(payload))),
+        ["tron-tamper", raw] => {
+            let mut raw = unhex_vec(raw);
+            let index = raw.len() - SIGNATURE_BYTE_FROM_END;
+            raw[index] ^= 1;
+            println!("{}", hex(&raw));
+        }
+        ["solana-nonce-address"] => {
+            let payer = parse_solana_address(&solana_payer()).expect("地址有效");
+            let nonce = solana::nonce_account_address(&payer).expect("能派生");
+            println!("{}", bitcoin::base58::encode(&nonce));
+        }
         ["solana-create-nonce", blockhash, lamports] => {
             let blockhash = parse_solana_address(blockhash).expect("blockhash 有效");
             let payload = solana::build_create_nonce(&solana_payer(), blockhash, number(lamports)).expect("参数有效");

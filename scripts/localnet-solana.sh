@@ -23,15 +23,8 @@ rpc() {
     -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":$2}" "$RPC"
 }
 
-# 从标准输入的 JSON 取值:field result.value.blockhash
-field() {
-  python3 -c '
-import json, sys
-value = json.load(sys.stdin)
-for key in sys.argv[1].split("."):
-    value = value[int(key)] if key.isdigit() else value[key]
-print(value)' "$1"
-}
+# 从标准输入的 JSON 取值:field .result.value.blockhash
+field() { jq -r "$1"; }
 
 fail() {
   echo "失败:$*" >&2
@@ -47,7 +40,7 @@ send() {
   case "$result" in
     *'"error"'*) echo "$result"; return 1 ;;
   esac
-  printf '%s' "$result" | field result
+  printf '%s' "$result" | field .result
 }
 
 confirm() {
@@ -67,7 +60,7 @@ confirm() {
 
 nonce_value() {
   rpc getAccountInfo "[\"$NONCE\",{\"encoding\":\"jsonParsed\",\"commitment\":\"confirmed\"}]" |
-    field result.value.data.parsed.info.blockhash
+    field .result.value.data.parsed.info.blockhash
 }
 
 expect() {
@@ -85,36 +78,22 @@ docker run -d --name "$NAME" --platform linux/amd64 -p "127.0.0.1:$PORT:8899" --
 
 # getHealth 在第 0 个 slot 就返回 ok,那时发的交易会丢,要等出块.
 for _ in $(seq 1 180); do
-  SLOT=$(rpc getSlot '[{"commitment":"confirmed"}]' 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("result", 0))' 2>/dev/null || echo 0)
+  SLOT=$(rpc getSlot '[{"commitment":"confirmed"}]' 2>/dev/null | jq '.result // 0' 2>/dev/null || echo 0)
   [ "$SLOT" -ge 40 ] && break
   sleep 1
 done
 [ "$SLOT" -ge 40 ] || fail "节点没有出块"
-echo "节点版本:$(rpc getVersion '[]' | field result.solana-core)"
+echo "节点版本:$(rpc getVersion '[]' | field '.result["solana-core"]')"
 
 PAYER=$(wallet solana-address)
-NONCE=$(python3 - "$PAYER" <<'PY'
-import hashlib, sys
-A = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-n = 0
-for c in sys.argv[1]:
-    n = n * 58 + A.index(c)
-digest = hashlib.sha256(n.to_bytes(32, "big") + b"bitone-nonce" + bytes(32)).digest()
-n = int.from_bytes(digest, "big")
-out = ""
-while n:
-    n, r = divmod(n, 58)
-    out = A[r] + out
-print("1" * (len(digest) - len(digest.lstrip(b"\0"))) + out)
-PY
-)
+NONCE=$(wallet solana-nonce-address)
 echo "付款账户 $PAYER"
 echo "nonce 账户 $NONCE"
 
 for _ in $(seq 1 30); do
   rpc requestAirdrop "[\"$PAYER\",10000000000]" >/dev/null
   sleep 2
-  BALANCE=$(rpc getBalance "[\"$PAYER\",{\"commitment\":\"confirmed\"}]" | field result.value)
+  BALANCE=$(rpc getBalance "[\"$PAYER\",{\"commitment\":\"confirmed\"}]" | field .result.value)
   [ "$BALANCE" != 0 ] && break
 done
 expect "空投到账" "$BALANCE" 10000000000
@@ -123,20 +102,20 @@ expect "空投到账" "$BALANCE" 10000000000
 rpc requestAirdrop "[\"$NONCE\",1000000]" >/dev/null
 for _ in $(seq 1 30); do
   sleep 1
-  FUNDED=$(rpc getBalance "[\"$NONCE\",{\"commitment\":\"confirmed\"}]" | field result.value)
+  FUNDED=$(rpc getBalance "[\"$NONCE\",{\"commitment\":\"confirmed\"}]" | field .result.value)
   [ "$FUNDED" != 0 ] && break
 done
 expect "nonce 地址已被预存款" "$FUNDED" 1000000
 
 # 创建 nonce 账户.
-RENT=$(rpc getMinimumBalanceForRentExemption '[80]' | field result)
-BLOCKHASH=$(rpc getLatestBlockhash '[{"commitment":"confirmed"}]' | field result.value.blockhash)
+RENT=$(rpc getMinimumBalanceForRentExemption '[80]' | field .result)
+BLOCKHASH=$(rpc getLatestBlockhash '[{"commitment":"confirmed"}]' | field .result.value.blockhash)
 read -r RAW HASH < <(wallet solana-create-nonce "$BLOCKHASH" "$RENT")
 SIGNATURE=$(send "$RAW")
 expect "创建 nonce 的签名" "$SIGNATURE" "$HASH"
 confirm "$SIGNATURE"
 AUTHORITY=$(rpc getAccountInfo "[\"$NONCE\",{\"encoding\":\"jsonParsed\",\"commitment\":\"confirmed\"}]" |
-  field result.value.data.parsed.info.authority)
+  field .result.value.data.parsed.info.authority)
 expect "nonce 账户的 authority" "$AUTHORITY" "$PAYER"
 
 VALUE=$(nonce_value)
@@ -144,7 +123,7 @@ read -r RAW HASH < <(wallet solana-transfer "$PEER" 1500000000 "$VALUE")
 SIGNATURE=$(send "$RAW")
 expect "SOL 转账的签名" "$SIGNATURE" "$HASH"
 confirm "$SIGNATURE"
-BALANCE=$(rpc getBalance "[\"$PEER\",{\"commitment\":\"confirmed\"}]" | field result.value)
+BALANCE=$(rpc getBalance "[\"$PEER\",{\"commitment\":\"confirmed\"}]" | field .result.value)
 expect "收款方余额" "$BALANCE" 1500000000
 NEXT=$(nonce_value)
 [ "$NEXT" != "$VALUE" ] || fail "nonce 值没有推进"
@@ -152,20 +131,20 @@ echo "通过:nonce 值已推进 $VALUE -> $NEXT"
 
 # 旧 nonce 值已经作废,同一笔和新构建的都不能再上链.
 if OUTPUT=$(send "$RAW"); then fail "重放成功了:$OUTPUT"; fi
-echo "通过:重放被拒绝 $(printf '%s' "$OUTPUT" | field error.message)"
+echo "通过:重放被拒绝 $(printf '%s' "$OUTPUT" | field .error.message)"
 read -r STALE _ < <(wallet solana-transfer "$PEER" 1 "$VALUE")
 if OUTPUT=$(send "$STALE"); then fail "旧 nonce 值还能用:$OUTPUT"; fi
-echo "通过:旧 nonce 值被拒绝 $(printf '%s' "$OUTPUT" | field error.message)"
+echo "通过:旧 nonce 值被拒绝 $(printf '%s' "$OUTPUT" | field .error.message)"
 
 # 准备代币:另一个账户建 mint,给付款账户铸币.
 docker exec "$NAME" sh -c 'mkdir -p /root/.config/solana && solana-keygen new --no-bip39-passphrase --silent --force -o /root/.config/solana/id.json >/dev/null'
 in_node() { docker exec "$NAME" sh -c "URL=http://\$(hostname -i):8899; $1"; }
 in_node 'solana -u $URL airdrop 10 >/dev/null'
-MINT=$(in_node 'spl-token -u $URL create-token --decimals 6 --output json' | field commandOutput.address)
+MINT=$(in_node 'spl-token -u $URL create-token --decimals 6 --output json' | field .commandOutput.address)
 in_node "spl-token -u \$URL create-account $MINT --owner $PAYER --fee-payer /root/.config/solana/id.json >/dev/null"
 token_account() {
   rpc getTokenAccountsByOwner "[\"$1\",{\"mint\":\"$MINT\"},{\"encoding\":\"jsonParsed\",\"commitment\":\"confirmed\"}]" |
-    field result.value.0.pubkey
+    field .result.value[0].pubkey
 }
 SOURCE=$(token_account "$PAYER")
 in_node "spl-token -u \$URL mint $MINT 1000 $SOURCE >/dev/null"
@@ -179,7 +158,7 @@ SIGNATURE=$(send "$RAW")
 expect "代币转账的签名" "$SIGNATURE" "$HASH"
 confirm "$SIGNATURE"
 PEER_TOKEN=$(token_account "$PEER")
-AMOUNT=$(rpc getTokenAccountBalance "[\"$PEER_TOKEN\",{\"commitment\":\"confirmed\"}]" | field result.value.amount)
+AMOUNT=$(rpc getTokenAccountBalance "[\"$PEER_TOKEN\",{\"commitment\":\"confirmed\"}]" | field .result.value.amount)
 expect "收款方代币余额" "$AMOUNT" 1250000
 
 # 代币转账:账户已经存在.
@@ -187,9 +166,9 @@ VALUE=$(nonce_value)
 read -r RAW HASH < <(wallet solana-token "$PEER" 750000 "$MINT" 6 "$VALUE" 0)
 SIGNATURE=$(send "$RAW")
 confirm "$SIGNATURE"
-AMOUNT=$(rpc getTokenAccountBalance "[\"$PEER_TOKEN\",{\"commitment\":\"confirmed\"}]" | field result.value.amount)
+AMOUNT=$(rpc getTokenAccountBalance "[\"$PEER_TOKEN\",{\"commitment\":\"confirmed\"}]" | field .result.value.amount)
 expect "收款方代币余额" "$AMOUNT" 2000000
-AMOUNT=$(rpc getTokenAccountBalance "[\"$SOURCE\",{\"commitment\":\"confirmed\"}]" | field result.value.amount)
+AMOUNT=$(rpc getTokenAccountBalance "[\"$SOURCE\",{\"commitment\":\"confirmed\"}]" | field .result.value.amount)
 expect "付款方代币余额" "$AMOUNT" 998000000
 
 echo "全部通过"

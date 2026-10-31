@@ -3,7 +3,7 @@
 # 全程只碰本机.结束时停止并删除容器,退出码非 0 表示有检查没通过.
 #
 # 用法:crates/bitone-gateway/scripts/localnet-evm.sh
-# 依赖:Docker,rustup,python3,curl.
+# 依赖:Docker,rustup,jq,curl.
 set -euo pipefail
 
 IMAGE=ghcr.io/foundry-rs/foundry:latest
@@ -40,22 +40,15 @@ check() {
   fi
 }
 
-# 从标准输入的 JSON 里取一个字段,路径用点分隔.
-field() {
-  python3 -c '
-import json, sys
-value = json.load(sys.stdin)
-for key in sys.argv[1].split("."):
-    value = value[int(key)] if isinstance(value, list) else value.get(key)
-print("null" if value is None else value)' "$1"
-}
+# 从标准输入的 JSON 里取一个字段.
+field() { jq -r "$1"; }
 
 api_get() { curl -sS -m 20 "$BASE$1"; }
 api_post() { curl -sS -m 20 -H 'content-type: application/json' -d "$2" "$BASE$1"; }
 rpc() { curl -sS -m 20 -H 'content-type: application/json' -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":$2}" "$NODE"; }
 mine() { rpc anvil_mine "[\"$(printf '0x%x' "$1")\"]" >/dev/null; }
 cast_in_container() { docker exec "$CONTAINER" cast "$@"; }
-tx_field() { api_post /v1/ethereum/tx "{\"hashes\":[\"$1\"]}" | field "txs.0.$2"; }
+tx_field() { api_post /v1/ethereum/tx "{\"hashes\":[\"$1\"]}" | field ".txs[0].$2"; }
 broadcast() { api_post /v1/ethereum/broadcast "{\"raw\":\"$1\"}"; }
 
 # 签一笔交易.手续费写死,这样不依赖估算结果.
@@ -92,22 +85,18 @@ done
 BASE="http://$(sed -n 's/.*监听 //p' "$WORK/gateway.log" | head -1)"
 
 echo "== 只读接口"
-check "version 列出网络" "$(api_get /v1/version | field networks.0)" ethereum
+check "version 列出网络" "$(api_get /v1/version | field .networks[0])" ethereum
 REPLY=$(api_post /v1/ethereum/nonce "{\"addresses\":[\"$FROM\"]}")
-check "nonce latest" "$(echo "$REPLY" | field "nonces.$FROM.latest")" 0
-check "nonce pending" "$(echo "$REPLY" | field "nonces.$FROM.pending")" 0
+check "nonce latest" "$(echo "$REPLY" | field ".nonces[\"$FROM\"].latest")" 0
+check "nonce pending" "$(echo "$REPLY" | field ".nonces[\"$FROM\"].pending")" 0
 
 FEES=$(api_get /v1/ethereum/fees)
 echo "手续费 $FEES"
-check "fees 类型" "$(echo "$FEES" | field kind)" evm
-check "fees 最高单价不低于基础费" "$(echo "$FEES" | python3 -c '
-import json, sys
-fees = json.load(sys.stdin)
-base = int(fees["baseFee"])
-print(all(int(fees[tier]["maxFee"]) >= base and int(fees[tier]["priority"]) >= 0 for tier in ("slow", "medium", "fast")))')" True
+check "fees 类型" "$(echo "$FEES" | field .kind)" evm
+check "fees 最高单价不低于基础费" "$(echo "$FEES" | jq '(.baseFee | tonumber) as $base | all(.slow, .medium, .fast; (.maxFee | tonumber) >= $base and (.priority | tonumber) >= 0)')" true
 
 REPLY=$(api_post /v1/ethereum/estimate "{\"from\":\"$FROM\",\"to\":\"$TO\",\"value\":\"1000\"}")
-check "estimate 普通转账" "$(echo "$REPLY" | field gas)" 21000
+check "estimate 普通转账" "$(echo "$REPLY" | field .gas)" 21000
 
 echo "== 广播和状态"
 RAW=$(sign "$KEY" --nonce 0 --gas-limit 21000 --value 1000 "$TO")
@@ -115,25 +104,25 @@ HASH=$(cast_in_container keccak "$RAW")
 check "广播前查不到" "$(tx_field "$HASH" status)" unknown
 
 REPLY=$(broadcast "$RAW")
-check "broadcast 接收" "$(echo "$REPLY" | field status)" accepted
-check "broadcast 哈希和本地计算一致" "$(echo "$REPLY" | field hash)" "$HASH"
+check "broadcast 接收" "$(echo "$REPLY" | field .status)" accepted
+check "broadcast 哈希和本地计算一致" "$(echo "$REPLY" | field .hash)" "$HASH"
 check "上链前是 pending" "$(tx_field "$HASH" status)" pending
 REPLY=$(api_post /v1/ethereum/nonce "{\"addresses\":[\"$FROM\"]}")
-check "nonce pending 增加" "$(echo "$REPLY" | field "nonces.$FROM.pending")" 1
-check "nonce latest 不变" "$(echo "$REPLY" | field "nonces.$FROM.latest")" 0
+check "nonce pending 增加" "$(echo "$REPLY" | field ".nonces[\"$FROM\"].pending")" 1
+check "nonce latest 不变" "$(echo "$REPLY" | field ".nonces[\"$FROM\"].latest")" 0
 
 REPLY=$(broadcast "$RAW")
 echo "重复广播 $REPLY"
-check "内存池里重复广播仍是成功" "$(echo "$REPLY" | field status)" accepted
+check "内存池里重复广播仍是成功" "$(echo "$REPLY" | field .status)" accepted
 
 mine 1
 check "打包后 included" "$(tx_field "$HASH" status)" included
 check "打包后阶段 latest" "$(tx_field "$HASH" stage)" latest
-check "手续费大于 0" "$(tx_field "$HASH" fee | python3 -c 'print(int(input()) > 0)')" True
+check "手续费大于 0" "$(tx_field "$HASH" fee | jq '. > 0')" true
 
 REPLY=$(broadcast "$RAW")
 echo "上链后重复广播 $REPLY"
-check "上链后重复广播仍是成功" "$(echo "$REPLY" | field status)" accepted
+check "上链后重复广播仍是成功" "$(echo "$REPLY" | field .status)" accepted
 
 mine 2
 check "落后 2 块进入 safe" "$(tx_field "$HASH" stage)" safe
@@ -146,32 +135,32 @@ echo "== 节点拒绝"
 OTHER=$(sign "$KEY" --nonce 0 --gas-limit 21000 --value 2000 "$TO")
 REPLY=$(broadcast "$OTHER")
 echo "同 nonce 的另一笔 $REPLY"
-check "nonce 被别的交易用掉要报拒绝" "$(echo "$REPLY" | field error.code)" broadcast_rejected
+check "nonce 被别的交易用掉要报拒绝" "$(echo "$REPLY" | field .error.code)" broadcast_rejected
 
 POOR=$(sign "$POOR_KEY" --nonce 0 --gas-limit 21000 --value 1000 "$TO")
 REPLY=$(broadcast "$POOR")
 echo "余额不足 $REPLY"
-check "余额不足要报拒绝" "$(echo "$REPLY" | field error.code)" broadcast_rejected
+check "余额不足要报拒绝" "$(echo "$REPLY" | field .error.code)" broadcast_rejected
 
 echo "== 回滚的交易"
 RAW=$(sign "$KEY" --nonce 1 --gas-limit 200000 --create "$REVERTER_INIT")
 DEPLOY=$(cast_in_container keccak "$RAW")
-check "部署合约" "$(broadcast "$RAW" | field status)" accepted
+check "部署合约" "$(broadcast "$RAW" | field .status)" accepted
 mine 1
-CONTRACT=$(rpc eth_getTransactionReceipt "[\"$DEPLOY\"]" | field result.contractAddress)
+CONTRACT=$(rpc eth_getTransactionReceipt "[\"$DEPLOY\"]" | field .result.contractAddress)
 check "部署成功" "$(tx_field "$DEPLOY" status)" included
 
 REPLY=$(api_post /v1/ethereum/estimate "{\"from\":\"$FROM\",\"to\":\"$CONTRACT\"}")
 echo "估算回滚 $REPLY"
-check "估算回滚是 invalid_request,不是上游故障" "$(echo "$REPLY" | field error.code)" invalid_request
+check "估算回滚是 invalid_request,不是上游故障" "$(echo "$REPLY" | field .error.code)" invalid_request
 
 RAW=$(sign "$KEY" --nonce 2 --gas-limit 100000 "$CONTRACT")
 REVERTED=$(cast_in_container keccak "$RAW")
-check "回滚交易也能广播" "$(broadcast "$RAW" | field status)" accepted
+check "回滚交易也能广播" "$(broadcast "$RAW" | field .status)" accepted
 mine 1
 check "回滚交易上链后是 failed" "$(tx_field "$REVERTED" status)" failed
 check "failed 带阶段" "$(tx_field "$REVERTED" stage)" latest
-check "failed 手续费已扣除" "$(tx_field "$REVERTED" fee | python3 -c 'print(int(input()) > 0)')" True
+check "failed 手续费已扣除" "$(tx_field "$REVERTED" fee | jq '. > 0')" true
 mine 4
 check "最终确定后仍然是 failed" "$(tx_field "$REVERTED" status)" failed
 check "最终确定后阶段是 finalized" "$(tx_field "$REVERTED" stage)" finalized
