@@ -7,7 +7,7 @@ export function BrandMark({ size }: { size: number }) {
             {small ? (
                 <>
                     <path
-                        d="M56 40H44A4 4 0 0 0 40 44V116A4 4 0 0 0 44 120H56M104 40H116A4 4 0 0 1 120 44V116A4 4 0 0 1 116 120H104"
+                        d="M50 40H38A8 8 0 0 0 30 48V112A8 8 0 0 0 38 120H50M110 40H122A8 8 0 0 1 130 48V112A8 8 0 0 1 122 120H110"
                         fill="none"
                         stroke="#EEF1F5"
                         strokeWidth="20"
