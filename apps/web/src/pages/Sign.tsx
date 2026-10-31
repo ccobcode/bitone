@@ -1,10 +1,12 @@
+import { chainOf } from "../chains";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
 import { UrReceiver, accountKeyList, previewRequest, verifyResponse, type Review } from "../core";
 import { useApp, useLive } from "../data/app";
 import { db, type TxRecord } from "../data/db";
 import { txHref } from "../gateway/history";
-import { broadcastTx, replaceAndCancel, TransferError } from "../data/transfer";
+import { TransferError } from "../chains/transfer";
+import { broadcastTx, replaceAndCancel } from "../data/transfer";
 import {
     amountText,
     cancelNote,
@@ -45,7 +47,7 @@ import { t, translate } from "../core/i18n";
 
 const ASSETS = { to: "/", label: t("资产") };
 
-/** 561 是 33 的整数倍，见 docs/06-ui.md 第 4.5 节。 */
+/** 561 是 33 的整数倍,见 docs/06-ui.md 第 4.5 节. */
 const QR_SIZE = 561;
 
 function remaining(expiresAt: number, now: number): string {
@@ -120,10 +122,9 @@ function ScanPanel({
     const finish = useCallback(
         (message: Uint8Array) => {
             const account = accounts.find((item) => item.id === tx.accountId);
-            if (!account) return setNotice(t("找不到付款账户。"));
+            if (!account) return setNotice(t("找不到付款账户."));
             try {
-                const signer = tx.chain === "bitcoin" ? new Uint8Array() : account.key;
-                const verified = verifyResponse(tx.request, message, signer);
+                const verified = verifyResponse(tx.request, message, chainOf(tx.chain).signerKey(account));
                 setScanning(false);
                 buzz();
                 onVerified(verified.raw, verified.hash);
@@ -142,8 +143,8 @@ function ScanPanel({
             if (rejected || current.complete) return;
             const result = current.feed(text);
             if (result === "repeated") return;
-            if (result === "foreign") return setNotice(t("这不是签名结果二维码。"));
-            if (result === "invalid") return setNotice(t("这一帧与已收到的数据不一致，可以重新扫描。"));
+            if (result === "foreign") return setNotice(t("这不是签名结果二维码."));
+            if (result === "invalid") return setNotice(t("这一帧与已收到的数据不一致,可以重新扫描."));
             setNotice("");
             setProgress({ value: current.progress, frames: current.frames });
             if (current.complete) finish(current.message());
@@ -154,7 +155,7 @@ function ScanPanel({
     const images = useImageScan(t("上传签名二维码图片"), feed, setNotice);
 
     async function abandon() {
-        await cancelTx(tx.id, t("核验失败，用户放弃"));
+        await cancelTx(tx.id, t("核验失败,用户放弃"));
         await navigate(txHref(tx), { replace: true });
     }
 
@@ -168,7 +169,7 @@ function ScanPanel({
                     tone="danger"
                     icon="alert"
                     title={t("核验失败")}
-                    body={t("签名与构建记录不一致，已拒绝广播。")}
+                    body={t("签名与构建记录不一致,已拒绝广播.")}
                     facts={[
                         { label: t("不一致项"), value: rejected.item },
                         { label: t("结果"), value: rejected.recorded },
@@ -251,7 +252,7 @@ function CancelPanel({ tx }: { tx: TxRecord }) {
             const next = await replaceAndCancel(tx, { wallet, accounts, account });
             await navigate(`/sign/${encodeURIComponent(next.id)}`);
         } catch (error) {
-            setFailure(error instanceof TransferError ? translate(error.message) : t("无法生成替换交易。"));
+            setFailure(error instanceof TransferError ? translate(error.message) : t("无法生成替换交易."));
             setBusy(false);
         }
     }
@@ -282,11 +283,11 @@ function CancelPanel({ tx }: { tx: TxRecord }) {
     );
 }
 
-/** 用和冷钱包相同的代码再看一遍。结果只用于提示，判断以冷钱包屏幕为准。 */
+/** 用和冷钱包相同的代码再看一遍.结果只用于提示,判断以冷钱包屏幕为准. */
 function usePreview(tx: TxRecord): Review | null | undefined {
     const { accounts } = useApp();
     return useMemo(() => {
-        // 账户还没读出来时不下结论。
+        // 账户还没读出来时不下结论.
         if (accounts.length === 0) return undefined;
         try {
             return previewRequest(tx.request, accountKeyList(accounts));
@@ -304,7 +305,7 @@ function SigningView({ tx }: { tx: TxRecord }) {
 
     const onVerified = useCallback(
         (raw: string, hash: string) => {
-            // 页面跟着状态走，下一步是广播。扫描期间交易可能已经到期，这时切到已结束的状态。
+            // 页面跟着状态走,下一步是广播.扫描期间交易可能已经到期,这时切到已结束的状态.
             void markSigned(tx.id, { raw, hash }).catch(() => undefined);
         },
         [tx.id],
@@ -320,7 +321,7 @@ function SigningView({ tx }: { tx: TxRecord }) {
                             tone="danger"
                             icon="alert"
                             title={t("禁止签名")}
-                            body={review?.alerts[0] ?? t("这个请求无法解析，没有显示二维码。")}
+                            body={review?.alerts[0] ?? t("这个请求无法解析,没有显示二维码.")}
                             facts={[{ label: t("编号"), value: tx.id }]}
                         />
                     </div>
@@ -340,7 +341,7 @@ function SigningView({ tx }: { tx: TxRecord }) {
                         </div>
                         {review?.alerts.map((alert) => (
                             <Notice key={alert} tone="warn">
-                                {t("冷钱包会提示：")}
+                                {t("冷钱包会提示:")}
                                 {alert}
                             </Notice>
                         ))}
@@ -383,7 +384,7 @@ function SigningView({ tx }: { tx: TxRecord }) {
     );
 }
 
-/** 签名已经核验，等用户确认广播。广播后这笔才算发出去，页面落到交易详情。 */
+/** 签名已经核验,等用户确认广播.广播后这笔才算发出去,页面落到交易详情. */
 function SignedView({ tx }: { tx: TxRecord }) {
     const [busy, setBusy] = useState(false);
 
@@ -409,7 +410,7 @@ function SignedView({ tx }: { tx: TxRecord }) {
                     </Fact>
                 </dl>
                 <div className="flex justify-end gap-s2">
-                    <Button disabled={busy} onClick={() => void cancelTx(tx.id, t("用户取消，签名仍然有效"))}>
+                    <Button disabled={busy} onClick={() => void cancelTx(tx.id, t("用户取消,签名仍然有效"))}>
                         {t("放弃")}
                     </Button>
                     <Button variant="primary" disabled={busy} onClick={() => void send()}>
@@ -430,11 +431,7 @@ function ClosedView({ tx }: { tx: TxRecord }) {
                 tone="warn"
                 icon="clock"
                 title={expired ? t("已过期") : STATE_LABELS[tx.state]}
-                body={
-                    expired
-                        ? t("这个请求已经失效，重新构建后用新的二维码签名。")
-                        : t("这个请求已经结束，不能继续签名。")
-                }
+                body={expired ? t("这个请求已经失效,重新构建后用新的二维码签名.") : t("这个请求已经结束,不能继续签名.")}
                 facts={[
                     { label: t("编号"), value: tx.id },
                     { label: t("状态"), value: <Chip tone="neutral">{STATE_LABELS[tx.state]}</Chip> },
@@ -469,7 +466,7 @@ export default function Sign() {
             <>
                 <ChildTitle parent={ASSETS}>{t("冷钱包签名")}</ChildTitle>
                 <Empty icon="qr" action={<LinkButton to="/history">{t("查看记录")}</LinkButton>}>
-                    {t("没有找到这笔交易。")}
+                    {t("没有找到这笔交易.")}
                 </Empty>
             </>
         );

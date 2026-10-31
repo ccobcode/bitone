@@ -12,7 +12,7 @@ import TxDetail from "./pages/TxDetail";
 import Welcome from "./pages/Welcome";
 import { Shell } from "./ui/Shell";
 
-/** 没有任何钱包时回到 W0。这时除了欢迎页，其他页面都没有意义。 */
+/** 没有任何钱包时回到 W0.这时除了欢迎页,其他页面都没有意义. */
 function RequireWallet() {
     const { wallets } = useApp();
     return wallets.length > 0 ? <Outlet /> : <Navigate to="/welcome" replace />;

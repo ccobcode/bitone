@@ -4,7 +4,7 @@ import { Empty, LinkButton } from "../ui/primitives";
 import { overlayLink } from "../ui/Sheet";
 import { t } from "../core/i18n";
 
-/** 另一个网络已有钱包，当前网络还没有。 */
+/** 另一个网络已有钱包,当前网络还没有. */
 export function NoWallet() {
     const { mode } = useApp();
     return (
@@ -18,7 +18,7 @@ export function NoWallet() {
         >
             {t("这个浏览器还没有")}
             {modeLabel(mode)}
-            {t("钱包。")}
+            {t("钱包.")}
         </Empty>
     );
 }

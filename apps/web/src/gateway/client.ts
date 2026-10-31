@@ -1,31 +1,31 @@
-// 网关 HTTP 接口，格式见 docs/09-gateway-api.md。网关的数据都不可信，进来先校验。
+// 网关 HTTP 接口,格式见 docs/09-gateway-api.md.网关的数据都不可信,进来先校验.
 import { addressKey, cleanText, isRecord } from "../core/text";
 import { parseAmount } from "../core/amount";
 import type { ChainObservation, ChainStatus } from "../data/machine";
 import { t } from "../core/i18n";
 
-/** 单次请求的地址上限。 */
+/** 单次请求的地址上限. */
 export const MAX_ADDRESSES = 100;
-/** 一次快照的条目上限。 */
+/** 一次快照的条目上限. */
 export const MAX_SNAPSHOT_ITEMS = 1000;
 
 export interface Balance {
     address: string;
-    /** `native` 或合约地址。 */
+    /** `native` 或合约地址. */
     asset: string;
     amount: bigint;
 }
 
-/** 一次请求的时限。转账构建在账户锁里等待网关，不能一直挂着。 */
+/** 一次请求的时限.转账构建在账户锁里等待网关,不能一直挂着. */
 const REQUEST_TIMEOUT = 20_000;
-/** 网关可能依次尝试几个上游，广播要比普通查询等得久。 */
+/** 网关可能依次尝试几个上游,广播要比普通查询等得久. */
 const BROADCAST_TIMEOUT = 45_000;
-/** 快照要等最慢的网络，单个上游超时后还要换下一个。 */
+/** 快照要等最慢的网络,单个上游超时后还要换下一个. */
 const SNAPSHOT_TIMEOUT = 60_000;
 
 export class GatewayError extends Error {
     readonly code: string;
-    /** 网关转述的节点原文，只当纯文本显示。 */
+    /** 网关转述的节点原文,只当纯文本显示. */
     readonly detail: string;
     constructor(code: string, detail = "") {
         super(t("网关不可用"));
@@ -53,7 +53,7 @@ async function request(path: string, init?: RequestInit, timeout?: number): Prom
     return response.json().catch(() => null);
 }
 
-function post(network: string, path: string, body: unknown, timeout?: number): Promise<unknown> {
+export function post(network: string, path: string, body: unknown, timeout?: number): Promise<unknown> {
     return request(
         `/v1/${encodeURIComponent(network)}/${path}`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
@@ -61,32 +61,32 @@ function post(network: string, path: string, body: unknown, timeout?: number): P
     );
 }
 
-function get(network: string, path: string): Promise<unknown> {
+export function get(network: string, path: string): Promise<unknown> {
     return request(`/v1/${encodeURIComponent(network)}/${path}`);
 }
 
-/** 响应不完整时算查询失败，不能当成 0 或空。 */
-function malformed(): GatewayError {
+/** 响应不完整时算查询失败,不能当成 0 或空. */
+export function malformed(): GatewayError {
     return new GatewayError("unreachable");
 }
 
-function requireAmount(value: unknown): bigint {
+export function requireAmount(value: unknown): bigint {
     const amount = parseAmount(value);
     if (amount === null) throw malformed();
     return amount;
 }
 
-function requireCount(value: unknown): number {
+export function requireCount(value: unknown): number {
     if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw malformed();
     return value;
 }
 
-function requireHex(value: unknown, bytes: number): string {
+export function requireHex(value: unknown, bytes: number): string {
     if (typeof value !== "string" || value.length !== bytes * 2 || !/^[0-9a-f]+$/i.test(value)) throw malformed();
     return value;
 }
 
-function requireText(value: unknown, max: number): string {
+export function requireText(value: unknown, max: number): string {
     if (typeof value !== "string") throw malformed();
     const text = cleanText(value, max);
     if (!text) throw malformed();
@@ -101,7 +101,7 @@ export function chunks<T>(list: readonly T[], size: number): T[][] {
 
 export interface GatewayVersion {
     networks: string[];
-    /** 没有配置索引服务的网络，查不到链上历史。 */
+    /** 没有配置索引服务的网络,查不到链上历史. */
     noHistory: string[];
 }
 
@@ -117,8 +117,8 @@ export async function fetchVersion(): Promise<GatewayVersion> {
 export { addressKey };
 
 /**
- * 只留下请求过的地址和合法金额，同一地址同一资产以最后一条为准。
- * 地址统一换回本地的写法，后面按本地地址聚合。
+ * 只留下请求过的地址和合法金额,同一地址同一资产以最后一条为准.
+ * 地址统一换回本地的写法,后面按本地地址聚合.
  */
 export function parseBalances(list: unknown, addresses: readonly string[]): Balance[] {
     if (!Array.isArray(list)) return [];
@@ -135,214 +135,25 @@ export function parseBalances(list: unknown, addresses: readonly string[]): Bala
     return [...merged.values()];
 }
 
-export interface Utxo {
-    address: string;
-    txid: string;
-    vout: number;
-    amount: bigint;
-    /** 0 表示还在内存池。 */
-    height: number;
-}
-
-/** 只留下请求过的地址。网关给的 UTXO 不可信，金额由前序交易的 txid 校验。 */
-export async function fetchUtxos(network: string, addresses: readonly string[]): Promise<Utxo[]> {
-    const pages = await Promise.all(
-        chunks(addresses, MAX_ADDRESSES).map(async (chunk) => {
-            const body = await post(network, "utxos", { addresses: chunk });
-            const list = isRecord(body) ? body.utxos : null;
-            if (!Array.isArray(list)) throw malformed();
-            const known = new Set(chunk);
-            return list.flatMap((item: unknown): Utxo[] => {
-                if (!isRecord(item) || typeof item.address !== "string" || !known.has(item.address)) return [];
-                return [
-                    {
-                        address: item.address,
-                        // 占用按字符串比较，大小写不同不能算成另一个 UTXO。
-                        txid: requireHex(item.txid, 32).toLowerCase(),
-                        vout: requireCount(item.vout),
-                        amount: requireAmount(item.amount),
-                        height: requireCount(item.height),
-                    },
-                ];
-            });
-        }),
-    );
-    return pages.flat();
-}
-
-/** 只返回请求过的 txid。内容对不对由核心库重算 txid 判断。 */
-export async function fetchRawTxs(network: string, txids: readonly string[]): Promise<Map<string, string>> {
-    const result = new Map<string, string>();
-    for (const chunk of chunks(txids, MAX_ADDRESSES)) {
-        const body = await post(network, "raw-txs", { txids: chunk });
-        const map = isRecord(body) ? body.txs : null;
-        if (!isRecord(map)) throw malformed();
-        for (const txid of chunk) {
-            const hex = map[txid];
-            if (typeof hex === "string" && hex.length % 2 === 0 && /^[0-9a-f]*$/i.test(hex)) result.set(txid, hex);
-        }
-    }
-    return result;
-}
-
-export interface NonceInfo {
-    latest: number;
-    pending: number;
-}
-
-export async function fetchNonces(network: string, addresses: readonly string[]): Promise<Map<string, NonceInfo>> {
-    const body = await post(network, "nonce", { addresses });
-    const map = isRecord(body) ? body.nonces : null;
-    if (!isRecord(map)) throw malformed();
-    const lower = new Map(Object.entries(map).map(([address, value]) => [addressKey(address), value]));
-    const result = new Map<string, NonceInfo>();
-    for (const address of addresses) {
-        const row = lower.get(addressKey(address));
-        if (!isRecord(row)) throw malformed();
-        result.set(address, { latest: requireCount(row.latest), pending: requireCount(row.pending) });
-    }
-    return result;
-}
-
-export interface TronResources {
-    bandwidth: bigint;
-    energy: bigint;
-    activated: boolean;
-}
-
-export async function fetchResources(network: string, address: string): Promise<TronResources> {
-    const body = await post(network, "resources", { addresses: [address] });
-    const map = isRecord(body) ? body.resources : null;
-    const row = isRecord(map) ? map[address] : null;
-    if (!isRecord(row)) throw malformed();
-    return {
-        bandwidth: BigInt(requireCount(row.bandwidth)),
-        energy: BigInt(requireCount(row.energy)),
-        activated: row.activated === true,
-    };
-}
-
-export interface RefBlock {
-    refBlockBytes: string;
-    refBlockHash: string;
-    timestamp: number;
-}
-
-export async function fetchRefBlock(network: string): Promise<RefBlock> {
-    const body = await get(network, "ref-block");
-    if (!isRecord(body)) throw malformed();
-    return {
-        refBlockBytes: requireHex(body.refBlockBytes, 2),
-        refBlockHash: requireHex(body.refBlockHash, 8),
-        timestamp: requireCount(body.timestamp),
-    };
-}
-
-export interface NonceAccount {
-    exists: boolean;
-    nonce: string;
-}
-
-export async function fetchNonceAccount(network: string, address: string): Promise<NonceAccount> {
-    const body = await post(network, "nonce-account", { address });
-    if (!isRecord(body) || typeof body.exists !== "boolean") throw malformed();
-    return body.exists ? { exists: true, nonce: requireText(body.nonce, 64) } : { exists: false, nonce: "" };
-}
-
-export async function fetchBlockhash(network: string): Promise<string> {
-    const body = await get(network, "blockhash");
-    return requireText(isRecord(body) ? body.blockhash : null, 64);
-}
-
 export type FeeTier = "slow" | "medium" | "fast";
 
-export interface EvmTierFee {
-    maxFee: bigint;
-    priority: bigint;
-}
-
-export type Fees =
-    | { kind: "bitcoin"; slow: bigint; medium: bigint; fast: bigint }
-    | { kind: "evm"; baseFee: bigint; slow: EvmTierFee; medium: EvmTierFee; fast: EvmTierFee }
-    | { kind: "tron"; energyPrice: bigint; bandwidthPrice: bigint }
-    | { kind: "solana"; slow: bigint; medium: bigint; fast: bigint };
-
-function evmTier(value: unknown): EvmTierFee {
-    if (!isRecord(value)) throw malformed();
-    return { maxFee: requireAmount(value.maxFee), priority: requireAmount(value.priority) };
-}
-
-export async function fetchFees(network: string): Promise<Fees> {
+/** 手续费的格式按链不同,由注册表按 `kind` 分发给各链解析. */
+export async function fetchFeeBody(network: string): Promise<Record<string, unknown>> {
     const body = await get(network, "fees");
     if (!isRecord(body)) throw malformed();
-    switch (body.kind) {
-        case "bitcoin":
-        case "solana":
-            return {
-                kind: body.kind,
-                slow: BigInt(requireCount(body.slow)),
-                medium: BigInt(requireCount(body.medium)),
-                fast: BigInt(requireCount(body.fast)),
-            };
-        case "evm":
-            return {
-                kind: "evm",
-                baseFee: requireAmount(body.baseFee),
-                slow: evmTier(body.slow),
-                medium: evmTier(body.medium),
-                fast: evmTier(body.fast),
-            };
-        case "tron":
-            return {
-                kind: "tron",
-                energyPrice: BigInt(requireCount(body.energyPrice)),
-                bandwidthPrice: BigInt(requireCount(body.bandwidthPrice)),
-            };
-        default:
-            throw malformed();
-    }
+    return body;
 }
 
-/** 合约回滚时网关返回 400 `invalid_request` 加节点原文。 */
-export async function estimateEvmGas(
-    network: string,
-    call: { from: string; to: string; value: string; data?: string },
-): Promise<bigint> {
-    const body = await post(network, "estimate", call);
-    return requireAmount(isRecord(body) ? body.gas : null);
-}
-
-export interface TronEstimate {
-    energy: bigint;
-    bandwidth: bigint;
-    activationFee: bigint;
-}
-
-export async function estimateTron(
-    network: string,
-    call: { from: string; to: string; contract?: string; data?: string },
-): Promise<TronEstimate> {
-    const body = await post(network, "estimate", call);
-    if (!isRecord(body)) throw malformed();
+/** 三档都是整数的手续费. */
+export function requireTiers(body: Record<string, unknown>): Record<FeeTier, bigint> {
     return {
-        energy: requireAmount(body.energy),
-        bandwidth: requireAmount(body.bandwidth),
-        activationFee: requireAmount(body.activationFee),
+        slow: BigInt(requireCount(body.slow)),
+        medium: BigInt(requireCount(body.medium)),
+        fast: BigInt(requireCount(body.fast)),
     };
 }
 
-export interface SolanaEstimate {
-    recipientTokenAccount: boolean;
-    rent: bigint;
-}
-
-export async function estimateSolana(network: string, recipient: string, mint?: string): Promise<SolanaEstimate> {
-    const body = await post(network, "estimate", { recipient, mint });
-    if (!isRecord(body) || typeof body.recipientTokenAccount !== "boolean") throw malformed();
-    return { recipientTokenAccount: body.recipientTokenAccount, rent: requireAmount(body.rent) };
-}
-
-/** 节点接收时返回哈希。其余情况都抛错，由调用方按结果不明处理。 */
+/** 节点接收时返回哈希.其余情况都抛错,由调用方按结果不明处理. */
 export async function broadcastRaw(network: string, raw: string): Promise<string> {
     const body = await post(network, "broadcast", { raw }, BROADCAST_TIMEOUT);
     if (!isRecord(body) || body.status !== "accepted") throw malformed();
@@ -355,7 +166,7 @@ function isStatus(value: unknown): value is ChainStatus {
     return STATUSES.includes(value as ChainStatus);
 }
 
-/** `/tx` 和 `tx` 频道共用的格式。不合法时返回 null。 */
+/** `/tx` 和 `tx` 频道共用的格式.不合法时返回 null. */
 export function parseObservation(value: unknown): ChainObservation | null {
     if (!isRecord(value) || typeof value.hash !== "string" || !isStatus(value.status)) return null;
     const block = typeof value.block === "number" && Number.isSafeInteger(value.block) ? value.block : null;
@@ -388,7 +199,7 @@ export async function fetchTxs(network: string, hashes: readonly string[]): Prom
     return pages.flat();
 }
 
-/** 一笔交易的输入输出。Bitcoin 才有，见 `walletView`。 */
+/** 一笔交易的输入输出.Bitcoin 才有,见 `walletView`. */
 export interface Flows {
     inputs: string[];
     outputs: { address: string | null; amount: string }[];
@@ -407,15 +218,15 @@ export interface HistoryItem {
 
 export interface HistoryPage {
     items: HistoryItem[];
-    /** 空表示没有更多。空页也可能带游标，不能遇到空页就停。 */
+    /** 空表示没有更多.空页也可能带游标,不能遇到空页就停. */
     cursor: string | null;
-    /** 下次增量查询的水位，原样传回，不解析。 */
+    /** 下次增量查询的水位,原样传回,不解析. */
     checkpoint: string;
-    /** 上次之后没有变化，这一页是空的。 */
+    /** 上次之后没有变化,这一页是空的. */
     unchanged: boolean;
 }
 
-/** 只收形状完整的。不完整时退回网关按批归纳的结果。 */
+/** 只收形状完整的.不完整时退回网关按批归纳的结果. */
 function parseFlows(value: unknown): Flows | null {
     if (!isRecord(value) || !Array.isArray(value.inputs) || !Array.isArray(value.outputs)) return null;
     const inputs = value.inputs.flatMap((input: unknown) => (typeof input === "string" ? [cleanText(input, 128)] : []));
@@ -473,7 +284,7 @@ export async function fetchHistory(
     return parsePage(await post(network, "history", { addresses, cursor, since }));
 }
 
-/** 这批地址里有过交易的，地址发现用。 */
+/** 这批地址里有过交易的,地址发现用. */
 export async function fetchUsed(network: string, addresses: readonly string[]): Promise<string[]> {
     const body = await post(network, "used", { addresses });
     const list = isRecord(body) ? body.used : null;
@@ -484,14 +295,14 @@ export async function fetchUsed(network: string, addresses: readonly string[]): 
 export interface SnapshotItem {
     network: string;
     address: string;
-    /** 没有时是原生币。 */
+    /** 没有时是原生币. */
     contract?: string;
     since?: string;
-    /** 分批编号。翻页游标绑定一批地址，水位相同的批次也不能合并。 */
+    /** 分批编号.翻页游标绑定一批地址,水位相同的批次也不能合并. */
     group: number;
 }
 
-/** 一批地址的最新状态。`balances` 和 `history` 分开报告失败，空表示这部分没查到。 */
+/** 一批地址的最新状态.`balances` 和 `history` 分开报告失败,空表示这部分没查到. */
 export interface SnapshotResult {
     network: string;
     addresses: string[];
@@ -512,14 +323,14 @@ function parseSnapshot(value: unknown): SnapshotResult | null {
         network: value.network,
         addresses,
         height: parseHeight(value.height),
-        // 响应不完整时算查询失败，不能当成余额为 0。
+        // 响应不完整时算查询失败,不能当成余额为 0.
         balances: Array.isArray(value.balances) ? parseBalances(value.balances, addresses) : null,
         history: isRecord(value.history) ? parsePage(value.history) : null,
         error: typeof value.error === "string" ? cleanText(value.error) : null,
     };
 }
 
-/** 响应一行一个 JSON，哪批先查完就先到，到一批处理一批。慢的网络不拖累其他网络。 */
+/** 响应一行一个 JSON,哪批先查完就先到,到一批处理一批.慢的网络不拖累其他网络. */
 export async function fetchSnapshot(
     items: readonly SnapshotItem[],
     onResult: (result: SnapshotResult) => Promise<void>,
@@ -555,10 +366,10 @@ function parseLine(line: string): unknown {
     }
 }
 
-/** 跟块推送。`items` 为空表示网关这次没取到交易，要自己补取。 */
+/** 跟块推送.`items` 为空表示网关这次没取到交易,要自己补取. */
 export interface ChainUpdate {
     height: number;
-    /** 上一条推送的高度，接不上说明中间漏了。 */
+    /** 上一条推送的高度,接不上说明中间漏了. */
     previous: number;
     balances: Balance[];
     items: HistoryItem[] | null;
@@ -579,7 +390,7 @@ export function parseUpdate(value: unknown, addresses: readonly string[]): Chain
 
 export type PriceMap = Map<string, string>;
 
-/** 键统一成 `网络:合约`，EVM 合约转小写。`/prices` 和 `prices` 频道共用。 */
+/** 键统一成 `网络:合约`,EVM 合约转小写.`/prices` 和 `prices` 频道共用. */
 export function parsePrices(value: unknown): PriceMap {
     const prices: PriceMap = new Map();
     if (!isRecord(value)) return prices;

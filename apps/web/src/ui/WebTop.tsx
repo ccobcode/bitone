@@ -6,7 +6,7 @@ import { Chip } from "./primitives";
 import { AssetIcon } from "./TokenIcon";
 import { t } from "../core/i18n";
 
-/** 连接状态和延迟。正常时只有圆点和延迟，出问题才显示文字和颜色。窄屏时不显示文字，放不下时也不显示延迟。延迟宽度固定，数字变化时不推动旁边的内容。 */
+/** 连接状态和延迟.正常时只有圆点和延迟,出问题才显示文字和颜色.窄屏时不显示文字,放不下时也不显示延迟.延迟宽度固定,数字变化时不推动旁边的内容. */
 function LiveState() {
     const { socket, down, latency } = useGateway();
     const state = down
@@ -27,7 +27,7 @@ function LiveState() {
     );
 }
 
-/** 等着用户动手的事。平时不出现，有事时才占顶栏的位置。 */
+/** 等着用户动手的事.平时不出现,有事时才占顶栏的位置. */
 function Inbox() {
     const rows = useAttention();
     const navigate = useNavigate();
@@ -40,7 +40,7 @@ function Inbox() {
     return (
         <Menu.Root>
             <Menu.Trigger aria-label={t("{0} 项待处理", rows.length)} className="press rise flex min-h-11 items-center">
-                {/* 手机上只留数字，钱包切换不被挤窄。 */}
+                {/* 手机上只留数字,钱包切换不被挤窄. */}
                 <Chip tone={tone}>
                     {rows.length}
                     <span className="hidden nav:inline"> {t("待处理")}</span>
@@ -70,7 +70,7 @@ function Inbox() {
     );
 }
 
-/** 顶栏右侧的状态：先是要处理的事，再是连接状态。 */
+/** 顶栏右侧的状态:先是要处理的事,再是连接状态. */
 export function WebTop() {
     return (
         <div className="flex shrink-0 items-center gap-s3">

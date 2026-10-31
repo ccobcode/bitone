@@ -4,7 +4,7 @@ import { ContactDialog } from "../pages/Contacts";
 import PairDialog from "../pages/Pair";
 import ReceiveDialog from "../pages/Receive";
 
-/** 网址上的浮层。页面不动，关掉回到原处。 */
+/** 网址上的浮层.页面不动,关掉回到原处. */
 export function Overlays() {
     const [params] = useSearchParams();
     if (params.has("connect")) return <PairDialog />;

@@ -1,4 +1,4 @@
-// 界面功能图标，线宽 1.8，圆角端点，24 网格。路径和冷钱包共用，来源是 design/icons.json。
+// 界面功能图标,线宽 1.8,圆角端点,24 网格.路径和冷钱包共用,来源是 design/icons.json.
 import PATHS from "./icons.gen.json";
 
 export type IconName = keyof typeof PATHS;
@@ -7,11 +7,11 @@ interface IconProps {
     name: IconName;
     size?: number;
     className?: string;
-    /** 完成时描线。 */
+    /** 完成时描线. */
     draw?: boolean;
 }
 
-/** 下载中：箭头往托盘里落，循环。加载不用转圈，见 docs/06-ui.md 第 5 节。 */
+/** 下载中:箭头往托盘里落,循环.加载不用转圈,见 docs/06-ui.md 第 5 节. */
 export function DownloadingIcon() {
     return (
         <svg

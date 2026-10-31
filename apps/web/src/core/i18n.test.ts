@@ -20,7 +20,7 @@ describe("setLang", () => {
         vi.unstubAllGlobals();
     });
 
-    it("自动跟随系统语言，不保存具体语言", () => {
+    it("自动跟随系统语言,不保存具体语言", () => {
         vi.spyOn(navigator, "language", "get").mockReturnValue("en-US");
         setLang("zh");
         setLang("auto");
@@ -64,10 +64,10 @@ describe("t", () => {
 });
 
 describe("translate", () => {
-    it("核心库的文案按模板翻译，动态内容原样保留", () => {
+    it("核心库的文案按模板翻译,动态内容原样保留", () => {
         setLang("en");
         expect(translate("普通转账")).toBe("Transfer");
-        expect(translate("对方可随时转走你全部的 USDT。")).toBe("The recipient can move all your USDT at any time.");
+        expect(translate("对方可随时转走你全部的 USDT.")).toBe("The recipient can move all your USDT at any time.");
     });
 
     it("金额和地址不处理", () => {

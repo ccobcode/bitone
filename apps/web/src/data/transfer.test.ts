@@ -1,12 +1,13 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-    accountKeyList,
-    bitcoinFeeInfo,
-    bitcoinReplacement,
-    deriveAddress,
-    previewRequest,
-    solanaNonceAddress,
-} from "../core";
+import { deriveAddress } from "../chains";
+import { bitcoinFeeInfo, bitcoinReplacement } from "../chains/bitcoin/core";
+import { needsPrevTx, spendableCoins } from "../chains/bitcoin/transfer";
+import { bumpedEvmFees } from "../chains/evm/transfer";
+import { solanaNonceAddress } from "../chains/solana/core";
+import { NONCE_RENT, SOLANA_BLOCKHASH_WINDOW } from "../chains/solana/transfer";
+import { QUOTE_LIFETIME, TransferError } from "../chains/transfer";
+import { TRON_LIFETIME, tronCost, tronFeeLimit } from "../chains/tron/transfer";
+import { accountKeyList, previewRequest } from "../core";
 import {
     BTC_ADDRESS,
     EVM_ADDRESS,
@@ -26,26 +27,9 @@ import {
     type Fixture,
     type Route,
 } from "../testing";
-import { clearLocalData, db } from "./db";
-import {
-    NONCE_RENT,
-    QUOTE_LIFETIME,
-    SOLANA_BLOCKHASH_WINDOW,
-    TRON_LIFETIME,
-    TransferError,
-    broadcastTx,
-    bumpedEvmFees,
-    createReplacement,
-    createSolanaNonce,
-    createTransfer,
-    needsPrevTx,
-    replaceAndCancel,
-    resendTx,
-    spendableCoins,
-    tronCost,
-    tronFeeLimit,
-} from "./transfer";
-import { applyObservation, cancelTx, markSigned, planOf, sweepExpired, withAccountLock } from "./txs";
+import { clearLocalData, db, planOf } from "./db";
+import { broadcastTx, createReplacement, createSetup, createTransfer, replaceAndCancel, resendTx } from "./transfer";
+import { applyObservation, cancelTx, markSigned, sweepExpired, withAccountLock } from "./txs";
 
 let fixture: Fixture;
 
@@ -85,14 +69,14 @@ afterEach(() => {
 });
 
 describe("EVM 构建", () => {
-    it("写入待签名记录和 nonce 占用，请求能被核心库解析", async () => {
+    it("写入待签名记录和 nonce 占用,请求能被核心库解析", async () => {
         evmGateway();
         const before = Date.now();
         const tx = await createTransfer(evmDraft());
         expect(tx).toMatchObject({ state: "signing", chain: "evm", network: "ethereum", to: PEER_EVM, amount: "1000" });
         expect(planOf(tx, "evm")).toMatchObject({ nonce: 7, gasLimit: 21000, maxFee: EVM_FEES.medium.maxFee });
         expect(tx.id).toMatch(/^TX-\d{8}-0001$/);
-        // 30 分钟是手续费报价，不是签名的有效期。
+        // 30 分钟是手续费报价,不是签名的有效期.
         expect(tx.hardExpiry).toBe(false);
         expect(tx.expiresAt).toBeGreaterThanOrEqual(before + QUOTE_LIFETIME);
         const review = previewRequest(tx.request, keys());
@@ -100,7 +84,7 @@ describe("EVM 构建", () => {
         expect(await db.reservations.toArray()).toMatchObject([{ type: "nonce", value: "7", txIds: [tx.id] }]);
     });
 
-    it("十笔并发构建，nonce 连续且不重复", async () => {
+    it("十笔并发构建,nonce 连续且不重复", async () => {
         evmGateway();
         const list = await Promise.all(Array.from({ length: 10 }, (_, i) => createTransfer(evmDraft(BigInt(i + 1)))));
         const nonces = list.map((tx) => planOf(tx, "evm").nonce).sort((a, b) => a - b);
@@ -109,7 +93,7 @@ describe("EVM 构建", () => {
         expect(await db.reservations.count()).toBe(10);
     });
 
-    it("锁是按账户的，另一个账户不用排队", async () => {
+    it("锁是按账户的,另一个账户不用排队", async () => {
         let release = () => {};
         const held = new Promise<void>((resolve) => {
             release = resolve;
@@ -143,7 +127,7 @@ describe("EVM 构建", () => {
         expect(order).toEqual(["持锁", "放锁", "构建"]);
     });
 
-    it("取消中间一笔后，空出来的 nonce 先用掉", async () => {
+    it("取消中间一笔后,空出来的 nonce 先用掉", async () => {
         evmGateway();
         const first = await createTransfer(evmDraft());
         await createTransfer(evmDraft());
@@ -152,7 +136,7 @@ describe("EVM 构建", () => {
         expect(planOf(third, "evm").nonce).toBe(7);
     });
 
-    it("取消已签名的交易不释放，新交易不能跳过它，否则永远打包不了", async () => {
+    it("取消已签名的交易不释放,新交易不能跳过它,否则永远打包不了", async () => {
         evmGateway();
         const first = await createTransfer(evmDraft());
         await markSigned(first.id, { raw: "aa", hash: "0x1" });
@@ -162,7 +146,7 @@ describe("EVM 构建", () => {
         expect(await db.txs.count()).toBe(1);
     });
 
-    it("发了替换交易之后，新交易接在它后面", async () => {
+    it("发了替换交易之后,新交易接在它后面", async () => {
         evmGateway();
         const first = await createTransfer(evmDraft());
         await markSigned(first.id, { raw: "aa", hash: "0x1" });
@@ -172,7 +156,7 @@ describe("EVM 构建", () => {
         expect(planOf(await createTransfer(evmDraft()), "evm").nonce).toBe(8);
     });
 
-    it("同样的转账结果不明时不让再发，新交易用下一个 nonce，两笔都会生效", async () => {
+    it("同样的转账结果不明时不让再发,新交易用下一个 nonce,两笔都会生效", async () => {
         evmGateway(7, { "ethereum/broadcast": () => gatewayError("broadcast_rejected", "x", 422) });
         const tx = await createTransfer(evmDraft());
         await markSigned(tx.id, { raw: "aa", hash: "0x1" });
@@ -182,7 +166,7 @@ describe("EVM 构建", () => {
         expect(planOf(await createTransfer(evmDraft(999n)), "evm").nonce).toBe(8);
     });
 
-    it("本地过期释放占用，已过期的待签名交易变成已放弃", async () => {
+    it("本地过期释放占用,已过期的待签名交易变成已放弃", async () => {
         evmGateway();
         const tx = await createTransfer(evmDraft());
         await sweepExpired(must(tx.expiresAt) - 1);
@@ -209,7 +193,7 @@ describe("EVM 构建", () => {
         expect(calls).not.toContain("ethereum/estimate");
     });
 
-    it("ERC-20 的调用数据来自核心库，Gas 留余量", async () => {
+    it("ERC-20 的调用数据来自核心库,Gas 留余量", async () => {
         let call: Record<string, unknown> = {};
         evmGateway(7, {
             "ethereum/estimate": (body: Record<string, unknown>) => {
@@ -226,7 +210,7 @@ describe("EVM 构建", () => {
         expect(previewRequest(tx.request, keys()).amount).toMatchObject({ symbol: "USDT" });
     });
 
-    it("Forbidden 时抛错，什么都不写，没有二维码可显示", async () => {
+    it("Forbidden 时抛错,什么都不写,没有二维码可显示", async () => {
         evmGateway();
         const draft = { ...evmDraft(), account: { ...fixture.account(PATHS.evm), path: PATHS.tron } };
         await expect(createTransfer(draft)).rejects.toMatchObject({ code: "forbidden" });
@@ -266,7 +250,7 @@ describe("Bitcoin 构建", () => {
     const draft = (amount: bigint, path = PATHS.segwit, from = BTC_ADDRESS) =>
         draftFor(fixture, path, from, "bitcoin", "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4", amount);
 
-    it("选币、取回前序交易、构建 PSBT，占用输入和找零索引", async () => {
+    it("选币,取回前序交易,构建 PSBT,占用输入和找零索引", async () => {
         const list = coins(BTC_ADDRESS, [100_000]);
         const { calls } = bitcoinGateway(list);
         const tx = await createTransfer(draft(40_000n));
@@ -283,7 +267,7 @@ describe("Bitcoin 构建", () => {
         expect(rows.map((row) => row.type).sort()).toEqual(["change", "utxo"]);
     });
 
-    it("并发构建不会用到同一个 UTXO，第三笔余额不足", async () => {
+    it("并发构建不会用到同一个 UTXO,第三笔余额不足", async () => {
         const list = coins(BTC_ADDRESS, [50_000, 50_000]);
         bitcoinGateway(list);
         const results = await Promise.allSettled([
@@ -303,7 +287,7 @@ describe("Bitcoin 构建", () => {
         expect(new Set(change).size).toBe(2);
     });
 
-    it("内存池里的 UTXO 不用，已占用的 UTXO 不用", async () => {
+    it("内存池里的 UTXO 不用,已占用的 UTXO 不用", async () => {
         const list = coins(BTC_ADDRESS, [50_000]);
         stubGateway({
             "bitcoin/utxos": () => ({
@@ -325,7 +309,7 @@ describe("Bitcoin 构建", () => {
         expect(await db.reservations.count()).toBe(0);
     });
 
-    it("网关虚报金额时拒绝构建，前序交易里的金额才算数", async () => {
+    it("网关虚报金额时拒绝构建,前序交易里的金额才算数", async () => {
         const list = coins(BTC_ADDRESS, [100_000]);
         bitcoinGateway(list.map((coin) => ({ ...coin, amount: 900_000 })));
         await expect(createTransfer(draft(40_000n))).rejects.toMatchObject({ code: "prev-tx" });
@@ -337,7 +321,7 @@ describe("Bitcoin 构建", () => {
         await expect(createTransfer(draft(40_000n))).rejects.toMatchObject({ code: "prev-tx" });
     });
 
-    it("全 Taproot 不取前序交易，SegWit 和混合输入都要取", async () => {
+    it("全 Taproot 不取前序交易,SegWit 和混合输入都要取", async () => {
         expect(needsPrevTx([{ path: "m/86'/0'/0'/0/0" }])).toBe(false);
         expect(needsPrevTx([{ path: "m/84'/0'/0'/0/0" }])).toBe(true);
         expect(needsPrevTx([{ path: "m/86'/0'/0'/0/0" }, { path: "m/84'/0'/0'/0/0" }])).toBe(true);
@@ -350,7 +334,7 @@ describe("Bitcoin 构建", () => {
         expect(previewRequest(tx.request, keys()).confirm).toBe("tap");
     });
 
-    it("前序交易太大、超过二维码上限时提示减少输入，什么都不写", async () => {
+    it("前序交易太大,超过二维码上限时提示减少输入,什么都不写", async () => {
         const big = fakePrevTx(scriptFor(BTC_ADDRESS), 100_000, 0, 9000);
         bitcoinGateway([{ ...big, amount: 100_000, address: BTC_ADDRESS }]);
         await expect(createTransfer(draft(40_000n))).rejects.toMatchObject({
@@ -361,14 +345,14 @@ describe("Bitcoin 构建", () => {
         expect(await db.reservations.count()).toBe(0);
     });
 
-    it("金额低于粉尘线时用核心库的错误，门限按收款脚本类型算", async () => {
+    it("金额低于粉尘线时用核心库的错误,门限按收款脚本类型算", async () => {
         bitcoinGateway(coins(BTC_ADDRESS, [100_000]));
         await expect(createTransfer(draft(100n))).rejects.toMatchObject({
             code: "invalid",
-            message: "金额太小，节点不会转发。",
+            message: "金额太小,节点不会转发.",
         });
         expect(await db.txs.count()).toBe(0);
-        // P2WPKH 的门限是 294，不是 546。
+        // P2WPKH 的门限是 294,不是 546.
         expect((await createTransfer(draft(300n))).amount).toBe("300");
     });
 
@@ -392,7 +376,7 @@ describe("Bitcoin 构建", () => {
         expect(await spendableCoins(account(), "bitcoin")).toEqual([]);
     });
 
-    it("找零太小时没有找零，不占用找零索引", async () => {
+    it("找零太小时没有找零,不占用找零索引", async () => {
         bitcoinGateway(coins(BTC_ADDRESS, [40_500]));
         const tx = await createTransfer(draft(40_000n));
         const plan = planOf(tx, "bitcoin");
@@ -408,7 +392,7 @@ describe("Bitcoin 构建", () => {
     });
 
     describe("RBF", () => {
-        it("加速用同一组输入和找零索引，手续费更高，不产生新占用", async () => {
+        it("加速用同一组输入和找零索引,手续费更高,不产生新占用", async () => {
             const list = coins(BTC_ADDRESS, [100_000]);
             bitcoinGateway(list);
             const tx = await createTransfer(draft(40_000n));
@@ -425,7 +409,7 @@ describe("Bitcoin 构建", () => {
             expect((await db.reservations.toArray()).every((row) => row.txIds.length === 2)).toBe(true);
         });
 
-        it("取消不再指定收款方，全部回到找零路径，冷钱包显示转给自己", async () => {
+        it("取消不再指定收款方,全部回到找零路径,冷钱包显示转给自己", async () => {
             bitcoinGateway(coins(BTC_ADDRESS, [100_000]));
             const tx = await createTransfer(draft(40_000n));
             const old = planOf(tx, "bitcoin");
@@ -445,7 +429,7 @@ describe("Bitcoin 构建", () => {
             expect(await db.reservations.count()).toBe(2);
         });
 
-        it("原交易没有找零时，取消要分配一个找零索引并占用", async () => {
+        it("原交易没有找零时,取消要分配一个找零索引并占用", async () => {
             bitcoinGateway(coins(BTC_ADDRESS, [40_500]));
             const tx = await createTransfer(draft(40_000n));
             expect(planOf(tx, "bitcoin").changePath).toBeNull();
@@ -468,7 +452,7 @@ describe("Bitcoin 构建", () => {
             expect(planOf(next, "bitcoin").changeIndex).toBe(1);
         });
 
-        it("取消交易再加速还是取消，不会变回付款", async () => {
+        it("取消交易再加速还是取消,不会变回付款", async () => {
             bitcoinGateway(coins(BTC_ADDRESS, [100_000]));
             const tx = await createTransfer(draft(40_000n));
             const cancel = await createReplacement(tx, "cancel", side(PATHS.segwit));
@@ -493,7 +477,7 @@ describe("Bitcoin 构建", () => {
             });
         });
 
-        it("手续费由核心库算，不低于快档", async () => {
+        it("手续费由核心库算,不低于快档", async () => {
             bitcoinGateway(coins(BTC_ADDRESS, [100_000]));
             const tx = await createTransfer(draft(40_000n));
             const old = planOf(tx, "bitcoin");
@@ -524,7 +508,7 @@ describe("TRON 构建", () => {
     const draft = (asset = "native", amount = 1_000_000n) =>
         draftFor(fixture, PATHS.tron, TRON_ADDRESS, "tron", "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8", amount, asset);
 
-    it("过期时间从区块时间起算 30 分钟，到期后签名作废", async () => {
+    it("过期时间从区块时间起算 30 分钟,到期后签名作废", async () => {
         const timestamp = Date.now() - 5000;
         tronGateway(timestamp);
         const tx = await createTransfer(draft());
@@ -534,14 +518,14 @@ describe("TRON 构建", () => {
         expect(planOf(tx, "tron")).toMatchObject({ feeLimit: 0 });
     });
 
-    it("TRC-20 写入 fee_limit，默认全靠燃烧再留 20%", async () => {
+    it("TRC-20 写入 fee_limit,默认全靠燃烧再留 20%", async () => {
         tronGateway();
         const tx = await createTransfer(draft("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"));
         expect(planOf(tx, "tron").feeLimit).toBe(Number(tronFeeLimit(65_000n, 420n)));
         expect(previewRequest(tx.request, keys()).amount).toMatchObject({ symbol: "USDT" });
     });
 
-    it("能量、带宽和激活费分开计算", () => {
+    it("能量,带宽和激活费分开计算", () => {
         const cost = tronCost(
             { energy: 65_000n, bandwidth: 345n, activationFee: 1_100_000n },
             { energy: 15_000n, bandwidth: 100n, activated: true },
@@ -563,13 +547,13 @@ describe("TRON 构建", () => {
         expect(free.total).toBe(0n);
     });
 
-    it("引用区块的时间异常时拒绝，网关不能拉长签名有效期", async () => {
+    it("引用区块的时间异常时拒绝,网关不能拉长签名有效期", async () => {
         tronGateway(Date.now() + 20 * 60 * 60_000);
         await expect(createTransfer(draft())).rejects.toMatchObject({ code: "invalid" });
         expect(await db.txs.count()).toBe(0);
     });
 
-    it("不提供加速、取消和重建，重建是另一笔独立的交易", async () => {
+    it("不提供加速,取消和重建,重建是另一笔独立的交易", async () => {
         tronGateway();
         const tx = await createTransfer(draft());
         for (const mode of ["speedup", "cancel", "rebuild"] as const) {
@@ -601,10 +585,10 @@ describe("Solana 构建", () => {
         await expect(createTransfer(draft())).rejects.toMatchObject({ code: "no-nonce-account" });
     });
 
-    it("创建 nonce 账户只有 1 分钟窗口，到期后本地作废", async () => {
+    it("创建 nonce 账户只有 1 分钟窗口,到期后本地作废", async () => {
         solanaGateway(false);
         const before = Date.now();
-        const tx = await createSolanaNonce(draft());
+        const tx = await createSetup(draft());
         expect(tx).toMatchObject({
             kind: "create-nonce",
             hardExpiry: true,
@@ -620,10 +604,10 @@ describe("Solana 构建", () => {
 
     it("已有 nonce 账户时不重复创建", async () => {
         solanaGateway(true);
-        await expect(createSolanaNonce(draft())).rejects.toMatchObject({ code: "invalid" });
+        await expect(createSetup(draft())).rejects.toMatchObject({ code: "invalid" });
     });
 
-    it("每笔都取当前 nonce 值，第一条指令是 AdvanceNonceAccount，不过期", async () => {
+    it("每笔都取当前 nonce 值,第一条指令是 AdvanceNonceAccount,不过期", async () => {
         const { calls } = solanaGateway();
         const tx = await createTransfer(draft());
         expect(calls).toContain("solana/nonce-account");
@@ -633,7 +617,7 @@ describe("Solana 构建", () => {
         expect(previewRequest(tx.request, keys()).confirm).not.toBe("refuse");
     });
 
-    it("nonce 值是一次性的，上一笔没结束时拒绝再构建", async () => {
+    it("nonce 值是一次性的,上一笔没结束时拒绝再构建", async () => {
         solanaGateway();
         const results = await Promise.allSettled([createTransfer(draft()), createTransfer(draft())]);
         expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
@@ -641,9 +625,9 @@ describe("Solana 构建", () => {
         expect((failed as PromiseRejectedResult).reason).toMatchObject({ code: "nonce-busy" });
     });
 
-    it("放弃已签名的创建请求后，blockhash 过期就释放，账户不会永远被占住", async () => {
+    it("放弃已签名的创建请求后,blockhash 过期就释放,账户不会永远被占住", async () => {
         solanaGateway(false);
-        const tx = await createSolanaNonce(draft());
+        const tx = await createSetup(draft());
         await markSigned(tx.id, { raw: "aa", hash: "sig" });
         await cancelTx(tx.id, "用户取消");
         expect(await db.reservations.count()).toBe(1);
@@ -675,7 +659,7 @@ describe("Solana 构建", () => {
         expect(planOf(tx, "solana")).toMatchObject({ createAta: true });
     });
 
-    it("不提供加速，取消只推进 nonce，冷钱包显示作废已签名的交易，要长按", async () => {
+    it("不提供加速,取消只推进 nonce,冷钱包显示作废已签名的交易,要长按", async () => {
         solanaGateway();
         const tx = await createTransfer(draft());
         await expect(createReplacement(tx, "speedup", side(PATHS.solana))).rejects.toMatchObject({
@@ -701,7 +685,7 @@ describe("Solana 构建", () => {
         expect(await db.reservations.count()).toBe(1);
     });
 
-    it("代币转账的取消也只推进 nonce，不会创建代币账户", async () => {
+    it("代币转账的取消也只推进 nonce,不会创建代币账户", async () => {
         solanaGateway(true, { "solana/estimate": () => ({ recipientTokenAccount: false, rent: "2039280" }) });
         const tx = await createTransfer(draft(USDC));
         const next = await createReplacement(tx, "cancel", side(PATHS.solana));
@@ -709,7 +693,7 @@ describe("Solana 构建", () => {
         expect(planOf(next, "solana")).toMatchObject({ createAta: false });
     });
 
-    it("重建还是同一笔转账，复用同一个 nonce 值", async () => {
+    it("重建还是同一笔转账,复用同一个 nonce 值", async () => {
         solanaGateway();
         const tx = await createTransfer(draft());
         const next = await createReplacement(tx, "rebuild", side(PATHS.solana));
@@ -743,7 +727,7 @@ describe("替换和重建", () => {
         return tx;
     }
 
-    it("重建复用同一 nonce，占用不增加", async () => {
+    it("重建复用同一 nonce,占用不增加", async () => {
         evmGateway();
         const tx = await broadcasted();
         const next = await createReplacement(must(await db.txs.get(tx.id)), "rebuild", side(PATHS.evm));
@@ -753,13 +737,13 @@ describe("替换和重建", () => {
         expect((await db.reservations.toArray())[0]?.txIds).toEqual([tx.id, next.id]);
     });
 
-    it("加速的单价至少高 10%，低于当前快档时用快档", () => {
+    it("加速的单价至少高 10%,低于当前快档时用快档", () => {
         const fast = { maxFee: 100n, priority: 10n };
         expect(bumpedEvmFees({ maxFee: "1000", maxPriority: "100" }, fast)).toEqual({ maxFee: 1126n, priority: 113n });
         expect(bumpedEvmFees({ maxFee: "10", maxPriority: "1" }, fast)).toEqual(fast);
     });
 
-    it("取消是同 nonce 转 0 给自己，单价提高", async () => {
+    it("取消是同 nonce 转 0 给自己,单价提高", async () => {
         evmGateway();
         const tx = await broadcasted();
         const next = await createReplacement(must(await db.txs.get(tx.id)), "cancel", side(PATHS.evm));
@@ -790,7 +774,7 @@ describe("替换和重建", () => {
         expect((await db.reservations.toArray())[0]?.txIds).toEqual([tx.id]);
     });
 
-    it("W4 发替换交易：原交易放弃，占用留给新请求", async () => {
+    it("W4 发替换交易:原交易放弃,占用留给新请求", async () => {
         evmGateway();
         const tx = await createTransfer(evmDraft());
         const next = await replaceAndCancel(tx, side(PATHS.evm));
@@ -798,7 +782,7 @@ describe("替换和重建", () => {
         expect(await db.reservations.toArray()).toMatchObject([{ value: "7", txIds: [next.id] }]);
     });
 
-    it("替换交易上链：原交易已替换，最终确定后释放占用", async () => {
+    it("替换交易上链:原交易已替换,最终确定后释放占用", async () => {
         evmGateway(7, {
             "ethereum/broadcast": ({ raw }) => ({ hash: raw === "aa" ? "0x1" : "0x2", status: "accepted" }),
         });
@@ -815,7 +799,7 @@ describe("替换和重建", () => {
         expect(await db.reservations.count()).toBe(0);
     });
 
-    it("原交易抢先上链：还没签名的替换请求作废，已广播的标为已替换", async () => {
+    it("原交易抢先上链:还没签名的替换请求作废,已广播的标为已替换", async () => {
         evmGateway(7, {
             "ethereum/broadcast": ({ raw }) => ({ hash: raw === "aa" ? "0x1" : "0x2", status: "accepted" }),
         });
@@ -830,7 +814,7 @@ describe("替换和重建", () => {
         expect((await db.txs.get(sent.id))?.state).toBe("replaced");
     });
 
-    it("重组时占用不释放，确认中退回已广播后 nonce 不会被再次分配", async () => {
+    it("重组时占用不释放,确认中退回已广播后 nonce 不会被再次分配", async () => {
         evmGateway(7, { "ethereum/broadcast": () => ({ hash: "0x1", status: "accepted" }) });
         const tx = await broadcasted();
         await broadcastTx(tx.id);
@@ -846,7 +830,7 @@ describe("替换和重建", () => {
         expect(planOf(next, "evm").nonce).toBe(8);
     });
 
-    it("链上失败到最终阶段才释放占用，之前重组还可能改变结果", async () => {
+    it("链上失败到最终阶段才释放占用,之前重组还可能改变结果", async () => {
         evmGateway(7, { "ethereum/broadcast": () => ({ hash: "0x1", status: "accepted" }) });
         const tx = await broadcasted();
         await broadcastTx(tx.id);
@@ -858,7 +842,7 @@ describe("替换和重建", () => {
         expect(await db.reservations.count()).toBe(0);
     });
 
-    it("原交易上链后重组，替换交易上链：替换交易如实显示，不会两笔都是已替换", async () => {
+    it("原交易上链后重组,替换交易上链:替换交易如实显示,不会两笔都是已替换", async () => {
         evmGateway(7, {
             "ethereum/broadcast": ({ raw }) => ({ hash: raw === "aa" ? "0x1" : "0x2", status: "accepted" }),
         });
@@ -871,7 +855,7 @@ describe("替换和重建", () => {
         await applyObservation(a.id, seen("included", "0x1"), { now: Date.now() });
         expect((await db.txs.get(b.id))?.state).toBe("replaced");
 
-        // 重组：原交易退回，替换交易上链。
+        // 重组:原交易退回,替换交易上链.
         const gone = { hash: "0x1", status: "unknown" as const, stage: null, confirmations: 0, block: null, fee: null };
         await applyObservation(a.id, gone, { now: Date.now() });
         await applyObservation(b.id, seen("included", "0x2"), { now: Date.now() });
@@ -880,7 +864,7 @@ describe("替换和重建", () => {
         expect((await db.txs.get(b.id))?.state).toBe("confirmed");
     });
 
-    it("结果不明也能取消，节点永久拒绝时不会卡死", async () => {
+    it("结果不明也能取消,节点永久拒绝时不会卡死", async () => {
         evmGateway(7, { "ethereum/broadcast": () => gatewayError("broadcast_rejected", "x", 422) });
         const tx = await broadcasted();
         await broadcastTx(tx.id);
@@ -897,13 +881,13 @@ describe("广播", () => {
         return tx;
     }
 
-    it("节点接收后是已广播，哈希大小写不影响比对", async () => {
+    it("节点接收后是已广播,哈希大小写不影响比对", async () => {
         evmGateway(7, { "ethereum/broadcast": () => ({ hash: "0xabc1", status: "accepted" }) });
         const tx = await signed();
         expect(await broadcastTx(tx.id)).toMatchObject({ state: "broadcast", attempts: 1 });
     });
 
-    it("被拒绝是结果不明，保留节点原文", async () => {
+    it("被拒绝是结果不明,保留节点原文", async () => {
         evmGateway(7, { "ethereum/broadcast": () => gatewayError("broadcast_rejected", "nonce too low\u0000", 422) });
         const tx = await signed();
         expect(await broadcastTx(tx.id)).toMatchObject({ state: "uncertain", lastError: "nonce too low" });
@@ -921,13 +905,13 @@ describe("广播", () => {
         expect(await broadcastTx(tx.id)).toMatchObject({ state: "uncertain", lastError: "连接失败" });
     });
 
-    it("网关返回的哈希不一致是结果不明，网关可能谎报", async () => {
+    it("网关返回的哈希不一致是结果不明,网关可能谎报", async () => {
         evmGateway(7, { "ethereum/broadcast": () => ({ hash: "0xbad", status: "accepted" }) });
         const tx = await signed();
         expect((await broadcastTx(tx.id)).state).toBe("uncertain");
     });
 
-    it("重试广播同一笔，原始数据不变", async () => {
+    it("重试广播同一笔,原始数据不变", async () => {
         const raws: unknown[] = [];
         let accept = false;
         evmGateway(7, {

@@ -5,7 +5,7 @@ import { StateCard } from "./StateCard";
 import { Button, LinkButton } from "./primitives";
 import { t } from "../core/i18n";
 
-/** 网关断开，保留最后一次查询到的余额，未完成的交易改用轮询。 */
+/** 网关断开,保留最后一次查询到的余额,未完成的交易改用轮询. */
 export function GatewayDown() {
     const { lastUpdated, retryAt, reconnect } = useGateway();
     const [now, setNow] = useState(() => Date.now());
@@ -19,7 +19,7 @@ export function GatewayDown() {
             tone="danger"
             icon="offline"
             title={t("连接已断开")}
-            body={t("余额和交易状态可能不是最新。")}
+            body={t("余额和交易状态可能不是最新.")}
             facts={[
                 { label: t("最后更新"), value: lastUpdated ? clockLabel(lastUpdated) : t("暂无") },
                 { label: t("自动重连"), value: retryAt ? t("{0} 秒后", seconds) : t("连接中") },

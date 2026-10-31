@@ -66,7 +66,7 @@ describe("parseBalances", () => {
         expect(parseBalances("oops", [EVM])).toEqual([]);
     });
 
-    it("EVM 地址按小写比对，结果换回本地写法", () => {
+    it("EVM 地址按小写比对,结果换回本地写法", () => {
         const [row] = parseBalances([{ address: EVM.toLowerCase(), asset: "native", amount: "1" }], [EVM]);
         expect(row?.address).toBe(EVM);
     });
@@ -95,7 +95,7 @@ describe("fetchSnapshot", () => {
         return results;
     };
 
-    it("逐行处理，一行被拆成两段也能拼回来，余额和历史分开报告失败", async () => {
+    it("逐行处理,一行被拆成两段也能拼回来,余额和历史分开报告失败", async () => {
         const encoder = new TextEncoder();
         const first = {
             network: "bitcoin",
@@ -122,7 +122,7 @@ describe("fetchSnapshot", () => {
         expect(failed).toMatchObject({ height: null, balances: null, error: "upstream_unavailable" });
     });
 
-    it("网关错误带错误码，连不上时也是 GatewayError", async () => {
+    it("网关错误带错误码,连不上时也是 GatewayError", async () => {
         vi.stubGlobal(
             "fetch",
             vi.fn(async () => Response.json({ error: { code: "rate_limited", message: "x" } }, { status: 429 })),
@@ -135,7 +135,7 @@ describe("fetchSnapshot", () => {
         await expect(collect()).rejects.toBeInstanceOf(GatewayError);
     });
 
-    it("正文不完整时报错，不完整的最后一行不算结果", async () => {
+    it("正文不完整时报错,不完整的最后一行不算结果", async () => {
         vi.stubGlobal(
             "fetch",
             vi.fn(async () => new Response("<html></html>\n")),
@@ -150,7 +150,7 @@ describe("fetchSnapshot", () => {
 });
 
 describe("parseUpdate", () => {
-    it("高度不完整的推送不要，txs 为空值表示网关没取到", () => {
+    it("高度不完整的推送不要,txs 为空值表示网关没取到", () => {
         expect(parseUpdate({ height: 2 }, ["a"])).toBeNull();
         expect(parseUpdate({ height: 2, previous: 1, balances: [], txs: null }, ["a"])).toEqual({
             height: 2,
@@ -176,13 +176,13 @@ describe("资产表", () => {
         expect(targets).toEqual([{ network: "ethereum", addresses: [EVM] }]);
     });
 
-    it("没有余额时也有原生币行，旧路径账户没有余额时不显示", () => {
+    it("没有余额时也有原生币行,旧路径账户没有余额时不显示", () => {
         const list = rows([]);
         expect(list.map((r) => r.network)).toEqual(["ethereum", "bsc"]);
         expect(list[0]?.entry?.symbol).toBe("ETH");
     });
 
-    it("还没查到的网络标记为未加载，已查到的不标记", () => {
+    it("还没查到的网络标记为未加载,已查到的不标记", () => {
         const list = rows([]);
         expect(list.find((r) => r.network === "ethereum")?.loaded).toBe(true);
         expect(list.find((r) => r.network === "bsc")?.loaded).toBe(false);
@@ -275,7 +275,7 @@ describe("BalanceSocket", () => {
         expect(retryDelay(20, 1)).toBe(30_000);
     });
 
-    it("连接后订阅，按订阅 ID 分发推送", () => {
+    it("连接后订阅,按订阅 ID 分发推送", () => {
         const { events } = setup();
         FakeSocket.last.open();
         const [request] = FakeSocket.last.sent;
@@ -326,7 +326,7 @@ describe("BalanceSocket", () => {
         expect(events.onReady).toHaveBeenCalledTimes(1);
     });
 
-    it("断线后退避重连，重新订阅并通知补一次", () => {
+    it("断线后退避重连,重新订阅并通知补一次", () => {
         const { events } = setup();
         FakeSocket.last.open();
         FakeSocket.last.push({ jsonrpc: "2.0", id: FakeSocket.last.sent[0]?.id, result: "sub-1" });
@@ -344,7 +344,7 @@ describe("BalanceSocket", () => {
         expect(events.onReady).toHaveBeenCalledTimes(2);
     });
 
-    it("连续失败时间隔变长，立即重连清零退避", () => {
+    it("连续失败时间隔变长,立即重连清零退避", () => {
         const { socket } = setup();
         FakeSocket.last.onclose?.();
         vi.advanceTimersByTime(1000);
@@ -367,7 +367,7 @@ describe("BalanceSocket", () => {
         expect(FakeSocket.count).toBe(1);
     });
 
-    it("地址变化时只换这个网络的订阅，不换连接，也不触发全量补查", () => {
+    it("地址变化时只换这个网络的订阅,不换连接,也不触发全量补查", () => {
         const { socket, events } = setup();
         socket.setTargets([
             { network: "ethereum", addresses: [EVM] },
@@ -399,7 +399,7 @@ describe("BalanceSocket", () => {
         expect(events.onReady).toHaveBeenCalledTimes(1);
     });
 
-    it("每批地址的订阅确认后才取快照，这批确认时另一批还可以没回复", () => {
+    it("每批地址的订阅确认后才取快照,这批确认时另一批还可以没回复", () => {
         const { socket, events } = setup();
         socket.setTargets([
             { network: "ethereum", addresses: [EVM] },
@@ -412,14 +412,14 @@ describe("BalanceSocket", () => {
         expect(events.onBatchReady).toHaveBeenCalledExactlyOnceWith({ network: "ethereum", addresses: [EVM] });
     });
 
-    it("延迟来自 WebSocket 心跳，不用 HTTP", () => {
+    it("延迟来自 WebSocket 心跳,不用 HTTP", () => {
         const { events } = setup();
         FakeSocket.last.open();
         FakeSocket.last.push({ id: FakeSocket.last.pings[0]?.id, result: "pong" });
         expect(events.onLatency).toHaveBeenCalledTimes(1);
     });
 
-    it("订阅还没回复地址就变了，回复后退订旧的，只用新的", () => {
+    it("订阅还没回复地址就变了,回复后退订旧的,只用新的", () => {
         const { socket, events } = setup();
         FakeSocket.last.open();
         const old = FakeSocket.last.sent[0];
@@ -487,7 +487,7 @@ describe("交易和价格订阅", () => {
 
     const reply = (id: number | undefined, result: string) => FakeSocket.last.push({ jsonrpc: "2.0", id, result });
 
-    it("连接时订阅已有的交易，推送交给上层，不换连接", () => {
+    it("连接时订阅已有的交易,推送交给上层,不换连接", () => {
         const { socket, events } = setup();
         socket.watchTxs([{ network: "ethereum", hash: HASH }]);
         FakeSocket.last.open();
@@ -501,7 +501,7 @@ describe("交易和价格订阅", () => {
         expect(FakeSocket.count).toBe(1);
     });
 
-    it("连接打开后新增的交易单独订阅，回复后通知用 HTTP 补一次，基线不会推送", () => {
+    it("连接打开后新增的交易单独订阅,回复后通知用 HTTP 补一次,基线不会推送", () => {
         const { socket, events } = setup();
         FakeSocket.last.open();
         expect(events.onReady).toHaveBeenCalledTimes(1);
@@ -513,7 +513,7 @@ describe("交易和价格订阅", () => {
         expect(FakeSocket.count).toBe(1);
     });
 
-    it("交易结束后退订，同一笔不重复订阅", () => {
+    it("交易结束后退订,同一笔不重复订阅", () => {
         const { socket } = setup();
         FakeSocket.last.open();
         socket.watchTxs([{ network: "ethereum", hash: HASH }]);
@@ -534,14 +534,14 @@ describe("交易和价格订阅", () => {
         expect(FakeSocket.last.sent[0]?.params).toMatchObject({ channel: "tx", hash: HASH });
     });
 
-    it("单连接最多订阅 100 笔，超出的靠轮询", () => {
+    it("单连接最多订阅 100 笔,超出的靠轮询", () => {
         const { socket } = setup();
         socket.watchTxs(Array.from({ length: 120 }, (_, i) => ({ network: "ethereum", hash: `h${i}` })));
         FakeSocket.last.open();
         expect(FakeSocket.last.sent).toHaveLength(100);
     });
 
-    it("心跳没有回应时重连，有回应时保持连接", () => {
+    it("心跳没有回应时重连,有回应时保持连接", () => {
         const { events } = setup();
         const first = FakeSocket.last;
         first.open();
@@ -553,7 +553,7 @@ describe("交易和价格订阅", () => {
         vi.advanceTimersByTime(25_000);
         expect(FakeSocket.last).toBe(first);
 
-        // 这一次没有回应，半开连接不会触发 close，要自己断开。
+        // 这一次没有回应,半开连接不会触发 close,要自己断开.
         vi.advanceTimersByTime(25_000);
         expect(events.onStatus).toHaveBeenLastCalledWith("retrying", expect.any(Number));
         vi.advanceTimersByTime(2_000);
@@ -577,7 +577,7 @@ describe("交易和价格订阅", () => {
 });
 
 describe("parseObservation", () => {
-    it("校验字段，金额不是整数时当成没有", () => {
+    it("校验字段,金额不是整数时当成没有", () => {
         expect(
             parseObservation({
                 hash: "a",
@@ -608,7 +608,7 @@ describe("parseObservation", () => {
 });
 
 describe("parsePrices", () => {
-    it("键统一成小写合约，Base58 不变", () => {
+    it("键统一成小写合约,Base58 不变", () => {
         const prices = parsePrices({
             [`ethereum:${USDT}`]: "1.00",
             "tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t": "1.00",

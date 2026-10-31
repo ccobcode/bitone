@@ -65,7 +65,7 @@ async function sent(): Promise<TxRecord> {
 const state = async (id: string) => (await db.txs.get(id))?.state;
 
 describe("轮询", () => {
-    it("按链上状态推进，停在最终状态", async () => {
+    it("按链上状态推进,停在最终状态", async () => {
         let reply: unknown = status("included", { stage: "latest", block: 9, fee: "21000" });
         chain({ tx: () => reply });
         const tx = await sent();
@@ -87,7 +87,7 @@ describe("轮询", () => {
         expect(await db.txs.get(tx.id)).toMatchObject({ state: "failed", fee: "42000" });
     });
 
-    it("已替换的交易继续查询，重组后上链要如实显示", async () => {
+    it("已替换的交易继续查询,重组后上链要如实显示", async () => {
         chain({ tx: () => status("unknown") });
         const tx = await sent();
         chain({ nonce: 8, tx: () => status("unknown") });
@@ -100,7 +100,7 @@ describe("轮询", () => {
         expect(await state(tx.id)).toBe("confirming");
     });
 
-    it("先取 nonce 再取状态，交易在两次查询之间上链不会被误判", async () => {
+    it("先取 nonce 再取状态,交易在两次查询之间上链不会被误判", async () => {
         const order: string[] = [];
         chain({ tx: () => status("included") });
         const tx = await sent();
@@ -120,7 +120,7 @@ describe("轮询", () => {
         expect(await state(tx.id)).toBe("confirming");
     });
 
-    it("nonce 被用掉且查不到交易，连续两轮后才算已替换", async () => {
+    it("nonce 被用掉且查不到交易,连续两轮后才算已替换", async () => {
         chain({ nonce: 7, tx: () => status("unknown") });
         const tx = await sent();
         chain({ nonce: 8, tx: () => status("unknown") });
@@ -180,7 +180,7 @@ describe("轮询", () => {
         expect(calls).toEqual([]);
     });
 
-    it("已放弃但已签名的交易，nonce 被用掉后释放占用", async () => {
+    it("已放弃但已签名的交易,nonce 被用掉后释放占用", async () => {
         chain({ nonce: 7 });
         const tx = await createTransfer(draft());
         await markSigned(tx.id, { raw: "02aa", hash: HASH });
@@ -196,7 +196,7 @@ describe("轮询", () => {
         expect(await db.reservations.count()).toBe(0);
     });
 
-    it("已放弃的交易释放占用时，在途的替换交易继续占着", async () => {
+    it("已放弃的交易释放占用时,在途的替换交易继续占着", async () => {
         chain({ nonce: 7 });
         const tx = await createTransfer(draft());
         await markSigned(tx.id, { raw: "02aa", hash: HASH });
@@ -214,7 +214,7 @@ describe("轮询", () => {
         expect(await db.reservations.toArray()).toMatchObject([{ txIds: [next.id] }]);
     });
 
-    it("替换交易和原交易都被跟踪，先上链的算数", async () => {
+    it("替换交易和原交易都被跟踪,先上链的算数", async () => {
         chain();
         const tx = await sent();
         const next = await createReplacement(tx, "speedup", {
@@ -245,7 +245,7 @@ describe("轮询", () => {
 });
 
 describe("推送", () => {
-    it("按哈希找到交易，内容先校验", async () => {
+    it("按哈希找到交易,内容先校验", async () => {
         chain();
         const tx = await sent();
         await applyPush("ethereum", { hash: HASH, status: "bogus" });

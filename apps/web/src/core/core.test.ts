@@ -1,3 +1,4 @@
+import { deriveAddress } from "../chains";
 import { must } from "../testing";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -7,7 +8,6 @@ import {
     PairingReceiver,
     UrReceiver,
     addressFrame,
-    deriveAddress,
     initCoreSync,
     manifestPackageVersion,
     networkList,
@@ -56,7 +56,7 @@ describe("配对数据", () => {
         expect(address(pairing, "m/44'/501'/0'/0'")).toBe("HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk");
     });
 
-    it("一次导出全部账户，按 scope 区分主网和测试网", () => {
+    it("一次导出全部账户,按 scope 区分主网和测试网", () => {
         const scopes = new Map(decode().accounts.map((account) => [account.path, account.scope]));
         expect(scopes.size).toBe(9);
         expect(scopes.get("m/84'/0'/0'")).toBe("mainnet");
@@ -64,7 +64,7 @@ describe("配对数据", () => {
         expect(scopes.get("m/44'/60'/0'/0/0")).toBe("both");
     });
 
-    it("帧顺序打乱也能解出，并报告帧数和进度", () => {
+    it("帧顺序打乱也能解出,并报告帧数和进度", () => {
         const receiver = new PairingReceiver();
         for (const frame of [...frames].reverse()) {
             receiver.feed(frame.toUpperCase());
@@ -101,7 +101,7 @@ describe("地址核对二维码", () => {
 
     const frame = (c: typeof check) => addressFrame(c.fingerprint, c.network, c.path, c.address);
 
-    it("核心库的帧解码器能收下，大写后也一样", () => {
+    it("核心库的帧解码器能收下,大写后也一样", () => {
         for (const part of [frame(check), frame(check).toUpperCase()]) {
             const receiver = new FrameReceiver();
             expect(receiver.receive(part)).toBe(1);
@@ -126,7 +126,7 @@ describe("地址核对二维码", () => {
 });
 
 describe("收款地址校验", () => {
-    it("返回规范写法，拒绝别的网络", () => {
+    it("返回规范写法,拒绝别的网络", () => {
         expect(validateAddress("ethereum", " 0x9858effd232b4033e47d90003d41ec34ecaeda94 ")).toBe(
             "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
         );
@@ -146,11 +146,11 @@ describe("相似地址", () => {
         expect(lookalike(a, "0x7099aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaadc7911")).toBe(false);
     });
 
-    it("短格式看起来一样就算相似，Bitcoin 只显示前缀后两位", () => {
+    it("短格式看起来一样就算相似,Bitcoin 只显示前缀后两位", () => {
         expect(lookalike("bc1qk7aaxxxxxxxxzzzz", "bc1qk7bbyyyyyyyyzzzz")).toBe(true);
     });
 
-    it("固定前缀不算相同，Base58 区分大小写", () => {
+    it("固定前缀不算相同,Base58 区分大小写", () => {
         expect(lookalike("bc1qaaaaxxxxxxxxzzzz", "bc1qbbbbyyyyyyyyzzzz")).toBe(false);
         expect(lookalike("TAbcdXXXXXXXXXXwxyz", "TAbcdYYYYYYYYYYwxyz")).toBe(true);
         expect(lookalike("TAbcdXXXXXXXXXXwxyz", "tabcdYYYYYYYYYYwxyz")).toBe(false);
@@ -158,7 +158,7 @@ describe("相似地址", () => {
 });
 
 describe("内置清单", () => {
-    it("来自核心库，覆盖全部网络的原生币", () => {
+    it("来自核心库,覆盖全部网络的原生币", () => {
         for (const network of networkList()) expect(lookupAsset(network.id, "native"), network.id).not.toBeNull();
         expect(formatAsset("ethereum", "native", 10n ** 18n)).toBe("1.0000 ETH");
         expect(formatAsset("ethereum", "0x0000000000000000000000000000000000000001", 7n)).toBe("7 未知代币");
@@ -166,7 +166,7 @@ describe("内置清单", () => {
 });
 
 describe("清单包", () => {
-    // 临时生成的密钥。厂商私钥不进仓库，这里只能测拒绝，接受的路径由 Rust 的测试覆盖。
+    // 临时生成的密钥.厂商私钥不进仓库,这里只能测拒绝,接受的路径由 Rust 的测试覆盖.
     function pack(version: number): Uint8Array {
         const { privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
         const body = Buffer.from(JSON.stringify({ version, assets: [] }));
@@ -184,7 +184,7 @@ describe("清单包", () => {
 });
 
 describe("网络名", () => {
-    it("来自核心库，未知网络原样返回", () => {
+    it("来自核心库,未知网络原样返回", () => {
         expect(networkName("bsc")).toBe("BNB Smart Chain");
         expect(networkName("btc-testnet4")).toBe("Testnet4");
         expect(networkName("nope")).toBe("nope");
@@ -206,7 +206,7 @@ describe("签名核验", () => {
         return receiver.message();
     }
 
-    it("真实冷钱包的签名能通过，得到可广播的交易和哈希", () => {
+    it("真实冷钱包的签名能通过,得到可广播的交易和哈希", () => {
         const verified = verifyResponse(bytes(fixture.request), response(), bytes(fixture.key));
         expect(verified.raw).toMatch(/^02/);
         expect(verified.hash).toMatch(/^0x[0-9a-f]{64}$/);
@@ -231,7 +231,7 @@ describe("签名核验", () => {
         expect(() => verifyResponse(request, response(), bytes(fixture.key))).toThrow();
     });
 
-    it("接收器只收 bitone-response，误扫别的二维码不影响后面的帧", () => {
+    it("接收器只收 bitone-response,误扫别的二维码不影响后面的帧", () => {
         const receiver = new UrReceiver("bitone-response");
         expect(receiver.feed("ur:bitone-accounts/1-2/abc")).toBe("foreign");
         expect(receiver.feed("https://example.com")).toBe("foreign");

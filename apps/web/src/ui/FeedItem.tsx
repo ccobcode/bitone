@@ -13,7 +13,7 @@ const TONE_TEXT = {
     danger: "text-danger",
 };
 
-/** 一笔交易。整行进详情页。已确认是常态，不显示标签，异常才显示。compact 用在没有按天分组的地方，时间带日期。 */
+/** 一笔交易.整行进详情页.已确认是常态,不显示标签,异常才显示.compact 用在没有按天分组的地方,时间带日期. */
 export function FeedItem({ row, compact }: { row: FeedRow; compact?: boolean }) {
     const time = row.time === null ? t("等待打包") : compact ? timeLabel(row.time) : minuteLabel(row.time);
     const flagged = row.tone !== "ok";
@@ -40,7 +40,7 @@ export function FeedItem({ row, compact }: { row: FeedRow; compact?: boolean }) 
             value={
                 <>
                     <span className={`text-t3 ${row.direction === "in" ? "text-ok" : ""}`}>{row.amount}</span>
-                    {/* 放不下标签时，状态写在时间的位置。 */}
+                    {/* 放不下标签时,状态写在时间的位置. */}
                     {flagged ? (
                         <span className={`text-t1 ${TONE_TEXT[row.tone]} ${compact ? "" : "@split:hidden"}`}>
                             {row.status}

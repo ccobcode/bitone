@@ -25,7 +25,7 @@ beforeAll(() => {
 beforeEach(clearLocalData);
 
 describe("selectableAccounts", () => {
-    it("只列当前网络模式的账户，EVM 两边都有", () => {
+    it("只列当前网络模式的账户,EVM 两边都有", () => {
         const paths = (mode: Mode) => selectableAccounts(pairing, mode).map((a) => a.path);
         expect(paths("mainnet")).toEqual([
             "m/84'/0'/0'",
@@ -46,7 +46,7 @@ describe("savePairing", () => {
         expect(await db.wallets.get(testnetId)).toMatchObject({ name: "主钱包", mode: "testnet" });
         expect(await db.accounts.where("walletId").equals(id).count()).toBe(5);
         expect(await db.accounts.where("walletId").equals(testnetId).count()).toBe(5);
-        // 每个模式两个 Bitcoin 账户各有接收和找零，另外三个账户各一个地址。
+        // 每个模式两个 Bitcoin 账户各有接收和找零,另外三个账户各一个地址.
         expect(await db.addresses.count()).toBe((GAP_LIMIT * 4 + 3) * 2);
         const row = await db.addresses.get([`${id}:m/84'/0'/0'`, 0, 0]);
         expect(row).toMatchObject({ address: "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu", verified: false });
@@ -54,7 +54,7 @@ describe("savePairing", () => {
         expect(evm.map((item) => item.accountId).sort()).toEqual([`${id}:${EVM_PATH}`, `${testnetId}:${EVM_PATH}`]);
     });
 
-    it("账户按 scope 分，网络和地址跟着模式走", async () => {
+    it("账户按 scope 分,网络和地址跟着模式走", async () => {
         await save("主钱包");
         expect(await db.accounts.get(`${id}:m/84'/1'/0'`)).toBeUndefined();
         expect(await db.accounts.get(`${testnetId}:m/84'/0'/0'`)).toBeUndefined();
@@ -64,12 +64,12 @@ describe("savePairing", () => {
         expect(row?.address).toMatch(/^tb1q/);
     });
 
-    it("不保存 scope，数据模型仍然主网测试网分开", async () => {
+    it("不保存 scope,数据模型仍然主网测试网分开", async () => {
         await save("主钱包");
         expect(await db.accounts.get(`${testnetId}:${EVM_PATH}`)).not.toHaveProperty("scope");
     });
 
-    it("返回当前模式的钱包，切换网络时留在同一个冷钱包", async () => {
+    it("返回当前模式的钱包,切换网络时留在同一个冷钱包", async () => {
         const saved = await save("主钱包", allPaths(), "testnet");
         expect(saved.id).toBe(testnetId);
         expect((await db.settings.get("wallet:mainnet"))?.value).toBe(id);
@@ -83,7 +83,7 @@ describe("savePairing", () => {
         expect(account?.key).toHaveLength(32);
     });
 
-    it("只写入勾选的账户，没有账户的模式不建钱包", async () => {
+    it("只写入勾选的账户,没有账户的模式不建钱包", async () => {
         await save("主钱包", new Set(["m/84'/0'/0'"]));
         expect(await db.accounts.count()).toBe(1);
         expect(await db.wallets.get(testnetId)).toBeUndefined();
@@ -95,7 +95,7 @@ describe("savePairing", () => {
         expect(await db.addresses.count()).toBe(2);
     });
 
-    it("钱包已存在时只补缺的账户，不覆盖名称和核对状态", async () => {
+    it("钱包已存在时只补缺的账户,不覆盖名称和核对状态", async () => {
         await save("主钱包", new Set([EVM_PATH]));
         const key: [string, number, number] = [`${testnetId}:${EVM_PATH}`, 0, 0];
         await db.addresses.update(key, { verified: true });
@@ -108,7 +108,7 @@ describe("savePairing", () => {
         expect((await db.addresses.get(key))?.verified).toBe(true);
     });
 
-    it("另一个模式的钱包已存在时，当前模式的钱包照常新建", async () => {
+    it("另一个模式的钱包已存在时,当前模式的钱包照常新建", async () => {
         await save("主钱包", new Set(["m/84'/0'/0'"]));
         await save("新名字");
         expect((await db.wallets.get(id))?.name).toBe("主钱包");

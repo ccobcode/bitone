@@ -1,6 +1,6 @@
-// 通知什么、通知谁。只有实时到来的新事件才打扰用户：
-// 快照、翻页和地址发现带来的历史记录不算，粉尘和清单外代币不算，它们常被用来做地址投毒。
-// 通知只用来跳转查看，不带任何操作。到账要看确认状态，提示音不能当成到账依据。
+// 通知什么,通知谁.只有实时到来的新事件才打扰用户:
+// 快照,翻页和地址发现带来的历史记录不算,粉尘和清单外代币不算,它们常被用来做地址投毒.
+// 通知只用来跳转查看,不带任何操作.到账要看确认状态,提示音不能当成到账依据.
 import { networkList } from "../core";
 import { t } from "../core/i18n";
 import { formatAsset, lookupAsset, priceKey } from "../core/manifest";
@@ -13,16 +13,16 @@ export type NoticeKind = "incoming" | "included" | "failed";
 export interface Notice {
     kind: NoticeKind;
     network: string;
-    /** 页面里显示的文字，可以带金额。 */
+    /** 页面里显示的文字,可以带金额. */
     title: string;
-    /** 系统通知默认用的文字，不带金额，它可能出现在锁屏或屏幕共享里。 */
+    /** 系统通知默认用的文字,不带金额,它可能出现在锁屏或屏幕共享里. */
     summary: string;
     link: string;
-    /** 这条代表几笔，合并时累加。 */
+    /** 这条代表几笔,合并时累加. */
     count: number;
 }
 
-/** 低于这个美元价值的转入不通知。 */
+/** 低于这个美元价值的转入不通知. */
 const DUST_USD = 1;
 
 export function isTestnet(network: string): boolean {
@@ -35,7 +35,7 @@ function isDust(row: ChainEntry, decimals: number, prices: PriceMap | null): boo
     return (Number(row.amount) / 10 ** decimals) * Number(price) < DUST_USD;
 }
 
-/** 别人转给这个钱包的、清单内的、有实际金额的转账。 */
+/** 别人转给这个钱包的,清单内的,有实际金额的转账. */
 function worthTelling(row: ChainEntry, own: ReadonlySet<string>, prices: PriceMap | null): boolean {
     if (row.status === "failed" || !row.to || !own.has(addressKey(row.to))) return false;
     if (row.from && own.has(addressKey(row.from))) return false;
@@ -48,7 +48,7 @@ function incomingNotice(row: ChainEntry): Notice {
     return {
         kind: "incoming",
         network: row.network,
-        title: row.status === "finalized" ? t("收到 {0}", amount) : t("收到 {0}，确认中", amount),
+        title: row.status === "finalized" ? t("收到 {0}", amount) : t("收到 {0},确认中", amount),
         summary: t("收到一笔转账"),
         link: "/history",
         count: 1,
@@ -60,7 +60,7 @@ export function mergedNotice(first: Notice, count: number): Notice {
     return { ...first, title, summary: title, count };
 }
 
-/** 推送带来的新记录，一笔交易只算一次。 */
+/** 推送带来的新记录,一笔交易只算一次. */
 export function incomingNotices(
     rows: readonly ChainEntry[],
     own: ReadonlySet<string>,
@@ -71,7 +71,7 @@ export function incomingNotices(
     return [...unique.values()].map(incomingNotice);
 }
 
-/** 增量补回来的新记录，也就是用户不在时发生的。合并成一条。 */
+/** 增量补回来的新记录,也就是用户不在时发生的.合并成一条. */
 export function missedNotice(
     rows: readonly ChainEntry[],
     own: ReadonlySet<string>,
@@ -83,7 +83,7 @@ export function missedNotice(
     return { ...first, title, summary: title, count: rest.length + 1 };
 }
 
-/** 同一件事只通知一次。多个标签页同时看到状态变化时，只有一个能认领。 */
+/** 同一件事只通知一次.多个标签页同时看到状态变化时,只有一个能认领. */
 export async function claimNotice(key: string): Promise<boolean> {
     const id = `notified:${key}`;
     return db.transaction("rw", db.settings, async () => {
@@ -102,12 +102,12 @@ if (channel) {
     channel.onmessage = ({ data }: MessageEvent<Notice>) => {
         for (const listener of listeners) listener(data, false);
     };
-    // Node 里打开的频道会拖住进程退出，浏览器没有这个方法。
+    // Node 里打开的频道会拖住进程退出,浏览器没有这个方法.
     const { unref } = channel as unknown as { unref?(): void };
     unref?.call(channel);
 }
 
-/** 发出通知。发现它的标签页负责声音和系统通知，其他标签页只显示，用户看着哪个都不会错过。 */
+/** 发出通知.发现它的标签页负责声音和系统通知,其他标签页只显示,用户看着哪个都不会错过. */
 export function publish(notice: Notice): void {
     for (const listener of listeners) listener(notice, true);
     channel?.postMessage(notice);
@@ -119,8 +119,8 @@ export function onNotice(listener: Listener): () => void {
 }
 
 /**
- * 弹系统通知。Android Chrome 只允许通过 Service Worker 发通知，这里的构造函数会抛错。
- * 通知发不出去只是少一次提醒，不能影响调用方，同步也在这条调用链上。
+ * 弹系统通知.Android Chrome 只允许通过 Service Worker 发通知,这里的构造函数会抛错.
+ * 通知发不出去只是少一次提醒,不能影响调用方,同步也在这条调用链上.
  */
 export function systemNotice(body: string, onClick: () => void): void {
     try {
@@ -130,6 +130,6 @@ export function systemNotice(body: string, onClick: () => void): void {
             shown.close();
         };
     } catch {
-        // 页面内的提示和声音不受影响。
+        // 页面内的提示和声音不受影响.
     }
 }

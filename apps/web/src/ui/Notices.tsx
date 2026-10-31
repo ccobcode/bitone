@@ -9,7 +9,7 @@ import { claimNotice, isTestnet, mergedNotice, onNotice, publish, systemNotice, 
 import { Icon } from "./Icon";
 import { Button } from "./primitives";
 
-/** 这段时间内连续的转入只响一次。 */
+/** 这段时间内连续的转入只响一次. */
 const MERGE_WINDOW = 3000;
 const TOAST_LIFE = tokens.toast;
 
@@ -17,7 +17,7 @@ interface Toast {
     id: number;
     notice: Notice;
     at: number;
-    /** 第一次收到转入时，问一次要不要开提醒。 */
+    /** 第一次收到转入时,问一次要不要开提醒. */
     ask: boolean;
 }
 
@@ -28,7 +28,7 @@ export interface NoticeSettings {
     asked: boolean;
 }
 
-/** 通知开关都存在设置表里，默认关闭。 */
+/** 通知开关都存在设置表里,默认关闭. */
 export function useNoticeSettings(): NoticeSettings {
     const rows = useLive(
         () => db.settings.bulkGet(["notifySound", "notifyBackground", "notifyAmount", "notifyAsked"]),
@@ -39,12 +39,12 @@ export function useNoticeSettings(): NoticeSettings {
         sound: sound?.value === true,
         background: background?.value === true,
         amount: amount?.value === true,
-        // 读到之前当成问过，不能闪一下询问。
+        // 读到之前当成问过,不能闪一下询问.
         asked: rows === undefined || asked?.value === true,
     };
 }
 
-/** 请求系统通知权限，要在点击里调用。返回是否拿到。 */
+/** 请求系统通知权限,要在点击里调用.返回是否拿到. */
 export async function requestBackground(): Promise<boolean> {
     if (typeof Notification !== "function") return false;
     const granted = (await Notification.requestPermission()) === "granted";
@@ -52,7 +52,7 @@ export async function requestBackground(): Promise<boolean> {
     return granted;
 }
 
-/** 自己的转账走到这些状态时通知。 */
+/** 自己的转账走到这些状态时通知. */
 function txNotice(tx: TxRecord): Notice | null {
     const base = { network: tx.network, link: `/history/${encodeURIComponent(tx.id)}`, count: 1 };
     if (tx.state === "confirming" || tx.state === "confirmed") {
@@ -63,7 +63,7 @@ function txNotice(tx: TxRecord): Notice | null {
     return null;
 }
 
-/** 状态变化时发通知。打开页面时已有的状态是起点，不通知。 */
+/** 状态变化时发通知.打开页面时已有的状态是起点,不通知. */
 function useTxNotices() {
     const txs = useLive(() => db.txs.toArray(), []);
     const seen = useRef<Map<string, TxState> | null>(null);
@@ -94,7 +94,7 @@ function ToastCard({ toast, onClose, children }: { toast: Toast; onClose(): void
         return () => document.removeEventListener("visibilitychange", update);
     }, []);
 
-    // 失败要用户自己关。其余的在页面看不见或鼠标悬停时不计时，不能没看到就消失。
+    // 失败要用户自己关.其余的在页面看不见或鼠标悬停时不计时,不能没看到就消失.
     useEffect(() => {
         if (failed || held || hidden || toast.ask) return;
         const timer = setTimeout(onClose, TOAST_LIFE);
@@ -102,7 +102,7 @@ function ToastCard({ toast, onClose, children }: { toast: Toast; onClose(): void
     }, [failed, held, hidden, toast.ask, onClose]);
 
     return (
-        // biome-ignore lint/a11y/noStaticElementInteractions: 悬停和聚焦只暂停计时，不是操作。
+        // biome-ignore lint/a11y/noStaticElementInteractions: 悬停和聚焦只暂停计时,不是操作.
         <div
             role={failed ? "alert" : "status"}
             onMouseEnter={() => setHeld(true)}
@@ -135,7 +135,7 @@ function ToastCard({ toast, onClose, children }: { toast: Toast; onClose(): void
     );
 }
 
-/** 签名和扫码时不打扰，结束后再提示。显示收款二维码时用户正等着到账，照常提示。 */
+/** 签名和扫码时不打扰,结束后再提示.显示收款二维码时用户正等着到账,照常提示. */
 function isQuiet(pathname: string, search: string): boolean {
     const params = new URLSearchParams(search);
     return pathname.startsWith("/sign/") || params.has("connect") || params.has("import");
@@ -166,7 +166,7 @@ export function Notices() {
         [navigate],
     );
 
-    /** 声音和系统通知，只有发现这件事的标签页负责。 */
+    /** 声音和系统通知,只有发现这件事的标签页负责. */
     const alert = useCallback(
         (notice: Notice) => {
             const { sound } = current.current.settings;
@@ -182,7 +182,7 @@ export function Notices() {
             const { settings: options, toasts: list } = current.current;
             const shown = notice.kind === "incoming" && list.find((toast) => toast.notice.kind === "incoming");
             if (shown) {
-                // 屏幕上已有转入提示时并进去，不叠一摞。刚响过就不再响。
+                // 屏幕上已有转入提示时并进去,不叠一摞.刚响过就不再响.
                 const merged = mergedNotice(shown.notice, shown.notice.count + notice.count);
                 setToasts((previous) =>
                     previous.map((toast) => (toast.id === shown.id ? { ...toast, notice: merged, at: now } : toast)),
@@ -213,7 +213,7 @@ export function Notices() {
         for (const notice of held.current.splice(0)) show(notice, true);
     }, [quiet, show]);
 
-    // 浏览器要求点过页面才能发声，开着提示音时用第一次点击解锁。
+    // 浏览器要求点过页面才能发声,开着提示音时用第一次点击解锁.
     useEffect(() => {
         if (!settings.sound) return;
         document.addEventListener("pointerdown", unlockChime, { once: true });

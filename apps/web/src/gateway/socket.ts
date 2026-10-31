@@ -1,34 +1,34 @@
-// 余额、交易和价格的订阅。订阅只存在于当前连接，断线后退避重连，重连后重新订阅并让上层用 HTTP 补一次。
+// 余额,交易和价格的订阅.订阅只存在于当前连接,断线后退避重连,重连后重新订阅并让上层用 HTTP 补一次.
 import { MAX_ADDRESSES, chunks } from "./client";
 import type { Target } from "./assets";
 
-/** 单连接的地址上限，超出的地址靠 HTTP 刷新。和网关一致。 */
+/** 单连接的地址上限,超出的地址靠 HTTP 刷新.和网关一致. */
 const MAX_SUBSCRIBED = 5000;
-/** 单连接的交易上限，超出的交易靠 HTTP 轮询。 */
+/** 单连接的交易上限,超出的交易靠 HTTP 轮询. */
 const MAX_WATCHED_TXS = 100;
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30_000;
-/** 应用层心跳的间隔，两次之间什么都没收到就重连。 */
+/** 应用层心跳的间隔,两次之间什么都没收到就重连. */
 const HEARTBEAT_INTERVAL = 25_000;
 
-/** `degraded` 是连接正常但有订阅被拒绝，这部分地址收不到推送。 */
+/** `degraded` 是连接正常但有订阅被拒绝,这部分地址收不到推送. */
 export type SocketStatus = "connecting" | "live" | "retrying" | "degraded";
 
 export interface SocketEvents {
     onStatus(status: SocketStatus, retryAt: number | null): void;
-    /** 收到这批地址的跟块推送，内容还没校验。 */
+    /** 收到这批地址的跟块推送,内容还没校验. */
     onUpdate(network: string, addresses: readonly string[], update: unknown): void;
-    /** 收到交易的最终性变化，内容还没校验。 */
+    /** 收到交易的最终性变化,内容还没校验. */
     onTx?(network: string, tx: unknown): void;
-    /** 新增的交易订阅收到回复。网关先取好基线再回复，这时要用 HTTP 补一次，基线本身不会推送。 */
+    /** 新增的交易订阅收到回复.网关先取好基线再回复,这时要用 HTTP 补一次,基线本身不会推送. */
     onTxWatched?(network: string, hash: string): void;
-    /** 这批地址的订阅收到回复。网关先取好基线再回复，这时取快照不会漏掉变化，首次、重连和新增都会触发。 */
+    /** 这批地址的订阅收到回复.网关先取好基线再回复,这时取快照不会漏掉变化,首次,重连和新增都会触发. */
     onBatchReady?(target: Target): void;
-    /** 应用层心跳的往返时间，毫秒。 */
+    /** 应用层心跳的往返时间,毫秒. */
     onLatency?(ms: number): void;
     onPrices?(prices: unknown): void;
     /**
-     * 全部订阅都收到了回复。首次和重连都会触发。
+     * 全部订阅都收到了回复.首次和重连都会触发.
      */
     onReady(): void;
 }
@@ -43,7 +43,7 @@ export interface WatchedTx {
     hash: string;
 }
 
-/** `stale` 是还没等到回复地址就变了，回复后要退订。 */
+/** `stale` 是还没等到回复地址就变了,回复后要退订. */
 type Topic =
     | { kind: "addresses"; network: string; addresses: readonly string[]; stale?: boolean }
     | { kind: "tx"; network: string; hash: string }
@@ -72,11 +72,11 @@ export class BalanceSocket {
     #pingId = 0;
     #pingAt = 0;
     #nextId = 1;
-    /** 请求 ID 对应的主题，收到响应后转成订阅 ID 对应的主题。 */
+    /** 请求 ID 对应的主题,收到响应后转成订阅 ID 对应的主题. */
     #pending = new Map<number, Topic>();
     #subscriptions = new Map<string, Topic>();
     #rejected = false;
-    /** 连接建立时一批发出的订阅还没有全部回复。 */
+    /** 连接建立时一批发出的订阅还没有全部回复. */
     #opening = false;
 
     constructor(url: string, events: SocketEvents) {
@@ -95,7 +95,7 @@ export class BalanceSocket {
         this.#drop();
     }
 
-    /** 地址变化时调用。只换变了的那批订阅，连接和其他批次不动，否则每变一次全部都要重查。 */
+    /** 地址变化时调用.只换变了的那批订阅,连接和其他批次不动,否则每变一次全部都要重查. */
     setTargets(targets: Target[]): void {
         const before = this.#allowed();
         this.#targets = targets;
@@ -114,7 +114,7 @@ export class BalanceSocket {
         }
     }
 
-    /** 更新要跟踪的交易。交易随时增减，所以只增减这几个订阅，不换连接。 */
+    /** 更新要跟踪的交易.交易随时增减,所以只增减这几个订阅,不换连接. */
     watchTxs(list: readonly WatchedTx[]): void {
         const next = new Map(list.slice(0, MAX_WATCHED_TXS).map((tx) => [txKey(tx), tx]));
         const socket = this.#socket;
@@ -128,14 +128,14 @@ export class BalanceSocket {
         this.#txs = next;
     }
 
-    /** 主网才有美元价格，所以由上层决定要不要订阅。 */
+    /** 主网才有美元价格,所以由上层决定要不要订阅. */
     watchPrices(): void {
         const socket = this.#socket;
         if (!this.#prices && socket?.readyState === WebSocket.OPEN) this.#subscribePrices(socket);
         this.#prices = true;
     }
 
-    /** 立即重连，并清零退避。 */
+    /** 立即重连,并清零退避. */
     reconnect(): void {
         this.#attempt = 0;
         this.#clearTimer();
@@ -149,8 +149,8 @@ export class BalanceSocket {
     }
 
     /**
-     * 浏览器看不到 WebSocket 的 ping 帧。电脑休眠或切换网络后连接可能已经断了，却不会触发 close，
-     * 所以定时发一条应用层 ping，上一条之后什么都没收到就重连。
+     * 浏览器看不到 WebSocket 的 ping 帧.电脑休眠或切换网络后连接可能已经断了,却不会触发 close,
+     * 所以定时发一条应用层 ping,上一条之后什么都没收到就重连.
      */
     #beat(socket: WebSocket): void {
         if (!this.#alive) {
@@ -173,7 +173,7 @@ export class BalanceSocket {
         this.#heartbeat = null;
     }
 
-    /** 摘掉回调再关闭，主动关闭不触发重连。 */
+    /** 摘掉回调再关闭,主动关闭不触发重连. */
     #drop(): void {
         this.#stopBeat();
         const socket = this.#socket;
@@ -220,7 +220,7 @@ export class BalanceSocket {
         this.#timer = setTimeout(() => this.#connect(), delay);
     }
 
-    /** 单连接上限内要订阅的批次，键是 `网络|第一个地址`。地址少的批次在前，地址多的网络不能把其他网络挤掉。 */
+    /** 单连接上限内要订阅的批次,键是 `网络|第一个地址`.地址少的批次在前,地址多的网络不能把其他网络挤掉. */
     #allowed(): Map<string, Target> {
         let room = MAX_SUBSCRIBED;
         const allowed = new Map<string, Target>();

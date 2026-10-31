@@ -16,7 +16,7 @@ interface PickerProps {
     value: ReactNode;
     items: PickerItem[];
     onPick(key: string): void;
-    /** field 是通栏，compact 和输入框等高，filter 和分段选择等高，pill 是金额旁边的胶囊。 */
+    /** field 是通栏,compact 和输入框等高,filter 和分段选择等高,pill 是金额旁边的胶囊. */
     look?: "field" | "compact" | "filter" | "pill";
     label?: string;
     empty?: string;
@@ -29,7 +29,7 @@ const LOOKS = {
     pill: "h-12 shrink-0 rounded-rf py-s1 pr-s3 pl-s2",
 };
 
-/** 下拉选择，内容带图标。宽屏贴着触发它的元素展开，手机上是底部弹层，有标题和关闭按钮。 */
+/** 下拉选择,内容带图标.宽屏贴着触发它的元素展开,手机上是底部弹层,有标题和关闭按钮. */
 export function Picker({ id, value, items, onPick, look = "field", label, empty = t("没有可选项") }: PickerProps) {
     const [open, setOpen] = useState(false);
     return (

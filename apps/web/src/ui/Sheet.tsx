@@ -6,12 +6,12 @@ import { Icon } from "./Icon";
 import { buttonClass, type ButtonVariant } from "./primitives";
 import { t } from "../core/i18n";
 
-/** 打开浮层的链接属性。浮层进历史记录，浏览器的返回能关掉它。 */
+/** 打开浮层的链接属性.浮层进历史记录,浏览器的返回能关掉它. */
 export function overlayLink(search: string) {
     return { to: { search }, state: { overlay: true } };
 }
 
-/** 打开收款浮层。asset 是清单里的资产键，verify 直接进核对。 */
+/** 打开收款浮层.asset 是清单里的资产键,verify 直接进核对. */
 export function receiveLink(accountId: string, { asset, verify }: { asset?: string; verify?: boolean } = {}) {
     const params = new URLSearchParams({ receive: accountId });
     if (asset) params.set("asset", asset);
@@ -19,7 +19,7 @@ export function receiveLink(accountId: string, { asset, verify }: { asset?: stri
     return overlayLink(`?${params}`);
 }
 
-/** 关掉浮层，回到打开它的页面。直接打开的网址没有上一页，换成清掉参数。 */
+/** 关掉浮层,回到打开它的页面.直接打开的网址没有上一页,换成清掉参数. */
 export function useCloseOverlay(): () => void {
     const { state } = useLocation();
     const navigate = useNavigate();
@@ -34,8 +34,8 @@ function sheetWidth(width: number): CSSProperties {
 }
 
 /**
- * 软键盘盖住的高度。iOS 和安卓默认都不缩小布局视口，贴底的浮层要自己让开，
- * 不用 `interactive-widget`，它只有安卓有，而且底部标签栏也会被顶起来。
+ * 软键盘盖住的高度.iOS 和安卓默认都不缩小布局视口,贴底的浮层要自己让开,
+ * 不用 `interactive-widget`,它只有安卓有,而且底部标签栏也会被顶起来.
  */
 function useKeyboardInset() {
     useEffect(() => {
@@ -45,7 +45,7 @@ function useKeyboardInset() {
         const update = () => {
             const covered = Math.max(0, window.innerHeight - view.height - view.offsetTop);
             root.style.setProperty("--keyboard", `${Math.round(covered)}px`);
-            // 浮层变矮后，正在输入的那一项可能被挤到可视区外。
+            // 浮层变矮后,正在输入的那一项可能被挤到可视区外.
             if (covered > 0 && document.activeElement instanceof HTMLElement) {
                 document.activeElement.scrollIntoView({ block: "nearest" });
             }
@@ -61,19 +61,19 @@ function useKeyboardInset() {
     }, []);
 }
 
-/** 浮层底部的操作区。内容比一屏高时贴着底部，不用滚动才够得到主操作。fill 时按钮等分，和上面的内容共用左右边线。 */
+/** 浮层底部的操作区.内容比一屏高时贴着底部,不用滚动才够得到主操作.fill 时按钮等分,和上面的内容共用左右边线. */
 export function SheetActions({ fill, children }: { fill?: boolean; children: ReactNode }) {
     return <div className={`sheet-actions ${fill ? "*:flex-1" : ""}`}>{children}</div>;
 }
 
 interface SheetProps {
     title: string;
-    /** 宽屏时的宽度。 */
+    /** 宽屏时的宽度. */
     width?: number;
     children: ReactNode;
 }
 
-/** 浮层的外框。一次性的轻任务放在这里，关掉回到原处。 */
+/** 浮层的外框.一次性的轻任务放在这里,关掉回到原处. */
 export function Sheet({ title, width = 560, children }: SheetProps) {
     const close = useCloseOverlay();
     const popup = useRef<HTMLDivElement>(null);
@@ -82,7 +82,7 @@ export function Sheet({ title, width = 560, children }: SheetProps) {
         <Dialog.Root open onOpenChange={(open) => (open ? undefined : close())}>
             <Dialog.Portal>
                 <Dialog.Backdrop className="scrim fixed inset-0 z-30" />
-                {/* 焦点放在浮层本身，打开时关闭按钮不显示焦点环。 */}
+                {/* 焦点放在浮层本身,打开时关闭按钮不显示焦点环. */}
                 <Dialog.Popup
                     ref={popup}
                     initialFocus={popup}
@@ -104,18 +104,18 @@ export function Sheet({ title, width = 560, children }: SheetProps) {
 }
 
 interface ConfirmProps {
-    /** 打开确认框的按钮。 */
+    /** 打开确认框的按钮. */
     trigger: ReactNode;
     variant?: ButtonVariant;
     title: string;
-    /** 放弃这次操作的按钮文字。 */
+    /** 放弃这次操作的按钮文字. */
     cancel: string;
-    /** 确认的按钮，放在放弃按钮后面。 */
+    /** 确认的按钮,放在放弃按钮后面. */
     actions: ReactNode;
     children: ReactNode;
 }
 
-/** 确认一个操作。全站一个写法，默认焦点在放弃按钮上。 */
+/** 确认一个操作.全站一个写法,默认焦点在放弃按钮上. */
 export function Confirm({ trigger, variant, title, cancel, actions, children }: ConfirmProps) {
     return (
         <AlertDialog.Root>

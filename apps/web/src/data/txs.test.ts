@@ -14,19 +14,19 @@ function tx(state: TxRecord["state"], extra: Partial<TxRecord> = {}): TxRecord {
 }
 
 describe("isDeletable", () => {
-    it("没上链就结束、不占序号的可以删", () => {
+    it("没上链就结束,不占序号的可以删", () => {
         for (const state of ["abandoned", "expired"] as const) expect(isDeletable(tx(state), 0, NOW), state).toBe(true);
     });
 
-    it("还占着序号的不能删，签名可能仍然有效", () => {
+    it("还占着序号的不能删,签名可能仍然有效", () => {
         expect(isDeletable(tx("abandoned", { raw: "aa" }), 1, NOW)).toBe(false);
     });
 
-    it("序号释放后，签名有效的那笔也能删", () => {
+    it("序号释放后,签名有效的那笔也能删", () => {
         expect(isDeletable(tx("abandoned", { raw: "aa" }), 0, NOW)).toBe(true);
     });
 
-    it("刚被替换的还在观察期，过了才能删", () => {
+    it("刚被替换的还在观察期,过了才能删", () => {
         expect(isDeletable(tx("replaced"), 0, NOW + 1)).toBe(false);
         expect(isDeletable(tx("replaced"), 0, NOW + REPLACED_WATCH)).toBe(true);
     });
@@ -55,7 +55,7 @@ describe("deleteRequest", () => {
         expect(await db.txs.get("TX-1")).toBeUndefined();
     });
 
-    it("写库时再查一次，还占着序号的拒绝删除", async () => {
+    it("写库时再查一次,还占着序号的拒绝删除", async () => {
         await db.txs.put(tx("abandoned", { raw: "aa" }));
         await db.reservations.put({
             id: "r",
@@ -89,7 +89,7 @@ describe("有结果的交易存成标准记录", () => {
     const seen = (status: "finalized" | "failed") =>
         ({ hash: "0xABC", status, stage: "finalized", confirmations: 9, block: 1, fee: null }) as const;
 
-    it("确认后的记录和网关同步的是同一个标识，后到的直接覆盖", async () => {
+    it("确认后的记录和网关同步的是同一个标识,后到的直接覆盖", async () => {
         await db.txs.put(moving);
         await applyObservation("TX-1", seen("finalized"), { now: NOW });
         const [saved] = await db.chainTxs.toArray();
@@ -98,7 +98,7 @@ describe("有结果的交易存成标准记录", () => {
         expect(saved?.id).toBe(entry("w", "s", "ethereum", { ...item, status: "finalized" }).id);
     });
 
-    it("链上失败也存，确认中不存", async () => {
+    it("链上失败也存,确认中不存", async () => {
         await db.txs.put(moving);
         await applyObservation("TX-1", seen("failed"), { now: NOW });
         expect((await db.chainTxs.toArray())[0]?.status).toBe("failed");
@@ -108,7 +108,7 @@ describe("有结果的交易存成标准记录", () => {
         expect(await db.chainTxs.count()).toBe(0);
     });
 
-    it("按哈希找本地交易，十六进制不分大小写", async () => {
+    it("按哈希找本地交易,十六进制不分大小写", async () => {
         await db.txs.put(moving);
         expect((await findTx("ethereum", "0xabc"))?.id).toBe("TX-1");
         expect(await findTx("bsc", "0xabc")).toBeUndefined();

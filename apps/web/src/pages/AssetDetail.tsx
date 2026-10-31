@@ -125,7 +125,7 @@ function Detail({ group, prices }: { group: AssetGroup; prices: PriceMap | null 
                             ))}
                         </ul>
                     ) : (
-                        <Empty icon="assets">{t("还没有余额。")}</Empty>
+                        <Empty icon="assets">{t("还没有余额.")}</Empty>
                     )}
                 </Section>
                 <Section aria-labelledby="h-records" className="col-span-12 gap-s2 @4xl:col-span-5">
@@ -142,7 +142,7 @@ function Detail({ group, prices }: { group: AssetGroup; prices: PriceMap | null 
                             ))}
                         </ul>
                     ) : (
-                        <Empty icon="history">{t("还没有交易记录。")}</Empty>
+                        <Empty icon="history">{t("还没有交易记录.")}</Empty>
                     )}
                 </Section>
             </div>
@@ -169,7 +169,7 @@ export default function AssetDetail() {
                     <SkeletonRows />
                 </Section>
             ) : (
-                <Empty icon="assets">{t("没有找到这个资产。")}</Empty>
+                <Empty icon="assets">{t("没有找到这个资产.")}</Empty>
             )}
         </>
     );

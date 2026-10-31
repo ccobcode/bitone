@@ -1,14 +1,16 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { chainOf } from "../chains";
+import { TransferError } from "../chains/transfer";
 import { networkName, validateAddress, type Review } from "../core";
 import { formatUnits, formatUsd, parseUnits, toInput, usdCents } from "../core/amount";
 import { lookupAsset, priceKey } from "../core/manifest";
-import { cleanText, shortAddress } from "../core/text";
+import { shortAddress } from "../core/text";
 import { useApp, useLive } from "../data/app";
 import { checkRecipient, usableContacts } from "../data/contacts";
 import { db, type Account, type Wallet } from "../data/db";
-import { TransferError, createSolanaNonce, createTransfer } from "../data/transfer";
-import { reservationsOf } from "../data/txs";
+import { createSetup, createTransfer } from "../data/transfer";
+import { reservationsOf } from "../data/claims";
 import { buildRows, inManifest, pendingAmount, type AssetRow, type ManifestRow } from "../gateway/assets";
 import { GatewayError, addressKey, type FeeTier } from "../gateway/client";
 import { txHref } from "../gateway/history";
@@ -39,13 +41,13 @@ import { AssetIcon, TokenIcon, networkIcon } from "../ui/TokenIcon";
 import { NoWallet } from "./NoWallet";
 import { t, translate } from "../core/i18n";
 
-/** 选择框里最多显示的小数位，完整金额在「全部」里。 */
+/** 选择框里最多显示的小数位,完整金额在"全部"里. */
 const PICKER_FRACTION = 8;
 
 function failureText(error: unknown): string {
     if (error instanceof TransferError) return translate(error.message);
-    if (error instanceof GatewayError) return translate(error.detail) || t("暂时无法生成交易，请稍后重试。");
-    return error instanceof Error ? translate(error.message) : t("生成失败，没有写入任何记录。");
+    if (error instanceof GatewayError) return translate(error.detail) || t("暂时无法生成交易,请稍后重试.");
+    return error instanceof Error ? translate(error.message) : t("生成失败,没有写入任何记录.");
 }
 
 function AccountValue({ account, address }: { account: Account; address: string }) {
@@ -62,7 +64,7 @@ function AccountValue({ account, address }: { account: Account; address: string 
     );
 }
 
-/** 金额旁边的资产胶囊。 */
+/** 金额旁边的资产胶囊. */
 function AssetPill({ row }: { row: ManifestRow }) {
     return (
         <>
@@ -106,7 +108,7 @@ function SendForm({ wallet, rows, first }: FormProps) {
     const navigate = useNavigate();
     const [params] = useSearchParams();
 
-    // 从联系人或失败的交易进来时带上预填内容，用户改动后以输入为准。
+    // 从联系人或失败的交易进来时带上预填内容,用户改动后以输入为准.
     const originId = params.get("from");
     const contactId = params.get("contact");
     const origin = useLive(async () => (originId ? ((await db.txs.get(originId)) ?? null) : null), [originId]);
@@ -150,7 +152,7 @@ function SendForm({ wallet, rows, first }: FormProps) {
     const txs = useLive(() => db.txs.where("walletId").equals(wallet.id).toArray(), [wallet.id]);
     const reservations = useLive(() => reservationsOf(account.id, network), [account.id, network]);
 
-    /** 默认资产会随余额加载变化。用户开始填写后就锁定，金额不能换到另一个币上。 */
+    /** 默认资产会随余额加载变化.用户开始填写后就锁定,金额不能换到另一个币上. */
     function keepRow() {
         setRowId((current) => current ?? row.id);
     }
@@ -213,8 +215,8 @@ function SendForm({ wallet, rows, first }: FormProps) {
         !canonical ||
         !amountOk ||
         busy ||
-        quote.needsNonceAccount ||
-        quote.nonceBusy ||
+        quote.setup !== null ||
+        quote.busyNotice !== null ||
         quote.held !== null ||
         quote.enough === false ||
         (quote.problem !== null && gasOverride === null) ||
@@ -260,7 +262,7 @@ function SendForm({ wallet, rows, first }: FormProps) {
                     tone="danger"
                     icon="alert"
                     title={t("禁止签名")}
-                    body={forbidden.alerts[0] ?? t("这笔交易不能签名，没有生成二维码。")}
+                    body={forbidden.alerts[0] ?? t("这笔交易不能签名,没有生成二维码.")}
                     facts={[
                         { label: t("网络"), value: networkName(network) },
                         { label: t("判定"), value: forbidden.title },
@@ -278,7 +280,7 @@ function SendForm({ wallet, rows, first }: FormProps) {
                         >
                             {t("金额")}
                         </label>
-                        {/* 大字号的金额也是输入框，边框和聚焦状态和其他输入框一致。 */}
+                        {/* 大字号的金额也是输入框,边框和聚焦状态和其他输入框一致. */}
                         <div className="flex min-w-0 items-center gap-s4 rounded-r2 border border-line-strong bg-surface py-s2 pr-s2 pl-s4 outline-2 outline-transparent transition-colors focus-within:border-accent-text focus-within:outline-accent-soft">
                             <input
                                 id="amt"
@@ -380,7 +382,7 @@ function SendForm({ wallet, rows, first }: FormProps) {
                                 {canonical ? (
                                     <Chip tone="ok">
                                         <Icon name="check" size={12} />
-                                        {(chain === "evm" && to.trim() === canonical) || chain === "tron"
+                                        {chainOf(chain).checksummed(to.trim(), canonical)
                                             ? t("校验和有效")
                                             : t("地址格式有效")}
                                     </Chip>
@@ -398,9 +400,9 @@ function SendForm({ wallet, rows, first }: FormProps) {
                         ) : null}
                         {check?.pending ? (
                             <Helper tone="text-warn">
-                                {t("这个地址来自备份，先在地址簿确认「")}
+                                {t('这个地址来自备份,先在地址簿确认"')}
                                 {check.pending.name}
-                                {t("」才能转账。")}
+                                {t('"才能转账.')}
                             </Helper>
                         ) : null}
                         {check?.similar && canonical ? (
@@ -411,7 +413,7 @@ function SendForm({ wallet, rows, first }: FormProps) {
                                 <span className="font-medium">
                                     {t("与")}
                                     {check.similar.name}
-                                    {t("首尾相同，中间不同，可能是投毒地址。")}
+                                    {t("首尾相同,中间不同,可能是投毒地址.")}
                                 </span>
                                 <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-s3 gap-y-s1 text-text-2">
                                     <span>{t("已有")}</span>
@@ -475,14 +477,8 @@ function SendForm({ wallet, rows, first }: FormProps) {
                                 ))}
                             </dl>
                         ) : null}
-                        {quote.failed ? <Helper tone="text-danger">{t("手续费暂时不可用。")}</Helper> : null}
-                        {quote.problem ? (
-                            <Helper tone="text-warn">
-                                {chain === "evm"
-                                    ? t("估算失败：{0}，可以在高级设置里填写 Gas 上限。", cleanText(quote.problem, 160))
-                                    : quote.problem}
-                            </Helper>
-                        ) : null}
+                        {quote.failed ? <Helper tone="text-danger">{t("手续费暂时不可用.")}</Helper> : null}
+                        {quote.problem ? <Helper tone="text-warn">{quote.problemNote ?? quote.problem}</Helper> : null}
                     </div>
 
                     <div className="flex flex-col">
@@ -524,16 +520,12 @@ function SendForm({ wallet, rows, first }: FormProps) {
                 </section>
 
                 <aside className="col-span-12 flex min-w-0 flex-col gap-s4 @split:sticky @split:top-[calc(var(--topbar)+var(--safe-top)+var(--s5))] @split:col-span-4">
-                    {quote.needsNonceAccount ? (
-                        <Section aria-labelledby="h-nonce" className="rise flex flex-col gap-s3">
-                            <SectionTitle id="h-nonce">{t("创建 nonce 账户")}</SectionTitle>
-                            <Helper>{t("首次 Solana 转账前要先创建，需要少量可赎回的 SOL。")}</Helper>
-                            <Button
-                                variant="primary"
-                                disabled={busy}
-                                onClick={() => void run(() => createSolanaNonce(base))}
-                            >
-                                {t("创建账户")}
+                    {quote.setup ? (
+                        <Section aria-labelledby="h-setup" className="rise flex flex-col gap-s3">
+                            <SectionTitle id="h-setup">{quote.setup.title}</SectionTitle>
+                            <Helper>{quote.setup.helper}</Helper>
+                            <Button variant="primary" disabled={busy} onClick={() => void run(() => createSetup(base))}>
+                                {quote.setup.action}
                             </Button>
                         </Section>
                     ) : null}
@@ -576,13 +568,11 @@ function SendForm({ wallet, rows, first }: FormProps) {
                         </p>
                     </Section>
 
-                    {quote.nonceBusy ? (
-                        <Notice tone="warn">{t("上一笔 Solana 交易还没有结束，完成后才能转账。")}</Notice>
-                    ) : null}
+                    {quote.busyNotice ? <Notice tone="warn">{quote.busyNotice}</Notice> : null}
                     {quote.held ? (
                         <Notice tone="warn">
                             <Link to={txHref(quote.held)} className="text-warn">
-                                {t("交易")} {quote.held.id} {t("已取消但签名仍然有效，先发替换交易。")}
+                                {t("交易")} {quote.held.id} {t("已取消但签名仍然有效,先发替换交易.")}
                             </Link>
                         </Notice>
                     ) : null}
@@ -628,7 +618,7 @@ export default function Send() {
             ) : gateway.down ? null : gateway.loading ? (
                 <SkeletonRows />
             ) : (
-                <Empty icon="send">{t("没有可以转出的资产。")}</Empty>
+                <Empty icon="send">{t("没有可以转出的资产.")}</Empty>
             )}
         </>
     );

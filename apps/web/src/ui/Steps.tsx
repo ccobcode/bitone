@@ -19,10 +19,10 @@ const TEXTS = {
     todo: "text-text-3",
 };
 
-/** 第三步的结果。广播之后这一步还要等链上确认。 */
+/** 第三步的结果.广播之后这一步还要等链上确认. */
 export type StepResult = "live" | "finished" | "failed";
 
-/** 转账步骤，放在页头右侧，不单独占一行。手机上只有圆点，步骤名就是页面标题，和冷钱包相同。切页时外壳不重新挂载，连线是真的填上去的。 */
+/** 转账步骤,放在页头右侧,不单独占一行.手机上只有圆点,步骤名就是页面标题,和冷钱包相同.切页时外壳不重新挂载,连线是真的填上去的. */
 export function Steps({ current, result }: { current: 1 | 2 | 3; result?: StepResult }) {
     return (
         <ol aria-label={t("转账步骤")} className="flex shrink-0 items-center gap-s2">

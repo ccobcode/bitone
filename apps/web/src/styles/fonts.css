@@ -1,4 +1,4 @@
-/* 字体全部本地打包，只留 woff2。Inter 和 JetBrains Mono 用可变字体的 latin 子集，Noto Sans SC 用简体子集。 */
+/* 字体全部本地打包,只留 woff2.Inter 和 JetBrains Mono 用可变字体的 latin 子集,Noto Sans SC 用简体子集. */
 @font-face {
     font-family: "Inter Variable";
     font-style: normal;

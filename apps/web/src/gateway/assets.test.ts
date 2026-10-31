@@ -25,7 +25,7 @@ function row(network: string, asset: string, amount: bigint, extra: Partial<Asse
 }
 
 describe("groupRows", () => {
-    it("同一个币跨网络合并，不同小数位先换算", () => {
+    it("同一个币跨网络合并,不同小数位先换算", () => {
         const [group] = groupRows([row("ethereum", USDT, 5_000_000n), row("bsc", USDT_BSC, 10n ** 18n)], null);
         expect(group?.key).toBe("usdt");
         expect(group?.decimals).toBe(18);
@@ -33,14 +33,14 @@ describe("groupRows", () => {
         expect(group?.rows).toHaveLength(2);
     });
 
-    it("清单外的代币不合并，符号再像也不行", () => {
+    it("清单外的代币不合并,符号再像也不行", () => {
         const fake = "0x0000000000000000000000000000000000000001";
         const groups = groupRows([row("ethereum", USDT, 1n), row("ethereum", fake, 9n)], null);
         expect(groups.map((group) => group.key)).toEqual(["usdt"]);
         expect(groups[0]?.amount).toBe(1n);
     });
 
-    it("有余额的按估值排序，没估值的其次，零余额最后", () => {
+    it("有余额的按估值排序,没估值的其次,零余额最后", () => {
         const prices = new Map([
             ["ethereum:native", "3000"],
             ["bitcoin:native", "60000"],
@@ -66,7 +66,7 @@ describe("groupRows", () => {
 });
 
 describe("largestRow", () => {
-    it("比较时按换算后的金额，小数位多的不占便宜", () => {
+    it("比较时按换算后的金额,小数位多的不占便宜", () => {
         const [group] = groupRows([row("ethereum", USDT, 5_000_000n), row("bsc", USDT_BSC, 10n ** 18n)], null);
         expect(largestRow(must(group)).network).toBe("ethereum");
     });
@@ -94,13 +94,13 @@ describe("assetShares", () => {
         return must(item);
     };
 
-    it("占比按估值算，没有估值时不显示", () => {
+    it("占比按估值算,没有估值时不显示", () => {
         const shares = assetShares([group("ethereum", "3"), group("bsc", "1")]);
         expect(shares.map((share) => share.percent)).toEqual([75, 25]);
         expect(assetShares(groupRows([row("ethereum", "native", 1n)], null))).toEqual([]);
     });
 
-    it("超过五项时最小的合成其他，只多一项时不合并", () => {
+    it("超过五项时最小的合成其他,只多一项时不合并", () => {
         const networks = ["ethereum", "bsc", "polygon", "tron", "solana", "bitcoin"];
         const groups = networks.map((network, i) => group(network, String(10 - i)));
         expect(assetShares(groups).map((share) => share.key)).toEqual(["eth", "bnb", "pol", "trx", "other"]);

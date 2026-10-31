@@ -1,3 +1,4 @@
+import { chainOf } from "../chains";
 import { useMemo, useState } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import { addressFrame, isLegacyKind, type Mode } from "../core";
@@ -14,7 +15,7 @@ import { Sheet, SheetActions } from "../ui/Sheet";
 import { TokenIcon } from "../ui/TokenIcon";
 import { t } from "../core/i18n";
 
-/** 发放过的地址，最新的在前。 */
+/** 发放过的地址,最新的在前. */
 function useIssued(accountId: string) {
     const { addresses } = useApp();
     const indexKey = `receive:${accountId}`;
@@ -55,7 +56,7 @@ interface PanelProps {
     index: string | null;
 }
 
-/** 一个账户的收款地址。收款、核对、地址列表在这里切换，不离开浮层。 */
+/** 一个账户的收款地址.收款,核对,地址列表在这里切换,不离开浮层. */
 function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelProps) {
     const { indexKey, latest, issued } = useIssued(account.id);
     const row = issued.find((item) => String(item.index) === index) ?? issued[0];
@@ -75,7 +76,7 @@ function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelPro
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         } catch {
-            setError(t("浏览器不允许复制，请手动选择地址。"));
+            setError(t("浏览器不允许复制,请手动选择地址."));
         }
     }
 
@@ -87,7 +88,7 @@ function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelPro
             onIndex(null);
             setView("main");
         } catch {
-            setError(t("无法生成新地址。"));
+            setError(t("无法生成新地址."));
         }
     }
 
@@ -118,7 +119,7 @@ function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelPro
                         </SelectRow>
                     ))}
                 </SelectList>
-                <Notice>{t("使用新地址后，旧地址仍然可以收款。")}</Notice>
+                <Notice>{t("使用新地址后,旧地址仍然可以收款.")}</Notice>
                 {error ? <Notice tone="danger">{error}</Notice> : null}
                 <SheetActions fill>
                     <Button onClick={() => setView("main")}>{t("返回")}</Button>
@@ -141,11 +142,11 @@ function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelPro
                 )}
             </div>
             <div className="flex flex-col gap-s1">
-                {/* 高度按地址列表的入口留，换账户时下面的内容不动。 */}
+                {/* 高度按地址列表的入口留,换账户时下面的内容不动. */}
                 <div className="flex min-h-11 items-center justify-between gap-s3 nav:min-h-8">
                     <span className="flex min-w-0 items-center gap-s3">
                         <span className={LABEL}>{t("地址")}</span>
-                        {account.chain === "bitcoin" && !verifying ? (
+                        {chainOf(account.chain).hdAddresses && !verifying ? (
                             <button type="button" className="link" onClick={() => setView("list")}>
                                 {t("地址列表")}
                             </button>
@@ -155,7 +156,7 @@ function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelPro
                         <Chip tone={row.verified ? "ok" : "warn"}>{row.verified ? t("已核对") : t("未核对")}</Chip>
                     </span>
                 </div>
-                {/* 最长的地址手机上三行，宽屏两行，短地址也留出同样的高度，换账户时下面的内容不跳。 */}
+                {/* 最长的地址手机上三行,宽屏两行,短地址也留出同样的高度,换账户时下面的内容不跳. */}
                 <FullAddress
                     address={row.address}
                     className="min-h-[calc(3lh+2*var(--s1))] content-start text-t3 @2xl:min-h-[calc(2lh+var(--s1))]"
@@ -170,11 +171,9 @@ function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelPro
                 ) : null}
             </dl>
             {verifying ? (
-                <Notice tone="warn">
-                    {t("用冷钱包扫这个码，不要发给付款方。显示属于本钱包并且逐段一致，才算通过。")}
-                </Notice>
+                <Notice tone="warn">{t("用冷钱包扫这个码,不要发给付款方.显示属于本钱包并且逐段一致,才算通过.")}</Notice>
             ) : row.verified ? null : (
-                <Notice tone="warn">{t("收款前先在冷钱包核对地址，以冷钱包屏幕为准。")}</Notice>
+                <Notice tone="warn">{t("收款前先在冷钱包核对地址,以冷钱包屏幕为准.")}</Notice>
             )}
             {error ? <Notice tone="danger">{error}</Notice> : null}
             <SheetActions fill>
@@ -205,7 +204,7 @@ function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelPro
     );
 }
 
-/** 收款是动作，不是页面。从哪里打开，关掉就回到哪里。 */
+/** 收款是动作,不是页面.从哪里打开,关掉就回到哪里. */
 export default function ReceiveDialog() {
     const { wallet, accounts, addresses, mode } = useApp();
     const [params, setParams] = useSearchParams();

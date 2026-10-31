@@ -63,7 +63,7 @@ describe("lookupAsset", () => {
 
     it("EVM 地址忽略大小写", () => {
         expect(lookupAsset("ethereum", USDT.toLowerCase())?.symbol).toBe("USDT");
-        // docs/09 的示例就是这种写法。
+        // docs/09 的示例就是这种写法.
         expect(lookupAsset("ethereum", "0xdAC17F958D2ee523a2206206994597C13D831EC7")?.symbol).toBe("USDT");
     });
 

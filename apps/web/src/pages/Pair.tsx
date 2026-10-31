@@ -1,3 +1,4 @@
+import { chainOf } from "../chains";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { PairingReceiver, type Pairing } from "../core";
@@ -18,7 +19,7 @@ function shortKey(key: Uint8Array): string {
     return `${hex.slice(0, 6)}…${hex.slice(-6)}`;
 }
 
-/** 连接冷钱包：扫码，选账户。保存后接着核对第一个收款地址，见 docs/04-security.md 第 4 节。 */
+/** 连接冷钱包:扫码,选账户.保存后接着核对第一个收款地址,见 docs/04-security.md 第 4 节. */
 export default function PairDialog() {
     const { mode, wallet, wallets, selectWallet, refreshPersisted } = useApp();
     const navigate = useNavigate();
@@ -36,7 +37,7 @@ export default function PairDialog() {
     const [saveError, setSaveError] = useState("");
     const [savedId, setSavedId] = useState("");
 
-    // 等全局状态读到新钱包再跳转。否则首次配对时路由守卫看到的还是没有钱包。
+    // 等全局状态读到新钱包再跳转.否则首次配对时路由守卫看到的还是没有钱包.
     useEffect(() => {
         if (savedId && wallet?.id === savedId) void navigate("/?receive=&verify=1", { replace: true });
     }, [savedId, wallet, navigate]);
@@ -62,8 +63,8 @@ export default function PairDialog() {
             const current = receiver.current;
             const result = current.feed(text);
             if (result === "repeated") return;
-            if (result === "foreign") return setNotice(t("这不是观察钱包二维码。"));
-            if (result === "invalid") return setNotice(t("这一帧与已收到的数据不一致，可以重新扫描。"));
+            if (result === "foreign") return setNotice(t("这不是观察钱包二维码."));
+            if (result === "invalid") return setNotice(t("这一帧与已收到的数据不一致,可以重新扫描."));
             setNotice("");
             setProgress({ value: current.progress, frames: current.frames });
             if (!current.complete) return;
@@ -74,14 +75,14 @@ export default function PairDialog() {
                 reset();
                 setNotice(
                     error instanceof Error && error.message.includes("白名单")
-                        ? t("{0}，已拒绝。", translate(error.message))
-                        : t("二维码数据无法解析，已拒绝。"),
+                        ? t("{0},已拒绝.", translate(error.message))
+                        : t("二维码数据无法解析,已拒绝."),
                 );
                 return;
             }
             const id = walletId(decoded.fingerprint, mode);
             setName(wallets.find((item) => item.id === id)?.name ?? t("主钱包"));
-            // 两个模式的账户都默认勾选，配对时切换网络不会丢。
+            // 两个模式的账户都默认勾选,配对时切换网络不会丢.
             setPaths(new Set(selectableAccounts(decoded).map((account) => account.path)));
             setPairing(decoded);
             buzz();
@@ -102,7 +103,7 @@ export default function PairDialog() {
             await selectWallet(saved);
             setSavedId(saved.id);
         } catch {
-            setSaveError(t("写入失败，请重试。"));
+            setSaveError(t("写入失败,请重试."));
             setSaving(false);
         }
     }
@@ -166,9 +167,7 @@ export default function PairDialog() {
                                 <span className="truncate text-t1 text-text-3">{accountKind(account)}</span>
                             </span>
                             <span className="hidden flex-col items-end whitespace-nowrap @split:flex">
-                                <span className="text-t1 text-text-3">
-                                    {account.chain === "bitcoin" ? t("扩展公钥") : t("账户公钥")}
-                                </span>
+                                <span className="text-t1 text-text-3">{chainOf(account.chain).keyLabel()}</span>
                                 <span className="font-mono text-t1 text-text-2">{shortKey(account.key)}</span>
                             </span>
                         </label>
@@ -189,7 +188,7 @@ export default function PairDialog() {
                     className="field text-t3"
                 />
             </div>
-            {existing ? <Notice>{t("这个钱包已配对，导入后只补缺的账户。")}</Notice> : null}
+            {existing ? <Notice>{t("这个钱包已配对,导入后只补缺的账户.")}</Notice> : null}
             {saveError ? <Notice tone="danger">{saveError}</Notice> : null}
             <SheetActions>
                 <Button onClick={reset}>{t("重新扫描")}</Button>

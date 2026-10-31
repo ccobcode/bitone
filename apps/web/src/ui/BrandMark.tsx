@@ -1,4 +1,4 @@
-/** 品牌标志，不随主题变化。32 及以下用粗线版。 */
+/** 品牌标志,不随主题变化.32 及以下用粗线版. */
 export function BrandMark({ size }: { size: number }) {
     const small = size <= 32;
     return (

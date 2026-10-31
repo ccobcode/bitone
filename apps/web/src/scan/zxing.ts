@@ -1,4 +1,4 @@
-// 扫码库和它的 wasm 都自托管。默认的 locateFile 会去 CDN 取，这里必须覆盖。
+// 扫码库和它的 wasm 都自托管.默认的 locateFile 会去 CDN 取,这里必须覆盖.
 import { prepareZXingModule, readBarcodes } from "zxing-wasm/reader";
 import wasmUrl from "zxing-wasm/reader/zxing_reader.wasm?url";
 

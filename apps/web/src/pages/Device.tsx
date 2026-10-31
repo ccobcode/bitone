@@ -24,14 +24,14 @@ import { overlayLink, receiveLink } from "../ui/Sheet";
 import { TokenIcon } from "../ui/TokenIcon";
 import { t, translate } from "../core/i18n";
 
-/** 与核心库的 MAX_MESSAGE_BYTES 一致，超限时二维码发不出去。 */
+/** 与核心库的 MAX_MESSAGE_BYTES 一致,超限时二维码发不出去. */
 const MAX_PACKAGE = 256 * 1024;
 
 function kib(bytes: number): string {
     return `${Math.ceil(bytes / 1024)} KiB`;
 }
 
-/** 清单包由厂商签名，网页端只负责显示，验签和版本检查都在冷钱包。 */
+/** 清单包由厂商签名,网页端只负责显示,验签和版本检查都在冷钱包. */
 function ManifestCard() {
     const input = useRef<HTMLInputElement>(null);
     const [pack, setPack] = useState<{ name: string; bytes: Uint8Array; version: number } | null>(null);
@@ -43,14 +43,14 @@ function ManifestCard() {
         setShown(false);
         setPack(null);
         if (file.size > MAX_PACKAGE) {
-            setFailure(t("清单包超过 {0}，不能用二维码传输。", kib(MAX_PACKAGE)));
+            setFailure(t("清单包超过 {0},不能用二维码传输.", kib(MAX_PACKAGE)));
             return;
         }
         const bytes = new Uint8Array(await file.arrayBuffer());
         try {
             setPack({ name: cleanText(file.name, 64), bytes, version: manifestPackageVersion(bytes) });
         } catch (error) {
-            setFailure(t("清单包无效：{0}。", error instanceof Error ? translate(error.message) : t("无法解析")));
+            setFailure(t("清单包无效:{0}.", error instanceof Error ? translate(error.message) : t("无法解析")));
         }
     }
 
@@ -160,7 +160,7 @@ export default function Device() {
                         })}
                     </ul>
                 ) : (
-                    <Empty icon="noAccount">{t("这个网络下还没有账户。")}</Empty>
+                    <Empty icon="noAccount">{t("这个网络下还没有账户.")}</Empty>
                 )}
             </Section>
 

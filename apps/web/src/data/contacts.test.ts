@@ -21,7 +21,7 @@ beforeEach(clearLocalData);
 afterEach(() => vi.unstubAllGlobals());
 
 describe("地址簿", () => {
-    it("保存规范写法，名称去掉不可见字符", async () => {
+    it("保存规范写法,名称去掉不可见字符", async () => {
         const saved = await saveContact({
             name: " 运营‮备用金 ",
             chain: "evm",
@@ -40,14 +40,14 @@ describe("地址簿", () => {
         );
     });
 
-    it("同一地址不重复，大小写不同也算同一个", async () => {
+    it("同一地址不重复,大小写不同也算同一个", async () => {
         await saveContact({ name: "a", chain: "evm", mode: "mainnet", address: PEER_EVM });
         await expect(
             saveContact({ name: "b", chain: "evm", mode: "mainnet", address: PEER_EVM.toLowerCase() }),
         ).rejects.toThrow("已在地址簿");
     });
 
-    it("编辑保留确认状态，待确认的联系人改名后仍然待确认", async () => {
+    it("编辑保留确认状态,待确认的联系人改名后仍然待确认", async () => {
         await db.contacts.add(contact({ pending: true }));
         const saved = await saveContact({ id: "c1", name: "新名字", chain: "evm", mode: "mainnet", address: PEER_EVM });
         expect(saved).toMatchObject({ id: "c1", name: "新名字", pending: true });
@@ -78,7 +78,7 @@ describe("收款地址检查", () => {
         expect(checkRecipient(PEER_EVM, [contact()], [], []).contact?.name).toBe("运营备用金");
     });
 
-    it("待确认的联系人不算联系人，要单独提示", () => {
+    it("待确认的联系人不算联系人,要单独提示", () => {
         const check = checkRecipient(PEER_EVM, [contact({ pending: true })], [], []);
         expect(check.contact).toBeNull();
         expect(check.pending?.name).toBe("运营备用金");
@@ -98,7 +98,7 @@ describe("收款地址检查", () => {
 
     it("与联系人首尾相同但中间不同时警告", () => {
         const check = checkRecipient(LOOKALIKE, [contact()], [], []);
-        expect(check.similar).toEqual({ name: "「运营备用金」", address: PEER_EVM });
+        expect(check.similar).toEqual({ name: '"运营备用金"', address: PEER_EVM });
         expect(check.contact).toBeNull();
     });
 
@@ -107,7 +107,7 @@ describe("收款地址检查", () => {
         expect(checkRecipient(LOOKALIKE, [], [], [PEER_EVM]).similar?.name).toBe("本钱包地址");
     });
 
-    it("待确认的联系人不作为比对依据，同一个地址不算相似", () => {
+    it("待确认的联系人不作为比对依据,同一个地址不算相似", () => {
         expect(checkRecipient(LOOKALIKE, [contact({ pending: true })], [], []).similar).toBeNull();
         expect(checkRecipient(PEER_EVM, [contact()], [], []).similar).toBeNull();
         expect(checkRecipient(PEER_EVM.toLowerCase(), [contact()], [], []).similar).toBeNull();

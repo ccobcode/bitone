@@ -22,7 +22,7 @@ async function address(change: 0 | 1, index: number): Promise<string> {
     return row?.address ?? "";
 }
 
-/** `used` 里的地址有过交易。 */
+/** `used` 里的地址有过交易. */
 function historyFor(used: () => Set<string>) {
     return stubGateway({
         "bitcoin/used": ({ addresses }) => ({ used: (addresses as string[]).filter((a) => used().has(a)) }),
@@ -34,7 +34,7 @@ async function rows(change: 0 | 1) {
 }
 
 describe("地址发现", () => {
-    it("发现结束时一次写入地址，途中不写，否则每个地址都会引发一轮页面查询", async () => {
+    it("发现结束时一次写入地址,途中不写,否则每个地址都会引发一轮页面查询", async () => {
         const used = new Set<string>();
         for (const index of [0, 19]) used.add(await address(0, index));
         historyFor(() => used);
@@ -66,7 +66,7 @@ describe("地址发现", () => {
         expect((await rows(0)).find((row) => row.index === 3)?.verified).toBe(true);
     });
 
-    it("一天内不重复发现，打开页面不产生请求", async () => {
+    it("一天内不重复发现,打开页面不产生请求", async () => {
         const { calls } = historyFor(() => new Set());
         await discoverAccount(account, "bitcoin", "mainnet");
         const full = calls.length;
@@ -85,7 +85,7 @@ describe("地址发现", () => {
         const { calls } = historyFor(() => new Set());
         await discoverAccount(account, "bitcoin", "mainnet");
         expect(await rows(0)).toHaveLength(GAP_LIMIT);
-        // 接收和找零各一批，一批一次请求。
+        // 接收和找零各一批,一批一次请求.
         expect(calls).toHaveLength(2);
     });
 
@@ -115,7 +115,7 @@ describe("地址发现", () => {
         expect(await rows(1)).toHaveLength(3 + GAP_LIMIT + 1);
     });
 
-    it("网关不可用时报错，不当成没有记录", async () => {
+    it("网关不可用时报错,不当成没有记录", async () => {
         stubGateway({ "bitcoin/used": () => gatewayError("upstream_unavailable", "", 503) });
         await expect(discoverAccount(account, "bitcoin", "mainnet")).rejects.toMatchObject({
             code: "upstream_unavailable",

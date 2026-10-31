@@ -1,4 +1,4 @@
-// 公共小组件。尺寸和颜色都来自令牌。
+// 公共小组件.尺寸和颜色都来自令牌.
 import {
     createContext,
     use,
@@ -16,7 +16,7 @@ import { Icon, type IconName } from "./Icon";
 const BUTTON_BASE =
     "press inline-flex shrink-0 items-center justify-center gap-s2 rounded-r2 font-medium whitespace-nowrap no-underline disabled:cursor-not-allowed disabled:text-text-3";
 
-// 尺寸不能靠外部类名覆盖，Tailwind 的先后顺序和类名的书写顺序无关。
+// 尺寸不能靠外部类名覆盖,Tailwind 的先后顺序和类名的书写顺序无关.
 const BUTTON_SIZES = {
     sm: "h-11 px-s3 text-t2 nav:h-8 nav:rounded-r1",
     md: "h-btn px-s4 text-t3",
@@ -77,7 +77,7 @@ export function Chip({ tone, className = "", children }: { tone: ChipTone; class
     );
 }
 
-/** 一组内容就是一张卡片。卡片不嵌套，嵌在里面时只保留内容。 */
+/** 一组内容就是一张卡片.卡片不嵌套,嵌在里面时只保留内容. */
 export function Section({ className = "", children, ...props }: ComponentProps<"section">) {
     return (
         <section className={`card ${className}`} {...props}>
@@ -86,7 +86,7 @@ export function Section({ className = "", children, ...props }: ComponentProps<"
     );
 }
 
-/** 空状态。全站一个规格：居中一句话，最多一个操作。嵌在卡片里时只保留内容。 */
+/** 空状态.全站一个规格:居中一句话,最多一个操作.嵌在卡片里时只保留内容. */
 export function Empty({ icon, children, action }: { icon: IconName; children: ReactNode; action?: ReactNode }) {
     return (
         <Section className="min-h-40 items-center justify-center text-center">
@@ -99,7 +99,7 @@ export function Empty({ icon, children, action }: { icon: IconName; children: Re
     );
 }
 
-/** 标题放进外壳的标题行，和网络切换、连接状态同一行。 */
+/** 标题放进外壳的标题行,和网络切换,连接状态同一行. */
 export const TitleSlot = createContext<HTMLElement | null>(null);
 
 export function PageTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
@@ -116,7 +116,7 @@ export function PageTitle({ children, aside }: { children: ReactNode; aside?: Re
     );
 }
 
-/** 子页面的标题：父级链接加当前对象，导航的选中态留在父级。手机上是返回按钮加标题，和冷钱包的标题栏相同。 */
+/** 子页面的标题:父级链接加当前对象,导航的选中态留在父级.手机上是返回按钮加标题,和冷钱包的标题栏相同. */
 export function ChildTitle({ parent, children }: { parent: { to: string; label: string }; children: ReactNode }) {
     const slot = use(TitleSlot);
     if (!slot) return null;
@@ -159,7 +159,7 @@ export function SectionTitle({
     );
 }
 
-/** 字段或区块标题的一句说明，紧贴它说明的东西。独立成段要提醒用户的话用 Notice。 */
+/** 字段或区块标题的一句说明,紧贴它说明的东西.独立成段要提醒用户的话用 Notice. */
 export function Helper({ children, tone = "text-text-3" }: { children: ReactNode; tone?: string }) {
     return <p className={`text-t2 ${tone}`}>{children}</p>;
 }
@@ -170,7 +170,7 @@ const NOTICE_TONES = {
     danger: { block: "bg-danger-soft text-danger", icon: "alert" },
 } as const;
 
-/** 告示：用户要停下来看的事。贴着它说明的内容，放在区块标题下面或操作按钮上面。警告和错误读屏会立刻念出来。 */
+/** 告示:用户要停下来看的事.贴着它说明的内容,放在区块标题下面或操作按钮上面.警告和错误读屏会立刻念出来. */
 export function Notice({
     tone = "info",
     className = "",
@@ -192,25 +192,25 @@ export function Notice({
     );
 }
 
-/** 表单标签。 */
+/** 表单标签. */
 export const LABEL = "text-t2 text-text-3";
 
 interface ListRowProps {
     icon: ReactNode;
     title: ReactNode;
     sub?: ReactNode;
-    /** 标题和值之间的标签，窄屏不显示。 */
+    /** 标题和值之间的标签,窄屏不显示. */
     badge?: ReactNode;
-    /** 行内操作。宽屏悬停才出现。窄屏放不下时不显示，整行可点或者右边有值都算放不下。 */
+    /** 行内操作.宽屏悬停才出现.窄屏放不下时不显示,整行可点或者右边有值都算放不下. */
     actions?: ReactNode;
-    /** 右侧的值，右对齐。 */
+    /** 右侧的值,右对齐. */
     value?: ReactNode;
-    /** 整行的链接，带箭头。 */
+    /** 整行的链接,带箭头. */
     link?: LinkProps;
     label?: string;
 }
 
-/** 列表的一行，全站一个规格。文字贴着卡片内边距，悬停底色向两侧伸出。 */
+/** 列表的一行,全站一个规格.文字贴着卡片内边距,悬停底色向两侧伸出. */
 export function ListRow({ icon, title, sub, badge, actions, value, link, label }: ListRowProps) {
     return (
         <li className="row relative flex min-h-row items-center gap-s3 py-s1">
@@ -238,7 +238,7 @@ export function Skeleton({ className = "" }: { className?: string }) {
     return <span aria-hidden="true" className={`skeleton ${className}`} />;
 }
 
-/** 读取中的列表。 */
+/** 读取中的列表. */
 export function SkeletonRows({ count = 3 }: { count?: number }) {
     return (
         <div aria-hidden="true" className="flex flex-col">
@@ -273,7 +273,7 @@ interface SegmentedProps<T> {
 
 const SEGMENT_SIZES = { sm: "h-11 px-s3 text-t2 nav:h-7", md: "h-11 px-s4 text-t2 nav:h-9", lg: "h-11 px-s4 text-t3" };
 
-/** 分段选择，选中块滑到新位置，不是原地变色。 */
+/** 分段选择,选中块滑到新位置,不是原地变色. */
 export function Segmented<T extends string>({
     label,
     options,
@@ -303,7 +303,7 @@ export function Segmented<T extends string>({
     );
 }
 
-/** 开关：圆点滑动，轨道变色。放在设置行里时整行都能点，和冷钱包相同。 */
+/** 开关:圆点滑动,轨道变色.放在设置行里时整行都能点,和冷钱包相同. */
 export function Switch({
     checked,
     onChange,
@@ -329,7 +329,7 @@ export function Switch({
     );
 }
 
-/** 竖向单选列表，选中块滑到新位置。文字贴着边线，选中块向两侧伸出。 */
+/** 竖向单选列表,选中块滑到新位置.文字贴着边线,选中块向两侧伸出. */
 export function SelectList({ selected, children }: { selected: number; children: ReactNode }) {
     return (
         <div className="select-rail -mx-s3" style={{ "--i": selected } as CSSProperties}>
@@ -362,7 +362,7 @@ export function SelectRow({
     );
 }
 
-/** 折叠区的开关，内容放在后面的 Collapse 里。整行可点，箭头在右边翻转，和冷钱包相同。 */
+/** 折叠区的开关,内容放在后面的 Collapse 里.整行可点,箭头在右边翻转,和冷钱包相同. */
 export function Disclosure({ open, onToggle, children }: { open: boolean; onToggle(): void; children: ReactNode }) {
     return (
         <button
@@ -377,7 +377,7 @@ export function Disclosure({ open, onToggle, children }: { open: boolean; onTogg
     );
 }
 
-/** 展开折叠，高度和透明度同时过渡。 */
+/** 展开折叠,高度和透明度同时过渡. */
 export function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
     return (
         <div className="fold" data-open={open ? "" : undefined}>
@@ -386,7 +386,7 @@ export function Collapse({ open, children }: { open: boolean; children: ReactNod
     );
 }
 
-/** 标签和值一行，靠行距分组，不画分隔线。 */
+/** 标签和值一行,靠行距分组,不画分隔线. */
 export function Fact({ label, children, mono }: { label: string; children: ReactNode; mono?: boolean }) {
     return (
         <div className="flex min-h-8 items-baseline justify-between gap-s4 py-s1">
@@ -396,7 +396,7 @@ export function Fact({ label, children, mono }: { label: string; children: React
     );
 }
 
-/** 完整地址，4 个字符一组，奇数组用 text，偶数组用 text-2。 */
+/** 完整地址,4 个字符一组,奇数组用 text,偶数组用 text-2. */
 export function FullAddress({ address, className = "" }: { address: string; className?: string }) {
     return (
         <span className={`flex flex-wrap gap-x-s2 gap-y-s1 font-mono ${className}`}>
@@ -409,7 +409,7 @@ export function FullAddress({ address, className = "" }: { address: string; clas
     );
 }
 
-/** 「至 0x7a3F…9C21」这样的文字，只有地址用等宽字体。 */
+/** "至 0x7a3F…9C21"这样的文字,只有地址用等宽字体. */
 export function Party({ text }: { text: string }) {
     const space = text.indexOf(" ");
     if (space < 0) return <span>{text}</span>;

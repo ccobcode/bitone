@@ -1,34 +1,7 @@
-// 账户在界面上的名称。
+// 账户在界面上的名称.
+import { chainOf } from "../chains";
 import { networkName, networksFor, type AccountKind, type Chain, type Mode } from "../core";
-import type { NetworkIcon } from "./TokenIcon";
 import { t } from "../core/i18n";
-
-const CHAIN_TITLES: Record<Chain, string> = {
-    bitcoin: "Bitcoin",
-    evm: "EVM",
-    tron: "TRON",
-    solana: "Solana",
-};
-
-const CHAIN_ICONS: Record<Chain, NetworkIcon> = {
-    bitcoin: "bitcoin",
-    evm: "ethereum",
-    tron: "tron",
-    solana: "solana",
-};
-
-const KIND_LABELS: Record<Exclude<AccountKind, "single">, string> = {
-    segwit: "Native SegWit",
-    taproot: "Taproot",
-    "nested-segwit": "Nested SegWit",
-    legacy: "Legacy",
-};
-
-const SINGLE_LABELS: Record<Exclude<Chain, "bitcoin">, string> = {
-    evm: "Ethereum、BSC、Polygon",
-    tron: "TRC-20",
-    solana: "SPL",
-};
 
 interface AccountLike {
     chain: Chain;
@@ -36,28 +9,29 @@ interface AccountLike {
 }
 
 export function accountTitle(account: AccountLike): string {
-    return CHAIN_TITLES[account.chain];
+    return chainOf(account.chain).title;
 }
 
-export function accountIcon(account: AccountLike): NetworkIcon {
-    return CHAIN_ICONS[account.chain];
+export function accountIcon(account: AccountLike): string {
+    return chainOf(account.chain).icon;
 }
 
 export function accountKind({ chain, kind }: AccountLike): string {
-    if (kind !== "single") return KIND_LABELS[kind];
-    return chain === "bitcoin" ? "" : SINGLE_LABELS[chain];
+    return chainOf(chain).kindLabels[kind] ?? "";
 }
 
-/** 列表里的账户名称。Bitcoin 有多种账户，要带上类型。 */
+/** 列表里的账户名称.有多种账户的链要带上类型. */
 export function accountName(account: AccountLike): string {
-    return account.chain === "bitcoin" ? `${accountTitle(account)} ${accountKind(account)}` : accountTitle(account);
+    return chainOf(account.chain).namedByKind
+        ? `${accountTitle(account)} ${accountKind(account)}`
+        : accountTitle(account);
 }
 
-/** 这个账户可用的全部网络名称。 */
+/** 这个账户可用的全部网络名称. */
 export function accountNetworks(chain: Chain, mode: Mode): string {
     return networksFor(chain, mode)
         .map((network) => networkName(network.id))
-        .join(t("、"));
+        .join(t(","));
 }
 
 export function modeLabel(mode: Mode): string {
@@ -72,18 +46,18 @@ export function tierLabel(tier: keyof typeof TIER_LABELS): string {
 
 const pad = (value: number) => String(value).padStart(2, "0");
 
-/** 时间线和列表里的时间。 */
+/** 时间线和列表里的时间. */
 export function timeLabel(time: number, now = Date.now()): string {
     return `${dayLabel(time, now)} ${minuteLabel(time)}`;
 }
 
-/** 本地日期 YYYY-MM-DD。 */
+/** 本地日期 YYYY-MM-DD. */
 export function dateLabel(time: number): string {
     const date = new Date(time);
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-/** 列表里按天分组的标题。今年的不写年份。 */
+/** 列表里按天分组的标题.今年的不写年份. */
 export function dayLabel(time: number, now = Date.now()): string {
     const date = new Date(time);
     const today = new Date(now);
@@ -94,7 +68,7 @@ export function dayLabel(time: number, now = Date.now()): string {
     return date.getFullYear() === today.getFullYear() ? full.slice(5) : full;
 }
 
-/** 列表里的时分。 */
+/** 列表里的时分. */
 export function minuteLabel(time: number): string {
     const date = new Date(time);
     return `${pad(date.getHours())}:${pad(date.getMinutes())}`;

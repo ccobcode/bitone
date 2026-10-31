@@ -23,7 +23,7 @@ function EntryArrow() {
 export default function Welcome() {
     const { wallets } = useApp();
     const [params] = useSearchParams();
-    // 配对和导入写入钱包后，浮层还要走完自己的最后一步，由它负责离开这一页。
+    // 配对和导入写入钱包后,浮层还要走完自己的最后一步,由它负责离开这一页.
     const busy = params.has("connect") || params.has("import");
     if (wallets.length > 0 && !busy) return <Navigate to="/" replace />;
     return (

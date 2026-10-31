@@ -1,3 +1,4 @@
+import { CHAIN_LIST, DEFAULT_CONTACT_CHAIN } from "../chains";
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import type { Chain } from "../core";
@@ -30,12 +31,7 @@ import { Sheet, SheetActions, overlayLink, useCloseOverlay } from "../ui/Sheet";
 import { TokenIcon } from "../ui/TokenIcon";
 import { t } from "../core/i18n";
 
-const CHAINS: { value: Chain; label: string }[] = [
-    { value: "bitcoin", label: "Bitcoin" },
-    { value: "evm", label: "EVM" },
-    { value: "tron", label: "TRON" },
-    { value: "solana", label: "Solana" },
-];
+const CHAINS: { value: Chain; label: string }[] = CHAIN_LIST.map((spec) => ({ value: spec.id, label: spec.title }));
 
 const chainView = (chain: Chain) => ({ chain, kind: "single" as const });
 
@@ -49,9 +45,9 @@ interface EditorState {
 function SimilarWarning({ name }: { name: string }) {
     return (
         <Notice tone="warn">
-            {t("与「")}
+            {t('与"')}
             {name}
-            {t("」首尾相同，中间不同，可能是投毒地址。")}
+            {t('"首尾相同,中间不同,可能是投毒地址.')}
         </Notice>
     );
 }
@@ -72,7 +68,7 @@ function Editor({ value, contacts }: { value: EditorState; contacts: Contact[] }
             await saveContact({ ...form, mode });
             close();
         } catch (error) {
-            setFailure(error instanceof ContactError ? error.message : t("保存失败，请重试。"));
+            setFailure(error instanceof ContactError ? error.message : t("保存失败,请重试."));
         }
     }
 
@@ -128,7 +124,7 @@ function Editor({ value, contacts }: { value: EditorState; contacts: Contact[] }
     );
 }
 
-/** 添加和编辑联系人。`?edit=new` 是添加，其余是联系人 id。 */
+/** 添加和编辑联系人.`?edit=new` 是添加,其余是联系人 id. */
 export function ContactDialog() {
     const { mode } = useApp();
     const [params] = useSearchParams();
@@ -138,7 +134,7 @@ export function ContactDialog() {
     const contact = contacts.find((row) => row.id === id);
     const value = contact
         ? { id: contact.id, name: contact.name, chain: contact.chain, address: contact.address }
-        : { name: "", chain: "evm" as const, address: "" };
+        : { name: "", chain: DEFAULT_CONTACT_CHAIN, address: "" };
     return <Editor key={id} value={value} contacts={contacts.filter((row) => !row.pending)} />;
 }
 
@@ -146,7 +142,7 @@ function PendingSection({ list, confirmed }: { list: Contact[]; confirmed: Conta
     return (
         <Section aria-labelledby="h-pend" className="gap-s2">
             <SectionTitle id="h-pend">{t("待确认")}</SectionTitle>
-            <Notice tone="warn">{t("这些联系人来自备份，确认后才能用于转账。")}</Notice>
+            <Notice tone="warn">{t("这些联系人来自备份,确认后才能用于转账.")}</Notice>
             <ul className="stagger flex flex-col gap-s3">
                 {list.map((contact) => {
                     const similar = similarContact(
@@ -237,7 +233,7 @@ export default function Contacts() {
                     </ul>
                 ) : (
                     <Empty icon="contacts">
-                        {pending.length > 0 ? t("确认后的联系人显示在这里。") : t("地址簿还是空的。")}
+                        {pending.length > 0 ? t("确认后的联系人显示在这里.") : t("地址簿还是空的.")}
                     </Empty>
                 )}
             </Section>

@@ -1,3 +1,4 @@
+import { NETWORK_FAMILIES } from "../chains";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { saveSetting, useApp, useLive } from "../data/app";
@@ -16,17 +17,12 @@ import { TokenIcon, networkIcon, type NetworkIcon } from "../ui/TokenIcon";
 import { NoWallet } from "./NoWallet";
 import { t } from "../core/i18n";
 
-/** 列表每次多显示这么多行，记录都在本地，不用请求网关。 */
+/** 列表每次多显示这么多行,记录都在本地,不用请求网关. */
 const PAGE_SIZE = 50;
 
 const NETWORKS: { id: "all" | NetworkIcon; label: string }[] = [
     { id: "all", label: t("全部网络") },
-    { id: "bitcoin", label: "Bitcoin" },
-    { id: "ethereum", label: "Ethereum" },
-    { id: "bsc", label: "BSC" },
-    { id: "polygon", label: "Polygon" },
-    { id: "tron", label: "TRON" },
-    { id: "solana", label: "Solana" },
+    ...NETWORK_FAMILIES.map(({ id, label }) => ({ id, label })),
 ];
 
 type Direction = "all" | FeedRow["direction"];
@@ -37,7 +33,7 @@ const DIRECTIONS: { value: Direction; label: string }[] = [
     { value: "out", label: t("转出") },
 ];
 
-/** 按天分组。没有时间的是内存池里的交易，已经在进行中那一组。 */
+/** 按天分组.没有时间的是内存池里的交易,已经在进行中那一组. */
 function byDay(rows: readonly FeedRow[]): { day: string; rows: FeedRow[] }[] {
     const days: { day: string; rows: FeedRow[] }[] = [];
     for (const row of rows) {
@@ -49,7 +45,7 @@ function byDay(rows: readonly FeedRow[]): { day: string; rows: FeedRow[] }[] {
     return days;
 }
 
-/** 后台正在取新记录。放在标题旁边不占内容的位置，开始和结束时列表都不跳。 */
+/** 后台正在取新记录.放在标题旁边不占内容的位置,开始和结束时列表都不跳. */
 function Downloading() {
     return (
         <span role="status" className="fade-in flex shrink-0 items-center gap-s1 text-t2 text-text-3">
@@ -68,7 +64,7 @@ export default function History() {
     const [limit, setLimit] = useState(PAGE_SIZE);
     const [loadingOlder, setLoadingOlder] = useState(false);
 
-    // 看过交易记录后，顶栏和首页不再提示这些链上失败。
+    // 看过交易记录后,顶栏和首页不再提示这些链上失败.
     useEffect(() => void saveSetting("historySeenAt", Date.now()), []);
 
     const cursors = useLive(() => db.feedCursors.toArray(), []);
@@ -82,11 +78,11 @@ export default function History() {
     const visible = settled.slice(0, limit);
     const saved = new Map((cursors ?? []).map((cursor) => [cursor.id, cursor]));
     const cursorOf = (stream: HistoryStream) => (wallet ? saved.get(streamId(wallet.id, stream)) : undefined);
-    // 更早的记录还在链上，翻到时才取。
+    // 更早的记录还在链上,翻到时才取.
     const older = gateway.feedStreams.filter(
         (stream) => cursorOf(stream)?.older && (network === "all" || networkIcon(stream.network) === network),
     );
-    // 第一次下载且没有内容可看时才盖住列表。其余情况只是一个小提示，上游慢也不挡已有的记录。
+    // 第一次下载且没有内容可看时才盖住列表.其余情况只是一个小提示,上游慢也不挡已有的记录.
     const downloading = shown.length === 0 && gateway.syncing && gateway.feedStreams.some((s) => !cursorOf(s));
     const never = gateway.syncFailed.filter(
         (id) => !gateway.feedStreams.some((stream) => stream.network === id && cursorOf(stream)),
@@ -154,13 +150,13 @@ export default function History() {
                 </div>
 
                 {stale.length > 0 ? (
-                    <Notice tone="warn">{t("{0} 暂时无法更新，显示的是上次同步的记录。", failedNames(stale))}</Notice>
+                    <Notice tone="warn">{t("{0} 暂时无法更新,显示的是上次同步的记录.", failedNames(stale))}</Notice>
                 ) : null}
                 {never.length > 0 ? (
-                    <Notice tone="warn">{t("{0} 的记录暂时下载不到。", failedNames(never))}</Notice>
+                    <Notice tone="warn">{t("{0} 的记录暂时下载不到.", failedNames(never))}</Notice>
                 ) : null}
                 {localOnly.length > 0 ? (
-                    <Notice>{t("{0} 只显示从这里发出的交易。", failedNames(localOnly))}</Notice>
+                    <Notice>{t("{0} 只显示从这里发出的交易.", failedNames(localOnly))}</Notice>
                 ) : null}
             </div>
 
@@ -189,7 +185,7 @@ export default function History() {
                             </section>
                         ))
                     ) : downloading ? null : (
-                        <Empty icon="history">{t("没有符合条件的交易。")}</Empty>
+                        <Empty icon="history">{t("没有符合条件的交易.")}</Empty>
                     )}
                     {downloading ? (
                         <div
@@ -222,7 +218,7 @@ export default function History() {
     );
 }
 
-/** 没上链就结束的请求。不是资金流动，单独放，已放弃但签名有效的也在这里一直看得到。 */
+/** 没上链就结束的请求.不是资金流动,单独放,已放弃但签名有效的也在这里一直看得到. */
 export function Unsent() {
     const { unsent } = useFeed();
     return (
@@ -237,7 +233,7 @@ export function Unsent() {
                     </ul>
                 </Section>
             ) : (
-                <Empty icon="history">{t("没有未上链的请求。")}</Empty>
+                <Empty icon="history">{t("没有未上链的请求.")}</Empty>
             )}
         </>
     );

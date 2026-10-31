@@ -1,15 +1,15 @@
-// 金额只用 BigInt。网关的金额是最小单位的整数字符串。
+// 金额只用 BigInt.网关的金额是最小单位的整数字符串.
 
-/** BigInt('0x10')、BigInt('') 都不报错，所以先按十进制整数校验。 */
+/** BigInt('0x10'),BigInt('') 都不报错,所以先按十进制整数校验. */
 export function parseAmount(value: unknown): bigint | null {
     if (typeof value !== "string" || !/^\d{1,78}$/.test(value)) return null;
     return BigInt(value);
 }
 
 export interface FormatOptions {
-    /** 至少显示的小数位。 */
+    /** 至少显示的小数位. */
     min?: number;
-    /** 最多显示的小数位，多出的部分舍去，不进位。 */
+    /** 最多显示的小数位,多出的部分舍去,不进位. */
     max?: number;
 }
 
@@ -27,7 +27,7 @@ export function formatUnits(raw: bigint, decimals: number, { min = 0, max = deci
     return text;
 }
 
-/** 用户输入的十进制金额转成最小单位。格式不对或小数位超出时返回 null，不用浮点数。 */
+/** 用户输入的十进制金额转成最小单位.格式不对或小数位超出时返回 null,不用浮点数. */
 export function parseUnits(text: string, decimals: number): bigint | null {
     const value = text.trim().replaceAll(",", "");
     const match = /^(\d+)(?:\.(\d*))?$/.exec(value);
@@ -37,12 +37,12 @@ export function parseUnits(text: string, decimals: number): bigint | null {
     return BigInt(match[1] ?? "0") * 10n ** BigInt(decimals) + BigInt(fraction.padEnd(decimals, "0") || "0");
 }
 
-/** 最小单位转回输入框里的文字，不分组。 */
+/** 最小单位转回输入框里的文字,不分组. */
 export function toInput(raw: bigint, decimals: number): string {
     return formatUnits(raw, decimals).replaceAll(",", "");
 }
 
-/** 美元金额，单位是分。价格是网关给的十进制字符串，只用于展示。 */
+/** 美元金额,单位是分.价格是网关给的十进制字符串,只用于展示. */
 export function usdCents(amount: bigint, decimals: number, price: string): bigint | null {
     const match = /^(\d{1,30})(?:\.(\d{1,30}))?$/.exec(price);
     if (!match) return null;

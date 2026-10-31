@@ -32,14 +32,14 @@ describe("formatUnits", () => {
         expect(formatUnits(2150300000000000000n, 18, { min: 4, max: 8 })).toBe("2.1503");
     });
 
-    it("超出最多小数位时舍去，不进位", () => {
+    it("超出最多小数位时舍去,不进位", () => {
         expect(formatUnits(1999999999999999999n, 18, { max: 8 })).toBe("1.99999999");
         expect(formatUnits(1n, 18, { max: 8 })).toBe("<0.00000001");
     });
 });
 
 describe("parseUnits", () => {
-    it("转成最小单位，不用浮点数", () => {
+    it("转成最小单位,不用浮点数", () => {
         expect(parseUnits("1.5", 18)).toBe(1_500_000_000_000_000_000n);
         expect(parseUnits("0.1", 8)).toBe(10_000_000n);
         expect(parseUnits("1,250.00", 6)).toBe(1_250_000_000n);
@@ -63,7 +63,7 @@ describe("parseUnits", () => {
 });
 
 describe("美元估值", () => {
-    it("用 BigInt 计算，舍去分以下", () => {
+    it("用 BigInt 计算,舍去分以下", () => {
         expect(usdCents(10n ** 18n, 18, "3400.12")).toBe(340_012n);
         expect(usdCents(1_500_000n, 6, "1.00")).toBe(150n);
         expect(usdCents(1n, 18, "3400.12")).toBe(0n);

@@ -1,3 +1,4 @@
+import { CHAIN_LIST } from "../chains";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { isLegacyKind, networkName } from "../core";
@@ -42,19 +43,14 @@ import { AssetIcon, TokenIcon } from "../ui/TokenIcon";
 import { NoWallet } from "./NoWallet";
 import { t } from "../core/i18n";
 
-/** 表格最多显示 8 位小数，完整金额放在 title 里。 */
+/** 表格最多显示 8 位小数,完整金额放在 title 里. */
 const TABLE_FRACTION = 8;
 const RECENT = 5;
 
-/** 颜色跟着资产走，不跟名次，资产排序变了颜色也不变。 */
+/** 颜色跟着资产走,不跟名次,资产排序变了颜色也不变. */
 const SHARE_COLORS: Record<Share["key"], string> = {
-    btc: "var(--chart-2)",
-    eth: "var(--chart-1)",
+    ...Object.fromEntries(CHAIN_LIST.flatMap((spec) => spec.natives.map(({ icon, color }) => [icon, color]))),
     usdt: "var(--chart-3)",
-    bnb: "var(--chart-4)",
-    sol: "var(--chart-5)",
-    pol: "var(--chart-7)",
-    trx: "var(--chart-8)",
     usdc: "var(--chart-6)",
     other: "var(--text-3)",
 };
@@ -70,7 +66,7 @@ function GroupAmount({ group, loading }: { group: AssetGroup; loading: boolean }
     );
 }
 
-/** 第二行：在哪些网络上。一个网络时写名称，多个时写数量，详情里才拆开。 */
+/** 第二行:在哪些网络上.一个网络时写名称,多个时写数量,详情里才拆开. */
 function whereLabel(group: AssetGroup): string {
     const held = group.rows.filter((row) => row.amount > 0n);
     const rows = held.length > 0 ? held : group.rows;
@@ -135,7 +131,7 @@ function Row({ group, pending, loading }: { group: AssetGroup; pending: bigint; 
     );
 }
 
-/** 清单外的代币。没有可信的符号和小数位，只显示原始整数，也没有详情可进。 */
+/** 清单外的代币.没有可信的符号和小数位,只显示原始整数,也没有详情可进. */
 function UnknownRow({ row }: { row: AssetRow }) {
     return (
         <ListRow
@@ -151,7 +147,7 @@ function UnknownRow({ row }: { row: AssetRow }) {
     );
 }
 
-/** 资产分布。估值只用于展示。 */
+/** 资产分布.估值只用于展示. */
 function Allocation({ shares }: { shares: Share[] }) {
     const name = (share: Share) => share.label ?? t("其他");
     const percent = (share: Share) => (share.percent < 1 ? "<1%" : `${Math.round(share.percent)}%`);
@@ -159,7 +155,7 @@ function Allocation({ shares }: { shares: Share[] }) {
         <div className="flex flex-col gap-s2">
             <div
                 role="img"
-                aria-label={shares.map((share) => `${name(share)} ${percent(share)}`).join(t("，"))}
+                aria-label={shares.map((share) => `${name(share)} ${percent(share)}`).join(t(","))}
                 className="flex h-2 gap-0.5"
             >
                 {shares.map((share) => (
@@ -222,7 +218,7 @@ function Hero({ groups, total, loading }: { groups: AssetGroup[]; total: bigint 
     );
 }
 
-/** 只有等着用户动手的时候才出现。 */
+/** 只有等着用户动手的时候才出现. */
 function TodoStrip() {
     const rows = useAttention();
     if (rows.length === 0) return null;
@@ -235,7 +231,7 @@ function TodoStrip() {
                         <span className="flex min-w-0 flex-1 flex-col">
                             <span className="truncate text-t3 font-medium">{row.title}</span>
                             <span className="hidden truncate text-t1 text-text-3 @split:block">{row.party}</span>
-                            {/* 手机上放不下标签，状态代替第二行。 */}
+                            {/* 手机上放不下标签,状态代替第二行. */}
                             <span className="truncate text-t1 text-text-2 @split:hidden">{row.status}</span>
                         </span>
                         <span className="hidden shrink-0 @split:block">
@@ -251,7 +247,7 @@ function TodoStrip() {
     );
 }
 
-/** 收起的一组，展开状态记在 setting 里。展开后仍然排在持仓后面，不和有余额的混在一起。 */
+/** 收起的一组,展开状态记在 setting 里.展开后仍然排在持仓后面,不和有余额的混在一起. */
 function Folded({ setting, label, children }: { setting: string; label: string; children: ReactNode }) {
     const saved = useLive(async () => (await db.settings.get(setting))?.value, [setting]);
     const open = saved === true;
@@ -282,7 +278,7 @@ function Recent() {
                     ))}
                 </ul>
             ) : (
-                <Empty icon="history">{t("还没有交易记录。")}</Empty>
+                <Empty icon="history">{t("还没有交易记录.")}</Empty>
             )}
         </Section>
     );
@@ -300,7 +296,7 @@ function StatusRow({ to, label, children }: { to: string; label: string; childre
     );
 }
 
-/** 这个浏览器里的数据靠不靠得住。 */
+/** 这个浏览器里的数据靠不靠得住. */
 function WalletStatus() {
     const { accounts, addresses, persisted } = useApp();
     const last = useLive(async () => (await db.settings.get("lastBackup"))?.value, []);
@@ -342,7 +338,7 @@ export default function Assets() {
     const groups = groupRows(rows, gateway.prices);
     const held = groups.filter((group) => !group.empty);
     const zero = groups.filter((group) => group.empty);
-    // 全是零余额时列表不能是空的，新钱包要看得到自己有哪些币。
+    // 全是零余额时列表不能是空的,新钱包要看得到自己有哪些币.
     const shown = held.length > 0 ? held : groups;
     const unknown = rows.filter((row) => row.entry === null && row.amount > 0n);
     const failed = gateway.down ? [] : gateway.failures.map((failure) => networkName(failure.network));
@@ -364,17 +360,25 @@ export default function Assets() {
                     <SectionTitle id="h-held">{t("持仓")}</SectionTitle>
                     {failed.length > 0 ? (
                         <Notice tone="warn">
-                            {failed.join(t("、"))} {t("余额暂时不可用。")}
+                            {failed.join(t(","))} {t("余额暂时不可用.")}
                         </Notice>
                     ) : null}
-                    {gateway.discoveryFailed ? <Notice tone="warn">{t("Bitcoin 余额可能不全。")}</Notice> : null}
+                    {gateway.discoveryFailed
+                        ? CHAIN_LIST.map((spec) =>
+                              spec.discoveryNotice ? (
+                                  <Notice key={spec.id} tone="warn">
+                                      {spec.discoveryNotice()}
+                                  </Notice>
+                              ) : null,
+                          )
+                        : null}
                     {shown.length > 0 ? (
                         <ul className="stagger">{shown.map(line)}</ul>
                     ) : gateway.loading ? (
                         <SkeletonRows />
                     ) : (
                         <Empty icon={gateway.down ? "offline" : "assets"}>
-                            {gateway.down ? t("余额暂时不可用。") : t("还没有资产。")}
+                            {gateway.down ? t("余额暂时不可用.") : t("还没有资产.")}
                         </Empty>
                     )}
                     {zero.length > 0 && held.length > 0 ? (
@@ -384,7 +388,7 @@ export default function Assets() {
                     ) : null}
                     {unknown.length > 0 ? (
                         <Folded setting="showUnknownTokens" label={t("{0} 个未识别代币", unknown.length)}>
-                            <Notice tone="warn">{t("不在内置清单里，不能转账，也不计入总资产。")}</Notice>
+                            <Notice tone="warn">{t("不在内置清单里,不能转账,也不计入总资产.")}</Notice>
                             <ul>
                                 {unknown.map((row) => (
                                     <UnknownRow key={row.id} row={row} />

@@ -1,4 +1,4 @@
-// 交易记录和转账请求。记录是链上事实，请求是这个浏览器里的意图，上链之后才进记录。
+// 交易记录和转账请求.记录是链上事实,请求是这个浏览器里的意图,上链之后才进记录.
 import { networkName } from "../core";
 import { formatAsset, lookupAsset, type AssetEntry } from "../core/manifest";
 import { shortAddress } from "../core/text";
@@ -11,7 +11,7 @@ import { t } from "../core/i18n";
 
 export type HistoryStream = Target;
 
-/** 已同步过的批次保持不变，翻页游标绑定它们。没同步过的地址按单次上限分成新批次。 */
+/** 已同步过的批次保持不变,翻页游标绑定它们.没同步过的地址按单次上限分成新批次. */
 export function historyStreams(
     walletId: string,
     targets: readonly Target[],
@@ -43,7 +43,7 @@ export type FeedTone = "neutral" | "accent" | "ok" | "warn" | "danger";
 export interface FeedRow {
     key: string;
     network: string;
-    /** 内置清单的条目，清单外的代币是 null。 */
+    /** 内置清单的条目,清单外的代币是 null. */
     entry: AssetEntry | null;
     direction: "in" | "out";
     title: string;
@@ -51,23 +51,23 @@ export interface FeedRow {
     amount: string;
     status: string;
     tone: FeedTone;
-    /** 还没有结果的交易，排在列表最前面。 */
+    /** 还没有结果的交易,排在列表最前面. */
     moving: boolean;
-    /** 毫秒。内存池里的交易没有时间。 */
+    /** 毫秒.内存池里的交易没有时间. */
     time: number | null;
     note: string | null;
     noteTone: "warn" | "danger" | "muted";
-    /** 用户写的备注，只当纯文本显示。 */
+    /** 用户写的备注,只当纯文本显示. */
     remark: string | null;
     href: string;
 }
 
-/** 上链交易的详情页。本地发起的和网关同步的是同一个地址。 */
+/** 上链交易的详情页.本地发起的和网关同步的是同一个地址. */
 export function recordHref(network: string, hash: string): string {
     return `/history/${network}/${encodeURIComponent(txKey(network, hash).slice(network.length + 1))}`;
 }
 
-/** 本地交易的详情页。上过链的用记录的地址，其余还只是请求，用编号。 */
+/** 本地交易的详情页.上过链的用记录的地址,其余还只是请求,用编号. */
 export function txHref(tx: Pick<TxRecord, "id" | "state" | "network" | "hash">): string {
     return tx.hash && LEDGER.has(tx.state) ? recordHref(tx.network, tx.hash) : `/history/${encodeURIComponent(tx.id)}`;
 }
@@ -99,14 +99,14 @@ function localNote(tx: TxRecord): Pick<FeedRow, "note" | "noteTone"> {
         case "replaced":
             return { note: t("被同一序号的交易替换"), noteTone: "muted" };
         case "expired":
-            return { note: t("超过过期时间，未上链"), noteTone: "muted" };
+            return { note: t("超过过期时间,未上链"), noteTone: "muted" };
         case "abandoned":
             return tx.raw
-                ? { note: t("已取消，签名仍然有效"), noteTone: "warn" }
+                ? { note: t("已取消,签名仍然有效"), noteTone: "warn" }
                 : { note: t("已取消"), noteTone: "muted" };
         case "confirming":
             return tx.reverted
-                ? { note: t("执行失败，等待最终确认"), noteTone: "danger" }
+                ? { note: t("执行失败,等待最终确认"), noteTone: "danger" }
                 : { note: null, noteTone: "muted" };
         default:
             return { note: null, noteTone: "muted" };
@@ -168,14 +168,14 @@ function remoteRow({ id, network, item }: RemoteItem, own: ReadonlySet<string>, 
         amount: `${out ? "-" : "+"}${formatAsset(network, item.asset, item.amount)}`,
         ...REMOTE_STATES[item.status],
         time: item.time === null ? null : item.time * 1000,
-        note: item.status === "failed" ? t("执行失败，手续费已扣除") : null,
+        note: item.status === "failed" ? t("执行失败,手续费已扣除") : null,
         noteTone: item.status === "failed" ? "danger" : "muted",
         remark,
         href: recordHref(network, item.hash),
     };
 }
 
-/** 进了记录的本地状态。其余要么还没发出去，要么没上链就结束了。 */
+/** 进了记录的本地状态.其余要么还没发出去,要么没上链就结束了. */
 const LEDGER: ReadonlySet<TxState> = new Set<TxState>([
     "broadcasting",
     "broadcast",
@@ -185,7 +185,7 @@ const LEDGER: ReadonlySet<TxState> = new Set<TxState>([
     "failed",
 ]);
 
-/** 本地认为没上链，链上却查到了。不能盖住，否则用户会再付一次。 */
+/** 本地认为没上链,链上却查到了.不能盖住,否则用户会再付一次. */
 const CLOSED: ReadonlySet<TxState> = new Set<TxState>(["replaced", "expired", "abandoned"]);
 
 function onChain(status: ChainStatus): boolean {
@@ -193,15 +193,15 @@ function onChain(status: ChainStatus): boolean {
 }
 
 function sortRows(rows: FeedRow[]): FeedRow[] {
-    // 没有时间的是内存池里的交易，排在最前面。
+    // 没有时间的是内存池里的交易,排在最前面.
     const rank = (row: FeedRow) => row.time ?? Number.MAX_SAFE_INTEGER;
     return rows.sort((a, b) => rank(b) - rank(a));
 }
 
 /**
- * 交易记录：上过链或者正在上链的交易，同一笔只留本地的。
- * 零金额记录是地址投毒的常见手法，转出也能伪造（`transferFrom(受害者, 投毒地址, 0)`），
- * 所以不分方向都不进列表，见 docs/04-security.md 第 4 节。
+ * 交易记录:上过链或者正在上链的交易,同一笔只留本地的.
+ * 零金额记录是地址投毒的常见手法,转出也能伪造(`transferFrom(受害者, 投毒地址, 0)`),
+ * 所以不分方向都不进列表,见 docs/04-security.md 第 4 节.
  */
 export function ledgerRows(
     local: readonly TxRecord[],
@@ -222,12 +222,12 @@ export function ledgerRows(
         const stale = offline.has(key);
         if (stale && !onChain(entry.item.status)) continue;
         const row = remoteRow(entry, own, remarks.get(key) ?? null);
-        rows.push(stale ? { ...row, note: t("链上查到这笔，本地记录已过时"), noteTone: "warn" } : row);
+        rows.push(stale ? { ...row, note: t("链上查到这笔,本地记录已过时"), noteTone: "warn" } : row);
     }
     return sortRows(rows);
 }
 
-/** 没上链就结束的请求。不是资金流动，所以不进记录，签名仍然有效的要一直看得到。 */
+/** 没上链就结束的请求.不是资金流动,所以不进记录,签名仍然有效的要一直看得到. */
 export function unsentRows(local: readonly TxRecord[], remote: readonly RemoteItem[]): FeedRow[] {
     const seen = new Map(
         remote.flatMap(({ network, item }) => (onChain(item.status) ? [[txKey(network, item.hash), item.status]] : [])),
@@ -236,14 +236,14 @@ export function unsentRows(local: readonly TxRecord[], remote: readonly RemoteIt
         local
             .filter((tx) => CLOSED.has(tx.state))
             .map((tx) => {
-                // 这笔没有发生，金额不带符号，不能看起来像一笔转出。
+                // 这笔没有发生,金额不带符号,不能看起来像一笔转出.
                 const row = { ...localRow(tx, null), amount: formatAsset(tx.network, tx.asset, BigInt(tx.amount)) };
                 const status = tx.hash ? seen.get(txKey(tx.network, tx.hash)) : undefined;
                 if (!status) return row;
                 return {
                     ...row,
                     ...REMOTE_STATES[status],
-                    note: t("链上查到这笔，本地记录已过时"),
+                    note: t("链上查到这笔,本地记录已过时"),
                     noteTone: "warn" as const,
                 };
             }),
@@ -288,7 +288,7 @@ function attention(
     }
 }
 
-/** 等着用户动手的事。顶栏和首页共用这一个口径。seenAt 之前的链上失败已经看过，不再提示。 */
+/** 等着用户动手的事.顶栏和首页共用这一个口径.seenAt 之前的链上失败已经看过,不再提示. */
 export function attentionRows(txs: readonly TxRecord[], seenAt: number, now: number): AttentionRow[] {
     return [...txs]
         .sort((a, b) => b.createdAt - a.createdAt)
@@ -301,5 +301,5 @@ export function attentionRows(txs: readonly TxRecord[], seenAt: number, now: num
 }
 
 export function failedNames(failed: readonly string[]): string {
-    return failed.map(networkName).join(t("、"));
+    return failed.map(networkName).join(t(","));
 }

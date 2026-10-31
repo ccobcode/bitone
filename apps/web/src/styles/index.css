@@ -3,7 +3,7 @@
 @import "./fonts.css";
 @import "./motion.css";
 
-/* 令牌映射成主题变量。默认调色板清空，页面只能用令牌。 */
+/* 令牌映射成主题变量.默认调色板清空,页面只能用令牌. */
 @theme inline {
     --color-*: initial;
     --color-bg: var(--bg);
@@ -66,7 +66,7 @@
     --font-mono: var(--mono);
 }
 
-/* 字号自带行高，24 及以上字距收紧 1%。窄屏时导航折到上方。栅格按内容宽度切换，不看窗口宽度。 */
+/* 字号自带行高,24 及以上字距收紧 1%.窄屏时导航折到上方.栅格按内容宽度切换,不看窗口宽度. */
 @theme {
     --text-t1--line-height: var(--lh-t1);
     --text-t2--line-height: var(--lh-t2);
@@ -92,14 +92,14 @@
 }
 
 :root {
-    /* 填充色。色块里的输入框和次级按钮要换一层，靠这两个变量。 */
+    /* 填充色.色块里的输入框和次级按钮要换一层,靠这两个变量. */
     --fill: var(--surface-3);
     --fill-hover: var(--line-strong);
-    /* 弹层和选中块要比所在的卡片亮一级。 */
+    /* 弹层和选中块要比所在的卡片亮一级. */
     --popup: light-dark(var(--surface), var(--surface-2));
     --thumb: light-dark(var(--surface), var(--surface-3));
     --rail: var(--surface-2);
-    /* 取景框和开关圆点在任何主题下都是白的。 */
+    /* 取景框和开关圆点在任何主题下都是白的. */
     --on-camera: #ffffff;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-x: max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
@@ -107,7 +107,7 @@
     --page-width: 1200px;
     --topbar: 64px;
     --tabbar: var(--h-row);
-    /* 手机上父级链接要 44 的触控区，所有页面都按这个高度留。 */
+    /* 手机上父级链接要 44 的触控区,所有页面都按这个高度留. */
     --page-title: 44px;
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     --focus: var(--accent-text);
@@ -128,7 +128,7 @@
 }
 
 @layer base {
-    /* 添加到主屏幕后没有浏览器外壳，页面要像应用：不回弹露底，不放大，点击没有灰块。 */
+    /* 添加到主屏幕后没有浏览器外壳,页面要像应用:不回弹露底,不放大,点击没有灰块. */
     html {
         overscroll-behavior: none;
         text-size-adjust: 100%;
@@ -164,14 +164,14 @@
         outline: 2px solid var(--focus);
         outline-offset: 2px;
     }
-    /* JetBrains Mono 的连字会把 0x 画成乘号，地址里不能出现。 */
+    /* JetBrains Mono 的连字会把 0x 画成乘号,地址里不能出现. */
     .font-mono {
         font-variant-ligatures: none;
     }
 }
 
 @layer components {
-    /* 外壳：顶栏横跨全宽，内容居中。页面底色和卡片的明度差就是边界。 */
+    /* 外壳:顶栏横跨全宽,内容居中.页面底色和卡片的明度差就是边界. */
     .app-frame {
         display: flex;
         min-height: 100dvh;
@@ -188,7 +188,7 @@
         align-items: center;
         border-bottom: 1px solid var(--line);
         background: var(--surface);
-        /* 主屏幕模式下页面延伸到状态栏后面。 */
+        /* 主屏幕模式下页面延伸到状态栏后面. */
         padding-top: var(--safe-top);
     }
     .app-main {
@@ -196,7 +196,7 @@
         min-width: 0;
         flex: 1;
         flex-direction: column;
-        /* 悬浮标签栏占的高度，内容滚到底时不会被盖住。 */
+        /* 悬浮标签栏占的高度,内容滚到底时不会被盖住. */
         padding-bottom: calc(var(--tabbar) + var(--safe-bottom) + var(--s2) + var(--s6));
     }
     .page-frame {
@@ -206,7 +206,7 @@
         margin-inline: auto;
         padding-inline: var(--page-x);
     }
-    /* 页头在所有页面一样高，首个区块从同一条线开始，切换导航时内容不跳。 */
+    /* 页头在所有页面一样高,首个区块从同一条线开始,切换导航时内容不跳. */
     .page-head {
         display: flex;
         align-items: center;
@@ -237,7 +237,7 @@
         }
     }
 
-    /* 卡片：一层，不嵌套，不画边框，边界来自和页面底色的明度差。 */
+    /* 卡片:一层,不嵌套,不画边框,边界来自和页面底色的明度差. */
     .card {
         display: flex;
         min-width: 0;
@@ -258,7 +258,7 @@
         padding: 0;
     }
 
-    /* 设置行：左边标题和说明，右边值或操作，行间没有分隔线。两端都贴卡片内边距。 */
+    /* 设置行:左边标题和说明,右边值或操作,行间没有分隔线.两端都贴卡片内边距. */
     .setting {
         position: relative;
         display: flex;
@@ -290,7 +290,7 @@
     .setting:last-child {
         padding-bottom: 0;
     }
-    /* 输入框和成组的按钮在手机上独占一行，铺满卡片。 */
+    /* 输入框和成组的按钮在手机上独占一行,铺满卡片. */
     @media (width < 60rem) {
         .setting-wide {
             flex: 1 1 100%;
@@ -299,7 +299,7 @@
             flex: 1 1 auto;
         }
     }
-    /* 输入框：细边框。聚焦时边框变主色，外加一圈浅色环。 */
+    /* 输入框:细边框.聚焦时边框变主色,外加一圈浅色环. */
     .field {
         width: 100%;
         min-width: 0;
@@ -325,7 +325,7 @@
         border-color: var(--focus);
         outline-color: var(--accent-soft);
     }
-    /* iOS 上小于 16 的输入框聚焦时整页放大。 */
+    /* iOS 上小于 16 的输入框聚焦时整页放大. */
     @media (width < 60rem) {
         .field {
             font-size: 16px;
@@ -339,7 +339,7 @@
         color: var(--text-2);
     }
 
-    /* 列表行没有横线。文字贴着卡片内边距，悬停底色向两侧各伸出 12。按下时显示底色并缩放。 */
+    /* 列表行没有横线.文字贴着卡片内边距,悬停底色向两侧各伸出 12.按下时显示底色并缩放. */
     .row {
         position: relative;
         margin-inline: calc(var(--s3) * -1);
@@ -369,13 +369,13 @@
         }
     }
 
-    /* 色块。里面的输入框和次级按钮换到上一层，分段选择的选中块也要跟着换。 */
+    /* 色块.里面的输入框和次级按钮换到上一层,分段选择的选中块也要跟着换. */
     .tint {
         --fill: var(--surface);
         --fill-hover: var(--surface-3);
     }
 
-    /* 浮层：宽屏居中，手机上从底部升起。内容自成容器，里面的栅格按浮层宽度切换。 */
+    /* 浮层:宽屏居中,手机上从底部升起.内容自成容器,里面的栅格按浮层宽度切换. */
     .sheet {
         --sheet-x: 0;
         --sheet-y: 0;
@@ -391,7 +391,7 @@
         border-radius: var(--r4) var(--r4) 0 0;
         background: var(--popup);
         box-shadow: var(--elevation-3);
-        /* 底部的内边距在操作区里，内容不会从操作区下面漏出来。 */
+        /* 底部的内边距在操作区里,内容不会从操作区下面漏出来. */
         padding: var(--s4) var(--page-x) 0;
         container-type: inline-size;
         outline: none;
@@ -424,7 +424,7 @@
         background: var(--popup);
         padding-block: var(--s2) calc(var(--s4) + var(--safe-bottom));
     }
-    /* 手机上按钮等分，放弃在左，确认在右，和冷钱包的弹层相同。 */
+    /* 手机上按钮等分,放弃在左,确认在右,和冷钱包的弹层相同. */
     @media (width < 60rem) {
         .sheet-actions > * {
             flex: 1 1 0;
@@ -436,7 +436,7 @@
         }
     }
 
-    /* 文字链接没有内边距，右边缘能贴着边线。下划线是渐变出来的。 */
+    /* 文字链接没有内边距,右边缘能贴着边线.下划线是渐变出来的. */
     .link {
         color: var(--accent-text);
         font-size: var(--t2);

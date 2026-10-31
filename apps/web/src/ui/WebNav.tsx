@@ -10,7 +10,7 @@ import { overlayLink } from "./Sheet";
 import { WebTop } from "./WebTop";
 import { t } from "../core/i18n";
 
-/** 主导航只放能停留的页面。转账和收款是动作，子页面的选中态留在父级，转账从资产发起。 */
+/** 主导航只放能停留的页面.转账和收款是动作,子页面的选中态留在父级,转账从资产发起. */
 const ITEMS: { to: string; label: string; icon: IconName; on(pathname: string): boolean }[] = [
     { to: "/", label: t("资产"), icon: "assets", on: (path) => /^\/($|assets\/|send$|sign\/)/.test(path) },
     { to: "/history", label: t("交易记录"), icon: "history", on: (path) => path.startsWith("/history") },
@@ -43,7 +43,7 @@ function WalletMenu() {
                                 onClick={() => void selectWallet(item)}
                                 className="popup-item cursor-pointer"
                             >
-                                {/* 三列都固定：名称占满并截断，指纹宽度相同，勾选位始终留着。 */}
+                                {/* 三列都固定:名称占满并截断,指纹宽度相同,勾选位始终留着. */}
                                 <span className="min-w-0 flex-1 truncate font-medium">{item.name}</span>
                                 <span className="shrink-0 font-mono text-t1 text-text-3">{item.fingerprint}</span>
                                 <span className="flex size-4 shrink-0 items-center justify-center text-accent-text">
@@ -68,7 +68,7 @@ function WalletMenu() {
     );
 }
 
-/** 标志右侧的网络标签，点一下切到另一个网络。只换查看的余额，一次配对两个网络都有。 */
+/** 标志右侧的网络标签,点一下切到另一个网络.只换查看的余额,一次配对两个网络都有. */
 function NetworkTag() {
     const { wallets, mode, setMode } = useApp();
     if (wallets.length === 0) return null;
@@ -76,12 +76,12 @@ function NetworkTag() {
     return (
         <button
             type="button"
-            aria-label={t("{0}，切换到{1}", modeLabel(mode), modeLabel(other))}
+            aria-label={t("{0},切换到{1}", modeLabel(mode), modeLabel(other))}
             title={t("切换到{0}", modeLabel(other))}
             onClick={() => void setMode(other)}
             className="press flex min-h-11 shrink-0 items-center"
         >
-            {/* 宽度固定，切换网络时导航不移动。 */}
+            {/* 宽度固定,切换网络时导航不移动. */}
             <Chip tone={mode === "testnet" ? "testnet" : "neutral"} className="w-22 justify-center">
                 {modeLabel(mode)}
                 <Icon name="updown" size={12} />
@@ -90,7 +90,7 @@ function NetworkTag() {
     );
 }
 
-/** 桌面端的顶部导航。窄屏时导航在底部标签栏，这里只留标志和钱包。 */
+/** 桌面端的顶部导航.窄屏时导航在底部标签栏,这里只留标志和钱包. */
 export function WebNav() {
     const { pathname } = useLocation();
     const active = ITEMS.findIndex((item) => item.on(pathname));
@@ -133,7 +133,7 @@ export function WebNav() {
     );
 }
 
-/** 手机底部标签栏，和桌面的主导航是同样四项。 */
+/** 手机底部标签栏,和桌面的主导航是同样四项. */
 export function TabBar() {
     const { pathname } = useLocation();
     const index = ITEMS.findIndex((item) => item.on(pathname));

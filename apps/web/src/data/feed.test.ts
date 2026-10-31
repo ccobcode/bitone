@@ -38,7 +38,7 @@ const page = (items: HistoryItem[], cursor: string | null = null, checkpoint = "
     unchanged: false,
 });
 
-/** 每批地址回一份结果。`extra` 能改写任何字段，比如让某个网络失败。 */
+/** 每批地址回一份结果.`extra` 能改写任何字段,比如让某个网络失败. */
 function answer(
     next: HistoryPage | null,
     extra: (network: string) => Partial<SnapshotResult> = () => ({}),
@@ -66,7 +66,7 @@ beforeEach(async () => {
 });
 
 describe("txKey", () => {
-    it("十六进制哈希转小写，Base58 不变", () => {
+    it("十六进制哈希转小写,Base58 不变", () => {
         const hex = `0x${"AB".repeat(32)}`;
         expect(txKey("ethereum", hex)).toBe(`ethereum:${hex.toLowerCase()}`);
         expect(txKey("tron", "AB".repeat(32))).toBe(`tron:${"ab".repeat(32)}`);
@@ -75,7 +75,7 @@ describe("txKey", () => {
 });
 
 describe("syncFeed", () => {
-    it("一次请求带上全部地址和资产，代币带合约，原生币不带", async () => {
+    it("一次请求带上全部地址和资产,代币带合约,原生币不带", async () => {
         answer(page([]));
         const bitcoin = { network: "bitcoin", addresses: ["bc1a", "bc1b"] };
         await syncFeed(WALLET, [STREAM, bitcoin], (network) =>
@@ -90,7 +90,7 @@ describe("syncFeed", () => {
         ]);
     });
 
-    it("第一次只取最新一页，记下水位和往前翻的游标", async () => {
+    it("第一次只取最新一页,记下水位和往前翻的游标", async () => {
         answer(page([item("a")], "p2", "100"));
         expect(await syncFeed(WALLET, [STREAM], native)).toEqual({ failed: [], failures: [], missed: [] });
         expect(await hashes()).toEqual(["a"]);
@@ -99,7 +99,7 @@ describe("syncFeed", () => {
         expect(cursor).toMatchObject({ addresses: ["0xa"], older: "p2", checkpoint: "100" });
     });
 
-    it("再次打开带上水位，只写入新的", async () => {
+    it("再次打开带上水位,只写入新的", async () => {
         answer(page([item("a")]));
         await syncFeed(WALLET, [STREAM], native);
 
@@ -110,7 +110,7 @@ describe("syncFeed", () => {
         expect((await db.feedCursors.toArray())[0]?.checkpoint).toBe("120");
     });
 
-    it("增量也按游标翻完，一次超过一页时不漏", async () => {
+    it("增量也按游标翻完,一次超过一页时不漏", async () => {
         answer(page([item("a")]));
         await syncFeed(WALLET, [STREAM], native);
         answer(page([item("b")], "p2", "120"));
@@ -121,7 +121,7 @@ describe("syncFeed", () => {
         expect((await db.feedCursors.toArray())[0]?.checkpoint).toBe("120");
     });
 
-    it("被重组掉的交易过了等待时间从缓存里消失，已定论的留下", async () => {
+    it("被重组掉的交易过了等待时间从缓存里消失,已定论的留下", async () => {
         vi.useFakeTimers({ toFake: ["Date"] });
         answer(page([item("final"), item("gone", "included")]));
         await syncFeed(WALLET, [STREAM], native);
@@ -140,7 +140,7 @@ describe("syncFeed", () => {
         expect((await db.chainTxs.toArray()).map((row) => row.status)).toEqual(["finalized"]);
     });
 
-    it("增量中途失败时不删任何记录，水位不动", async () => {
+    it("增量中途失败时不删任何记录,水位不动", async () => {
         answer(page([item("open", "included")]));
         await syncFeed(WALLET, [STREAM], native);
         answer(page([item("new")], "p2", "120"));
@@ -150,7 +150,7 @@ describe("syncFeed", () => {
         expect((await db.feedCursors.toArray())[0]?.checkpoint).toBe("100");
     });
 
-    it("没有变化时不动缓存，未定论的记录不能被当成重组", async () => {
+    it("没有变化时不动缓存,未定论的记录不能被当成重组", async () => {
         answer(page([item("a", "included")]));
         await syncFeed(WALLET, [STREAM], native);
         answer({ ...page([], null, "100"), unchanged: true });
@@ -180,7 +180,7 @@ describe("syncFeed", () => {
         });
     });
 
-    it("没有索引服务的网络不算同步失败，未定论的记录逐笔查状态", async () => {
+    it("没有索引服务的网络不算同步失败,未定论的记录逐笔查状态", async () => {
         const stream = { network: "bsc", addresses: ["0xa"] };
         await applyChainUpdate(WALLET, stream, {
             height: 5,
@@ -215,14 +215,14 @@ describe("快照和推送同时发生", () => {
         items: [],
     });
 
-    it("推送比快照新时，先到的推送不会被快照盖掉", async () => {
+    it("推送比快照新时,先到的推送不会被快照盖掉", async () => {
         await applyChainUpdate(WALLET, STREAM, update(12, 7n));
         answer(page([]), () => ({ height: 10 }), [balance(5n)]);
         await syncFeed(WALLET, [STREAM], native);
         expect(await amounts()).toEqual([["7", 12]]);
     });
 
-    it("快照比推送新时，迟到的推送不会盖掉快照", async () => {
+    it("快照比推送新时,迟到的推送不会盖掉快照", async () => {
         answer(page([]), () => ({ height: 12 }), [balance(7n)]);
         await syncFeed(WALLET, [STREAM], native);
         await applyChainUpdate(WALLET, STREAM, update(10, 5n));
@@ -236,7 +236,7 @@ describe("快照和推送同时发生", () => {
         expect((await db.chainTxs.toArray()).map((row) => row.status)).toEqual(["finalized"]);
     });
 
-    it("Bitcoin 一笔只留一条，金额以最新的归纳为准", async () => {
+    it("Bitcoin 一笔只留一条,金额以最新的归纳为准", async () => {
         const stream = { network: "bitcoin", addresses: ["bc1a"] };
         answer(page([item("a", "finalized", 5n)]));
         await syncFeed(WALLET, [stream], native);
@@ -250,7 +250,7 @@ describe("快照和推送同时发生", () => {
 });
 
 describe("loadOlder", () => {
-    it("往前翻一页，翻完后不再有游标", async () => {
+    it("往前翻一页,翻完后不再有游标", async () => {
         answer(page([item("a")], "p2"));
         await syncFeed(WALLET, [STREAM], native);
 
@@ -265,7 +265,7 @@ describe("loadOlder", () => {
         expect(history).not.toHaveBeenCalled();
     });
 
-    it("翻页游标过期时清掉，下次从最新一页重来，已有记录不受影响", async () => {
+    it("翻页游标过期时清掉,下次从最新一页重来,已有记录不受影响", async () => {
         answer(page([item("a")], "p2"));
         await syncFeed(WALLET, [STREAM], native);
         history.mockRejectedValue(new GatewayError("invalid_request"));
@@ -295,7 +295,7 @@ describe("索引比推送慢时", () => {
         });
     }
 
-    it("刚推送的记录不会被快照删掉，水位也不越过它", async () => {
+    it("刚推送的记录不会被快照删掉,水位也不越过它", async () => {
         answer(page([], null, "100"));
         await pushed();
         answer(page([], null, "200"));
@@ -304,7 +304,7 @@ describe("索引比推送慢时", () => {
         expect((await db.feedCursors.toArray())[0]?.checkpoint).toBe("100");
     });
 
-    it("重新出现时不算新记录，不会重复通知", async () => {
+    it("重新出现时不算新记录,不会重复通知", async () => {
         answer(page([], null, "100"));
         await pushed();
         await syncFeed(WALLET, [STREAM], native);
@@ -315,7 +315,7 @@ describe("索引比推送慢时", () => {
         expect((await db.feedCursors.toArray())[0]?.checkpoint).toBe("200");
     });
 
-    it("过了等待时间还查不到才算被回滚，水位随后前进", async () => {
+    it("过了等待时间还查不到才算被回滚,水位随后前进", async () => {
         answer(page([], null, "100"));
         await pushed();
         vi.setSystemTime(Date.now() + LAG);
@@ -339,7 +339,7 @@ describe("记录标识", () => {
         expect(local.id).toBe(remote.id);
     });
 
-    it("Base58 地址区分大小写，不能合并", () => {
+    it("Base58 地址区分大小写,不能合并", () => {
         const one = entry(WALLET, "s", "tron", { ...item("ab"), from: "TAbc", to: "TDef" });
         const two = entry(WALLET, "s", "tron", { ...item("ab"), from: "Tabc", to: "TDef" });
         expect(one.id).not.toBe(two.id);
@@ -354,18 +354,18 @@ describe("walletView", () => {
             { address: "bc1peer", amount: "7" },
         ],
     };
-    // 网关只看到 bc1a 这一批，把找零当成了付款。
+    // 网关只看到 bc1a 这一批,把找零当成了付款.
     const row = { from: "bc1a", to: "bc1change", amount: "10", flows };
 
-    it("找零在另一批时不算付款，收款方也不是找零地址", () => {
+    it("找零在另一批时不算付款,收款方也不是找零地址", () => {
         expect(walletView(row, new Set(["bc1a", "bc1change"]))).toEqual({ from: "bc1a", to: "bc1peer", amount: "7" });
     });
 
-    it("还不知道找零地址时和网关的结果相同，发现之后自动改正", () => {
+    it("还不知道找零地址时和网关的结果相同,发现之后自动改正", () => {
         expect(walletView(row, new Set(["bc1a"]))).toEqual({ from: "bc1a", to: "bc1change", amount: "10" });
     });
 
-    it("全部付给自己时是转账，金额是移动的部分", () => {
+    it("全部付给自己时是转账,金额是移动的部分", () => {
         const own = new Set(["bc1a", "bc1change", "bc1peer"]);
         expect(walletView(row, own)).toEqual({ from: "bc1a", to: "bc1change", amount: "10" });
     });
@@ -374,7 +374,7 @@ describe("walletView", () => {
         expect(walletView(row, new Set(["bc1peer"]))).toEqual({ from: "bc1a", to: "bc1peer", amount: "7" });
     });
 
-    it("数据输出没有地址，不算收款方", () => {
+    it("数据输出没有地址,不算收款方", () => {
         const outputs = [{ address: null, amount: "0" }, ...flows.outputs];
         const view = walletView({ ...row, flows: { ...flows, outputs } }, new Set(["bc1a", "bc1change"]));
         expect(view.to).toBe("bc1peer");
@@ -385,7 +385,7 @@ describe("walletView", () => {
         expect(walletView({ from, to, amount }, new Set(["bc1peer"]))).toEqual({ from, to, amount });
     });
 
-    it("两批地址都写入同一笔时只留一条，归纳结果和写入顺序无关", async () => {
+    it("两批地址都写入同一笔时只留一条,归纳结果和写入顺序无关", async () => {
         const first = { network: "bitcoin", addresses: ["bc1a"] };
         const second = { network: "bitcoin", addresses: ["bc1change"] };
         const seen = { ...item("t"), from: "bc1a", to: "bc1change", amount: 10n, flows };
@@ -402,7 +402,7 @@ describe("walletView", () => {
 });
 
 describe("drainQueue", () => {
-    it("一批出错不影响后面的批次，跑完后可以再次同步", async () => {
+    it("一批出错不影响后面的批次,跑完后可以再次同步", async () => {
         const run = { running: false, queue: new Map([["a", "a"]]) };
         const failed: string[][] = [];
         const done: string[][] = [];

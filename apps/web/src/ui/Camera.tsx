@@ -6,7 +6,7 @@ import { StateCard } from "./StateCard";
 
 export type CameraFailure = "denied" | "missing" | "failed";
 
-/** 送去识别的图像最长边，够看清单帧二维码，也不拖慢每帧的解码。 */
+/** 送去识别的图像最长边,够看清单帧二维码,也不拖慢每帧的解码. */
 const MAX_EDGE = 1280;
 
 function failureOf(error: unknown): CameraFailure {
@@ -46,12 +46,12 @@ interface CameraProps {
     onDevices(devices: MediaDeviceInfo[]): void;
 }
 
-/** 收齐时短促震动，和冷钱包相同。只有部分手机浏览器支持，其余什么都不做。 */
+/** 收齐时短促震动,和冷钱包相同.只有部分手机浏览器支持,其余什么都不做. */
 export function buzz(): void {
     navigator.vibrate?.(30);
 }
 
-/** 实时取景，逐帧识别。取景区域在任何主题下都是深色。 */
+/** 实时取景,逐帧识别.取景区域在任何主题下都是深色. */
 export function Camera({ active, deviceId, onText, onFailure, onDevices }: CameraProps) {
     const video = useRef<HTMLVideoElement>(null);
     const callbacks = useRef({ onText, onFailure, onDevices });
@@ -71,7 +71,7 @@ export function Camera({ active, deviceId, onText, onFailure, onDevices }: Camer
                 ? { deviceId: { exact: deviceId } }
                 : { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } };
             const opened = await navigator.mediaDevices.getUserMedia({ video: constraints, audio: false });
-            // 申请期间页面可能已经离开，这时要立刻关掉，否则摄像头一直亮着。
+            // 申请期间页面可能已经离开,这时要立刻关掉,否则摄像头一直亮着.
             if (stopped) {
                 stopTracks(opened);
                 return;
@@ -120,11 +120,11 @@ interface CameraPanelProps {
     failure: CameraFailure | null;
     onFailure(failure: CameraFailure | null): void;
     onText(text: string): void;
-    /** 摄像头打不开时的退路。 */
+    /** 摄像头打不开时的退路. */
     onUpload(): void;
 }
 
-/** 取景区域加摄像头选择。打不开时换成异常卡片，可以重试或者上传图片。 */
+/** 取景区域加摄像头选择.打不开时换成异常卡片,可以重试或者上传图片. */
 export function CameraPanel({ active, failure, onFailure, onText, onUpload }: CameraPanelProps) {
     const [attempt, setAttempt] = useState(0);
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
@@ -185,7 +185,7 @@ export function CameraPanel({ active, failure, onFailure, onText, onUpload }: Ca
     );
 }
 
-/** 从图片读二维码。隐藏的文件框放进页面，`open` 弹出选择。 */
+/** 从图片读二维码.隐藏的文件框放进页面,`open` 弹出选择. */
 export function useImageScan(label: string, onText: (text: string) => void, onNotice: (text: string) => void) {
     const input = useRef<HTMLInputElement>(null);
 
@@ -195,10 +195,10 @@ export function useImageScan(label: string, onText: (text: string) => void, onNo
             for (const file of files) {
                 const [text] = await decodeQr(file);
                 if (text) onText(text);
-                else onNotice(t("图片里没有识别到二维码。"));
+                else onNotice(t("图片里没有识别到二维码."));
             }
         } catch {
-            onNotice(t("图片无法读取。"));
+            onNotice(t("图片无法读取."));
         }
     }
 
@@ -213,7 +213,7 @@ export function useImageScan(label: string, onText: (text: string) => void, onNo
                 hidden
                 aria-label={label}
                 onChange={(event) => {
-                    // FileList 是实时的，清空 value 后就没有内容了，所以先拷出来。
+                    // FileList 是实时的,清空 value 后就没有内容了,所以先拷出来.
                     void read([...(event.target.files ?? [])]);
                     event.target.value = "";
                 }}

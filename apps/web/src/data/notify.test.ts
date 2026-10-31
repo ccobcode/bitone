@@ -76,7 +76,7 @@ describe("要不要通知", () => {
     const told = (rows: ChainEntry[], prices: Map<string, string> | null = null) =>
         incomingNotices(rows, own, prices).length;
 
-    it("别人转来的清单内资产要通知，确认前写明确认中", () => {
+    it("别人转来的清单内资产要通知,确认前写明确认中", () => {
         const [notice] = incomingNotices([row()], own, null);
         expect(notice?.kind).toBe("incoming");
         expect(notice?.title).toContain("确认中");
@@ -96,12 +96,12 @@ describe("要不要通知", () => {
         expect(told([row({ status: "failed" })])).toBe(0);
     });
 
-    it("清单外的代币和零金额转账不通知，它们常被用来做地址投毒", () => {
+    it("清单外的代币和零金额转账不通知,它们常被用来做地址投毒", () => {
         expect(told([row({ asset: "0x000000000000000000000000000000000000dead" })])).toBe(0);
         expect(told([row({ asset: USDT, amount: "0" })])).toBe(0);
     });
 
-    it("粉尘不通知，查不到价格时不能漏掉", () => {
+    it("粉尘不通知,查不到价格时不能漏掉", () => {
         const prices = new Map([["ethereum:native", "3000"]]);
         expect(told([row({ amount: "1000" })], prices)).toBe(0);
         expect(told([row()], prices)).toBe(1);
@@ -124,7 +124,7 @@ describe("合并", () => {
         expect(merged).toMatchObject({ count: 3, title: "收到 3 笔转账", summary: "收到 3 笔转账" });
     });
 
-    it("用户不在时的记录合成一条，只有一笔时照常显示", () => {
+    it("用户不在时的记录合成一条,只有一笔时照常显示", () => {
         expect(missedNotice([], own, null)).toBeNull();
         expect(missedNotice([row()], own, null)?.title).toContain("确认中");
         const rows = [row({ hash: "0x1" }), row({ hash: "0x2" })];
@@ -133,12 +133,12 @@ describe("合并", () => {
 });
 
 describe("什么算新发生", () => {
-    it("推送带来的记录只有第一次算新，多个标签页收到同一条也只通知一次", async () => {
+    it("推送带来的记录只有第一次算新,多个标签页收到同一条也只通知一次", async () => {
         expect(await applyChainUpdate("w", STREAM, update([item("0x1")]))).toHaveLength(1);
         expect(await applyChainUpdate("w", STREAM, update([item("0x1")]))).toHaveLength(0);
     });
 
-    it("状态变化不是新交易，不再通知", async () => {
+    it("状态变化不是新交易,不再通知", async () => {
         await applyChainUpdate("w", STREAM, update([item("0x1", "pending")]));
         expect(await applyChainUpdate("w", STREAM, update([item("0x1", "finalized")]))).toHaveLength(0);
     });
@@ -149,7 +149,7 @@ describe("什么算新发生", () => {
         expect(missed).toEqual([]);
     });
 
-    it("增量补回来的才算错过的，已经看过的未定论记录不算", async () => {
+    it("增量补回来的才算错过的,已经看过的未定论记录不算", async () => {
         snapshotOf([item("0x1")]);
         await syncFeed("w", [STREAM], () => ["native"]);
         snapshotOf([item("0x1", "finalized"), item("0x2")]);

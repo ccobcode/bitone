@@ -20,7 +20,7 @@ interface AnimatedQrProps {
     onError?(message: string): void;
 }
 
-/** 动态二维码，循环播放，可暂停、调速、全屏。喷泉码后面的帧也能用，所以一直发新帧。 */
+/** 动态二维码,循环播放,可暂停,调速,全屏.喷泉码后面的帧也能用,所以一直发新帧. */
 export function AnimatedQr({ message, type, size, label, onError }: AnimatedQrProps) {
     const sender = useRef<FrameSender | null>(null);
     const box = useRef<HTMLDivElement>(null);
@@ -28,13 +28,13 @@ export function AnimatedQr({ message, type, size, label, onError }: AnimatedQrPr
     const [paused, setPaused] = useState(false);
     const [speed, setSpeed] = useState(0);
     const [fullscreen, setFullscreen] = useState(false);
-    // 回调只用于报告，换一个回调不用重新分帧。
+    // 回调只用于报告,换一个回调不用重新分帧.
     const report = useRef(onError);
     useEffect(() => {
         report.current = onError;
     });
 
-    // 第一帧要和外框一起上屏，否则下面的按钮会先出现再被推开。
+    // 第一帧要和外框一起上屏,否则下面的按钮会先出现再被推开.
     useLayoutEffect(() => {
         let current: FrameSender;
         try {
@@ -100,7 +100,7 @@ export function AnimatedQr({ message, type, size, label, onError }: AnimatedQrPr
                 <Button size="sm" disabled={single} onClick={() => setSpeed((speed + 1) % SPEEDS.length)}>
                     {t("速度 {0}", SPEEDS[speed]?.label ?? "")}
                 </Button>
-                {/* iPhone 没有全屏接口。 */}
+                {/* iPhone 没有全屏接口. */}
                 {document.fullscreenEnabled ? (
                     <Button
                         size="iconSm"

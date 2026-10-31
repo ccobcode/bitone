@@ -45,7 +45,7 @@ function useCounts() {
     }, []);
 }
 
-/** 本地数据占用的空间。读一次钱包表，数据变化时重新估算。 */
+/** 本地数据占用的空间.读一次钱包表,数据变化时重新估算. */
 function useUsage(): number | null {
     const usage = useLive(async () => {
         await db.wallets.count();
@@ -54,7 +54,7 @@ function useUsage(): number | null {
     return usage ?? null;
 }
 
-/** 一组设置是一张卡片，标题在上，下面一行一项。 */
+/** 一组设置是一张卡片,标题在上,下面一行一项. */
 function Group({ id, title, tone, children }: { id: string; title: string; tone?: string; children: ReactNode }) {
     return (
         <section aria-labelledby={id} className="card gap-s2">
@@ -66,7 +66,7 @@ function Group({ id, title, tone, children }: { id: string; title: string; tone?
     );
 }
 
-/** 一行设置。左边的标题贴卡片左内边距，右边的值或操作贴右内边距。 */
+/** 一行设置.左边的标题贴卡片左内边距,右边的值或操作贴右内边距. */
 function Setting({
     label,
     hint,
@@ -113,7 +113,7 @@ function ClearData() {
                 </Button>
             }
         >
-            {t("这个浏览器里的钱包、交易记录和地址簿都会删除。")}
+            {t("这个浏览器里的钱包,交易记录和地址簿都会删除.")}
         </Confirm>
     );
 }
@@ -140,7 +140,7 @@ function BackupCard() {
     );
 }
 
-/** 提示音和后台提醒都要用户自己打开，浏览器也要求这两件事发生在点击里。 */
+/** 提示音和后台提醒都要用户自己打开,浏览器也要求这两件事发生在点击里. */
 function NoticeGroup() {
     const { sound, background, amount } = useNoticeSettings();
     const [denied, setDenied] = useState(false);
@@ -153,7 +153,7 @@ function NoticeGroup() {
 
     return (
         <Group id="h-notice" title={t("通知")}>
-            <Setting label={t("提示音")} hint={t("收到转账和交易有结果时响一声，测试网不响")}>
+            <Setting label={t("提示音")} hint={t("收到转账和交易有结果时响一声,测试网不响")}>
                 <Switch
                     label={t("提示音")}
                     checked={sound}
@@ -167,7 +167,7 @@ function NoticeGroup() {
             {supported ? (
                 <Setting
                     label={t("后台提醒")}
-                    hint={denied ? t("浏览器拒绝了通知权限，要在浏览器设置里开启") : t("页面在后台时用系统通知提醒")}
+                    hint={denied ? t("浏览器拒绝了通知权限,要在浏览器设置里开启") : t("页面在后台时用系统通知提醒")}
                 >
                     <Switch
                         label={t("后台提醒")}
@@ -216,7 +216,7 @@ export default function Settings() {
             <NoticeGroup />
 
             <Group id="h-gw" title={t("网关")}>
-                <Setting label={t("网关地址")} hint={t("和网页端同域部署，不能修改")}>
+                <Setting label={t("网关地址")} hint={t("和网页端同域部署,不能修改")}>
                     <span className="font-mono text-t2 [overflow-wrap:anywhere]">{location.origin}</span>
                 </Setting>
                 <Setting label="HTTP">
@@ -237,8 +237,8 @@ export default function Settings() {
                         persisted
                             ? undefined
                             : denied
-                              ? t("浏览器拒绝了申请，请导出备份。")
-                              : t("浏览器可能清理本地数据，地址簿和备注只能从备份恢复。")
+                              ? t("浏览器拒绝了申请,请导出备份.")
+                              : t("浏览器可能清理本地数据,地址簿和备注只能从备份恢复.")
                     }
                 >
                     {usage !== null ? <span className="text-t2 text-text-3">{formatBytes(usage)}</span> : null}
@@ -251,7 +251,7 @@ export default function Settings() {
                 </Setting>
                 <Setting label={t("记录")}>
                     <span className="text-t2 text-text-2">
-                        {(counts ?? []).map((count) => `${count.label} ${count.value}`).join(t("，"))}
+                        {(counts ?? []).map((count) => `${count.label} ${count.value}`).join(t(","))}
                     </span>
                 </Setting>
             </Group>
@@ -259,7 +259,7 @@ export default function Settings() {
             <BackupCard />
 
             <Group id="h-danger" title={t("危险操作")} tone="text-danger">
-                <Setting label={t("清除本地数据")} hint={t("钱包可重新扫码恢复，地址簿和备注只能从备份恢复")}>
+                <Setting label={t("清除本地数据")} hint={t("钱包可重新扫码恢复,地址簿和备注只能从备份恢复")}>
                     <ClearData />
                 </Setting>
             </Group>

@@ -1,4 +1,5 @@
-// 网关连接状态、余额、价格和交易跟踪。余额和链上记录在本地库里，快照和推送都写入本地，界面只读本地。
+// 网关连接状态,余额,价格和交易跟踪.余额和链上记录在本地库里,快照和推送都写入本地,界面只读本地.
+import { chainOf } from "../chains";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { liveQuery } from "dexie";
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -24,46 +25,46 @@ import { BalanceSocket, batchKey, type SocketStatus } from "./socket";
 import { applyPush, pollOpenTxs, watchedTxs } from "./tracker";
 import { t } from "../core/i18n";
 
-/** 断线时的 HTTP 轮询间隔。 */
+/** 断线时的 HTTP 轮询间隔. */
 export const POLL_INTERVAL = 15_000;
-/** 一批订阅回复通常同时到，等这么久合成一次快照。 */
+/** 一批订阅回复通常同时到,等这么久合成一次快照. */
 const SYNC_GATHER = 50;
-/** 有未定论的记录时，新块最多这么久触发一次增量。 */
+/** 有未定论的记录时,新块最多这么久触发一次增量. */
 const SETTLE_INTERVAL = 30_000;
-/** 查询失败的网络的最长重试间隔。 */
+/** 查询失败的网络的最长重试间隔. */
 const MAX_RETRY_INTERVAL = 5 * 60_000;
-/** 连接正常时也要轮询，推送只带状态，被替换要靠 HTTP 查 nonce 和 UTXO。 */
+/** 连接正常时也要轮询,推送只带状态,被替换要靠 HTTP 查 nonce 和 UTXO. */
 const LIVE_POLL_INTERVAL = 60_000;
-/** 检查本地到期和该不该轮询的间隔。 */
+/** 检查本地到期和该不该轮询的间隔. */
 const TICK_INTERVAL = 5000;
 
 interface GatewayState {
-    /** 网关配置了上游的网络。 */
+    /** 网关配置了上游的网络. */
     supported: string[];
     balances: Map<string, Balance[]>;
     failures: FeedFailure[];
-    /** 全部查询都还没有结果。 */
+    /** 全部查询都还没有结果. */
     loading: boolean;
-    /** HTTP 不可用，或者全部网络都查询失败。 */
+    /** HTTP 不可用,或者全部网络都查询失败. */
     down: boolean;
     httpOk: boolean;
     socket: SocketStatus;
     retryAt: number | null;
     lastUpdated: number;
     latency: number | null;
-    /** 主网的美元价格。测试网和没有配置价格源时为空。 */
+    /** 主网的美元价格.测试网和没有配置价格源时为空. */
     prices: PriceMap | null;
-    /** 地址发现没有完成，Bitcoin 余额可能不全。 */
+    /** 地址发现没有完成,Bitcoin 余额可能不全. */
     discoveryFailed: boolean;
     reconnect(): void;
-    /** 没有索引服务的网络，查不到链上历史。 */
+    /** 没有索引服务的网络,查不到链上历史. */
     noHistory: string[];
-    /** 要同步链上历史的地址。 */
+    /** 要同步链上历史的地址. */
     feedStreams: HistoryStream[];
     syncing: boolean;
-    /** 这次同步失败的网络。 */
+    /** 这次同步失败的网络. */
     syncFailed: string[];
-    /** 往前翻一页交易记录。 */
+    /** 往前翻一页交易记录. */
     loadOlder(streams: readonly HistoryStream[]): Promise<void>;
 }
 
@@ -80,7 +81,7 @@ async function timedVersion() {
     return { ...version, latency: Math.round(performance.now() - started) };
 }
 
-/** 手续费、nonce 这类随链变化的查询。地址发现不在内，重连时重跑发现会写入地址，又引发一轮查询。 */
+/** 手续费,nonce 这类随链变化的查询.地址发现不在内,重连时重跑发现会写入地址,又引发一轮查询. */
 const chainData = { queryKey: ["chain"] };
 
 export function GatewayProvider({ children }: { children: ReactNode }) {
@@ -96,7 +97,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         queryKey: ["version"],
         queryFn: timedVersion,
         retry: 1,
-        // 连接正常时推送就是证明，延迟也来自 WebSocket 的心跳。
+        // 连接正常时推送就是证明,延迟也来自 WebSocket 的心跳.
         refetchInterval: live ? false : POLL_INTERVAL,
     });
     const [latency, setLatency] = useState<number | null>(null);
@@ -114,7 +115,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         refetchInterval: live ? false : POLL_INTERVAL,
     });
 
-    // 地址发现只用于 Bitcoin。派生出的新地址写入 addresses，余额和订阅随之更新。
+    // 地址发现只用于 Bitcoin.派生出的新地址写入 addresses,余额和订阅随之更新.
     const walletId = accounts[0]?.walletId;
     const cursors = useLive(() => db.feedCursors.toArray(), []);
     const streams = useMemo(() => historyStreams(walletId ?? "", targets, cursors ?? []), [walletId, targets, cursors]);
@@ -123,7 +124,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         [streams, noHistory],
     );
     const feedTarget = useRef({ walletId, streams, noHistory });
-    /** 这个钱包的全部地址和当前价格，判断要不要通知时用。 */
+    /** 这个钱包的全部地址和当前价格,判断要不要通知时用. */
     const ownRef = useRef<ReadonlySet<string>>(new Set());
     const pricesRef = useRef<PriceMap | null>(null);
     const feedRun = useRef({
@@ -149,7 +150,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         return grouped;
     }, [stored]);
 
-    // 同一时间只跑一轮，期间要同步的批次排队，合成下一轮。不传时同步全部批次。
+    // 同一时间只跑一轮,期间要同步的批次排队,合成下一轮.不传时同步全部批次.
     const syncNow = useCallback(async (list?: readonly HistoryStream[]) => {
         const run = feedRun.current;
         for (const stream of list ?? feedTarget.current.streams) run.queue.set(batchKey(stream), stream);
@@ -160,7 +161,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         };
         const step = async (queued: HistoryStream[]) => {
             const { walletId: wallet, streams: current, noHistory: unindexed } = feedTarget.current;
-            // 切换钱包或网络后，排队的批次可能已经不属于当前钱包。
+            // 切换钱包或网络后,排队的批次可能已经不属于当前钱包.
             const known = new Set(current.map(batchKey));
             const batch = queued.filter((stream) => known.has(batchKey(stream)));
             if (!wallet || batch.length === 0) return;
@@ -186,7 +187,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         queryKey: ["discovery", walletId, supported.join(",")],
         queryFn: async () => {
             for (const account of accounts) {
-                if (account.chain !== "bitcoin") continue;
+                if (!chainOf(account.chain).hdAddresses) continue;
                 for (const network of accountNetworks(account, mode, supported))
                     await discoverAccount(account, network, mode);
             }
@@ -204,9 +205,9 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         pricesRef.current = prices.data ?? null;
     }, [prices.data]);
-    /** 每批地址收到的最后一个高度，用来发现漏掉的推送。 */
+    /** 每批地址收到的最后一个高度,用来发现漏掉的推送. */
     const heights = useRef(new Map<string, number>());
-    /** 每批地址上次因为未定论记录触发增量的时间。 */
+    /** 每批地址上次因为未定论记录触发增量的时间. */
     const settled = useRef(new Map<string, number>());
     const socketRef = useRef<BalanceSocket | null>(null);
     const supportedRef = useRef(supported);
@@ -222,14 +223,14 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
             onStatus: (status, retryAt) => {
                 setSocketState({ status, retryAt });
                 if (status === "connecting") heights.current.clear();
-                // 断线不一定是网关挂了，立刻用 HTTP 确认一次，不等下一轮轮询。
+                // 断线不一定是网关挂了,立刻用 HTTP 确认一次,不等下一轮轮询.
                 if (status === "retrying") void client.invalidateQueries({ queryKey: ["version"] });
             },
             onReady: () => {
                 void client.invalidateQueries(chainData);
                 void pollTxs();
             },
-            // 先订阅再取快照，这样两者之间到账的交易不会丢。
+            // 先订阅再取快照,这样两者之间到账的交易不会丢.
             onBatchReady: (target) => void syncNow([target]),
             onLatency: setLatency,
             onTx: (network, tx) => void applyPush(network, tx),
@@ -243,12 +244,12 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
                 const key = batchKey(stream);
                 const last = heights.current.get(key);
                 heights.current.set(key, update.height);
-                // 接不上说明中间漏了推送，交易没取到时网关也会说。这两种情况都要补，只补这批地址。
+                // 接不上说明中间漏了推送,交易没取到时网关也会说.这两种情况都要补,只补这批地址.
                 const missed = (last !== undefined && update.previous !== last) || update.items === null;
                 void applyChainUpdate(wallet, stream, update).then(async (fresh) => {
                     for (const notice of incomingNotices(fresh, ownRef.current, pricesRef.current)) publish(notice);
-                    // 新块是唯一的触发。没有未定论的记录时不请求，所以空闲时没有 HTTP。
-                    // 第一次只记时间，推送刚带来的记录不用马上再查一遍。
+                    // 新块是唯一的触发.没有未定论的记录时不请求,所以空闲时没有 HTTP.
+                    // 第一次只记时间,推送刚带来的记录不用马上再查一遍.
                     if (!settled.current.has(key)) settled.current.set(key, Date.now());
                     const due = Date.now() - (settled.current.get(key) ?? 0) >= SETTLE_INTERVAL;
                     if (missed || (due && (await hasOpenEntries(wallet, stream)))) {
@@ -277,7 +278,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         supportedRef.current = supported;
     }, [supported]);
 
-    // 未完成的交易都订阅 tx 频道，包括另一个模式和另一个钱包的。
+    // 未完成的交易都订阅 tx 频道,包括另一个模式和另一个钱包的.
     useEffect(() => {
         const query = liveQuery(() => watchedTxs(Date.now()));
         const subscription = query.subscribe({
@@ -292,7 +293,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         return () => subscription.unsubscribe();
     }, [supported]);
 
-    // 本地到期每隔几秒检查一次。轮询在断线时 15 秒一次，连接正常时只用来发现替换。
+    // 本地到期每隔几秒检查一次.轮询在断线时 15 秒一次,连接正常时只用来发现替换.
     useEffect(() => {
         const timer = setInterval(() => {
             void sweepExpired();
@@ -301,7 +302,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         return () => clearInterval(timer);
     }, [live, pollTxs]);
 
-    // 交易状态变了，这个标签页和其他标签页缓存的链上数据都要重新查询。
+    // 交易状态变了,这个标签页和其他标签页缓存的链上数据都要重新查询.
     useEffect(
         () =>
             onSync(() => {
@@ -317,14 +318,14 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
 
     const failures = feed.failures.filter((failure) => targets.some((target) => target.network === failure.network));
     const everyNetworkFailed = targets.length > 0 && failures.length === targets.length;
-    // 全部网络都查询失败也算不可用，版本接口正常不代表上游正常。
+    // 全部网络都查询失败也算不可用,版本接口正常不代表上游正常.
     const httpOk = version.isSuccess && !everyNetworkFailed;
 
     useEffect(() => {
         feedTarget.current = { walletId, streams, noHistory };
     }, [walletId, streams, noHistory]);
 
-    // 正常时这里什么都不做。查询失败的网络单独重试，间隔逐步拉长。断线时靠它保持更新。
+    // 正常时这里什么都不做.查询失败的网络单独重试,间隔逐步拉长.断线时靠它保持更新.
     const retries = useRef(0);
     useEffect(() => {
         const broken = new Set([...feed.failed, ...feed.failures.map((failure) => failure.network)]);

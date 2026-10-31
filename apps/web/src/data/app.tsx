@@ -1,4 +1,4 @@
-// 全局状态。钱包、账户、设置都直接来自 IndexedDB，多个标签页由 liveQuery 同步。
+// 全局状态.钱包,账户,设置都直接来自 IndexedDB,多个标签页由 liveQuery 同步.
 import { liveQuery } from "dexie";
 import {
     createContext,
@@ -20,7 +20,7 @@ export function useLive<T>(query: () => Promise<T>, deps: DependencyList): T | u
     useEffect(() => {
         const subscription = liveQuery(query).subscribe({ next: setValue, error: console.error });
         return () => subscription.unsubscribe();
-        // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖由调用方传入，调用方按 biome.json 的 useLive 配置检查。
+        // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖由调用方传入,调用方按 biome.json 的 useLive 配置检查.
     }, deps);
     return value;
 }
@@ -38,7 +38,7 @@ interface AppState {
     mode: Mode;
     setMode(mode: Mode): Promise<void>;
     wallets: Wallet[];
-    /** 当前模式下选中的钱包。 */
+    /** 当前模式下选中的钱包. */
     wallet: Wallet | null;
     selectWallet(wallet: Wallet): Promise<void>;
     accounts: Account[];
@@ -66,7 +66,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const data = useLive(async () => {
         if (!walletId) return null;
         const accounts = await db.accounts.where("walletId").equals(walletId).toArray();
-        // 主键按路径字符串排序，TRON 会排到 Bitcoin 前面。
+        // 主键按路径字符串排序,TRON 会排到 Bitcoin 前面.
         accounts.sort((a, b) => accountRank(a.path, mode) - accountRank(b.path, mode));
         const addresses = await db.addresses
             .where("accountId")
@@ -74,7 +74,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             .toArray();
         return { walletId, accounts, addresses };
     }, [walletId, mode]);
-    // 切换钱包时查询结果晚一拍到，不能把上一个钱包的账户配上新钱包的指纹。
+    // 切换钱包时查询结果晚一拍到,不能把上一个钱包的账户配上新钱包的指纹.
     const current = data?.walletId === walletId ? data : null;
 
     const [persisted, setPersisted] = useState(false);
@@ -104,7 +104,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         [mode, setMode, wallets, wallet, selectWallet, current, persisted, refreshPersisted],
     );
 
-    // 首次读取完成前不渲染，避免闪过 W0。
+    // 首次读取完成前不渲染,避免闪过 W0.
     if (!snapshot) return null;
     return <AppContext value={value}>{children}</AppContext>;
 }

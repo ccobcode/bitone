@@ -1,4 +1,4 @@
-/* 动效，对应 docs/06-ui.md 第 5 节。时长和缓动都来自令牌。 */
+/* 动效,对应 docs/06-ui.md 第 5 节.时长和缓动都来自令牌. */
 :root {
     --vt-in: var(--page-in);
     --vt-out: calc(var(--page-out) * -1);
@@ -8,7 +8,7 @@
     --vt-out: var(--page-out);
 }
 
-/* 页面切换。根节点不动，导航的选中态照常过渡，只有内容和标题走转场。 */
+/* 页面切换.根节点不动,导航的选中态照常过渡,只有内容和标题走转场. */
 .page-body {
     view-transition-name: page;
 }
@@ -16,10 +16,10 @@
     view-transition-name: page-title;
 }
 ::view-transition {
-    /* 动画进行中可以继续点击。 */
+    /* 动画进行中可以继续点击. */
     pointer-events: none;
 }
-/* 转场时页面单独成层，盖在根快照上面。标签栏也要单独成层，否则切页时会被盖住闪一下。 */
+/* 转场时页面单独成层,盖在根快照上面.标签栏也要单独成层,否则切页时会被盖住闪一下. */
 .tabbar {
     view-transition-name: tabbar;
 }
@@ -52,7 +52,7 @@
 ::view-transition-new(page-title) {
     animation: vt-in var(--dur-normal) var(--ease-emphasized) both;
 }
-/* 欢迎页没有外壳，进出时整页淡入淡出。 */
+/* 欢迎页没有外壳,进出时整页淡入淡出. */
 :root[data-nav="swap"]::view-transition-old(root) {
     display: block;
     animation: fade-out var(--dur-normal) var(--ease-exit) both;
@@ -67,7 +67,7 @@
         transform: translateX(var(--vt-in));
     }
 }
-/* 旧页先淡完，新旧文字不会叠在一起。 */
+/* 旧页先淡完,新旧文字不会叠在一起. */
 @keyframes vt-out {
     50% {
         opacity: 0;
@@ -123,7 +123,7 @@
         transform: translateY(var(--s1));
     }
 }
-/* 光圈往外扩散，等待时循环，完成时只放一次。 */
+/* 光圈往外扩散,等待时循环,完成时只放一次. */
 @keyframes ring-out {
     from {
         box-shadow: 0 0 0 0 color-mix(in srgb, var(--ring, currentcolor) 50%, transparent);
@@ -137,7 +137,7 @@
         opacity: 0.5;
     }
 }
-/* 取景框里的扫描线上下来回。 */
+/* 取景框里的扫描线上下来回. */
 @keyframes sweep {
     to {
         top: calc(100% - var(--s6));
@@ -145,7 +145,7 @@
 }
 
 @layer components {
-    /* 按下缩放，松开回弹。悬停只让颜色渐变。 */
+    /* 按下缩放,松开回弹.悬停只让颜色渐变. */
     .press {
         transition:
             transform var(--dur-normal) var(--ease-emphasized),
@@ -160,7 +160,7 @@
         transition-timing-function: var(--ease-standard);
     }
 
-    /* 新值淡入，不做滚动计数，金额没有中间值。 */
+    /* 新值淡入,不做滚动计数,金额没有中间值. */
     .fade-in {
         animation: fade-in var(--dur-normal) var(--ease-standard) both;
     }
@@ -168,7 +168,7 @@
         animation: rise var(--dur-normal) var(--ease-emphasized) both;
     }
 
-    /* 列表逐项进入，错开 30，最多错开 8 项。 */
+    /* 列表逐项进入,错开 30,最多错开 8 项. */
     .stagger > * {
         animation: rise var(--dur-normal) var(--ease-emphasized) both;
         animation-delay: calc(var(--dur-stagger) * var(--i, 0));
@@ -198,7 +198,7 @@
         --i: 8;
     }
 
-    /* 分段选择。各段等宽，选中块按序号平移，不用测量。 */
+    /* 分段选择.各段等宽,选中块按序号平移,不用测量. */
     .segmented {
         --seg-pad: var(--s1);
         position: relative;
@@ -242,7 +242,7 @@
         color: var(--text);
     }
 
-    /* 顶部导航。下划线从中间展开。 */
+    /* 顶部导航.下划线从中间展开. */
     .top-link {
         position: relative;
         display: flex;
@@ -275,7 +275,7 @@
         transform: scaleX(1);
     }
 
-    /* 手机底部标签栏：悬浮胶囊，对齐页面边线。底色块包住图标和文字，按序号平移，和冷钱包的底部导航同一规格。 */
+    /* 手机底部标签栏:悬浮胶囊,对齐页面边线.底色块包住图标和文字,按序号平移,和冷钱包的底部导航同一规格. */
     .tabbar {
         position: fixed;
         inset-inline: var(--page-x);
@@ -289,7 +289,7 @@
         box-shadow: var(--elevation-2);
         padding: var(--s1);
     }
-    /* 内容从导航后面滚过时用底色渐隐，不和按钮叠在一起。 */
+    /* 内容从导航后面滚过时用底色渐隐,不和按钮叠在一起. */
     .tabbar::before {
         position: absolute;
         z-index: -1;
@@ -321,7 +321,7 @@
         font-size: var(--t1);
         font-weight: 500;
         line-height: var(--lh-t1);
-        /* 英文标签可能比列宽，邻列都短，居中外溢比折行好。 */
+        /* 英文标签可能比列宽,邻列都短,居中外溢比折行好. */
         white-space: nowrap;
         text-decoration: none;
         transition: color var(--dur-fast) var(--ease-standard);
@@ -330,7 +330,7 @@
         color: var(--accent-text);
     }
 
-    /* 竖向选择列表，行高固定，选中块按序号平移。 */
+    /* 竖向选择列表,行高固定,选中块按序号平移. */
     .select-rail {
         position: relative;
     }
@@ -345,7 +345,7 @@
         transition: transform var(--dur-normal) var(--ease-standard);
     }
 
-    /* 开关：圆点滑动，轨道变色。 */
+    /* 开关:圆点滑动,轨道变色. */
     .switch {
         display: flex;
         width: var(--switch-w);
@@ -370,14 +370,14 @@
     [aria-checked="true"] > .switch > .switch-dot {
         transform: translateX(calc(var(--switch-w) - var(--switch-dot) - 4px));
     }
-    /* 设置行里的开关，整行都能点。 */
+    /* 设置行里的开关,整行都能点. */
     .setting .switch-button::after {
         position: absolute;
         inset: 0;
         content: "";
     }
 
-    /* 展开折叠：高度和透明度同时过渡。收起后不可聚焦。 */
+    /* 展开折叠:高度和透明度同时过渡.收起后不可聚焦. */
     .fold {
         display: grid;
         grid-template-rows: 0fr;
@@ -394,11 +394,11 @@
         visibility: visible;
         transition-delay: 0s;
     }
-    /* 收起时不占卡片的间距。 */
+    /* 收起时不占卡片的间距. */
     .card > .fold:not([data-open]) {
         margin-top: calc(var(--s4) * -1);
     }
-    /* 负边距留出焦点环的位置，overflow 不会把它裁掉。 */
+    /* 负边距留出焦点环的位置,overflow 不会把它裁掉. */
     .fold > * {
         overflow: hidden;
         min-height: 0;
@@ -406,7 +406,7 @@
         padding: var(--s1);
     }
 
-    /* 弹层：从 96% 放大并淡入。 */
+    /* 弹层:从 96% 放大并淡入. */
     .popup {
         border-radius: var(--r3);
         background: var(--popup);
@@ -449,13 +449,13 @@
             min-height: var(--s12);
         }
     }
-    /* 选择器在手机上是底部弹层，和冷钱包选账户相同。宽屏还是贴着触发它的元素展开。 */
+    /* 选择器在手机上是底部弹层,和冷钱包选账户相同.宽屏还是贴着触发它的元素展开. */
     .picker-title {
         display: none;
     }
     @media (width < 60rem) {
         .picker-position {
-            /* 定位库写在行内样式上，只有这样能盖掉。 */
+            /* 定位库写在行内样式上,只有这样能盖掉. */
             /* biome-ignore lint/complexity/noImportantStyles: 见上 */
             position: fixed !important;
             /* biome-ignore lint/complexity/noImportantStyles: 见上 */
@@ -489,7 +489,7 @@
         cursor: not-allowed;
         opacity: 0.5;
     }
-    /* 浮层由网址打开，挂载时已经是打开的，进场用关键帧。 */
+    /* 浮层由网址打开,挂载时已经是打开的,进场用关键帧. */
     .sheet {
         animation: sheet-in var(--dur-normal) var(--ease-emphasized) both;
     }
@@ -503,7 +503,7 @@
         opacity: 0;
     }
 
-    /* 向下的箭头，打开时翻转。 */
+    /* 向下的箭头,打开时翻转. */
     .flip {
         transition:
             transform var(--dur-normal) var(--ease-standard),
@@ -520,7 +520,7 @@
         }
     }
 
-    /* 取景框：四个角加一条扫描线，和冷钱包同一规格。取景区域比手机屏幕矮，边长按高度收。 */
+    /* 取景框:四个角加一条扫描线,和冷钱包同一规格.取景区域比手机屏幕矮,边长按高度收. */
     .scan-frame {
         position: absolute;
         top: 50%;
@@ -568,7 +568,7 @@
         animation: sweep calc(var(--dur-slow) * 6) linear infinite alternate;
     }
 
-    /* 骨架屏微光，不用转圈。 */
+    /* 骨架屏微光,不用转圈. */
     .skeleton {
         display: block;
         border-radius: var(--r1);
@@ -577,14 +577,14 @@
         animation: shimmer calc(var(--dur-slow) * 4) linear infinite;
     }
 
-    /* 完成时对勾描线。路径带 pathLength=1。 */
+    /* 完成时对勾描线.路径带 pathLength=1. */
     .draw {
         stroke-dasharray: 1;
         stroke-dashoffset: 1;
         animation: draw var(--dur-slow) var(--ease-standard) forwards;
     }
 
-    /* 转账步骤。切页时外壳不重新挂载，下一段是真的填上去的。 */
+    /* 转账步骤.切页时外壳不重新挂载,下一段是真的填上去的. */
     .step-fill {
         transform: scaleX(0);
         transform-origin: left;
@@ -594,15 +594,15 @@
         transform: scaleX(1);
     }
 
-    /* 进度条：宽度过渡，不是金额，可以有中间值。 */
+    /* 进度条:宽度过渡,不是金额,可以有中间值. */
     .meter-fill {
         transition: width var(--dur-slow) var(--ease-standard);
     }
-    /* 下载中的箭头往下落，循环。 */
+    /* 下载中的箭头往下落,循环. */
     .icon-drop {
         animation: drop calc(var(--dur-slow) * 4) var(--ease-standard) infinite;
     }
-    /* 进行中的那一段有光扫过，说明还在等链上。 */
+    /* 进行中的那一段有光扫过,说明还在等链上. */
     .meter-live {
         background: linear-gradient(90deg, var(--surface-3) 30%, var(--accent) 50%, var(--surface-3) 70%);
         background-size: 200% 100%;
@@ -617,7 +617,7 @@
     }
 }
 
-/* 系统开启减少动态效果时，位移和缩放都去掉，只保留淡入淡出。 */
+/* 系统开启减少动态效果时,位移和缩放都去掉,只保留淡入淡出. */
 @media (prefers-reduced-motion: reduce) {
     :root,
     :root[data-nav="back"] {

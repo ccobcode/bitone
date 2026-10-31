@@ -1,4 +1,4 @@
-// 测试共用的工具，不会进入构建产物。
+// 测试共用的工具,不会进入构建产物.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { vi } from "vitest";
@@ -6,7 +6,7 @@ import { PairingReceiver, initCoreSync, type Pairing } from "./core";
 import { lookupAsset } from "./core/manifest";
 import { db, type Account, type Wallet } from "./data/db";
 import { savePairing, walletId } from "./data/pairing";
-import type { TransferDraft } from "./data/transfer";
+import type { TransferDraft } from "./chains/transfer";
 import { t } from "./core/i18n";
 
 export const EVM_ADDRESS = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
@@ -16,7 +16,7 @@ export const BTC_ADDRESS = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu";
 export const PEER_EVM = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 export const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
-/** 取出一定存在的值，不存在时测试失败。 */
+/** 取出一定存在的值,不存在时测试失败. */
 export function must<T>(value: T | null | undefined): T {
     if (value === null || value === undefined) throw new Error(t("值不存在"));
     return value;
@@ -42,7 +42,7 @@ export interface Fixture {
     account(path: string): Account;
 }
 
-/** 配对真实的测试钱包。助记词是 abandon×11 about。 */
+/** 配对真实的测试钱包.助记词是 abandon×11 about. */
 export async function pairWallet(): Promise<Fixture> {
     const pairing = loadPairing();
     await savePairing(pairing, {
@@ -100,7 +100,7 @@ export function draftFor(
 
 export type Route = (body: Record<string, unknown>) => unknown;
 
-/** 假网关。`routes` 的键是 `/v1/` 之后的路径，返回 Response 时原样使用。 */
+/** 假网关.`routes` 的键是 `/v1/` 之后的路径,返回 Response 时原样使用. */
 export function stubGateway(routes: Record<string, Route>) {
     const calls: string[] = [];
     const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
@@ -122,7 +122,7 @@ export function gatewayError(code: string, message = "", status = 400): Response
 
 const CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 
-/** 测试里把地址转成输出脚本，只支持 SegWit v0 和 Taproot。 */
+/** 测试里把地址转成输出脚本,只支持 SegWit v0 和 Taproot. */
 export function scriptFor(address: string): Buffer {
     const data = [...address.slice(address.lastIndexOf("1") + 1, -6)].map((char) => CHARSET.indexOf(char));
     const version = data[0] ?? 0;
@@ -147,7 +147,7 @@ function u64(value: number): Buffer {
     return buffer;
 }
 
-/** 造一笔付给 `script` 的前序交易，返回 txid 和十六进制。`padding` 是额外的输出数量，用来撑大交易。 */
+/** 造一笔付给 `script` 的前序交易,返回 txid 和十六进制.`padding` 是额外的输出数量,用来撑大交易. */
 export function fakePrevTx(script: Buffer, amount: number, salt = 0, padding = 0): { txid: string; hex: string } {
     const input = Buffer.concat([
         Buffer.alloc(32, salt + 1),

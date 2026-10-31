@@ -61,7 +61,7 @@ const seen = (status: ChainObservation["status"], extra: Partial<ChainObservatio
     ...extra,
 });
 
-// 逐条对应 docs/03-system.md 第 7 节的状态图，最后四条是文档之外加的，见 machine.ts 开头。
+// 逐条对应 docs/03-system.md 第 7 节的状态图,最后四条是文档之外加的,见 machine.ts 开头.
 const EDGES: [TxState, TxEvent, TxState][] = [
     ["signing", "signed", "signed"],
     ["signing", "cancel", "abandoned"],
@@ -123,7 +123,7 @@ describe("状态图", () => {
         expect(rejected).toBe(STATES.length * EVENTS.length - EDGES.length);
     });
 
-    it("已确认和链上失败是终态，已确认不再回退", () => {
+    it("已确认和链上失败是终态,已确认不再回退", () => {
         for (const state of ["confirmed", "failed"] as const) {
             expect(TRANSITIONS[state]).toEqual({});
             expect(observe(tx(state), seen("unknown"), { now: NOW, conflict: true })).toEqual(tx(state));
@@ -159,7 +159,7 @@ describe("observe", () => {
         expect(observe(tx("confirming"), seen("included", { stage: "safe" }), { now: NOW }).state).toBe("confirming");
     });
 
-    it("离线期间走完的状态一次补齐，每一步都留在时间线", () => {
+    it("离线期间走完的状态一次补齐,每一步都留在时间线", () => {
         const next = observe(tx("broadcast"), seen("finalized"), { now: NOW });
         expect(next.state).toBe("confirmed");
         expect(next.timeline.map((entry) => entry.state)).toEqual(["broadcast", "confirming", "confirmed"]);
@@ -172,7 +172,7 @@ describe("observe", () => {
         ]);
     });
 
-    it("合约回滚是链上失败，不能算成功", () => {
+    it("合约回滚是链上失败,不能算成功", () => {
         const failed = seen("failed", { stage: "finalized", fee: "42000", block: 9 });
         for (const state of ["broadcast", "uncertain", "confirming"] as const) {
             const next = observe(tx(state), failed, { now: NOW });
@@ -182,14 +182,14 @@ describe("observe", () => {
         }
     });
 
-    it("还没到最终阶段的回滚不进终态，但不能显示成成功", () => {
+    it("还没到最终阶段的回滚不进终态,但不能显示成成功", () => {
         const next = observe(tx("broadcast"), seen("failed", { stage: "latest", fee: "42000" }), { now: NOW });
         expect(next).toMatchObject({ state: "confirming", reverted: true, fee: "42000" });
         expect(observe(next, seen("failed", { stage: "safe" }), { now: NOW }).state).toBe("confirming");
         expect(observe(next, seen("failed", { stage: "finalized" }), { now: NOW }).state).toBe("failed");
     });
 
-    it("回滚被重组后重新执行成功，失败标记清除", () => {
+    it("回滚被重组后重新执行成功,失败标记清除", () => {
         const failed = observe(tx("broadcast"), seen("failed", { stage: "latest" }), { now: NOW });
         const rolled = observe(failed, seen("unknown"), { now: NOW });
         expect(rolled).toMatchObject({ state: "broadcast", reverted: false });
@@ -204,7 +204,7 @@ describe("observe", () => {
         }
     });
 
-    it("结果不明时节点查到就是已广播，查不到保持不变", () => {
+    it("结果不明时节点查到就是已广播,查不到保持不变", () => {
         expect(observe(tx("uncertain"), seen("pending"), { now: NOW }).state).toBe("broadcast");
         expect(observe(tx("uncertain"), seen("unknown"), { now: NOW }).state).toBe("uncertain");
     });
@@ -225,7 +225,7 @@ describe("observe", () => {
         expect(again).toMatchObject({ state: "broadcast", conflicts: 1 });
     });
 
-    it("证据消失时清零，推送不带证据时计数不变", () => {
+    it("证据消失时清零,推送不带证据时计数不变", () => {
         const first = observe(tx("broadcast"), seen("unknown"), { now: NOW, conflict: true });
         expect(observe(first, seen("unknown"), { now: NOW, conflict: false }).conflicts).toBe(0);
         expect(observe(first, seen("unknown"), { now: NOW }).conflicts).toBe(1);
@@ -237,7 +237,7 @@ describe("observe", () => {
         expect(next).toMatchObject({ state: "confirming", conflicts: 0 });
     });
 
-    it("TRON 超过过期时间，宽限之后才算已过期", () => {
+    it("TRON 超过过期时间,宽限之后才算已过期", () => {
         const base = { chain: "tron" as const, hardExpiry: true, expiresAt: NOW };
         expect(observe(tx("broadcast", base), seen("unknown"), { now: NOW + 1000 }).state).toBe("broadcast");
         const late = NOW + EXPIRY_GRACE + 1;
@@ -266,14 +266,14 @@ describe("observe", () => {
         }
     });
 
-    it("已替换的交易其实上链了，要如实显示", () => {
+    it("已替换的交易其实上链了,要如实显示", () => {
         const next = observe(tx("replaced"), seen("included", { stage: "latest", block: 7 }), { now: NOW });
         expect(next).toMatchObject({ state: "confirming", block: 7 });
         expect(next.timeline.at(-1)?.note).toContain("替换判定作废");
         expect(observe(tx("replaced"), seen("finalized"), { now: NOW }).state).toBe("confirmed");
     });
 
-    it("已替换的交易查不到时保持不变，看够时间后不再查询", () => {
+    it("已替换的交易查不到时保持不变,看够时间后不再查询", () => {
         const record = tx("replaced", { updatedAt: NOW });
         expect(observe(record, seen("unknown"), { now: NOW, conflict: true })).toBe(record);
         expect(observe(record, seen("pending"), { now: NOW })).toBe(record);
@@ -284,7 +284,7 @@ describe("observe", () => {
 });
 
 describe("占用和超时", () => {
-    it("已签名后取消不释放，签名仍然有效", () => {
+    it("已签名后取消不释放,签名仍然有效", () => {
         expect(holdsReservation(tx("abandoned", { raw: "aa" }))).toBe(true);
         expect(holdsReservation(tx("abandoned", { raw: undefined }))).toBe(false);
         for (const state of ["signing", "signed", "broadcasting", "broadcast", "uncertain", "confirming"] as const) {
@@ -295,7 +295,7 @@ describe("占用和超时", () => {
         }
     });
 
-    it("已广播超时：Bitcoin 24 小时，EVM 30 分钟，其他链不提示", () => {
+    it("已广播超时:Bitcoin 24 小时,EVM 30 分钟,其他链不提示", () => {
         const at = (chain: TxRecord["chain"]) => tx("broadcast", { chain, broadcastAt: NOW });
         expect(isOverdue(at("evm"), NOW + 30 * 60_000)).toBe(false);
         expect(isOverdue(at("evm"), NOW + 30 * 60_000 + 1)).toBe(true);

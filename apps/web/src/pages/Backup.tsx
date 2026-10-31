@@ -26,10 +26,10 @@ function download(text: string, name: string): void {
 }
 
 function failureText(error: unknown): string {
-    return error instanceof BackupError ? error.message : t("操作失败，没有写入任何数据。");
+    return error instanceof BackupError ? error.message : t("操作失败,没有写入任何数据.");
 }
 
-/** 欢迎页和设置页打开的是同一个浮层。 */
+/** 欢迎页和设置页打开的是同一个浮层. */
 export function ImportDialog() {
     const { selectWallet, wallet } = useApp();
     const navigate = useNavigate();
@@ -58,7 +58,7 @@ export function ImportDialog() {
     }
 
     if (done) {
-        // 等全局状态读到导入的钱包再离开，否则路由守卫看到的还是没有钱包。
+        // 等全局状态读到导入的钱包再离开,否则路由守卫看到的还是没有钱包.
         const ready = !done.first || wallet?.id === done.first.id;
         return (
             <Sheet title={t("导入完成")}>
@@ -67,7 +67,7 @@ export function ImportDialog() {
                     <Fact label={t("联系人")}>{t("{0} 个", done.contacts)}</Fact>
                 </dl>
                 {done.conflicts > 0 ? (
-                    <Notice tone="warn">{t("{0} 个账户与本地公钥不同，已保留本地的。", done.conflicts)}</Notice>
+                    <Notice tone="warn">{t("{0} 个账户与本地公钥不同,已保留本地的.", done.conflicts)}</Notice>
                 ) : null}
                 <Notice>{t("导入的联系人和账户都要重新确认")}</Notice>
                 <SheetActions>
@@ -128,7 +128,7 @@ export function ImportDialog() {
     );
 }
 
-/** 口令输两次。输错的备份解不开，而且要等到恢复时才发现。 */
+/** 口令输两次.输错的备份解不开,而且要等到恢复时才发现. */
 export function ExportDialog() {
     const close = useCloseOverlay();
     const [passphrase, setPassphrase] = useState("");
@@ -159,7 +159,7 @@ export function ExportDialog() {
         return (
             <Sheet title={t("导出加密备份")}>
                 <p role="status" className="text-t3 text-text-2">
-                    {t("备份已导出。")}
+                    {t("备份已导出.")}
                 </p>
                 <SheetActions>
                     <Button variant="primary" onClick={close}>
@@ -199,7 +199,7 @@ export function ExportDialog() {
                     className="field text-t3"
                 />
             </div>
-            {again && passphrase !== again ? <Helper tone="text-warn">{t("两次输入的口令不一致。")}</Helper> : null}
+            {again && passphrase !== again ? <Helper tone="text-warn">{t("两次输入的口令不一致.")}</Helper> : null}
             {failure ? <Notice tone="danger">{failure}</Notice> : null}
             <SheetActions>
                 <Button variant="primary" disabled={!ready || busy} onClick={() => void save()}>

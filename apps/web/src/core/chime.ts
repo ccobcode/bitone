@@ -1,4 +1,4 @@
-// 提示音。现场合成：不需要音频文件，CSP 也没有放开媒体来源。音量压低，办公环境里不突兀。
+// 提示音.现场合成:不需要音频文件,CSP 也没有放开媒体来源.音量压低,办公环境里不突兀.
 export type Chime = "incoming" | "included" | "failed";
 
 const VOLUME = 0.06;
@@ -18,7 +18,7 @@ const NOTES: Record<Chime, readonly { hz: number; ms: number }[]> = {
 
 let context: AudioContext | null = null;
 
-/** 浏览器要求用户点过页面才能发声，所以要在点击时调用。 */
+/** 浏览器要求用户点过页面才能发声,所以要在点击时调用. */
 export function unlockChime(): void {
     context ??= new AudioContext();
     void context.resume();

@@ -12,7 +12,7 @@ import { TabBar, WebNav } from "./WebNav";
 
 type Progress = { current: 1 | 2 | 3; result?: StepResult };
 
-/** 这笔交易走到哪一步。没上链就结束的请求没有结果可说，不显示。 */
+/** 这笔交易走到哪一步.没上链就结束的请求没有结果可说,不显示. */
 const PROGRESS: Partial<Record<TxState, Progress>> = {
     signing: { current: 2 },
     signed: { current: 3 },
@@ -24,7 +24,7 @@ const PROGRESS: Partial<Record<TxState, Progress>> = {
     failed: { current: 3, result: "failed" },
 };
 
-/** 转账流程走到哪一步。广播后落到交易详情，第三步要在那里等到结果。切页时外壳不重新挂载，下一段是真的填上去的。 */
+/** 转账流程走到哪一步.广播后落到交易详情,第三步要在那里等到结果.切页时外壳不重新挂载,下一段是真的填上去的. */
 function useProgress(pathname: string): Progress | null {
     const [, first, second] = /^\/(?:sign|history)\/([^/]+)(?:\/([^/]+))?$/.exec(pathname) ?? [];
     const state = useLive(async () => {

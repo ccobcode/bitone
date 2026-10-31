@@ -1,6 +1,8 @@
-// 交易和占用的存储。状态变化、释放占用都在同一个事务里完成，多标签页不会看到中间状态。
+// 交易和占用的存储.状态变化,释放占用都在同一个事务里完成,多标签页不会看到中间状态.
 import type { Verified } from "../core";
-import { db, txKey, type Reservation, type ReservationType, type TxPlan, type TxRecord } from "./db";
+import { chainOf } from "../chains";
+import type { Claim } from "./claims";
+import { db, txKey, type NewTx, type Reservation, type ReservationType, type TxRecord } from "./db";
 import { entry } from "./feed";
 import {
     CONFLICT_ROUNDS,
@@ -16,14 +18,14 @@ import {
 import { announce } from "./sync";
 import { t } from "../core/i18n";
 
-/** 超过这个时间还在广播中，多半是页面中途关闭了，按超时处理。比网关请求的时限长。 */
+/** 超过这个时间还在广播中,多半是页面中途关闭了,按超时处理.比网关请求的时限长. */
 export const BROADCAST_STALE = 60_000;
 
 const scope = () => [db.txs, db.reservations, db.addresses, db.chainTxs];
 
 /**
- * 按账户加锁，见 docs/03-system.md 第 3 节。多个标签页同时构建时排队，
- * 分配序号、写入占用、写入交易都要在锁里完成。Web Locks 只在安全上下文可用。
+ * 按账户加锁,见 docs/03-system.md 第 3 节.多个标签页同时构建时排队,
+ * 分配序号,写入占用,写入交易都要在锁里完成.Web Locks 只在安全上下文可用.
  */
 export function withAccountLock<T>(accountId: string, work: () => Promise<T>): Promise<T> {
     const locks = globalThis.navigator?.locks;
@@ -37,7 +39,7 @@ function dayPrefix(now: number): string {
     return `TX-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-`;
 }
 
-/** 业务编号按天递增，在写入事务里取，多个标签页不会重复。 */
+/** 业务编号按天递增,在写入事务里取,多个标签页不会重复. */
 async function nextId(now: number): Promise<string> {
     const prefix = dayPrefix(now);
     const last = await db.txs.where("id").startsWith(prefix).last();
@@ -49,31 +51,7 @@ export function reservationId(accountId: string, network: string, type: Reservat
     return `${accountId}|${network}|${type}|${value}`;
 }
 
-export interface Claim {
-    type: ReservationType;
-    value: string;
-}
-
-export type NewTx = Pick<
-    TxRecord,
-    | "walletId"
-    | "accountId"
-    | "chain"
-    | "network"
-    | "kind"
-    | "asset"
-    | "amount"
-    | "from"
-    | "to"
-    | "request"
-    | "requestId"
-    | "plan"
-    | "expiresAt"
-    | "hardExpiry"
-    | "replaces"
->;
-
-/** 写入占用和交易。`shared` 是替换交易沿用的占用，其余的必须是新的。 */
+/** 写入占用和交易.`shared` 是替换交易沿用的占用,其余的必须是新的. */
 export async function insertTx(
     fields: NewTx,
     claims: Claim[],
@@ -128,7 +106,7 @@ export async function insertTx(
     return tx;
 }
 
-/** 有交易上链后，共用同一占用的其他交易都不可能再上链。 */
+/** 有交易上链后,共用同一占用的其他交易都不可能再上链. */
 async function retireSiblings(tx: TxRecord, rows: Reservation[], now: number): Promise<void> {
     const others = new Set(rows.flatMap((row) => row.txIds).filter((id) => id !== tx.id));
     for (const other of await db.txs.bulkGet([...others])) {
@@ -145,12 +123,12 @@ async function retireSiblings(tx: TxRecord, rows: Reservation[], now: number): P
 }
 
 async function markChangeUsed(tx: TxRecord): Promise<void> {
-    const { plan } = tx;
-    if (plan.chain !== "bitcoin" || plan.changeIndex === null) return;
-    await db.addresses.update([tx.accountId, 1, plan.changeIndex], { used: true });
+    const index = chainOf(tx.chain).changeIndex?.(tx) ?? null;
+    if (index === null) return;
+    await db.addresses.update([tx.accountId, 1, index], { used: true });
 }
 
-/** 有了结果的交易存一条标准记录，和网关同步的是同一种格式、同一个标识，后到的直接覆盖。 */
+/** 有了结果的交易存一条标准记录,和网关同步的是同一种格式,同一个标识,后到的直接覆盖. */
 async function saveRecord(tx: TxRecord, now: number): Promise<void> {
     if (!tx.hash) return;
     const status = tx.state === "failed" ? "failed" : "finalized";
@@ -167,7 +145,7 @@ async function saveRecord(tx: TxRecord, now: number): Promise<void> {
     await db.chainTxs.put(entry(tx.walletId, `local:${tx.walletId}`, tx.network, item));
 }
 
-/** 状态变化后处理占用。上链要等到最终状态才释放，确认中的交易可能被重组退回来。 */
+/** 状态变化后处理占用.上链要等到最终状态才释放,确认中的交易可能被重组退回来. */
 async function settle(before: TxRecord, after: TxRecord, now: number): Promise<void> {
     if (before.state === after.state) return;
     const rows = await db.reservations.where("txIds").equals(after.id).toArray();
@@ -233,7 +211,7 @@ export function finishBroadcast(id: string, error: string | null, now = Date.now
     return apply(
         id,
         (tx) => {
-            // 页面超时后交易已经被标成结果不明，这时的结果交给轮询确认。
+            // 页面超时后交易已经被标成结果不明,这时的结果交给轮询确认.
             if (tx.state !== "broadcasting") return tx;
             if (error === null) return transition(tx, "accepted", now, t("已被网络接收"));
             return { ...transition(tx, "rejected", now, error), lastError: error };
@@ -246,9 +224,9 @@ export function applyObservation(id: string, seen: ChainObservation, context: Ob
     return apply(id, (tx) => observe(tx, seen, context), context.now);
 }
 
-/** 本地到期的处理，每隔几秒调用一次。 */
+/** 本地到期的处理,每隔几秒调用一次. */
 export async function sweepExpired(now = Date.now()): Promise<void> {
-    // 已放弃的交易过期后签名也作废了，不用再占着。
+    // 已放弃的交易过期后签名也作废了,不用再占着.
     for (const tx of await heldByAbandoned()) {
         if (tx.hardExpiry && tx.expiresAt !== null && now > tx.expiresAt + EXPIRY_GRACE) await releaseHolder(tx.id);
     }
@@ -265,7 +243,7 @@ export async function sweepExpired(now = Date.now()): Promise<void> {
         ) {
             await apply(
                 row.id,
-                (tx) => (tx.state === "signed" ? transition(tx, "expired", now, t("超过过期时间，未广播")) : tx),
+                (tx) => (tx.state === "signed" ? transition(tx, "expired", now, t("超过过期时间,未广播")) : tx),
                 now,
             );
         } else if (row.state === "broadcasting" && now - (row.broadcastAt ?? 0) > BROADCAST_STALE) {
@@ -274,31 +252,7 @@ export async function sweepExpired(now = Date.now()): Promise<void> {
     }
 }
 
-export async function reservationsOf(accountId: string, network: string): Promise<Reservation[]> {
-    const rows = await db.reservations.where("accountId").equals(accountId).toArray();
-    return rows.filter((row) => row.network === network);
-}
-
-/** 大于等于 `floor` 的第一个没有被占用的序号。 */
-export function firstFree(rows: readonly Reservation[], type: ReservationType, floor: number): number {
-    const taken = new Set(rows.filter((row) => row.type === type).map((row) => Number(row.value)));
-    let value = floor;
-    while (taken.has(value)) value += 1;
-    return value;
-}
-
-/** 大于等于链上 nonce 的第一个空位。中间取消的交易留下的空位要先填上，否则后面的交易永远打包不了。 */
-export async function nextNonce(accountId: string, network: string, floor: number): Promise<number> {
-    return firstFree(await reservationsOf(accountId, network), "nonce", floor);
-}
-
-/** 沿用这笔交易的全部占用，替换交易和重建都走这里，保证最多一笔上链。 */
-export async function sharedClaims(tx: Pick<TxRecord, "id">): Promise<Claim[]> {
-    const rows = await db.reservations.where("txIds").equals(tx.id).toArray();
-    return rows.map(({ type, value }) => ({ type, value }));
-}
-
-/** 已放弃但签名仍然有效的交易，等它的序号确定作废后释放。 */
+/** 已放弃但签名仍然有效的交易,等它的序号确定作废后释放. */
 export async function heldByAbandoned(): Promise<TxRecord[]> {
     const rows = await db.txs.where("state").equals("abandoned").toArray();
     const signed = rows.filter((tx) => tx.raw !== undefined);
@@ -306,7 +260,7 @@ export async function heldByAbandoned(): Promise<TxRecord[]> {
     return signed.filter((_, i) => (held[i] ?? 0) > 0);
 }
 
-/** 这笔不再占用。替换交易可能还在途，只去掉自己，别人还占着的不能释放。 */
+/** 这笔不再占用.替换交易可能还在途,只去掉自己,别人还占着的不能释放. */
 async function releaseHolder(id: string): Promise<void> {
     await db.transaction("rw", scope(), async () => {
         for (const row of await db.reservations.where("txIds").equals(id).toArray()) {
@@ -319,7 +273,7 @@ async function releaseHolder(id: string): Promise<void> {
     announce();
 }
 
-/** 已放弃的交易这一轮的序号是否已被用掉。和被替换的判定一样，要连续看到才释放。 */
+/** 已放弃的交易这一轮的序号是否已被用掉.和被替换的判定一样,要连续看到才释放. */
 export async function noteSpent(id: string, spent: boolean, now = Date.now()): Promise<void> {
     const tx = await db.txs.get(id);
     if (!tx) return;
@@ -334,34 +288,17 @@ export async function noteSpent(id: string, spent: boolean, now = Date.now()): P
     if (conflicts >= CONFLICT_ROUNDS) await releaseHolder(id);
 }
 
-/**
- * 找到挡路的已放弃交易：它的 nonce 不小于链上 nonce，而且没有别的交易在用。
- * 在它之后构建的交易永远打包不了，要先发替换交易。
- */
-export function abandonedHolder(
-    rows: readonly Reservation[],
-    txs: readonly TxRecord[],
-    floor: number,
-): TxRecord | null {
-    for (const row of rows) {
-        if (row.type !== "nonce" || Number(row.value) < floor) continue;
-        const owners = txs.filter((tx) => row.txIds.includes(tx.id));
-        if (owners.length > 0 && owners.every((tx) => tx.state === "abandoned")) return owners[0] ?? null;
-    }
-    return null;
-}
-
 const CLOSED: ReadonlySet<TxRecord["state"]> = new Set<TxRecord["state"]>(["abandoned", "expired", "replaced"]);
 
 /**
- * 没上链就结束、也不再占序号的请求可以删。签名仍然有效的还占着序号，删了就看不到它，
- * 序号也可能被复用。刚被替换的还在观察期，链上可能反转。held 是它占着的序号数。
+ * 没上链就结束,也不再占序号的请求可以删.签名仍然有效的还占着序号,删了就看不到它,
+ * 序号也可能被复用.刚被替换的还在观察期,链上可能反转.held 是它占着的序号数.
  */
 export function isDeletable(tx: TxRecord, held: number, now: number): boolean {
     return CLOSED.has(tx.state) && held === 0 && !isWatched(tx, now);
 }
 
-/** 按网络和哈希找本地交易。十六进制哈希不分大小写，Solana 的区分，所以最后按交易标识比较。 */
+/** 按网络和哈希找本地交易.十六进制哈希不分大小写,Solana 的区分,所以最后按交易标识比较. */
 export function findTx(network: string, hash: string): Promise<TxRecord | undefined> {
     const key = txKey(network, hash);
     return db.txs
@@ -380,9 +317,4 @@ export async function deleteRequest(id: string, now = Date.now()): Promise<void>
         await db.txs.delete(id);
     });
     announce();
-}
-
-export function planOf<C extends TxPlan["chain"]>(tx: TxRecord, chain: C): Extract<TxPlan, { chain: C }> {
-    if (tx.plan.chain !== chain) throw new Error(t("交易类型不符"));
-    return tx.plan as Extract<TxPlan, { chain: C }>;
 }

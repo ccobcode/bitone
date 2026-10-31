@@ -1,19 +1,12 @@
-// 加密备份，见 docs/03-system.md 第 3 节。里面有钱包、账户公钥、地址簿和备注。
-// 不含网关地址和交易。交易可以从链上重新拉取，签名数据没有必要离开这个浏览器。
+// 加密备份,见 docs/03-system.md 第 3 节.里面有钱包,账户公钥,地址簿和备注.
+// 不含网关地址和交易.交易可以从链上重新拉取,签名数据没有必要离开这个浏览器.
 //
-// 备份可能是攻击者给的，文件里的内容都不可信：
-// 地址从公钥重新派生，路径只接受白名单，导入的账户全部未核对，联系人全部待确认。
-// 已配对的钱包不接受备份改动账户：同一路径公钥不同时保留本地的，本地没有的路径也不写入，
-// 指纹是公开的 4 字节，否则备份能往已配对的钱包里塞进攻击者的公钥。只能由冷钱包重新配对添加。
-import {
-    accountSpecList,
-    deriveAddress,
-    primaryNetwork,
-    validateAddress,
-    type AccountKind,
-    type Chain,
-    type Mode,
-} from "../core";
+// 备份可能是攻击者给的,文件里的内容都不可信:
+// 地址从公钥重新派生,路径只接受白名单,导入的账户全部未核对,联系人全部待确认.
+// 已配对的钱包不接受备份改动账户:同一路径公钥不同时保留本地的,本地没有的路径也不写入,
+// 指纹是公开的 4 字节,否则备份能往已配对的钱包里塞进攻击者的公钥.只能由冷钱包重新配对添加.
+import { deriveAddress, isChain } from "../chains";
+import { accountSpecList, primaryNetwork, validateAddress, type AccountKind, type Chain, type Mode } from "../core";
 import { cleanText, isRecord } from "../core/text";
 import { addressKey } from "../gateway/client";
 import { MAX_CONTACT_NAME } from "./contacts";
@@ -33,7 +26,7 @@ const MAX_NOTE = 500;
 
 export class BackupError extends Error {}
 
-/** 按字符计算，一个表情符号算一个。 */
+/** 按字符计算,一个表情符号算一个. */
 export function passphraseLongEnough(passphrase: string): boolean {
     return [...passphrase].length >= MIN_PASSPHRASE;
 }
@@ -49,7 +42,7 @@ function fromBase64(text: string): Uint8Array<ArrayBuffer> {
 }
 
 async function deriveKey(passphrase: string, salt: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
-    // 同一口令在不同输入法下可能是不同的 Unicode 序列。
+    // 同一口令在不同输入法下可能是不同的 Unicode 序列.
     const material = await crypto.subtle.importKey(
         "raw",
         new TextEncoder().encode(passphrase.normalize("NFKC")),
@@ -75,7 +68,7 @@ interface BackupFile {
     data: string;
 }
 
-/** 文件头也进认证，改动版本和迭代次数都解不开。 */
+/** 文件头也进认证,改动版本和迭代次数都解不开. */
 function headerBytes(file: Omit<BackupFile, "data">): Uint8Array<ArrayBuffer> {
     return new TextEncoder().encode(`${file.format}\n${file.version}\n${file.iterations}\n${file.salt}\n${file.iv}`);
 }
@@ -109,7 +102,7 @@ async function collect(): Promise<BackupPayload> {
 }
 
 export async function exportBackup(passphrase: string): Promise<string> {
-    if (!passphraseLongEnough(passphrase)) throw new BackupError(t("口令至少 {0} 个字符。", MIN_PASSPHRASE));
+    if (!passphraseLongEnough(passphrase)) throw new BackupError(t("口令至少 {0} 个字符.", MIN_PASSPHRASE));
     const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
     const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
     const head = {
@@ -127,20 +120,20 @@ export async function exportBackup(passphrase: string): Promise<string> {
 }
 
 function parseFile(text: string): BackupFile {
-    if (text.length > MAX_FILE_BYTES) throw new BackupError(t("文件太大，不是备份文件。"));
+    if (text.length > MAX_FILE_BYTES) throw new BackupError(t("文件太大,不是备份文件."));
     let value: unknown;
     try {
         value = JSON.parse(text);
     } catch {
-        throw new BackupError(t("这不是备份文件。"));
+        throw new BackupError(t("这不是备份文件."));
     }
-    if (!isRecord(value) || value.format !== BACKUP_FORMAT) throw new BackupError(t("这不是备份文件。"));
-    if (value.version !== BACKUP_VERSION) throw new BackupError(t("备份文件的版本不受支持。"));
-    // 迭代次数是文件给的，不能照用，否则一个构造的文件就能卡死页面。
-    if (value.iterations !== KDF_ITERATIONS) throw new BackupError(t("备份文件的参数不受支持。"));
+    if (!isRecord(value) || value.format !== BACKUP_FORMAT) throw new BackupError(t("这不是备份文件."));
+    if (value.version !== BACKUP_VERSION) throw new BackupError(t("备份文件的版本不受支持."));
+    // 迭代次数是文件给的,不能照用,否则一个构造的文件就能卡死页面.
+    if (value.iterations !== KDF_ITERATIONS) throw new BackupError(t("备份文件的参数不受支持."));
     const { salt, iv, data } = value;
     if (typeof salt !== "string" || typeof iv !== "string" || typeof data !== "string") {
-        throw new BackupError(t("这不是备份文件。"));
+        throw new BackupError(t("这不是备份文件."));
     }
     return { format: BACKUP_FORMAT, version: BACKUP_VERSION, iterations: KDF_ITERATIONS, salt, iv, data };
 }
@@ -155,18 +148,14 @@ async function decrypt(file: BackupFile, passphrase: string): Promise<unknown> {
         );
         return JSON.parse(new TextDecoder().decode(plain));
     } catch {
-        throw new BackupError(t("口令错误或文件已损坏。"));
+        throw new BackupError(t("口令错误或文件已损坏."));
     }
 }
 
-const invalid = () => new BackupError(t("备份内容无效，没有导入任何数据。"));
+const invalid = () => new BackupError(t("备份内容无效,没有导入任何数据."));
 
 function isMode(value: unknown): value is Mode {
     return value === "mainnet" || value === "testnet";
-}
-
-function isChain(value: unknown): value is Chain {
-    return value === "bitcoin" || value === "evm" || value === "tron" || value === "solana";
 }
 
 function checkedWallets(value: unknown): BackupPayload["wallets"] {
@@ -184,7 +173,7 @@ function checkedWallets(value: unknown): BackupPayload["wallets"] {
     });
 }
 
-/** 只接受这个模式下的路径。旧路径账户也在这张表里。 */
+/** 只接受这个模式下的路径.旧路径账户也在这张表里. */
 function checkedAccounts(value: unknown): (BackupPayload["accounts"][number] & { bytes: Uint8Array })[] {
     if (!Array.isArray(value)) throw invalid();
     return value.map((item: unknown) => {
@@ -232,11 +221,11 @@ function checkedNotes(value: unknown): BackupPayload["notes"] {
 export interface ImportSummary {
     wallets: number;
     accounts: number;
-    /** 已配对的钱包里没有写入的账户。公钥不同，或者本地没有这个路径。 */
+    /** 已配对的钱包里没有写入的账户.公钥不同,或者本地没有这个路径. */
     conflicts: number;
     contacts: number;
     notes: number;
-    /** 第一个导入的钱包，全新的浏览器导入后选中它。 */
+    /** 第一个导入的钱包,全新的浏览器导入后选中它. */
     first: Wallet | null;
 }
 
@@ -286,7 +275,7 @@ export async function importBackup(text: string, passphrase: string): Promise<Im
                 continue;
             }
             if (!existing) await db.accounts.add(account);
-            // 恢复出来的账户全部标为未核对，地址从公钥重新派生。
+            // 恢复出来的账户全部标为未核对,地址从公钥重新派生.
             await db.addresses.where("accountId").equals(account.id).modify({ verified: false });
             const keys = addresses.map((row): [string, number, number] => [row.accountId, row.change, row.index]);
             const present = await db.addresses.bulkGet(keys);
@@ -295,7 +284,7 @@ export async function importBackup(text: string, passphrase: string): Promise<Im
         }
         for (const item of contacts) {
             const rows = await db.contacts.where({ chain: item.chain, mode: item.mode }).toArray();
-            // 已有的联系人保持原样，备份不能改掉名称或确认状态。
+            // 已有的联系人保持原样,备份不能改掉名称或确认状态.
             if (rows.some((row) => addressKey(row.address) === addressKey(item.address))) continue;
             await db.contacts.add({ ...item, id: crypto.randomUUID(), pending: true, createdAt: Date.now() });
             summary.contacts += 1;

@@ -21,7 +21,7 @@ describe("表结构升级", () => {
         db.close();
     });
 
-    it("M1 的数据升级后还在，新索引可用", async () => {
+    it("M1 的数据升级后还在,新索引可用", async () => {
         const name = "bitone";
         await new BitOneDb().delete();
 

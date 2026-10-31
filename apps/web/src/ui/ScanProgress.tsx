@@ -1,5 +1,5 @@
 import { t } from "../core/i18n";
-/** 接收帧的进度，配对和签名共用。 */
+/** 接收帧的进度,配对和签名共用. */
 export function ScanProgress({ value, frames }: { value: number; frames: number }) {
     const done = Math.round(value * frames);
     return (
