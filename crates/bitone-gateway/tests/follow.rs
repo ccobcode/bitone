@@ -5,15 +5,17 @@ mod common;
 
 use axum::Router;
 use axum::extract::Path;
+use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
-use common::{Gateway, call, dead_url, error_code, mock, next_json, ok, rpc_failure, rpc_node};
+use common::{Calls, Gateway, call, dead_url, error_code, mock, next_json, ok, rpc_failure, rpc_node};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::time::timeout;
+use tokio::sync::broadcast;
+use tokio::time::{sleep, timeout};
 
 const EVM: &str = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
 const OTHER: &str = "0x3535353535353535353535353535353535353535";
@@ -31,6 +33,7 @@ fn padded(address: &str) -> String {
 struct Scene {
     block: u64,
     native: String,
+    token: u64,
     txs: HashMap<u64, Vec<Value>>,
     logs: Vec<Value>,
     broken_logs: bool,
@@ -44,7 +47,7 @@ fn reply(chain: &Chain, method: &str, params: &Value) -> Value {
     match method {
         "eth_blockNumber" => ok(json!(hex(scene.block))),
         "eth_getBalance" => ok(json!(scene.native)),
-        "eth_call" => ok(json!(format!("{:#066x}", 7))),
+        "eth_call" => ok(json!(format!("{:#066x}", scene.token))),
         "eth_getLogs" if scene.broken_logs => rpc_failure(-32000, "query returned more than 10000 results"),
         "eth_getLogs" => {
             let wanted = |log: &Value| {
@@ -74,6 +77,7 @@ async fn evm_chain() -> (Chain, String) {
     let chain: Chain = Arc::new(Mutex::new(Scene {
         block: 10,
         native: "0x1".to_string(),
+        token: 7,
         ..Default::default()
     }));
     let node = chain.clone();
@@ -345,4 +349,381 @@ async fn snapshot_validates_before_it_reaches_the_upstream() {
         assert_ne!(status, StatusCode::OK, "{code}");
         assert_eq!(error_code(&reply), code);
     }
+}
+
+// ---- 长连接：没有动静的地址不发余额请求 ----
+
+/// 同一个地址上提供 HTTP 和 WebSocket 的模拟节点。
+#[derive(Clone)]
+struct SocketNode {
+    url: String,
+    /// 客户端发来的订阅，按收到的顺序。
+    subscribed: Arc<Mutex<Vec<Value>>>,
+    /// 发给所有连接的推送。
+    pushes: broadcast::Sender<String>,
+    calls: Calls,
+}
+
+impl SocketNode {
+    async fn start(
+        ack: fn(u64) -> Value,
+        reply: impl Fn(&str, &Value) -> Value + Clone + Send + Sync + 'static,
+    ) -> Self {
+        let (pushes, _) = broadcast::channel(16);
+        let node = Self {
+            url: String::new(),
+            subscribed: Arc::default(),
+            pushes,
+            calls: Calls::default(),
+        };
+        let (state, log) = (node.clone(), node.calls.clone());
+        let rpc = move |axum::Json(body): axum::Json<Value>| {
+            let (reply, log) = (reply.clone(), log.clone());
+            async move {
+                let answer = |call: &Value| {
+                    let method = call["method"].as_str().unwrap();
+                    log.record(method);
+                    let mut response = reply(method, &call["params"]);
+                    response["jsonrpc"] = json!("2.0");
+                    response["id"] = call["id"].clone();
+                    response
+                };
+                axum::Json(match body.as_array() {
+                    Some(batch) => Value::Array(batch.iter().map(answer).collect()),
+                    None => answer(&body),
+                })
+            }
+        };
+        let upgrade = move |upgrade: WebSocketUpgrade| {
+            let state = state.clone();
+            async move { upgrade.on_upgrade(move |socket| state.serve(socket, ack)) }
+        };
+        let url = mock(Router::new().route("/", post(rpc).get(upgrade))).await;
+        Self { url, ..node }
+    }
+
+    async fn serve(self, mut socket: WebSocket, ack: fn(u64) -> Value) {
+        let mut pushes = self.pushes.subscribe();
+        loop {
+            tokio::select! {
+                incoming = socket.recv() => {
+                    let Some(Ok(WsMessage::Text(text))) = incoming else { return };
+                    let call: Value = serde_json::from_str(&text).unwrap();
+                    self.subscribed.lock().unwrap().push(call.clone());
+                    let id = call["id"].as_u64().unwrap();
+                    let reply = json!({"jsonrpc": "2.0", "id": id, "result": ack(id)}).to_string();
+                    if socket.send(WsMessage::text(reply)).await.is_err() {
+                        return;
+                    }
+                }
+                Ok(push) = pushes.recv() => {
+                    if socket.send(WsMessage::text(push)).await.is_err() {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    fn methods(&self, method: &str) -> Vec<Value> {
+        let calls = self.subscribed.lock().unwrap();
+        calls.iter().filter(|call| call["method"] == method).cloned().collect()
+    }
+
+    async fn wait_for(&self, method: &str, count: usize) {
+        timeout(Duration::from_secs(5), async {
+            while self.methods(method).len() < count {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("等 {method} 超时"));
+    }
+
+    fn push(&self, message: Value) {
+        self.pushes.send(message.to_string()).unwrap();
+    }
+}
+
+fn new_head(block: u64) -> Value {
+    json!({"method": "eth_subscription", "params": {"subscription": "0xhead", "result": {"number": format!("{block:#x}")}}})
+}
+
+async fn evm_socket_node(chain: &Chain) -> SocketNode {
+    let node = chain.clone();
+    SocketNode::start(
+        |id| json!(format!("{id:#x}")),
+        move |method, params| reply(&node, method, params),
+    )
+    .await
+}
+
+/// 只有高度时不访问上游，代币由节点推送，订阅多少地址都不用每轮 `balanceOf`。
+#[tokio::test]
+async fn evm_tokens_are_pushed_by_the_node_not_polled() {
+    let (chain, _) = evm_chain().await;
+    let node = evm_socket_node(&chain).await;
+    let gateway = Gateway::start(&evm_config(&node.url)).await;
+    let mut ws = gateway.ws().await;
+    assert!(call(&mut ws, subscribe(&[EVM])).await["result"].is_string());
+    node.wait_for("eth_subscribe", 3).await;
+    let filters = node.methods("eth_subscribe");
+    assert_eq!(filters[0]["params"], json!(["newHeads"]));
+    assert_eq!(filters[1]["params"][1]["topics"][1], json!([padded(EVM)]), "转出");
+    assert_eq!(filters[2]["params"][1]["topics"][2], json!([padded(EVM)]), "转入");
+
+    let token_calls = node.calls.count("eth_call");
+    chain.lock().unwrap().block = 11;
+    node.push(new_head(11));
+    let update = next_json(&mut ws).await;
+    assert_eq!(update["params"]["height"], 11);
+    assert_eq!(update["params"]["balances"], json!([]));
+    assert_eq!(update["params"]["txs"], json!([]));
+    assert_eq!(node.calls.count("eth_call"), token_calls, "没有动静不查代币余额");
+
+    let log = json!({
+        "address": USDT.to_lowercase(),
+        "blockNumber": "0xb",
+        "transactionHash": "0xdd",
+        "topics": [TRANSFER, padded(OTHER), padded(EVM)],
+        "data": format!("{:#066x}", 7),
+    });
+    chain.lock().unwrap().logs.push(log.clone());
+    chain.lock().unwrap().token = 9;
+    node.push(json!({"method": "eth_subscription", "params": {"subscription": "0xlogs", "result": log}}));
+    let update = next_json(&mut ws).await;
+    let balances = update["params"]["balances"].as_array().unwrap();
+    assert!(
+        balances.iter().any(|row| row["asset"] == USDT && row["amount"] == "9"),
+        "{balances:?}"
+    );
+    assert_eq!(update["params"]["txs"][0]["hash"], "0xdd", "推送后不用等下一个块");
+}
+
+/// 原生币没有日志，内部转账也不在交易列表里，只有余额能发现。
+#[tokio::test]
+async fn evm_native_changes_are_found_by_the_balance_batch() {
+    let (chain, _) = evm_chain().await;
+    let node = evm_socket_node(&chain).await;
+    let gateway = Gateway::start(&evm_config(&node.url)).await;
+    let mut ws = gateway.ws().await;
+    call(&mut ws, subscribe(&[EVM])).await;
+    node.wait_for("eth_subscribe", 3).await;
+
+    chain.lock().unwrap().block = 11;
+    node.push(new_head(11));
+    next_json(&mut ws).await;
+    sleep(Duration::from_millis(3100)).await;
+    {
+        let mut scene = chain.lock().unwrap();
+        scene.block = 12;
+        scene.native = "0x5".to_string();
+    }
+    node.push(new_head(12));
+    let update = timeout(Duration::from_secs(5), async {
+        loop {
+            let update = next_json(&mut ws).await;
+            if !update["params"]["balances"].as_array().unwrap().is_empty() {
+                return update;
+            }
+        }
+    })
+    .await
+    .expect("余额变化要推送");
+    assert_eq!(update["params"]["balances"][0]["amount"], "5");
+}
+
+/// 原生币隔几秒才查一次，发现变化时高度可能已经过了这笔交易所在的块，交易不能漏掉。
+#[tokio::test]
+async fn evm_native_tx_is_found_when_the_change_is_noticed_blocks_later() {
+    let (chain, _) = evm_chain().await;
+    let node = evm_socket_node(&chain).await;
+    let gateway = Gateway::start(&evm_config(&node.url)).await;
+    let mut ws = gateway.ws().await;
+    call(&mut ws, subscribe(&[EVM])).await;
+    node.wait_for("eth_subscribe", 3).await;
+    chain.lock().unwrap().block = 11;
+    node.push(new_head(11));
+    next_json(&mut ws).await;
+    // 等这一块的余额基线取完，否则这次变化算在基线里。
+    sleep(Duration::from_millis(300)).await;
+
+    {
+        let mut scene = chain.lock().unwrap();
+        scene.block = 12;
+        scene.native = "0x5".to_string();
+        let tx = json!({"hash": "0xee", "from": OTHER, "to": EVM.to_lowercase(), "value": "0x4"});
+        scene.txs.insert(12, vec![tx]);
+    }
+    node.push(new_head(12));
+    while next_json(&mut ws).await["params"]["height"] != 12 {}
+    sleep(Duration::from_millis(3100)).await;
+    chain.lock().unwrap().block = 13;
+    node.push(new_head(13));
+    let update = timeout(Duration::from_secs(4), async {
+        loop {
+            let update = next_json(&mut ws).await;
+            if !update["params"]["balances"].as_array().unwrap().is_empty() {
+                return update;
+            }
+        }
+    })
+    .await
+    .expect("余额变化要推送");
+    assert_eq!(update["params"]["txs"][0]["hash"], "0xee");
+}
+
+/// 订阅之后的第一个块就带着变化时，长连接还没有基线，这笔不能丢。
+#[tokio::test]
+async fn evm_change_in_the_first_block_after_subscribing_is_not_lost() {
+    let (chain, _) = evm_chain().await;
+    let node = evm_socket_node(&chain).await;
+    let gateway = Gateway::start(&evm_config(&node.url)).await;
+    let mut ws = gateway.ws().await;
+    call(&mut ws, subscribe(&[EVM])).await;
+    node.wait_for("eth_subscribe", 3).await;
+
+    {
+        let mut scene = chain.lock().unwrap();
+        scene.block = 11;
+        scene.native = "0x5".to_string();
+    }
+    node.push(new_head(11));
+    let update = timeout(Duration::from_secs(4), async {
+        loop {
+            let update = next_json(&mut ws).await;
+            if !update["params"]["balances"].as_array().unwrap().is_empty() {
+                return update;
+            }
+        }
+    })
+    .await
+    .expect("第一个块里的变化要推送");
+    assert_eq!(update["params"]["balances"][0]["amount"], "5");
+}
+
+/// 账户变化由节点推送，slot 再快也没有余额请求。
+#[tokio::test]
+async fn solana_changes_are_pushed_by_the_node_not_polled() {
+    const OWNER: &str = "11111111111111111111111111111111";
+    const ACCOUNT: &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+    let solana = Arc::new(Mutex::new(5u64));
+    let lamports = solana.clone();
+    let node = SocketNode::start(
+        |id| json!(id),
+        move |method, _| match method {
+            "getBalance" => json!({"result": {"value": *lamports.lock().unwrap()}}),
+            "getTokenAccountsByOwner" => {
+                json!({"result": {"value": [{"pubkey": ACCOUNT, "account": {"data": {"parsed": {"info": {
+                    "mint": ACCOUNT, "tokenAmount": {"amount": "3"},
+                }}}}}]}})
+            }
+            "getSignaturesForAddress" => ok(json!([])),
+            "getSlot" => ok(json!(100)),
+            _ => panic!("没有模拟 {method}"),
+        },
+    )
+    .await;
+    let config = format!(
+        "ws_poll_interval_ms = 10\n[networks.solana]\nupstreams = ['{}']\ntokens = ['{ACCOUNT}']\n",
+        node.url
+    );
+    let gateway = Gateway::start(&config).await;
+    let mut ws = gateway.ws().await;
+    let message = json!({"jsonrpc": "2.0", "id": 1, "method": "subscribe",
+                         "params": {"channel": "addresses", "network": "solana", "addresses": [OWNER]}});
+    assert!(call(&mut ws, message).await["result"].is_string());
+    node.wait_for("accountSubscribe", 2).await;
+    node.wait_for("logsSubscribe", 1).await;
+    let accounts: Vec<Value> = node
+        .methods("accountSubscribe")
+        .iter()
+        .map(|c| c["params"][0].clone())
+        .collect();
+    assert_eq!(accounts, [json!(OWNER), json!(ACCOUNT)], "代币在独立的账户上");
+    assert_eq!(
+        node.methods("logsSubscribe")[0]["params"][0]["mentions"],
+        json!([OWNER])
+    );
+    assert_eq!(node.methods("logsSubscribe")[0]["params"][1]["commitment"], "confirmed");
+
+    // 订阅生效后对账一次，之后 slot 不再触发余额查询。
+    node.push(json!({"method": "slotNotification", "params": {"result": {"slot": 199}}}));
+    next_json(&mut ws).await;
+    sleep(Duration::from_millis(50)).await;
+    let polls = node.calls.count("getBalance");
+    for slot in 200..203 {
+        node.push(json!({"method": "slotNotification", "params": {"result": {"slot": slot}}}));
+    }
+    let update = next_json(&mut ws).await;
+    assert_eq!(update["params"]["balances"], json!([]));
+    assert_eq!(node.calls.count("getBalance"), polls, "slot 不触发余额查询");
+
+    *solana.lock().unwrap() = 9;
+    let subscription = node.methods("accountSubscribe")[1]["id"].clone();
+    node.push(json!({"method": "accountNotification", "params": {"subscription": subscription, "result": {}}}));
+    let update = next_json(&mut ws).await;
+    assert_eq!(update["params"]["balances"][0]["amount"], "9");
+}
+
+/// TRON 没有推送，按块解析。一轮的请求数和地址数无关，地址没出现在区块里就不查它。
+#[tokio::test]
+async fn tron_parses_blocks_instead_of_querying_each_address() {
+    const OWNER: &str = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+    const OWNER_HEX: &str = "41a614f803b6fd780986a42c78ec9c7f77e6ded13c";
+    let tip = Arc::new(Mutex::new(100u64));
+    let accounts = Arc::new(Mutex::new(0usize));
+    let (height, reads) = (tip.clone(), accounts.clone());
+    let (block, parts, balance_tip) = (tip.clone(), tip.clone(), tip.clone());
+    let node = Router::new()
+        .route(
+            "/wallet/getnowblock",
+            get(move || {
+                let number = *height.lock().unwrap();
+                async move { axum::Json(json!({"block_header": {"raw_data": {"number": number}}})) }
+            }),
+        )
+        .route(
+            "/wallet/getblockbylimitnext",
+            post(move |axum::Json(body): axum::Json<Value>| {
+                let tip = *block.lock().unwrap();
+                async move {
+                    assert_eq!(body["endNum"], tip + 1);
+                    let value = json!({"owner_address": "41ffffffffffffffffffffffffffffffffffffffff", "to_address": OWNER_HEX, "amount": 1});
+                    axum::Json(json!({"block": [{"transactions": [{"raw_data": {"contract": [{"parameter": {"value": value}}]}}]}]}))
+                }
+            }),
+        )
+        .route("/jsonrpc", post(|| async { axum::Json(json!({"result": []})) }))
+        .route(
+            "/v1/accounts/{address}",
+            get(move || {
+                *reads.lock().unwrap() += 1;
+                // 这笔转账在 101 块到账。
+                let balance = if *balance_tip.lock().unwrap() > 100 { 8 } else { 5 };
+                async move { axum::Json(json!({"data": [{"balance": balance}]})) }
+            }),
+        )
+        .route("/v1/accounts/{address}/transactions", get(|| async { axum::Json(json!({"data": []})) }))
+        .route("/v1/accounts/{address}/transactions/trc20", get(|| async { axum::Json(json!({"data": []})) }))
+        .route(
+            "/walletsolidity/getnowblock",
+            get(|| async { axum::Json(json!({"block_header": {"raw_data": {"number": 90, "timestamp": 1000}}})) }),
+        );
+    let url = mock(node).await;
+    let config = format!("ws_poll_interval_ms = 10\n[networks.tron]\nupstreams = ['{url}']\n");
+    let gateway = Gateway::start(&config).await;
+    let mut ws = gateway.ws().await;
+    let message = json!({"jsonrpc": "2.0", "id": 1, "method": "subscribe",
+                         "params": {"channel": "addresses", "network": "tron", "addresses": [OWNER]}});
+    assert!(call(&mut ws, message).await["result"].is_string());
+    sleep(Duration::from_millis(100)).await;
+    let baseline = *accounts.lock().unwrap();
+    *parts.lock().unwrap() = 101;
+    // 按块轮询的间隔是 6 秒，等待消息的上限是 5 秒。
+    sleep(Duration::from_secs(4)).await;
+    let update = next_json(&mut ws).await;
+    assert_eq!(update["params"]["height"], 101);
+    assert_eq!(update["params"]["balances"][0]["amount"], "8");
+    assert_eq!(*accounts.lock().unwrap(), baseline + 1, "只查区块里出现的地址，查一次");
 }

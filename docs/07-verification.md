@@ -59,7 +59,7 @@
 - Web Locks 只在安全上下文可用，自部署用 HTTP 局域网地址时无法构建交易。
 - 网关切换到备用上游后不会自动切回。`trusted_proxies` 只支持单个 IP，不支持 CIDR。
 - EVM 的交易历史依赖 Etherscan 兼容的索引服务，JSON-RPC 查不了地址历史。
-- 公共节点限流很紧，TronGrid 要配 API key。TRON 和 Solana 跟块时每轮逐个地址查余额，成本随订阅的地址数增长。
+- 公共节点限流很紧，TronGrid 要配 API key。TRON 跟块一轮三次调用，一条网络全天约 4 万次，只在有订阅时运行。Solana 每个地址要几条订阅，公共节点的订阅上限没有公开。
 - BSC、Polygon、BSC Testnet、Amoy 没有不用 key 的索引服务。HyperSync 免费额度是每分钟 15 次，所有网络和用户共用，它也看不到合约内部转入的原生币。
 - EVM 跟块看不到合约内部转入的原生币，余额会更新，交易记录要等索引服务。
 - 记录多到 HyperSync 一个请求扫不完时，最早的在前，中间的要翻页才看得到。

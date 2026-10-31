@@ -2,7 +2,8 @@ import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
-import { useApp, useLive } from "../data/app";
+import { playChime, unlockChime } from "../core/chime";
+import { saveSetting, useApp, useLive } from "../data/app";
 import { clearLocalData, db } from "../data/db";
 import { requestPersist } from "../data/pairing";
 import { useGateway } from "../gateway/provider";
@@ -10,7 +11,8 @@ import type { SocketStatus } from "../gateway/socket";
 import { Icon } from "../ui/Icon";
 import { dateLabel } from "../ui/labels";
 import { LanguageSwitch } from "../ui/LanguageSwitch";
-import { Button, Chip, LinkButton, PageTitle, SectionTitle, buttonClass } from "../ui/primitives";
+import { requestBackground, useNoticeSettings } from "../ui/Notices";
+import { Button, Chip, LinkButton, PageTitle, SectionTitle, Switch, buttonClass } from "../ui/primitives";
 import { SheetActions, overlayLink, sheetWidth } from "../ui/Sheet";
 import { t } from "../core/i18n";
 
@@ -144,6 +146,52 @@ function BackupCard() {
     );
 }
 
+/** 提示音和后台提醒都要用户自己打开，浏览器也要求这两件事发生在点击里。 */
+function NoticeGroup() {
+    const { sound, background, amount } = useNoticeSettings();
+    const [denied, setDenied] = useState(false);
+    const supported = typeof Notification === "function";
+
+    async function setBackground(value: boolean) {
+        setDenied(value && !(await requestBackground()));
+        if (!value) await saveSetting("notifyBackground", false);
+    }
+
+    return (
+        <Group id="h-notice" title={t("通知")}>
+            <Setting label={t("提示音")} hint={t("收到转账和交易有结果时响一声，测试网不响")}>
+                <Switch
+                    checked={sound}
+                    onChange={(value) => {
+                        if (value) unlockChime();
+                        void saveSetting("notifySound", value);
+                        if (value) playChime("incoming");
+                    }}
+                >
+                    {sound ? t("已开启") : t("已关闭")}
+                </Switch>
+            </Setting>
+            {supported ? (
+                <Setting
+                    label={t("后台提醒")}
+                    hint={denied ? t("浏览器拒绝了通知权限，要在浏览器设置里开启") : t("页面在后台时用系统通知提醒")}
+                >
+                    <Switch checked={background} onChange={(value) => void setBackground(value)}>
+                        {background ? t("已开启") : t("已关闭")}
+                    </Switch>
+                </Setting>
+            ) : null}
+            {supported ? (
+                <Setting label={t("提醒里显示金额")} hint={t("系统通知可能出现在锁屏或屏幕共享里")}>
+                    <Switch checked={amount} onChange={(value) => void saveSetting("notifyAmount", value)}>
+                        {amount ? t("已开启") : t("已关闭")}
+                    </Switch>
+                </Setting>
+            ) : null}
+        </Group>
+    );
+}
+
 export default function Settings() {
     const { persisted, refreshPersisted } = useApp();
     const gateway = useGateway();
@@ -167,6 +215,8 @@ export default function Settings() {
                     <LanguageSwitch />
                 </Setting>
             </Group>
+
+            <NoticeGroup />
 
             <Group id="h-gw" title={t("网关")}>
                 <Setting label={t("网关地址")} hint={t("和网页端同域部署，不能修改")}>

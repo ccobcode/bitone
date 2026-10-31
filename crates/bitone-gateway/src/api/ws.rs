@@ -6,13 +6,14 @@
 //!
 //! 单 IP 的连接数有上限，单连接的订阅数也有上限，轮询上游的成本因此是有界的。
 
-use crate::address;
+use super::limit::ConnectionSlot;
+use super::{AppState, ClientIp};
+use crate::chains::is_valid_hash;
+use crate::chains::request::checked;
 use crate::error::ApiError;
 use crate::follow::{AbortOnDrop, Watcher, current_balances};
-use crate::limit::ConnectionSlot;
 use crate::prices::PriceMap;
 use crate::upstream::Tx;
-use crate::{AppState, ClientIp};
 use axum::Extension;
 use axum::extract::State;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade, close_code};
@@ -28,8 +29,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, interval_at, sleep, timeout};
 
-/// 单连接的地址上限，所有订阅合计。
-const MAX_ADDRESSES: usize = 1000;
+/// 单连接的地址上限，所有订阅合计。同一个地址在三个 Bitcoin 测试网上算三个。
+const MAX_ADDRESSES: usize = 5000;
 /// 单连接的交易上限，见 docs/03-system.md §4.3。
 const MAX_TXS: usize = 100;
 /// 单连接的 blocks 和 prices 订阅合计。每个网络一个，再加一个价格，正常用法到不了这个数。
@@ -105,7 +106,7 @@ async fn follow_addresses(
     addresses: Vec<String>,
     out: mpsc::Sender<String>,
 ) {
-    let (Some(pool), Some(follower)) = (state.networks.get(&network), state.followers.get(&network)) else {
+    let (Some(pool), Some(follower)) = (state.networks.pool(network), state.followers.get(&network)) else {
         return;
     };
     // 先取基线再回复订阅 ID。客户端收到回复后取一次快照，之后的变化一定会被推送。
@@ -113,7 +114,7 @@ async fn follow_addresses(
     let height = pool.head().await.ok();
     let baseline = current_balances(pool, &addresses).await;
     let watcher = Watcher::new(id.clone(), addresses, out.clone(), height, baseline);
-    let _member = follower.join(&state, watcher);
+    let _member = follower.join(&state.networks, watcher);
     if out.send(rpc_result(request, json!(id))).await.is_ok() {
         std::future::pending::<()>().await;
     }
@@ -248,8 +249,8 @@ impl Connection {
         let (id, out, interval) = (id.to_string(), self.out.clone(), state.poll_interval);
         match params {
             SubscribeParams::Addresses { network, addresses } => {
-                let (network, _) = state.network(&network)?;
-                let addresses = address::checked(network, addresses, MAX_ADDRESSES - self.used(Quota::Addresses))?;
+                let (network, _) = state.networks.get(&network)?;
+                let addresses = checked(network, addresses, MAX_ADDRESSES - self.used(Quota::Addresses))?;
                 let units = addresses.len();
                 Ok((
                     Quota::Addresses,
@@ -258,18 +259,18 @@ impl Connection {
                 ))
             }
             SubscribeParams::Tx { network, hash } => {
-                let (network, _) = state.network(&network)?;
+                let (network, _) = state.networks.get(&network)?;
                 if self.used(Quota::Txs) >= MAX_TXS {
                     return Err(ApiError::TooManySubscriptions);
                 }
-                if !address::is_valid_hash(network, &hash) {
+                if !is_valid_hash(network, &hash) {
                     return Err(ApiError::InvalidHash);
                 }
                 let hashes = [hash];
                 let fetch = move || {
                     let (state, hashes) = (state.clone(), hashes.clone());
                     async move {
-                        let pool = state.networks.get(&network)?;
+                        let pool = state.networks.pool(network)?;
                         pool.txs(&hashes).await.ok()?.pop()
                     }
                 };
@@ -285,13 +286,13 @@ impl Connection {
                 ))
             }
             SubscribeParams::Blocks { network } => {
-                let (network, _) = state.network(&network)?;
+                let (network, _) = state.networks.get(&network)?;
                 if self.used(Quota::Feeds) >= MAX_FEEDS {
                     return Err(ApiError::TooManySubscriptions);
                 }
                 let fetch = move || {
                     let state = state.clone();
-                    async move { state.networks.get(&network)?.height().await.ok() }
+                    async move { state.networks.pool(network)?.height().await.ok() }
                 };
                 let feed = Feed {
                     changed: |last, height| last != height,

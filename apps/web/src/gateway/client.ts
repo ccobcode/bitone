@@ -459,6 +459,14 @@ export async function fetchHistory(
     return parsePage(await post(network, "history", { addresses, cursor, since }));
 }
 
+/** 这批地址里有过交易的，地址发现用。 */
+export async function fetchUsed(network: string, addresses: readonly string[]): Promise<string[]> {
+    const body = await post(network, "used", { addresses });
+    const list = isRecord(body) ? body.used : null;
+    if (!Array.isArray(list)) throw malformed();
+    return list.filter((address): address is string => typeof address === "string");
+}
+
 export interface SnapshotItem {
     network: string;
     address: string;

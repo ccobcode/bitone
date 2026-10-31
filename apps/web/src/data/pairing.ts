@@ -115,6 +115,11 @@ export async function ensureAddress(account: Account, mode: Mode, index: number,
     return address;
 }
 
+/** 账户的第一个收款地址，账户的核对状态看的是它。 */
+export function firstAddress(addresses: readonly Address[], accountId: string): Address | undefined {
+    return addresses.find((a) => a.accountId === accountId && a.change === 0 && a.index === 0);
+}
+
 export function addressPath(account: Account, address: Pick<Address, "change" | "index">): string {
     return account.chain === "bitcoin" ? `${account.path}/${address.change}/${address.index}` : account.path;
 }

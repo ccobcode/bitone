@@ -1,14 +1,14 @@
 //! 跟块。每个网络一个任务，所有订阅共用，第一个订阅到来时启动，最后一个离开时停止。
 //!
-//! 客户端只订阅网关。上游有长连接就等推送，没有就轮询高度，这些差异都留在 upstream 里。
-//! 每轮只查一次全部被订阅的地址，余额变了或上游说地址有动静，才取这个订阅者的交易。
-//! 所以订阅者再多，轮询上游的成本也只随不重复的地址数增长。
+//! 客户端只订阅网关。怎么知道有新块、哪些地址有动静，每条链都不一样，这些都在 chains 的
+//! `watch` 里解决。这里只处理它们发来的信号：只有高度时不访问上游，地址有动静才查这些地址的
+//! 余额和交易。所以余额没变的地址没有任何请求，成本不随订阅的地址数增长。
 //!
+//! 上游没有长连接时退回轮询：每个新高度查一次全部地址，靠余额变化发现交易。
 //! 每条推送带上一轮的高度，客户端发现接不上就重新取快照。
 
-use crate::AppState;
-use crate::upstream::{Balance, HistoryItem, Pool, Signal};
-use bitone_core::{Chain, Network};
+use crate::upstream::{Balance, HistoryItem, Networks, Pool, Signal};
+use bitone_core::Network;
 use futures_util::future::join_all;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -16,21 +16,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
-use tokio::time::{Instant, sleep_until, timeout};
+use tokio::time::{Instant, timeout};
 
 /// 每批查询的地址数，与 HTTP 接口的单次上限一致。
 const CHUNK: usize = 100;
 const SIGNAL_QUEUE: usize = 64;
 
-/// 两轮之间的最短间隔。BSC 和 Solana 不到一秒一个块，没有必要每块都查。
-fn floor(chain: Chain) -> Duration {
-    match chain {
-        Chain::Bitcoin | Chain::Evm => Duration::from_secs(3),
-        // ponytail: 这两条链查余额要逐个地址调用，成本随地址数增长。
-        // 用户多了以后 TRON 改成解析区块，Solana 改成 accountSubscribe。
-        Chain::Tron | Chain::Solana => Duration::from_secs(6),
-    }
-}
+/// 只有高度变化时两轮之间的最短间隔。BSC 和 Solana 不到一秒一个块，没有必要每块都通知。
+/// 地址有动静时不等它。
+const ROUND_INTERVAL: Duration = Duration::from_secs(3);
 
 /// 丢弃时中止任务。
 pub struct AbortOnDrop(pub JoinHandle<()>);
@@ -111,7 +105,11 @@ impl Watcher {
             let changed: Vec<&String> = self
                 .addresses
                 .iter()
-                .filter(|address| current.get(*address) != progress.balances.get(*address))
+                .filter(|address| {
+                    current
+                        .get(*address)
+                        .is_some_and(|balances| progress.balances.get(*address) != Some(balances))
+                })
                 .collect();
             (progress.height, changed)
         };
@@ -154,6 +152,8 @@ struct Shared {
 
 pub struct Follower {
     network: Network,
+    /// 查不到推送时轮询高度的间隔。
+    poll_interval: Duration,
     shared: Mutex<Shared>,
     /// 全部被订阅的地址，长连接据此增加上游订阅。
     watched: watch::Sender<Vec<String>>,
@@ -177,9 +177,10 @@ impl Drop for Member {
 }
 
 impl Follower {
-    pub fn new(network: Network) -> Self {
+    pub fn new(network: Network, poll_interval: Duration) -> Self {
         Self {
             network,
+            poll_interval,
             shared: Mutex::default(),
             watched: watch::Sender::new(Vec::new()),
         }
@@ -194,14 +195,14 @@ impl Follower {
         self.watched.send_replace(addresses.into_iter().cloned().collect());
     }
 
-    pub fn join(self: &Arc<Self>, state: &Arc<AppState>, watcher: Watcher) -> Member {
+    pub fn join(self: &Arc<Self>, networks: &Arc<Networks>, watcher: Watcher) -> Member {
         let mut shared = self.lock();
         let key = shared.next;
         shared.next += 1;
         shared.watchers.insert(key, Arc::new(watcher));
         self.publish(&shared);
         if shared.task.is_none() {
-            shared.task = Some(AbortOnDrop(tokio::spawn(follow(state.clone(), self.clone()))));
+            shared.task = Some(AbortOnDrop(tokio::spawn(follow(networks.clone(), self.clone()))));
         }
         Member {
             follower: self.clone(),
@@ -218,12 +219,11 @@ impl Follower {
         })
     }
 
-    /// 查一轮并通知全部订阅。全部地址都查到才推进，否则下一轮重查。
-    async fn round(&self, pool: &Pool, height: u64, touched: &HashSet<String>) {
+    /// 查一轮并通知全部订阅。`query` 里的地址都查到才推进，否则下一轮重查。
+    async fn round(&self, pool: &Pool, height: u64, query: &[String], touched: &HashSet<String>) {
         let watchers: Vec<Arc<Watcher>> = self.lock().watchers.values().cloned().collect();
-        let addresses = self.watched.borrow().clone();
-        let current = current_balances(pool, &addresses).await;
-        if current.len() != addresses.len() {
+        let current = current_balances(pool, query).await;
+        if current.len() != query.len() {
             return;
         }
         let notices = watchers
@@ -238,6 +238,7 @@ impl Follower {
 struct Pending {
     head: Option<u64>,
     touched: HashSet<String>,
+    reconcile: bool,
     live: bool,
 }
 
@@ -248,46 +249,65 @@ impl Pending {
                 self.head = Some(height);
                 self.live = true;
             }
+            Signal::Block(height, addresses) => {
+                self.head = Some(height);
+                self.live = true;
+                self.touched.extend(addresses);
+            }
             Signal::Touched(addresses) => self.touched.extend(addresses),
+            Signal::Reconcile => self.reconcile = true,
             Signal::Lost => self.live = false,
         }
     }
+
+    /// 这一轮要查余额的地址。长连接正常时只查有动静的，查不到推送时查全部。
+    fn query(&self, watched: &[String]) -> Vec<String> {
+        let all = !self.live || self.reconcile;
+        let wanted = |address: &&String| all || self.touched.contains(*address);
+        watched.iter().filter(wanted).cloned().collect()
+    }
 }
 
-async fn follow(state: Arc<AppState>, follower: Arc<Follower>) {
+async fn follow(networks: Arc<Networks>, follower: Arc<Follower>) {
     let network = follower.network;
+    let poll_interval = follower.poll_interval;
     let (signals, mut incoming) = mpsc::channel(SIGNAL_QUEUE);
-    let watching = state.clone();
+    let watching = networks.clone();
     let addresses = follower.watched.subscribe();
     let _watch = AbortOnDrop(tokio::spawn(async move {
-        if let Some(pool) = watching.networks.get(&network) {
+        if let Some(pool) = watching.pool(network) {
             pool.watch(addresses, signals).await;
         }
     }));
-    let Some(pool) = state.networks.get(&network) else {
+    let Some(pool) = networks.pool(network) else {
         return;
     };
-    let pause = floor(network.chain()).min(state.poll_interval);
+    let pause = ROUND_INTERVAL.min(poll_interval);
     let mut next = Instant::now();
     let mut pending = Pending::default();
     loop {
-        sleep_until(next).await;
-        match timeout(state.poll_interval, incoming.recv()).await {
+        match timeout(poll_interval, incoming.recv()).await {
             Ok(Some(signal)) => pending.take(signal),
             Ok(None) => return,
-            // 长连接还在时安静就是没有新块，不用查。
-            Err(_) if pending.live => continue,
-            Err(_) => pending.head = pool.head().await.ok(),
+            // 长连接还在时安静就是没有动静，不用查。
+            Err(_) if pending.live => {}
+            Err(_) => pending.head = pool.head().await.ok().or(pending.head),
         }
         while let Ok(signal) = incoming.try_recv() {
             pending.take(signal);
         }
-        next = Instant::now() + pause;
-        let Some(head) = pending.head else { continue };
-        if pending.touched.is_empty() && !follower.behind(head) {
+        let urgent = !pending.touched.is_empty() || pending.reconcile;
+        if !urgent && Instant::now() < next {
             continue;
         }
-        follower.round(pool, head, &pending.touched).await;
+        let Some(head) = pending.head else { continue };
+        if !urgent && !follower.behind(head) {
+            continue;
+        }
+        next = Instant::now() + pause;
+        let query = pending.query(&follower.watched.borrow());
+        follower.round(pool, head, &query, &pending.touched).await;
         pending.touched.clear();
+        pending.reconcile = false;
     }
 }

@@ -2,8 +2,8 @@
 import { MAX_ADDRESSES } from "./client";
 import type { Target } from "./assets";
 
-/** 单连接的地址上限，超出的地址靠 HTTP 刷新。 */
-const MAX_SUBSCRIBED = 1000;
+/** 单连接的地址上限，超出的地址靠 HTTP 刷新。和网关一致。 */
+const MAX_SUBSCRIBED = 5000;
 /** 单连接的交易上限，超出的交易靠 HTTP 轮询。 */
 const MAX_WATCHED_TXS = 100;
 const BASE_DELAY = 1000;
@@ -22,12 +22,13 @@ export interface SocketEvents {
     onTx?(network: string, tx: unknown): void;
     /** 新增的交易订阅收到回复。网关先取好基线再回复，这时要用 HTTP 补一次，基线本身不会推送。 */
     onTxWatched?(network: string, hash: string): void;
-    /** 地址变化后这个网络的订阅全部收到回复，这时要用 HTTP 补一次，理由同上。 */
-    onAddressesWatched?(network: string): void;
+    /** 这批地址的订阅收到回复。网关先取好基线再回复，这时取快照不会漏掉变化，首次、重连和新增都会触发。 */
+    onBatchReady?(target: Target): void;
+    /** 应用层心跳的往返时间，毫秒。 */
+    onLatency?(ms: number): void;
     onPrices?(prices: unknown): void;
     /**
-     * 全部订阅都收到了回复。网关先取好基线再回复，所以这时用 HTTP 补一次不会漏掉变化，
-     * 在连接刚打开时补就可能漏。首次和重连都会触发。
+     * 全部订阅都收到了回复。首次和重连都会触发。
      */
     onReady(): void;
 }
@@ -68,6 +69,8 @@ export class BalanceSocket {
     #prices = false;
     #heartbeat: ReturnType<typeof setInterval> | null = null;
     #alive = true;
+    #pingId = 0;
+    #pingAt = 0;
     #nextId = 1;
     /** 请求 ID 对应的主题，收到响应后转成订阅 ID 对应的主题。 */
     #pending = new Map<number, Topic>();
@@ -155,8 +158,14 @@ export class BalanceSocket {
             this.#scheduleRetry();
             return;
         }
+        this.#ping(socket);
+    }
+
+    #ping(socket: WebSocket): void {
         this.#alive = false;
-        socket.send(JSON.stringify({ jsonrpc: "2.0", id: this.#nextId++, method: "ping" }));
+        this.#pingId = this.#nextId++;
+        this.#pingAt = performance.now();
+        socket.send(JSON.stringify({ jsonrpc: "2.0", id: this.#pingId, method: "ping" }));
     }
 
     #stopBeat(): void {
@@ -188,7 +197,7 @@ export class BalanceSocket {
             this.#subscribe(socket);
             this.#opening = this.#pending.size > 0;
             if (!this.#opening) this.#events.onReady();
-            this.#alive = true;
+            this.#ping(socket);
             this.#heartbeat = setInterval(() => this.#beat(socket), HEARTBEAT_INTERVAL);
         };
         socket.onmessage = (event) => {
@@ -211,11 +220,12 @@ export class BalanceSocket {
         this.#timer = setTimeout(() => this.#connect(), delay);
     }
 
-    /** 单连接上限内要订阅的批次，键是 `网络|第一个地址`。 */
+    /** 单连接上限内要订阅的批次，键是 `网络|第一个地址`。地址少的批次在前，地址多的网络不能把其他网络挤掉。 */
     #allowed(): Map<string, Target> {
         let room = MAX_SUBSCRIBED;
         const allowed = new Map<string, Target>();
-        for (const { network, addresses } of this.#targets) {
+        const smallest = [...this.#targets].sort((a, b) => a.addresses.length - b.addresses.length);
+        for (const { network, addresses } of smallest) {
             const target = { network, addresses: addresses.slice(0, room) };
             if (target.addresses.length > 0) allowed.set(batchKey(target), target);
             room -= target.addresses.length;
@@ -259,12 +269,6 @@ export class BalanceSocket {
         socket.send(JSON.stringify({ jsonrpc: "2.0", id, method: "subscribe", params }));
     }
 
-    #waitingFor(network: string): boolean {
-        return [...this.#pending.values()].some(
-            (topic) => topic.kind === "addresses" && topic.network === network && !topic.stale,
-        );
-    }
-
     #message(data: unknown): void {
         if (typeof data !== "string") return;
         let message: { id?: unknown; result?: unknown; method?: unknown; params?: Record<string, unknown> };
@@ -274,6 +278,10 @@ export class BalanceSocket {
             return;
         }
         if (typeof message.id === "number") {
+            if (message.id === this.#pingId) {
+                this.#events.onLatency?.(Math.round(performance.now() - this.#pingAt));
+                return;
+            }
             const topic = this.#pending.get(message.id);
             if (!topic) return;
             this.#pending.delete(message.id);
@@ -284,8 +292,8 @@ export class BalanceSocket {
             } else if (id) this.#subscriptions.set(id, topic);
             else this.#rejected = true;
             if (!this.#opening && topic.kind === "tx") this.#events.onTxWatched?.(topic.network, topic.hash);
-            if (!this.#opening && topic.kind === "addresses" && !stale && !this.#waitingFor(topic.network)) {
-                this.#events.onAddressesWatched?.(topic.network);
+            if (topic.kind === "addresses" && !stale && id) {
+                this.#events.onBatchReady?.({ network: topic.network, addresses: [...topic.addresses] });
             }
             if (this.#pending.size > 0) return;
             if (this.#rejected) this.#events.onStatus("degraded", null);

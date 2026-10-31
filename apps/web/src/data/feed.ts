@@ -29,7 +29,7 @@ export function streamId(walletId: string, { network, addresses }: HistoryStream
     return `${walletId}:${network}:${addresses[0]}`;
 }
 
-function entry(walletId: string, stream: string, network: string, item: HistoryItem): ChainEntry {
+export function entry(walletId: string, stream: string, network: string, item: HistoryItem): ChainEntry {
     const key = txKey(network, item.hash);
     const asset = addressKey(item.asset);
     // Bitcoin 的条目按一批地址归纳，地址变多后金额会变，所以一笔只留一条。
@@ -49,6 +49,12 @@ async function mergeBalances(network: string, height: number, rows: readonly Bal
     }));
     const stored = await db.balances.bulkGet(fresh.map((row) => row.id));
     await db.balances.bulkPut(fresh.filter((_, i) => (stored[i]?.height ?? 0) <= height));
+}
+
+/** 本地还没有的记录。多个标签页收到同一条推送时，写入在事务里排队，只有一个能看到它是新的。 */
+async function unseen(rows: readonly ChainEntry[]): Promise<ChainEntry[]> {
+    const stored = await db.chainTxs.bulkGet(rows.map((row) => row.id));
+    return rows.filter((_, i) => !stored[i]);
 }
 
 /** 第一次同步只取最新一页，更早的记录用户翻到时再取。 */
@@ -75,7 +81,7 @@ async function saveChanges(
     stream: HistoryStream,
     saved: FeedCursor,
     first: HistoryPage,
-): Promise<void> {
+): Promise<ChainEntry[]> {
     const { network, addresses } = stream;
     const rows = first.items.map((item) => entry(walletId, id, network, item));
     let cursor = first.cursor;
@@ -84,11 +90,13 @@ async function saveChanges(
         rows.push(...page.items.map((item) => entry(walletId, id, network, item)));
         cursor = page.cursor;
     }
-    await db.transaction("rw", db.chainTxs, db.feedCursors, async () => {
+    return db.transaction("rw", db.chainTxs, db.feedCursors, async () => {
+        const fresh = await unseen(rows);
         const open = await db.chainTxs.where("walletId").equals(walletId);
         await open.filter((row) => row.stream === id && OPEN.has(row.status)).delete();
         await db.chainTxs.bulkPut(rows);
         await db.feedCursors.update(id, { checkpoint: first.checkpoint });
+        return fresh;
     });
 }
 
@@ -149,6 +157,8 @@ export interface FeedResult {
     failures: FeedFailure[];
     /** 链上记录没同步成的网络。 */
     failed: string[];
+    /** 增量补回来的新记录，第一次同步的不算。 */
+    missed: ChainEntry[];
 }
 
 async function applyResult(
@@ -156,13 +166,14 @@ async function applyResult(
     stream: HistoryStream,
     saved: FeedCursor | undefined,
     result: SnapshotResult,
+    missed: ChainEntry[],
 ): Promise<boolean> {
     if (result.height !== null && result.balances) await mergeBalances(stream.network, result.height, result.balances);
     const page = result.history;
     if (!page) return false;
     const id = streamId(walletId, stream);
     if (!saved) await saveFirstPage(id, walletId, stream, page);
-    else if (!page.unchanged) await saveChanges(id, walletId, stream, saved, page);
+    else if (!page.unchanged) missed.push(...(await saveChanges(id, walletId, stream, saved, page)));
     return true;
 }
 
@@ -179,6 +190,7 @@ export async function syncFeed(
     const failures = new Map<string, string>();
     const failed = new Set<string>();
     const answered = new Set<string>();
+    const missed: ChainEntry[] = [];
     const apply = async (result: SnapshotResult) => {
         const index = streams.findIndex(
             (stream) => stream.network === result.network && stream.addresses[0] === result.addresses[0],
@@ -188,7 +200,7 @@ export async function syncFeed(
         answered.add(streamId(walletId, stream));
         if (result.balances === null) failures.set(stream.network, result.error ?? "unreachable");
         const indexed = !noHistory.includes(stream.network);
-        const synced = await applyResult(walletId, stream, saved[index], result).catch(() => false);
+        const synced = await applyResult(walletId, stream, saved[index], result, missed).catch(() => false);
         if (indexed && !synced) failed.add(stream.network);
     };
     const replies = await Promise.allSettled(batches(groups).map((items) => fetchSnapshot(items, apply)));
@@ -200,16 +212,23 @@ export async function syncFeed(
         if (!noHistory.includes(stream.network)) failed.add(stream.network);
     }
     await settleUnindexed(walletId, noHistory);
-    return { failures: [...failures].map(([network, code]) => ({ network, code })), failed: [...failed] };
+    return { failures: [...failures].map(([network, code]) => ({ network, code })), failed: [...failed], missed };
 }
 
-/** 把一条跟块推送写入本地。 */
-export async function applyChainUpdate(walletId: string, stream: HistoryStream, update: ChainUpdate): Promise<void> {
+/** 把一条跟块推送写入本地，返回本地原来没有的记录。 */
+export async function applyChainUpdate(
+    walletId: string,
+    stream: HistoryStream,
+    update: ChainUpdate,
+): Promise<ChainEntry[]> {
     const { network } = stream;
     const id = streamId(walletId, stream);
-    await db.transaction("rw", db.balances, db.chainTxs, async () => {
+    const rows = (update.items ?? []).map((item) => entry(walletId, id, network, item));
+    return db.transaction("rw", db.balances, db.chainTxs, async () => {
         await mergeBalances(network, update.height, update.balances);
-        await db.chainTxs.bulkPut((update.items ?? []).map((item) => entry(walletId, id, network, item)));
+        const fresh = await unseen(rows);
+        await db.chainTxs.bulkPut(rows);
+        return fresh;
     });
 }
 
@@ -238,7 +257,8 @@ export async function loadOlder(walletId: string, streams: readonly HistoryStrea
 }
 
 /** 还有未定论的记录时要继续同步，否则它们的状态不会更新。 */
-export async function hasOpenEntries(walletId: string): Promise<boolean> {
+export async function hasOpenEntries(walletId: string, stream: HistoryStream): Promise<boolean> {
+    const id = streamId(walletId, stream);
     const open = db.chainTxs.where("walletId").equals(walletId);
-    return (await open.filter((row) => OPEN.has(row.status)).count()) > 0;
+    return (await open.filter((row) => row.stream === id && OPEN.has(row.status)).count()) > 0;
 }

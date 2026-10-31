@@ -1,21 +1,19 @@
-//! EVM。普通 JSON-RPC 节点。交易历史节点查不到，要配置一个 Etherscan 兼容的索引服务。
+//! EVM 的上游适配器。
 
-use super::{
-    Balance, Broadcast, Cursor, Estimate, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, Signal, StreamPage,
-    Tx, TxStatus, Upstream, balance, decimal, hex_to_decimal, hex_u64, hex_u128, merge_pages, rejected, run_all,
-    stream_index, streams, watch_heads,
+use crate::upstream::{
+    Balance, Broadcast, Cursor, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, RawTx, Signal, Tx, TxStatus,
+    Upstream, balance, hex_to_decimal, hex_u64, hex_u128, rejected, run_all,
 };
-use crate::raw::RawTx;
 use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::iter::once;
 use tokio::sync::{mpsc, watch};
 
 /// ERC-20 的 balanceOf(address)。
 const BALANCE_OF: &str = "70a08231";
 /// 单个 JSON-RPC 批次的调用数。服务商对批次大小都有上限。
-const BATCH_SIZE: usize = 100;
+pub(super) const BATCH_SIZE: usize = 100;
 /// 查询一笔交易要两个调用。
 const TX_BATCH: usize = BATCH_SIZE / 2;
 /// 手续费按最近这么多个区块统计。
@@ -27,24 +25,22 @@ const BASE_FEE_MARGIN: [(u128, u128); 3] = [(5, 4), (3, 2), (2, 1)];
 /// 节点报出这些内容时，交易已经在内存池里。各家客户端的写法不同，有的是错误名，
 /// 所以先去掉空格和下划线再比较。
 const ALREADY_KNOWN: [&str; 3] = ["alreadyknown", "knowntransaction", "alreadyimported"];
-/// 索引服务的三类记录：普通交易、内部转账、代币转账。
-const ACTIONS: [&str; 3] = ["txlist", "txlistinternal", "tokentx"];
-const TOKEN_ACTION: &str = "tokentx";
-const PAGE_SIZE: usize = 50;
 /// ERC-20 的 Transfer 事件。
-const TRANSFER: &str = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-/// 跟块时最多回看的区块数。这里要取完整区块，只在地址有变化时才查。
-const MAX_SCAN: u64 = 32;
+pub(super) const TRANSFER: &str = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+/// 查交易历史的服务。节点查不到地址的历史。
+pub enum Indexer {
+    Etherscan(Http),
+    HyperSync(Http),
+}
 
 pub struct Evm {
     pub http: Http,
     pub tokens: Vec<String>,
-    pub indexer: Option<Http>,
-    /// `indexer` 是 HyperSync，不是 Etherscan 兼容的接口。
-    pub hypersync: bool,
+    pub indexer: Option<Indexer>,
 }
 
-fn evm_call(address: &str, asset: &str) -> (&'static str, Value) {
+pub(super) fn evm_call(address: &str, asset: &str) -> (&'static str, Value) {
     if asset == NATIVE {
         return ("eth_getBalance", json!([address, "latest"]));
     }
@@ -54,11 +50,11 @@ fn evm_call(address: &str, asset: &str) -> (&'static str, Value) {
 }
 
 /// 链上的三个位置。
-struct Tips {
-    latest: u64,
+pub(super) struct Tips {
+    pub(super) latest: u64,
     /// 有些节点不支持 `safe`，比如 Polygon。它只是中间阶段，缺了不影响完成标准。
-    safe: Option<u64>,
-    finalized: u64,
+    pub(super) safe: Option<u64>,
+    pub(super) finalized: u64,
 }
 
 impl Tips {
@@ -162,57 +158,6 @@ fn is_already_known(message: &str) -> bool {
     ALREADY_KNOWN.iter().any(|known| message.contains(known))
 }
 
-fn number(row: &Value, key: &str) -> Result<u64, Failed> {
-    row.get(key)
-        .and_then(Value::as_str)
-        .and_then(|text| text.parse().ok())
-        .ok_or(Failed)
-}
-
-/// 索引服务的一行记录。代币只保留清单里的，普通交易里金额为 0 的成功调用不是转账。
-fn history_item(row: &Value, action: &str, tokens: &[String], tips: &Tips) -> Result<Option<HistoryItem>, Failed> {
-    let hash = row
-        .get("hash")
-        .or_else(|| row.get("transactionHash"))
-        .and_then(Value::as_str)
-        .ok_or(Failed)?;
-    let text = |key: &str| {
-        row.get(key)
-            .and_then(Value::as_str)
-            .filter(|text| !text.is_empty())
-            .map(str::to_string)
-    };
-    let failed = row.get("isError").and_then(Value::as_str) == Some("1")
-        || row.get("txreceipt_status").and_then(Value::as_str) == Some("0");
-    let amount = decimal(row.get("value").ok_or(Failed)?)?;
-    let asset = if action == TOKEN_ACTION {
-        let contract = row.get("contractAddress").and_then(Value::as_str).ok_or(Failed)?;
-        match tokens.iter().find(|token| token.eq_ignore_ascii_case(contract)) {
-            Some(token) => token.clone(),
-            None => return Ok(None),
-        }
-    } else {
-        if amount == "0" && !failed {
-            return Ok(None);
-        }
-        NATIVE.to_string()
-    };
-    let status = match (failed, number(row, "blockNumber")? <= tips.finalized) {
-        (true, _) => TxStatus::Failed,
-        (false, true) => TxStatus::Finalized,
-        (false, false) => TxStatus::Included,
-    };
-    Ok(Some(HistoryItem {
-        hash: hash.to_string(),
-        time: Some(number(row, "timeStamp")?),
-        from: text("from"),
-        to: text("to"),
-        asset,
-        amount,
-        status,
-    }))
-}
-
 impl Evm {
     /// 发一批调用，结果按请求顺序返回，每项的错误单独保留。批量响应不保证顺序，要按 id 归位。
     async fn batch_items(&self, calls: &[(&str, Value)]) -> Result<Vec<Option<Value>>, Failed> {
@@ -234,7 +179,7 @@ impl Evm {
     }
 
     /// 一批调用，任何一项出错都算失败。
-    async fn batch(&self, calls: &[(&str, Value)]) -> Result<Vec<Value>, Failed> {
+    pub(super) async fn batch(&self, calls: &[(&str, Value)]) -> Result<Vec<Value>, Failed> {
         self.batch_items(calls)
             .await?
             .into_iter()
@@ -246,7 +191,7 @@ impl Evm {
         self.http.rpc(method, params).await?.map_err(|_| Failed)
     }
 
-    async fn tips(&self) -> Result<Tips, Failed> {
+    pub(super) async fn tips(&self) -> Result<Tips, Failed> {
         let calls = [
             ("eth_blockNumber", json!([])),
             ("eth_getBlockByNumber", json!(["safe", false])),
@@ -282,76 +227,20 @@ impl Evm {
             .map(|(hash, pair)| parse_tx(hash, &pair[0], &pair[1], tips))
             .collect()
     }
-
-    async fn stream(
-        &self,
-        indexer: &Http,
-        key: String,
-        token: Option<String>,
-        addresses: &[String],
-        tips: &Tips,
-        since: Option<u64>,
-    ) -> Result<Vec<StreamPage>, Failed> {
-        let address = stream_index(&key)
-            .and_then(|index| addresses.get(index))
-            .ok_or(Failed)?;
-        let action = key
-            .split(':')
-            .nth(1)
-            .filter(|action| ACTIONS.contains(action))
-            .ok_or(Failed)?;
-        let page: u32 = token.as_deref().map_or(Ok(1), str::parse).map_err(|_| Failed)?;
-        let start = since.map_or(0, |since| since + 1).to_string();
-        let query = [
-            ("module", "account"),
-            ("action", action),
-            ("address", address),
-            ("page", &page.to_string()),
-            ("offset", &PAGE_SIZE.to_string()),
-            ("sort", "desc"),
-            ("startblock", &start),
-        ];
-        let reply = indexer.get_query("", &query).await?;
-        // 没有记录时 status 是 0 而 result 是空数组，限流时 result 是一段文本。
-        let rows = reply.get("result").and_then(Value::as_array).ok_or(Failed)?;
-        let items = rows
-            .iter()
-            .filter_map(|row| history_item(row, action, &self.tokens, tips).transpose())
-            .collect::<Result<Vec<_>, _>>()?;
-        let next = (rows.len() >= PAGE_SIZE).then(|| (page + 1).to_string());
-        Ok(vec![StreamPage { key, next, items }])
-    }
-}
-
-/// HyperSync 返回的字段。
-fn hypersync_fields() -> Value {
-    json!({
-        "block": ["number", "timestamp"],
-        "transaction": ["hash", "from", "to", "value", "status", "block_number"],
-        "log": ["address", "topic0", "topic1", "topic2", "data", "transaction_hash", "block_number"],
-    })
-}
-
-/// 金额为 0 时可能是空的 `0x`，不能当成格式错误。
-fn hex_amount(value: Option<&Value>) -> Result<String, Failed> {
-    match value.and_then(Value::as_str).ok_or(Failed)? {
-        "0x" => Ok("0".to_string()),
-        hex => hex_to_decimal(hex).ok_or(Failed),
-    }
 }
 
 /// 日志的地址参数和结果都是补零到 32 字节的小写地址。
-fn log_topic(address: &str) -> String {
+pub(super) fn log_topic(address: &str) -> String {
     format!("0x{:0>64}", address[2..].to_ascii_lowercase())
 }
 
-fn topic_address(topic: Option<&Value>) -> Result<String, Failed> {
+pub(super) fn topic_address(topic: Option<&Value>) -> Result<String, Failed> {
     let topic = topic.and_then(Value::as_str).ok_or(Failed)?;
     let hex = topic.get(topic.len().saturating_sub(40)..).ok_or(Failed)?;
     Ok(format!("0x{hex}"))
 }
 
-fn item_status(failed: bool, block: u64, tips: &Tips) -> TxStatus {
+pub(super) fn item_status(failed: bool, block: u64, tips: &Tips) -> TxStatus {
     match (failed, block <= tips.finalized) {
         (true, _) => TxStatus::Failed,
         (false, true) => TxStatus::Finalized,
@@ -359,213 +248,11 @@ fn item_status(failed: bool, block: u64, tips: &Tips) -> TxStatus {
     }
 }
 
-impl Evm {
-    /// HyperSync 的一页，一个请求算一页。它只能从旧到新扫，所以游标是下一个要扫的区块。
-    /// 免费额度是每分钟 15 次，跟块不用它，只用来补历史。
-    // ponytail: 记录多到一个请求扫不完时，最早的在前，中间的要翻页才看得到。
-    // 这类地址多了以后改成从最新的区块往回分段扫。
-    async fn hypersync_page(
-        &self,
-        indexer: &Http,
-        addresses: &[String],
-        cursor: &Cursor,
-        since: Option<u64>,
-    ) -> Result<HistoryPage, Failed> {
-        let tips = self.tips().await?;
-        let from = match cursor.get("0") {
-            Some(token) => token.parse().map_err(|_| Failed)?,
-            None => since.map_or(0, |since| since + 1),
-        };
-        let own: Vec<String> = addresses.iter().map(|a| a.to_ascii_lowercase()).collect();
-        let tokens: Vec<String> = self.tokens.iter().map(|t| t.to_ascii_lowercase()).collect();
-        let topics: Vec<String> = addresses.iter().map(|address| log_topic(address)).collect();
-        let logs = if tokens.is_empty() {
-            json!([])
-        } else {
-            json!([
-                {"address": tokens, "topics": [[TRANSFER], topics, [], []]},
-                {"address": tokens, "topics": [[TRANSFER], [], topics, []]},
-            ])
-        };
-        let body = json!({
-            "from_block": from,
-            "transactions": [{"from": own}, {"to": own}],
-            "logs": logs,
-            "field_selection": hypersync_fields(),
-        });
-        let reply = indexer.post_to("/query", &body).await?;
-        let next = reply.get("next_block").and_then(Value::as_u64).ok_or(Failed)?;
-        let archive = reply.get("archive_height").and_then(Value::as_u64).ok_or(Failed)?;
-        let chunks = reply.get("data").and_then(Value::as_array).ok_or(Failed)?;
-        let rows = |key: &'static str| {
-            chunks
-                .iter()
-                .flat_map(move |chunk| chunk.get(key).and_then(Value::as_array).into_iter().flatten())
-        };
-
-        let mut times = HashMap::new();
-        for block in rows("blocks") {
-            let number = block.get("number").and_then(Value::as_u64).ok_or(Failed)?;
-            times.insert(number, hex_u64(block.get("timestamp").ok_or(Failed)?)?);
-        }
-        let mut items = Vec::new();
-        for tx in rows("transactions") {
-            let block = tx.get("block_number").and_then(Value::as_u64).ok_or(Failed)?;
-            let failed = tx.get("status").and_then(Value::as_u64) == Some(0);
-            let amount = hex_amount(tx.get("value"))?;
-            if amount == "0" && !failed {
-                continue;
-            }
-            let party = |key: &str| tx.get(key).and_then(Value::as_str).map(str::to_string);
-            items.push(HistoryItem {
-                hash: tx.get("hash").and_then(Value::as_str).ok_or(Failed)?.to_string(),
-                time: times.get(&block).copied(),
-                from: party("from"),
-                to: party("to"),
-                asset: NATIVE.to_string(),
-                amount,
-                status: item_status(failed, block, &tips),
-            });
-        }
-        for log in rows("logs") {
-            let contract = log.get("address").and_then(Value::as_str).ok_or(Failed)?;
-            let Some(asset) = self.tokens.iter().find(|token| token.eq_ignore_ascii_case(contract)) else {
-                continue;
-            };
-            let block = log.get("block_number").and_then(Value::as_u64).ok_or(Failed)?;
-            items.push(HistoryItem {
-                hash: log
-                    .get("transaction_hash")
-                    .and_then(Value::as_str)
-                    .ok_or(Failed)?
-                    .to_string(),
-                time: times.get(&block).copied(),
-                from: Some(topic_address(log.get("topic1"))?),
-                to: Some(topic_address(log.get("topic2"))?),
-                asset: asset.clone(),
-                amount: hex_amount(log.get("data"))?,
-                status: item_status(false, block, &tips),
-            });
-        }
-        let page = StreamPage {
-            key: "0".to_string(),
-            next: (next < archive).then(|| next.to_string()),
-            items,
-        };
-        Ok(HistoryPage {
-            // 它可能比节点慢几个块，水位不能超过它扫到的位置。
-            checkpoint: tips.finalized.min(archive),
-            ..merge_pages(vec![page])
-        })
-    }
-
-    /// 直接从节点取最近的交易。索引服务有延迟，BSC 和 Polygon 也没有免费的，所以跟块不用它。
-    // ponytail: 合约内部转入的原生币在区块里看不到，只更新余额，交易记录要等索引服务。
-    // 没有索引服务的网络要显示这部分时接 trace 接口。
-    async fn scan(&self, addresses: &[String], previous: u64) -> Result<Vec<HistoryItem>, Failed> {
-        let tips = self.tips().await?;
-        let first = (previous + 1)
-            .max(tips.latest.saturating_sub(MAX_SCAN - 1))
-            .min(tips.latest);
-        let own: HashSet<String> = addresses.iter().map(|a| a.to_ascii_lowercase()).collect();
-        let hex = |block: u64| format!("{block:#x}");
-
-        let mut calls: Vec<(&str, Value)> = (first..=tips.latest)
-            .map(|block| ("eth_getBlockByNumber", json!([hex(block), true])))
-            .collect();
-        let blocks = calls.len();
-        if !self.tokens.is_empty() {
-            let topics: Vec<String> = addresses.iter().map(|address| log_topic(address)).collect();
-            let sent = json!([TRANSFER, topics, null]);
-            let received = json!([TRANSFER, null, topics]);
-            for topics in [sent, received] {
-                let filter = json!({
-                    "fromBlock": hex(first),
-                    "toBlock": hex(tips.latest),
-                    "address": self.tokens,
-                    "topics": topics,
-                });
-                calls.push(("eth_getLogs", json!([filter])));
-            }
-        }
-        let results = self.batch(&calls).await?;
-        let (blocks, logs) = results.split_at(blocks);
-
-        let mut times = HashMap::new();
-        let mut native = Vec::new();
-        for block in blocks {
-            let number = hex_u64(block.get("number").ok_or(Failed)?)?;
-            times.insert(number, hex_u64(block.get("timestamp").ok_or(Failed)?)?);
-            let rows = block.get("transactions").and_then(Value::as_array).ok_or(Failed)?;
-            for tx in rows {
-                let party = |key: &str| tx.get(key).and_then(Value::as_str).map(str::to_ascii_lowercase);
-                let (from, to) = (party("from"), party("to"));
-                let mine = |party: &Option<String>| party.as_ref().is_some_and(|party| own.contains(party));
-                if mine(&from) || mine(&to) {
-                    native.push((number, tx, from, to));
-                }
-            }
-        }
-        let receipts: Vec<(&str, Value)> = native
-            .iter()
-            .map(|(_, tx, ..)| ("eth_getTransactionReceipt", json!([tx.get("hash")])))
-            .collect();
-        let receipts = if receipts.is_empty() {
-            Vec::new()
-        } else {
-            self.batch(&receipts).await?
-        };
-
-        let mut items = Vec::new();
-        for ((block, tx, from, to), receipt) in native.into_iter().zip(&receipts) {
-            let failed = receipt.get("status").and_then(Value::as_str) == Some("0x0");
-            let amount = hex_to_decimal(tx.get("value").and_then(Value::as_str).ok_or(Failed)?).ok_or(Failed)?;
-            // 和索引服务的规则一样：金额为 0 的成功调用不是转账。
-            if amount == "0" && !failed {
-                continue;
-            }
-            items.push(HistoryItem {
-                hash: tx.get("hash").and_then(Value::as_str).ok_or(Failed)?.to_string(),
-                time: times.get(&block).copied(),
-                from,
-                to,
-                asset: NATIVE.to_string(),
-                amount,
-                status: item_status(failed, block, &tips),
-            });
-        }
-        for log in logs.iter().flat_map(|logs| logs.as_array().into_iter().flatten()) {
-            let contract = log.get("address").and_then(Value::as_str).ok_or(Failed)?;
-            let Some(asset) = self.tokens.iter().find(|token| token.eq_ignore_ascii_case(contract)) else {
-                continue;
-            };
-            let block = hex_u64(log.get("blockNumber").ok_or(Failed)?)?;
-            items.push(HistoryItem {
-                hash: log
-                    .get("transactionHash")
-                    .and_then(Value::as_str)
-                    .ok_or(Failed)?
-                    .to_string(),
-                time: times.get(&block).copied(),
-                from: Some(topic_address(log.pointer("/topics/1"))?),
-                to: Some(topic_address(log.pointer("/topics/2"))?),
-                asset: asset.clone(),
-                amount: hex_to_decimal(log.get("data").and_then(Value::as_str).ok_or(Failed)?).ok_or(Failed)?,
-                status: item_status(false, block, &tips),
-            });
-        }
-        // 自己转给自己的代币会同时出现在转出和转入两次查询里。
-        let mut seen = HashSet::new();
-        items.retain(|item| seen.insert(item.clone()));
-        Ok(items)
-    }
-}
-
 impl Upstream for Evm {
-    fn watch(&self, _addresses: watch::Receiver<Vec<String>>, signals: mpsc::Sender<Signal>) -> BoxFuture<'_, ()> {
-        let subscribe = json!({"jsonrpc": "2.0", "id": 1, "method": "eth_subscribe", "params": ["newHeads"]});
-        let number = |result: &Value| hex_u64(result.get("number")?).ok();
-        Box::pin(watch_heads(self.http.socket_url(), subscribe, number, signals))
+    fn watch(&self, addresses: watch::Receiver<Vec<String>>, signals: mpsc::Sender<Signal>) -> BoxFuture<'_, ()> {
+        Box::pin(async move {
+            let _ = self.follow(addresses, signals).await;
+        })
     }
 
     fn recent<'a>(&'a self, addresses: &'a [String], previous: u64) -> Query<'a, Vec<HistoryItem>> {
@@ -630,23 +317,10 @@ impl Upstream for Evm {
         since: Option<u64>,
     ) -> Query<'a, HistoryPage> {
         Box::pin(async move {
-            let indexer = self.indexer.as_ref().ok_or(Failed)?;
-            if self.hypersync {
-                return self.hypersync_page(indexer, addresses, cursor, since).await;
+            match self.indexer.as_ref().ok_or(Failed)? {
+                Indexer::Etherscan(indexer) => self.etherscan_page(indexer, addresses, cursor, since).await,
+                Indexer::HyperSync(indexer) => self.hypersync_page(indexer, addresses, cursor, since).await,
             }
-            let tips = self.tips().await?;
-            let tips = &tips;
-            let keys =
-                (0..addresses.len()).flat_map(|index| ACTIONS.iter().map(move |action| format!("{index}:{action}")));
-            let queries = streams(keys, cursor)
-                .into_iter()
-                .map(|(key, token)| self.stream(indexer, key, token, addresses, tips, since))
-                .collect();
-            let page = merge_pages(run_all(queries).await?);
-            Ok(HistoryPage {
-                checkpoint: tips.finalized,
-                ..page
-            })
         })
     }
 
@@ -662,13 +336,12 @@ impl Upstream for Evm {
             }
         })
     }
+}
 
-    fn estimate<'a>(&'a self, request: &'a Estimate) -> Query<'a, Result<Value, String>> {
+impl Evm {
+    /// 内层的 `Err` 是节点拒绝这次调用，带节点原文。
+    pub fn estimate<'a>(&'a self, call: &'a Value) -> Query<'a, Result<Value, String>> {
         Box::pin(async move {
-            let Estimate::Evm { from, to, value, data } = request else {
-                return Err(Failed);
-            };
-            let call = json!({"from": from, "to": to, "value": value, "data": data});
             match self.http.rpc("eth_estimateGas", json!([call])).await? {
                 Ok(gas) => {
                     let gas = hex_to_decimal(gas.as_str().ok_or(Failed)?).ok_or(Failed)?;
@@ -680,7 +353,7 @@ impl Upstream for Evm {
         })
     }
 
-    fn nonces<'a>(&'a self, addresses: &'a [String]) -> Query<'a, BTreeMap<String, Value>> {
+    pub fn nonces<'a>(&'a self, addresses: &'a [String]) -> Query<'a, BTreeMap<String, Value>> {
         Box::pin(async move {
             let calls: Vec<(&str, Value)> = addresses
                 .iter()
@@ -889,66 +562,5 @@ mod tests {
         ] {
             assert!(!is_already_known(message), "{message}");
         }
-    }
-
-    fn row(value: &str, is_error: &str) -> Value {
-        json!({
-            "hash": HASH, "from": "0xa", "to": "0xb", "value": value, "isError": is_error,
-            "blockNumber": "85", "timeStamp": "1700000000", "contractAddress": "",
-        })
-    }
-
-    #[test]
-    fn history_maps_status_from_tags_and_receipt_flags() {
-        let item = history_item(&row("5", "0"), "txlist", &[], &tips()).unwrap().unwrap();
-        assert_eq!(
-            (item.status, item.amount.as_str(), item.asset.as_str()),
-            (TxStatus::Included, "5", NATIVE)
-        );
-        let mut settled = row("5", "0");
-        settled["blockNumber"] = json!("80");
-        assert_eq!(
-            history_item(&settled, "txlist", &[], &tips()).unwrap().unwrap().status,
-            TxStatus::Finalized
-        );
-        settled["txreceipt_status"] = json!("0");
-        assert_eq!(
-            history_item(&settled, "txlist", &[], &tips()).unwrap().unwrap().status,
-            TxStatus::Failed
-        );
-    }
-
-    #[test]
-    fn zero_value_calls_are_skipped_unless_they_failed() {
-        assert!(history_item(&row("0", "0"), "txlist", &[], &tips()).unwrap().is_none());
-        let failed = history_item(&row("0", "1"), "txlist", &[], &tips()).unwrap().unwrap();
-        assert_eq!(failed.status, TxStatus::Failed);
-    }
-
-    #[test]
-    fn tokens_outside_the_list_are_dropped_and_listed_ones_use_our_spelling() {
-        let tokens = vec!["0xAbC".to_string()];
-        let mut transfer = row("7", "0");
-        transfer["contractAddress"] = json!("0xabc");
-        let item = history_item(&transfer, TOKEN_ACTION, &tokens, &tips())
-            .unwrap()
-            .unwrap();
-        assert_eq!((item.asset.as_str(), item.amount.as_str()), ("0xAbC", "7"));
-        transfer["contractAddress"] = json!("0xdef");
-        assert!(
-            history_item(&transfer, TOKEN_ACTION, &tokens, &tips())
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn contract_creation_has_no_recipient() {
-        let mut creation = row("1", "0");
-        creation["to"] = json!("");
-        assert_eq!(
-            history_item(&creation, "txlist", &[], &tips()).unwrap().unwrap().to,
-            None
-        );
     }
 }

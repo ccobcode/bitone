@@ -798,27 +798,27 @@ async fn ws_rate_limit_applies_per_message() {
 async fn ws_address_cap_is_per_connection() {
     let (_, url) = EvmNode::start("0x1").await;
     let gateway = Gateway::start(&evm_config(&[&url], "")).await;
-    let addresses: Vec<String> = (0..1001).map(|i| format!("0x{i:040x}")).collect();
+    let addresses: Vec<String> = (0..100).map(|i| format!("0x{i:040x}")).collect();
     let mut ws = gateway.ws().await;
 
-    let reply = call(&mut ws, subscribe_message(1, &addresses)).await;
-    assert_eq!(reply["error"]["data"]["code"], "too_many_addresses");
-
     // 上限按连接累计，不是按单次订阅。
-    let first = call(&mut ws, subscribe_message(2, &addresses[..600])).await["result"].clone();
-    let reply = call(&mut ws, subscribe_message(3, &addresses[600..1001])).await;
+    let mut first = Value::Null;
+    for id in 1..=50 {
+        let reply = call(&mut ws, subscribe_message(id, &addresses)).await;
+        assert!(reply["result"].is_string(), "{reply}");
+        first = reply["result"].clone();
+    }
+    let reply = call(&mut ws, subscribe_message(51, &addresses[..1])).await;
     assert_eq!(reply["error"]["data"]["code"], "too_many_addresses");
-    let second = call(&mut ws, subscribe_message(4, &addresses[600..1000])).await;
-    assert!(second["result"].is_string());
 
     // 退订后释放额度。
-    let unsubscribe = json!({"jsonrpc": "2.0", "id": 5, "method": "unsubscribe", "params": [first]});
+    let unsubscribe = json!({"jsonrpc": "2.0", "id": 52, "method": "unsubscribe", "params": [first]});
     assert_eq!(call(&mut ws, unsubscribe).await["result"], true);
-    assert!(call(&mut ws, subscribe_message(6, &addresses[..600])).await["result"].is_string());
+    assert!(call(&mut ws, subscribe_message(53, &addresses)).await["result"].is_string());
 
     // 另一个连接的额度是独立的。
     let mut other = gateway.ws().await;
-    assert!(call(&mut other, subscribe_message(1, &addresses[..1000])).await["result"].is_string());
+    assert!(call(&mut other, subscribe_message(1, &addresses)).await["result"].is_string());
 }
 
 #[tokio::test]

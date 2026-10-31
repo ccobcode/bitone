@@ -91,7 +91,7 @@ describe("syncFeed", () => {
 
     it("第一次只取最新一页，记下水位和往前翻的游标", async () => {
         answer(page([item("a")], "p2", "100"));
-        expect(await syncFeed(WALLET, [STREAM], native)).toEqual({ failed: [], failures: [] });
+        expect(await syncFeed(WALLET, [STREAM], native)).toEqual({ failed: [], failures: [], missed: [] });
         expect(await hashes()).toEqual(["a"]);
         expect(history).not.toHaveBeenCalled();
         const [cursor] = await db.feedCursors.toArray();
@@ -162,6 +162,7 @@ describe("syncFeed", () => {
         expect(result).toEqual({
             failed: ["bsc"],
             failures: [{ network: "bsc", code: "upstream_unavailable" }],
+            missed: [],
         });
         expect(await hashes()).toEqual(["a"]);
     });
@@ -171,6 +172,7 @@ describe("syncFeed", () => {
         expect(await syncFeed(WALLET, [STREAM], native)).toEqual({
             failed: ["ethereum"],
             failures: [{ network: "ethereum", code: "rate_limited" }],
+            missed: [],
         });
     });
 
@@ -184,18 +186,19 @@ describe("syncFeed", () => {
         });
         answer(null);
         vi.mocked(fetchTxs).mockResolvedValue([{ hash: "0xab", status: "finalized" } as never]);
-        expect(await syncFeed(WALLET, [stream], native, ["bsc"])).toEqual({ failed: [], failures: [] });
+        expect(await syncFeed(WALLET, [stream], native, ["bsc"])).toEqual({ failed: [], failures: [], missed: [] });
         expect((await db.chainTxs.toArray()).map((row) => row.status)).toEqual(["finalized"]);
-        expect(await hasOpenEntries(WALLET)).toBe(false);
+        expect(await hasOpenEntries(WALLET, stream)).toBe(false);
     });
 
     it("有未定论的记录时要继续同步", async () => {
         answer(page([item("a", "included")]));
         await syncFeed(WALLET, [STREAM], native);
-        expect(await hasOpenEntries(WALLET)).toBe(true);
+        expect(await hasOpenEntries(WALLET, STREAM)).toBe(true);
+        expect(await hasOpenEntries(WALLET, { ...STREAM, addresses: ["0xother"] })).toBe(false);
         answer(page([item("a", "finalized")], null, "120"));
         await syncFeed(WALLET, [STREAM], native);
-        expect(await hasOpenEntries(WALLET)).toBe(false);
+        expect(await hasOpenEntries(WALLET, STREAM)).toBe(false);
     });
 });
 

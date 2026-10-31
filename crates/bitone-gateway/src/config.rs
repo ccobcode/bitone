@@ -1,9 +1,8 @@
 //! 配置文件。示例见 gateway.example.toml。
 
-use crate::address;
-use crate::upstream::electrum::{self, Transport};
+use crate::chains::{NetworkConfig, check_url, is_valid};
 use axum::http::{HeaderName, HeaderValue};
-use bitone_core::{Chain, Mode, Network};
+use bitone_core::{Mode, Network};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer};
 use std::collections::{BTreeMap, HashMap};
@@ -30,20 +29,6 @@ pub struct Config {
     pub prices: Option<PricesConfig>,
     #[serde(deserialize_with = "networks")]
     pub networks: HashMap<Network, NetworkConfig>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NetworkConfig {
-    pub upstreams: Vec<String>,
-    #[serde(default)]
-    pub tokens: Vec<String>,
-    /// TronGrid 的 API key，发给这个网络的全部上游。
-    pub tron_api_key: Option<String>,
-    /// EVM 的 Etherscan 兼容索引服务，只用于交易历史。节点查不到地址的历史。
-    pub indexer: Option<String>,
-    /// HyperSync 的 token。配了它，`indexer` 就按 HyperSync 的接口访问，否则按 Etherscan 的接口。
-    pub indexer_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,62 +76,6 @@ fn networks<'de, D: Deserializer<'de>>(deserializer: D) -> Result<HashMap<Networ
         .collect()
 }
 
-fn check_url(url: &str, owner: &str) -> Result<(), String> {
-    let parsed = reqwest::Url::parse(url).map_err(|_| format!("{owner} 的上游地址无效"))?;
-    if matches!(parsed.scheme(), "http" | "https") {
-        Ok(())
-    } else {
-        Err(format!("{owner} 的上游只支持 http 和 https"))
-    }
-}
-
-fn has_host_and_port(url: &str) -> bool {
-    reqwest::Url::parse(url).is_ok_and(|url| url.host_str().is_some() && url.port().is_some())
-}
-
-impl NetworkConfig {
-    fn validate(&self, network: Network) -> Result<(), String> {
-        let id = network.id();
-        for url in self.upstreams.iter().chain(&self.indexer) {
-            match electrum::transport(url) {
-                Some(_) if network.chain() != Chain::Bitcoin => return Err(format!("{id} 不支持 Electrum 上游")),
-                Some(Transport::TlsUnverified) if network.mode() == Mode::Mainnet => {
-                    return Err(format!("{id} 是主网，上游必须验证证书"));
-                }
-                Some(_) if !has_host_and_port(url) => return Err(format!("{id} 的 Electrum 上游要写主机和端口")),
-                Some(_) => {}
-                None => check_url(url, id)?,
-            }
-        }
-        if network.chain() == Chain::Bitcoin && !self.tokens.is_empty() {
-            return Err(format!("{id} 不支持代币"));
-        }
-        if let Some(token) = self.tokens.iter().find(|t| !address::is_valid(network, t)) {
-            return Err(format!("{id} 的代币地址无效: {token}"));
-        }
-        if self.indexer.is_some() && network.chain() != Chain::Evm {
-            return Err(format!("{id} 不需要 indexer"));
-        }
-        if let Some(token) = &self.indexer_token {
-            if self.indexer.is_none() {
-                return Err(format!("{id} 配了 indexer_token，没有 indexer"));
-            }
-            if HeaderValue::from_str(token).is_err() {
-                return Err(format!("{id} 的 indexer_token 无效"));
-            }
-        }
-        if let Some(key) = &self.tron_api_key {
-            if network.chain() != Chain::Tron {
-                return Err(format!("{id} 不是 TRON 网络"));
-            }
-            if HeaderValue::from_str(key).is_err() {
-                return Err(format!("{id} 的 tron_api_key 无效"));
-            }
-        }
-        Ok(())
-    }
-}
-
 impl PricesConfig {
     fn validate(&self) -> Result<(), String> {
         check_url(&self.url, "prices")?;
@@ -167,7 +96,7 @@ impl PricesConfig {
             if network.mode() != Mode::Mainnet {
                 return Err(format!("价格键 {key} 不是主网资产"));
             }
-            if asset != "native" && !address::is_valid(network, asset) {
+            if asset != "native" && !is_valid(network, asset) {
                 return Err(format!("价格键 {key} 的合约地址无效"));
             }
         }

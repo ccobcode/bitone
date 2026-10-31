@@ -1,15 +1,15 @@
-//! TRON。余额和历史用 TronGrid 的 v1 接口，其余是全节点的 HTTP 接口。
+//! TRON 的上游适配器。
 
-use super::{
-    Balance, Broadcast, Cursor, Estimate, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, StreamPage, Tx,
+use crate::upstream::{
+    Balance, Broadcast, Cursor, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, RawTx, Signal, StreamPage, Tx,
     TxStatus, Upstream, balance, decimal, merge_pages, rejected, run_all, stream_index, streams,
 };
-use crate::raw::RawTx;
 use bitcoin::base58;
 use bitcoin::hex::FromHex;
 use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+use tokio::sync::{mpsc, watch};
 
 const SUCCESS: &str = "SUCCESS";
 /// 交易已经被节点收到。
@@ -33,6 +33,14 @@ const NATIVE_STREAM: &str = "native";
 pub struct Tron {
     pub http: Http,
     pub tokens: Vec<String>,
+}
+
+/// 估算费用的请求，字段都已校验。
+pub struct Estimate {
+    pub from: String,
+    pub to: String,
+    pub contract: Option<String>,
+    pub data: Option<String>,
 }
 
 /// 查不到时节点返回空对象。
@@ -211,7 +219,7 @@ fn submitted(reply: &Value) -> Result<(), Option<String>> {
 }
 
 impl Tron {
-    async fn tip(&self) -> Result<u64, Failed> {
+    pub(super) async fn tip(&self) -> Result<u64, Failed> {
         block_number(&self.http.get("/wallet/getnowblock").await?)
     }
 
@@ -362,6 +370,12 @@ impl Tron {
 }
 
 impl Upstream for Tron {
+    fn watch(&self, addresses: watch::Receiver<Vec<String>>, signals: mpsc::Sender<Signal>) -> BoxFuture<'_, ()> {
+        Box::pin(async move {
+            let _ = self.follow(addresses, signals).await;
+        })
+    }
+
     fn balances<'a>(&'a self, addresses: &'a [String]) -> Query<'a, Vec<Balance>> {
         Box::pin(run_all(addresses.iter().map(|a| self.address(a)).collect()))
     }
@@ -415,39 +429,33 @@ impl Upstream for Tron {
     fn broadcast<'a>(&'a self, raw: &'a RawTx) -> BoxFuture<'a, Broadcast> {
         Box::pin(async move { self.submit(raw).await.unwrap_or_else(|outcome| outcome) })
     }
+}
 
-    fn estimate<'a>(&'a self, request: &'a Estimate) -> Query<'a, Result<Value, String>> {
+impl Tron {
+    /// 内层的 `Err` 是节点拒绝这次调用，带节点原文。
+    pub fn estimate<'a>(&'a self, request: &'a Estimate) -> Query<'a, Result<Value, String>> {
         Box::pin(async move {
-            let Estimate::Tron {
-                from,
-                to,
-                contract,
-                data,
-            } = request
-            else {
-                return Err(Failed);
-            };
-            let Some(contract) = contract else {
-                return Ok(Ok(self.estimate_transfer(to).await?));
+            let Some(contract) = &request.contract else {
+                return Ok(Ok(self.estimate_transfer(&request.to).await?));
             };
             let body = json!({
-                "owner_address": from,
+                "owner_address": request.from,
                 "contract_address": contract,
-                "data": data,
+                "data": request.data,
                 "visible": true,
             });
             simulated(&self.http.post_to("/wallet/triggerconstantcontract", &body).await?)
         })
     }
 
-    fn resources<'a>(&'a self, addresses: &'a [String]) -> Query<'a, BTreeMap<String, Value>> {
+    pub fn resources<'a>(&'a self, addresses: &'a [String]) -> Query<'a, BTreeMap<String, Value>> {
         Box::pin(async move {
             let pairs = run_all(addresses.iter().map(|address| self.resource(address)).collect()).await?;
             Ok(pairs.into_iter().collect())
         })
     }
 
-    fn ref_block(&self) -> Query<'_, Value> {
+    pub fn ref_block(&self) -> Query<'_, Value> {
         Box::pin(async { ref_block(&self.http.get("/walletsolidity/getnowblock").await?) })
     }
 }

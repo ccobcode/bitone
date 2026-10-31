@@ -225,6 +225,7 @@ class FakeSocket {
     static count = 0;
     readyState = 0;
     sent: { id: number; params: { network: string; addresses: string[] } }[] = [];
+    pings: { id: number; method: string }[] = [];
     onopen: (() => void) | null = null;
     onmessage: ((event: { data: unknown }) => void) | null = null;
     onclose: (() => void) | null = null;
@@ -234,7 +235,9 @@ class FakeSocket {
         FakeSocket.count += 1;
     }
     send(data: string) {
-        this.sent.push(JSON.parse(data));
+        const message = JSON.parse(data);
+        if (message.method === "ping") this.pings.push(message);
+        else this.sent.push(message);
     }
     close() {
         this.readyState = 3;
@@ -253,7 +256,13 @@ describe("BalanceSocket", () => {
         vi.useFakeTimers();
         FakeSocket.count = 0;
         vi.stubGlobal("WebSocket", FakeSocket);
-        const events = { onStatus: vi.fn(), onUpdate: vi.fn(), onReady: vi.fn(), onAddressesWatched: vi.fn() };
+        const events = {
+            onStatus: vi.fn(),
+            onUpdate: vi.fn(),
+            onReady: vi.fn(),
+            onBatchReady: vi.fn(),
+            onLatency: vi.fn(),
+        };
         const socket = new BalanceSocket("ws://x/v1/ws", events);
         socket.setTargets([{ network: "ethereum", addresses: [EVM] }]);
         socket.start();
@@ -386,8 +395,28 @@ describe("BalanceSocket", () => {
         expect(FakeSocket.last.sent).toHaveLength(2);
 
         FakeSocket.last.push({ id: subscribe?.id, result: "s3" });
-        expect(events.onAddressesWatched).toHaveBeenCalledExactlyOnceWith("ethereum");
+        expect(events.onBatchReady).toHaveBeenLastCalledWith({ network: "ethereum", addresses: [EVM, "x"] });
         expect(events.onReady).toHaveBeenCalledTimes(1);
+    });
+
+    it("每批地址的订阅确认后才取快照，这批确认时另一批还可以没回复", () => {
+        const { socket, events } = setup();
+        socket.setTargets([
+            { network: "ethereum", addresses: [EVM] },
+            { network: "bitcoin", addresses: ["b"] },
+        ]);
+        FakeSocket.last.open();
+        const [ethereum] = FakeSocket.last.sent;
+        expect(events.onBatchReady).not.toHaveBeenCalled();
+        FakeSocket.last.push({ id: ethereum?.id, result: "s1" });
+        expect(events.onBatchReady).toHaveBeenCalledExactlyOnceWith({ network: "ethereum", addresses: [EVM] });
+    });
+
+    it("延迟来自 WebSocket 心跳，不用 HTTP", () => {
+        const { events } = setup();
+        FakeSocket.last.open();
+        FakeSocket.last.push({ id: FakeSocket.last.pings[0]?.id, result: "pong" });
+        expect(events.onLatency).toHaveBeenCalledTimes(1);
     });
 
     it("订阅还没回复地址就变了，回复后退订旧的，只用新的", () => {
@@ -405,12 +434,26 @@ describe("BalanceSocket", () => {
 
         FakeSocket.last.push({ id: first?.id, result: "late" });
         expect(FakeSocket.last.sent.at(-1)).toMatchObject({ method: "unsubscribe", params: ["late"] });
-        expect(events.onAddressesWatched).not.toHaveBeenCalled();
+        expect(events.onBatchReady).not.toHaveBeenCalledWith({ network: "ethereum", addresses: [EVM, "x"] });
         FakeSocket.last.push({ id: second?.id, result: "s3" });
-        expect(events.onAddressesWatched).toHaveBeenCalledExactlyOnceWith("ethereum");
+        expect(events.onBatchReady).toHaveBeenLastCalledWith({ network: "ethereum", addresses: [EVM, "x", "y"] });
 
         FakeSocket.last.push({ method: "update", params: { subscription: "late", address: "x", balances: [] } });
         expect(events.onUpdate).not.toHaveBeenCalled();
+    });
+
+    it("地址多的网络不能把其他网络的订阅挤掉", () => {
+        const { socket } = setup();
+        const many = (network: string, seed: string) => ({
+            network,
+            addresses: Array.from({ length: 100 }, (_, i) => `${seed}${i}`),
+        });
+        const crowded = Array.from({ length: 60 }, (_, i) => many("btc-testnet4", `b${i}-`));
+        socket.setTargets([...crowded, { network: "ethereum", addresses: [EVM] }]);
+        FakeSocket.last.open();
+        const networks = FakeSocket.last.sent.map((message) => message.params.network);
+        expect(networks).toContain("ethereum");
+        expect(FakeSocket.last.sent.flatMap((message) => message.params.addresses).length).toBeLessThanOrEqual(5000);
     });
 
     it("超过单次上限的地址分批订阅", () => {
@@ -505,7 +548,7 @@ describe("交易和价格订阅", () => {
         reply(first.sent[0]?.id, "sub-1");
 
         vi.advanceTimersByTime(25_000);
-        expect(first.sent.at(-1)).toMatchObject({ method: "ping" });
+        expect(first.pings.at(-1)).toMatchObject({ method: "ping" });
         first.push({ jsonrpc: "2.0", id: first.sent.at(-1)?.id, result: "pong" });
         vi.advanceTimersByTime(25_000);
         expect(FakeSocket.last).toBe(first);

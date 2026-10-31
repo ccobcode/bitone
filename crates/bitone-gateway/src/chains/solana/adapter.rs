@@ -1,10 +1,9 @@
-//! Solana。标准 JSON-RPC 节点。
+//! Solana 的上游适配器。
 
-use super::{
-    Balance, Broadcast, Cursor, Estimate, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, Signal, StreamPage,
-    Tx, TxStatus, Upstream, balance, merge_pages, rejected, run_all, stream_index, watch_heads,
+use crate::upstream::{
+    Balance, Broadcast, Cursor, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, RawTx, Signal, StreamPage, Tx,
+    TxStatus, Upstream, balance, merge_pages, rejected, run_all, stream_index,
 };
-use crate::raw::RawTx;
 use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -272,7 +271,7 @@ impl Solana {
 
     /// 一个地址在某个代币下的总额。同一代币可以有多个代币账户，要加总。
     async fn token(&self, address: &str, mint: &str) -> Result<u128, Failed> {
-        let params = json!([address, {"mint": mint}, {"encoding": "jsonParsed"}]);
+        let params = json!([address, {"mint": mint}, {"encoding": "jsonParsed", "commitment": "confirmed"}]);
         let accounts = self.rpc("getTokenAccountsByOwner", params).await?;
         let mut total = 0u128;
         for account in accounts.as_array().ok_or(Failed)? {
@@ -290,7 +289,8 @@ impl Solana {
     }
 
     async fn address(&self, address: &str) -> Result<Vec<Balance>, Failed> {
-        let lamports = self.rpc("getBalance", json!([address])).await?.as_u64().ok_or(Failed)?;
+        let params = json!([address, {"commitment": "confirmed"}]);
+        let lamports = self.rpc("getBalance", params).await?.as_u64().ok_or(Failed)?;
         let mut out = vec![balance(address, NATIVE, lamports.to_string())];
         for mint in &self.tokens {
             out.push(balance(address, mint, self.token(address, mint).await?.to_string()));
@@ -320,7 +320,7 @@ impl Solana {
     }
 
     /// 代币转入不会出现在所有者地址的签名列表里，要单独查它的代币账户。
-    async fn token_accounts(&self, index: usize, address: &str) -> Result<Vec<String>, Failed> {
+    pub(super) async fn token_accounts(&self, index: usize, address: &str) -> Result<Vec<String>, Failed> {
         let mut keys = Vec::new();
         for mint in &self.tokens {
             let params = json!([address, {"mint": mint}, {"encoding": "jsonParsed", "commitment": "confirmed"}]);
@@ -466,15 +466,15 @@ impl Upstream for Solana {
         })
     }
 
-    fn watch(&self, _addresses: watch::Receiver<Vec<String>>, signals: mpsc::Sender<Signal>) -> BoxFuture<'_, ()> {
-        let subscribe = json!({"jsonrpc": "2.0", "id": 1, "method": "slotSubscribe"});
-        let slot = |result: &Value| result.get("slot")?.as_u64();
-        Box::pin(watch_heads(self.http.socket_url(), subscribe, slot, signals))
+    fn watch(&self, addresses: watch::Receiver<Vec<String>>, signals: mpsc::Sender<Signal>) -> BoxFuture<'_, ()> {
+        Box::pin(async move {
+            let _ = self.follow(addresses, signals).await;
+        })
     }
 
     fn recent<'a>(&'a self, addresses: &'a [String], previous: u64) -> Query<'a, Vec<HistoryItem>> {
         Box::pin(async move {
-            // 余额是 finalized，比交易的 confirmed 晚十几秒才变，所以要往回多看一段。
+            // 推送比签名列表略快，往回多看一段，重复的记录由客户端按标识合并。
             let since = previous.saturating_sub(RECENT_SLOTS);
             let cursor = Cursor::new();
             Ok(self.page(addresses, &cursor, Some(since)).await?.items)
@@ -512,31 +512,30 @@ impl Upstream for Solana {
             }
         })
     }
+}
 
-    fn estimate<'a>(&'a self, request: &'a Estimate) -> Query<'a, Result<Value, String>> {
+impl Solana {
+    pub fn estimate<'a>(&'a self, recipient: &'a str, mint: Option<&'a str>) -> Query<'a, Value> {
         Box::pin(async move {
-            let Estimate::Solana { recipient, mint } = request else {
-                return Err(Failed);
-            };
             let Some(mint) = mint else {
-                return Ok(Ok(json!({"recipientTokenAccount": true, "rent": "0"})));
+                return Ok(json!({"recipientTokenAccount": true, "rent": "0"}));
             };
             let options = json!({"encoding": "jsonParsed", "commitment": "confirmed"});
             let accounts = self
                 .rpc("getTokenAccountsByOwner", json!([recipient, {"mint": mint}, options]))
                 .await?;
             if !accounts.as_array().ok_or(Failed)?.is_empty() {
-                return Ok(Ok(json!({"recipientTokenAccount": true, "rent": "0"})));
+                return Ok(json!({"recipientTokenAccount": true, "rent": "0"}));
             }
             let rent = self
                 .result("getMinimumBalanceForRentExemption", json!([TOKEN_ACCOUNT_SIZE]))
                 .await?;
             let rent = rent.as_u64().ok_or(Failed)?;
-            Ok(Ok(json!({"recipientTokenAccount": false, "rent": rent.to_string()})))
+            Ok(json!({"recipientTokenAccount": false, "rent": rent.to_string()}))
         })
     }
 
-    fn nonce_account<'a>(&'a self, address: &'a str) -> Query<'a, Value> {
+    pub fn nonce_account<'a>(&'a self, address: &'a str) -> Query<'a, Value> {
         Box::pin(async move {
             // 上一笔转账推进 nonce 后要马上能读到新值，所以不用默认的 finalized。
             let params = json!([address, {"encoding": "jsonParsed", "commitment": "confirmed"}]);
@@ -544,7 +543,7 @@ impl Upstream for Solana {
         })
     }
 
-    fn blockhash(&self) -> Query<'_, Value> {
+    pub fn blockhash(&self) -> Query<'_, Value> {
         Box::pin(async {
             let value = self
                 .rpc("getLatestBlockhash", json!([{"commitment": "confirmed"}]))

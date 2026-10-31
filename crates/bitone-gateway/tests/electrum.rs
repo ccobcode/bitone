@@ -610,6 +610,21 @@ async fn esplora_can_back_up_an_electrum_server() {
     assert_eq!(reply["balances"][0]["amount"], "7");
 }
 
+#[tokio::test]
+async fn used_reports_addresses_with_any_history_in_one_request() {
+    let (_, incoming, _) = payment_pair();
+    let mut chain = Chain::new(100);
+    chain.add(&incoming, 90, &[BTC]);
+    let (url, calls) = chain.serve().await;
+    let gateway = Gateway::start(&one_upstream("bitcoin", &url)).await;
+    let (status, reply) = gateway
+        .post("/v1/bitcoin/used", &json!({"addresses": [BTC, BTC_OTHER]}))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reply, json!({"used": [BTC]}));
+    assert_eq!(calls.count("server.version"), 1, "一批地址一条连接");
+}
+
 fn broadcast_tx() -> (Transaction, String) {
     let (_, incoming, _) = payment_pair();
     let hash = incoming.compute_txid().to_string();

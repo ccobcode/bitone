@@ -1,25 +1,16 @@
-//! Bitcoin。Blockstream 和 mempool.space 都是 Esplora 接口。
+//! 两种上游共用的解析和归纳规则。Electrum 的查询结果也转成 Esplora 的形状，规则只有一份。
 
-use super::{
-    Balance, Broadcast, Cursor, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, StreamPage, Tx, TxStatus,
-    Upstream, Utxo, balance, merge_pages, rejected, run_all, stream_index, streams,
-};
-use crate::raw::RawTx;
-use bitcoin::hex::FromHex;
-use bitone_core::{Mode, Network};
-use futures_util::future::BoxFuture;
-use reqwest::{Method, StatusCode};
+use crate::upstream::{Failed, HistoryItem, NATIVE, Tx, TxStatus};
+use bitone_core::Mode;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashSet};
 
 /// 完成标准，见 docs/03-system.md §9。
-pub(super) const FINAL_CONFIRMATIONS: u64 = 6;
-/// Esplora 确认交易的分页大小。
-const CHAIN_PAGE: usize = 25;
+pub const FINAL_CONFIRMATIONS: u64 = 6;
 /// 手续费档位对应的目标确认块数。
-pub(super) const FAST_TARGET: u64 = 1;
-pub(super) const MEDIUM_TARGET: u64 = 6;
-pub(super) const SLOW_TARGET: u64 = 144;
+pub const FAST_TARGET: u64 = 1;
+pub const MEDIUM_TARGET: u64 = 6;
+pub const SLOW_TARGET: u64 = 144;
 /// 节点报出这些内容时，交易已经在内存池或链上。不同版本的措辞都有。
 const ALREADY_KNOWN: [&str; 5] = [
     "txn-already-known",
@@ -28,11 +19,6 @@ const ALREADY_KNOWN: [&str; 5] = [
     "already in block chain",
     "already in utxo set",
 ];
-
-pub struct Esplora {
-    pub http: Http,
-    pub network: Network,
-}
 
 fn confirmations(tip: u64, height: u64) -> u64 {
     tip.saturating_sub(height) + 1
@@ -47,7 +33,7 @@ fn status_for(confirmed: bool, confirmations: u64) -> TxStatus {
 }
 
 /// `/tx/{txid}` 的响应映射成交易状态。
-pub(super) fn parse_tx(hash: &str, reply: &Value, tip: u64) -> Result<Tx, Failed> {
+pub fn parse_tx(hash: &str, reply: &Value, tip: u64) -> Result<Tx, Failed> {
     let status = reply.get("status").ok_or(Failed)?;
     if !status.get("confirmed").and_then(Value::as_bool).ok_or(Failed)? {
         return Ok(Tx::pending(hash));
@@ -75,7 +61,7 @@ fn estimate_for(estimates: &BTreeMap<u64, f64>, target: u64) -> Option<f64> {
 }
 
 /// 网页端用整数费率。向上取整，下限 1 sat/vB，低于这个值的交易很多节点不转发。
-pub(super) fn fee_rates(reply: &Value, mode: Mode) -> Result<Value, Failed> {
+pub fn fee_rates(reply: &Value, mode: Mode) -> Result<Value, Failed> {
     let mut estimates = BTreeMap::new();
     for (target, rate) in reply.as_object().ok_or(Failed)? {
         let target: u64 = target.parse().map_err(|_| Failed)?;
@@ -97,15 +83,9 @@ pub(super) fn fee_rates(reply: &Value, mode: Mode) -> Result<Value, Failed> {
     Ok(json!({"kind": "bitcoin", "slow": slow, "medium": medium, "fast": fast}))
 }
 
-pub(super) fn is_already_known(text: &str) -> bool {
+pub fn is_already_known(text: &str) -> bool {
     let text = text.to_lowercase();
     ALREADY_KNOWN.iter().any(|known| text.contains(known))
-}
-
-/// 还在内存池的交易没有高度，总是算新的。
-fn newer_than(tx: &Value, since: Option<u64>) -> bool {
-    let height = tx.pointer("/status/block_height").and_then(Value::as_u64);
-    since.is_none_or(|since| height.is_none_or(|height| height > since))
 }
 
 fn address_of(output: &Value) -> Option<String> {
@@ -117,7 +97,7 @@ fn address_of(output: &Value) -> Option<String> {
 
 /// `/address/{address}/txs` 里的一笔交易，按这批地址的视角归纳：
 /// 输入里有自己的地址算转出，金额是付给别人的部分，否则算转入，金额是收到的部分。
-pub(super) fn history_item(tx: &Value, own: &HashSet<&str>, tip: u64) -> Result<HistoryItem, Failed> {
+pub fn history_item(tx: &Value, own: &HashSet<&str>, tip: u64) -> Result<HistoryItem, Failed> {
     let hash = tx.get("txid").and_then(Value::as_str).ok_or(Failed)?.to_string();
     let status = tx.get("status").ok_or(Failed)?;
     let confirmed = status.get("confirmed").and_then(Value::as_bool).ok_or(Failed)?;
@@ -169,189 +149,6 @@ pub(super) fn history_item(tx: &Value, own: &HashSet<&str>, tip: u64) -> Result<
         amount: amount.to_string(),
         status: status_for(confirmed, height.map_or(0, |height| confirmations(tip, height))),
     })
-}
-
-impl Esplora {
-    async fn tip(&self) -> Result<u64, Failed> {
-        self.http
-            .get_text("/blocks/tip/height")
-            .await?
-            .trim()
-            .parse()
-            .map_err(|_| Failed)
-    }
-
-    async fn address(&self, address: &str) -> Result<Vec<Balance>, Failed> {
-        let reply = self.http.get(&format!("/address/{address}")).await?;
-        let stat = |key: &str| {
-            reply
-                .pointer(&format!("/chain_stats/{key}"))
-                .and_then(Value::as_u64)
-                .ok_or(Failed)
-        };
-        let amount = stat("funded_txo_sum")?
-            .checked_sub(stat("spent_txo_sum")?)
-            .ok_or(Failed)?;
-        Ok(vec![balance(address, NATIVE, amount.to_string())])
-    }
-
-    async fn tx(&self, hash: &str, tip: u64) -> Result<Vec<Tx>, Failed> {
-        let Some(text) = self.http.find_text(&format!("/tx/{hash}")).await? else {
-            return Ok(vec![Tx::unknown(hash)]);
-        };
-        let reply: Value = serde_json::from_str(&text).map_err(|_| Failed)?;
-        Ok(vec![parse_tx(hash, &reply, tip)?])
-    }
-
-    async fn utxos_of(&self, address: &str) -> Result<Vec<Utxo>, Failed> {
-        let reply = self.http.get(&format!("/address/{address}/utxo")).await?;
-        let rows = reply.as_array().ok_or(Failed)?;
-        rows.iter()
-            .map(|row| {
-                let status = row.get("status").ok_or(Failed)?;
-                let confirmed = status.get("confirmed").and_then(Value::as_bool).ok_or(Failed)?;
-                let height = if confirmed {
-                    status.get("block_height").and_then(Value::as_u64).ok_or(Failed)?
-                } else {
-                    0
-                };
-                Ok(Utxo {
-                    address: address.to_string(),
-                    txid: row.get("txid").and_then(Value::as_str).ok_or(Failed)?.to_string(),
-                    vout: row
-                        .get("vout")
-                        .and_then(Value::as_u64)
-                        .ok_or(Failed)?
-                        .try_into()
-                        .map_err(|_| Failed)?,
-                    amount: row.get("value").and_then(Value::as_u64).ok_or(Failed)?.to_string(),
-                    height,
-                })
-            })
-            .collect()
-    }
-
-    async fn raw_tx(&self, txid: &str) -> Result<Vec<(String, String)>, Failed> {
-        let Some(hex) = self.http.find_text(&format!("/tx/{txid}/hex")).await? else {
-            return Ok(Vec::new());
-        };
-        let hex = hex.trim();
-        Vec::<u8>::from_hex(hex).map_err(|_| Failed)?;
-        Ok(vec![(txid.to_string(), hex.to_string())])
-    }
-
-    async fn stream(
-        &self,
-        key: String,
-        token: Option<String>,
-        addresses: &[String],
-        own: &HashSet<&str>,
-        tip: u64,
-        since: Option<u64>,
-    ) -> Result<Vec<StreamPage>, Failed> {
-        let address = stream_index(&key)
-            .and_then(|index| addresses.get(index))
-            .ok_or(Failed)?;
-        let path = match token {
-            Some(last_seen) => format!("/address/{address}/txs/chain/{last_seen}"),
-            None => format!("/address/{address}/txs"),
-        };
-        let reply = self.http.get(&path).await?;
-        let txs = reply.as_array().ok_or(Failed)?;
-        // 新的在前，碰到水位之前的交易就不用再往后翻了。
-        let fresh: Vec<&Value> = txs.iter().filter(|tx| newer_than(tx, since)).collect();
-        let items = fresh
-            .iter()
-            .map(|tx| history_item(tx, own, tip))
-            .collect::<Result<Vec<_>, _>>()?;
-        // 内存池部分不分页，下一页从最后一笔已确认的交易往后。
-        let chain: Vec<&HistoryItem> = items.iter().filter(|item| item.status != TxStatus::Pending).collect();
-        let next = (fresh.len() == txs.len() && chain.len() >= CHAIN_PAGE)
-            .then(|| chain.last().map(|item| item.hash.clone()))
-            .flatten();
-        Ok(vec![StreamPage { key, next, items }])
-    }
-
-    async fn submit(&self, raw: &RawTx) -> Result<Broadcast, Broadcast> {
-        let response = self.http.request(Method::POST, "/tx").body(raw.hex()).send().await?;
-        let status = response.status();
-        let text = response.text().await.map_err(|_| Broadcast::Unknown)?;
-        if status.is_success() {
-            return Ok(Broadcast::Accepted);
-        }
-        // Esplora 把节点的拒绝放在 400 里，其他状态码是服务自身的问题。
-        if status != StatusCode::BAD_REQUEST {
-            return Ok(Broadcast::Unknown);
-        }
-        if is_already_known(&text) {
-            return Ok(Broadcast::Accepted);
-        }
-        Ok(rejected(self, raw, text).await)
-    }
-}
-
-impl Upstream for Esplora {
-    fn balances<'a>(&'a self, addresses: &'a [String]) -> Query<'a, Vec<Balance>> {
-        Box::pin(run_all(addresses.iter().map(|a| self.address(a)).collect()))
-    }
-
-    fn height(&self) -> Query<'_, u64> {
-        Box::pin(self.tip())
-    }
-
-    fn fees(&self) -> Query<'_, Value> {
-        Box::pin(async { fee_rates(&self.http.get("/fee-estimates").await?, self.network.mode()) })
-    }
-
-    fn txs<'a>(&'a self, hashes: &'a [String]) -> Query<'a, Vec<Tx>> {
-        Box::pin(async move {
-            let tip = self.tip().await?;
-            run_all(hashes.iter().map(|hash| self.tx(hash, tip)).collect()).await
-        })
-    }
-
-    fn history<'a>(
-        &'a self,
-        addresses: &'a [String],
-        cursor: &'a Cursor,
-        since: Option<u64>,
-    ) -> Query<'a, HistoryPage> {
-        Box::pin(async move {
-            let tip = self.tip().await?;
-            let checkpoint = (tip + 1).saturating_sub(FINAL_CONFIRMATIONS);
-            // 公共节点按 IP 限流，一批地址要逐个查。高度没变就没有新的已确认交易，一个地址也不用查。
-            if cursor.is_empty() && since == Some(checkpoint) {
-                return Ok(HistoryPage {
-                    checkpoint,
-                    unchanged: true,
-                    ..Default::default()
-                });
-            }
-            let own: HashSet<&str> = addresses.iter().map(String::as_str).collect();
-            let own = &own;
-            let queries = streams((0..addresses.len()).map(|index| index.to_string()), cursor)
-                .into_iter()
-                .map(|(key, token)| self.stream(key, token, addresses, own, tip, since))
-                .collect();
-            let page = merge_pages(run_all(queries).await?);
-            Ok(HistoryPage { checkpoint, ..page })
-        })
-    }
-
-    fn broadcast<'a>(&'a self, raw: &'a RawTx) -> BoxFuture<'a, Broadcast> {
-        Box::pin(async move { self.submit(raw).await.unwrap_or_else(|outcome| outcome) })
-    }
-
-    fn utxos<'a>(&'a self, addresses: &'a [String]) -> Query<'a, Vec<Utxo>> {
-        Box::pin(run_all(addresses.iter().map(|a| self.utxos_of(a)).collect()))
-    }
-
-    fn raw_txs<'a>(&'a self, txids: &'a [String]) -> Query<'a, BTreeMap<String, String>> {
-        Box::pin(async move {
-            let pairs = run_all(txids.iter().map(|txid| self.raw_tx(txid)).collect()).await?;
-            Ok(pairs.into_iter().collect())
-        })
-    }
 }
 
 #[cfg(test)]

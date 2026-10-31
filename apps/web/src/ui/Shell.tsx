@@ -6,6 +6,7 @@ import { db } from "../data/db";
 import { GatewayProvider } from "../gateway/provider";
 import { Icon } from "./Icon";
 import { modeLabel } from "./labels";
+import { Notices } from "./Notices";
 import { Overlays } from "./Overlays";
 import { SheetActions, sheetWidth } from "./Sheet";
 import { Button, Chip, LinkButton, TitleSlot, buttonClass } from "./primitives";
@@ -117,6 +118,7 @@ export function Shell() {
                 {focus ? null : <TabBar />}
             </div>
             <Overlays />
+            <Notices />
         </GatewayProvider>
     );
 }

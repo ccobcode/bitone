@@ -259,6 +259,25 @@ async fn bitcoin_tx_reports_confirmations_and_the_six_block_rule() {
 }
 
 #[tokio::test]
+async fn bitcoin_used_counts_chain_and_mempool_transactions() {
+    let esplora = Router::new().route(
+        "/address/{address}",
+        get(|Path(address): Path<String>| async move {
+            let pending = u64::from(address == BTC);
+            Json(json!({"chain_stats": {"tx_count": 0}, "mempool_stats": {"tx_count": pending}}))
+        }),
+    );
+    let url = mock(esplora).await;
+    let gateway = Gateway::start(&network_config("bitcoin", &url)).await;
+    let body = json!({"addresses": [BTC, BTC_OTHER]});
+    let (status, reply) = gateway.post("/v1/bitcoin/used", &body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reply, json!({"used": [BTC]}));
+    let (status, _) = gateway.post("/v1/ethereum/used", &json!({"addresses": [EVM]})).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "没有配置这个网络");
+}
+
+#[tokio::test]
 async fn bitcoin_utxos_mark_the_mempool_with_height_zero() {
     let esplora = Router::new().route(
         "/address/{address}/utxo",
