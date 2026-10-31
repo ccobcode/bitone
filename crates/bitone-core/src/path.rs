@@ -1,6 +1,6 @@
-//! 派生路径和白名单，见 docs/04-security.md 第 2.6 节。
+//! 派生路径和白名单,见 docs/04-security.md 第 2.6 节.
 //!
-//! 路径决定链和网络，这是测试网签名不能花主网资金的依据。
+//! 路径决定链和网络,这是测试网签名不能花主网资金的依据.
 
 use crate::{Chain, Error, Mode, Network};
 use minicbor::{Decode, Encode};
@@ -8,7 +8,7 @@ use std::fmt;
 
 const HARDENED: u32 = 0x8000_0000;
 
-/// Bitcoin 地址索引的硬上限，防止资金被放到用户找不到的位置。
+/// Bitcoin 地址索引的硬上限,防止资金被放到用户找不到的位置.
 pub const MAX_ADDRESS_INDEX: u32 = 100_000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,13 +58,13 @@ pub enum AccountKind {
     SegWit,
     #[n(1)]
     Taproot,
-    /// 只用于转出导入钱包的旧资产。
+    /// 只用于转出导入钱包的旧资产.
     #[n(2)]
     NestedSegWit,
-    /// 只用于转出导入钱包的旧资产。
+    /// 只用于转出导入钱包的旧资产.
     #[n(3)]
     Legacy,
-    /// EVM、TRON、Solana 的单地址账户。
+    /// EVM,TRON,Solana 的单地址账户.
     #[n(4)]
     Single,
 }
@@ -96,7 +96,7 @@ impl AccountKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PathInfo {
     pub chain: Chain,
-    /// EVM 的主网和测试网路径相同，靠签名内的 Chain ID 隔离，所以是 `None`。
+    /// EVM 的主网和测试网路径相同,靠签名内的 Chain ID 隔离,所以是 `None`.
     pub mode: Option<Mode>,
     pub kind: AccountKind,
 }
@@ -113,7 +113,7 @@ fn bitcoin_mode(coin: u32) -> Option<Mode> {
     }
 }
 
-/// 判断路径是否在白名单里。不在白名单的路径没有 `Ok` 结果。
+/// 判断路径是否在白名单里.不在白名单的路径没有 `Ok` 结果.
 pub fn classify(path: &DerivationPath) -> Result<PathInfo, Error> {
     let info = |chain, mode, kind| Ok(PathInfo { chain, mode, kind });
     match path.0.as_slice() {
@@ -168,7 +168,7 @@ pub fn classify(path: &DerivationPath) -> Result<PathInfo, Error> {
     }
 }
 
-/// 校验路径可以用在这个网络上。主网路径配测试网声明、Bitcoin 路径配 EVM 请求都会被拒绝。
+/// 校验路径可以用在这个网络上.主网路径配测试网声明,Bitcoin 路径配 EVM 请求都会被拒绝.
 pub fn validate_for_network(path: &DerivationPath, network: Network) -> Result<PathInfo, Error> {
     let info = classify(path)?;
     if info.chain != network.chain() {
@@ -182,16 +182,16 @@ pub fn validate_for_network(path: &DerivationPath, network: Network) -> Result<P
     Ok(info)
 }
 
-/// 一个账户要导出的路径和公钥类型。
+/// 一个账户要导出的路径和公钥类型.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountSpec {
     pub chain: Chain,
     pub kind: AccountKind,
-    /// Bitcoin 是账户级路径，导出扩展公钥。其余是完整路径，导出账户公钥。
+    /// Bitcoin 是账户级路径,导出扩展公钥.其余是完整路径,导出账户公钥.
     pub path: &'static str,
 }
 
-/// 冷钱包在这个模式下导出的账户。`imported` 为真时额外导出 BIP44 和 BIP49，用于找回旧资产。
+/// 冷钱包在这个模式下导出的账户.`imported` 为真时额外导出 BIP44 和 BIP49,用于找回旧资产.
 pub fn account_specs(mode: Mode, imported: bool) -> Vec<AccountSpec> {
     let spec = |chain, kind, path| AccountSpec { chain, kind, path };
     let mut specs = match mode {
@@ -217,7 +217,7 @@ pub fn account_specs(mode: Mode, imported: bool) -> Vec<AccountSpec> {
     specs
 }
 
-/// 冷钱包导出的全部账户。主网和测试网私钥不同的链各有一份，EVM 共用一份。
+/// 冷钱包导出的全部账户.主网和测试网私钥不同的链各有一份,EVM 共用一份.
 pub fn all_account_specs(imported: bool) -> Vec<AccountSpec> {
     let mut specs = account_specs(Mode::Mainnet, imported);
     for spec in account_specs(Mode::Testnet, imported) {

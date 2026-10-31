@@ -46,7 +46,6 @@ export interface Quote {
     rows: QuoteRow[] | null;
     /** 这笔要付的手续费,单位是原生币的最小单位.不知道时是 null. */
     fee: bigint | null;
-    /** 资产的可用余额. */
     available: bigint | null;
     /** "全部"对应的金额. */
     max: bigint | null;

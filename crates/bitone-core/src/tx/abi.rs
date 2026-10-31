@@ -1,4 +1,4 @@
-//! EVM 风格的合约调用解析，EVM 和 TRON 共用。规则见 docs/04-security.md 第 2.7 节。
+//! EVM 风格的合约调用解析,EVM 和 TRON 共用.规则见 docs/04-security.md 第 2.7 节.
 
 use crate::manifest::Manifest;
 use crate::review::{ActionView, AmountView, Risk, Row};
@@ -10,7 +10,7 @@ pub type Word = [u8; 32];
 const TRANSFER: [u8; 4] = [0xa9, 0x05, 0x9c, 0xbb];
 const APPROVE: [u8; 4] = [0x09, 0x5e, 0xa7, 0xb3];
 const INCREASE_ALLOWANCE: [u8; 4] = [0x39, 0x50, 0x93, 0x51];
-/// USDT 等旧合约用的名字。
+/// USDT 等旧合约用的名字.
 const INCREASE_APPROVAL: [u8; 4] = [0xd7, 0x3d, 0xd6, 0x23];
 const SET_APPROVAL_FOR_ALL: [u8; 4] = [0xa2, 0x2c, 0xb4, 0x65];
 const PERMIT: [u8; 4] = [0xd5, 0x05, 0xac, 0xcf];
@@ -18,7 +18,7 @@ const PERMIT2_APPROVE: [u8; 4] = [0x87, 0x51, 0x7c, 0x45];
 const MULTICALL: [u8; 4] = [0xac, 0x96, 0x50, 0xd8];
 const MULTICALL_DEADLINE: [u8; 4] = [0x5a, 0xe4, 0x01, 0xdc];
 
-/// multicall 最多展开的层数和条数，超过时按无法识别处理。
+/// multicall 最多展开的层数和条数,超过时按无法识别处理.
 const MAX_DEPTH: usize = 3;
 const MAX_INNER_CALLS: usize = 32;
 
@@ -53,7 +53,7 @@ fn word(args: &[u8], index: usize) -> Option<Word> {
     args.get(index * 32..(index + 1) * 32)?.try_into().ok()
 }
 
-/// 高 12 字节不为 0 的地址参数不合法，按无法识别处理，防止显示和实际不一致。
+/// 高 12 字节不为 0 的地址参数不合法,按无法识别处理,防止显示和实际不一致.
 fn address(args: &[u8], index: usize) -> Option<[u8; 20]> {
     let value = word(args, index)?;
     if value[..12] != [0; 12] {
@@ -78,7 +78,7 @@ fn offset(args: &[u8], index: usize) -> Option<usize> {
     usize::try_from(u64::from_be_bytes(value[24..].try_into().ok()?)).ok()
 }
 
-/// 解析 `bytes[]`。`base` 是偏移量的起点。
+/// 解析 `bytes[]`.`base` 是偏移量的起点.
 fn bytes_array(args: &[u8], base: usize) -> Option<Vec<Vec<u8>>> {
     let tail = args.get(base..)?;
     let count = offset(tail, 0)?;
@@ -95,8 +95,8 @@ fn bytes_array(args: &[u8], base: usize) -> Option<Vec<Vec<u8>>> {
         .collect()
 }
 
-/// 授权类调用按前缀判断。合约照样会执行带尾部字节或高位不干净的调用，
-/// 所以这类数据不能降级成无法识别，只标为参数异常。
+/// 授权类调用按前缀判断.合约照样会执行带尾部字节或高位不干净的调用,
+/// 所以这类数据不能降级成无法识别,只标为参数异常.
 fn loose_address(args: &[u8], index: usize) -> Option<[u8; 20]> {
     word(args, index)?[12..].try_into().ok()
 }
@@ -119,7 +119,7 @@ pub fn decode(data: &[u8]) -> Call {
         return Call::Other;
     };
     let call = match *selector {
-        // 转账相反：格式不对就不是普通转账。
+        // 转账相反:格式不对就不是普通转账.
         TRANSFER if args.len() == 64 => address(args, 0)
             .zip(word(args, 1))
             .map(|(to, amount)| Call::Transfer { to, amount }),
@@ -163,7 +163,7 @@ pub fn decode(data: &[u8]) -> Call {
     call.unwrap_or(Call::Other)
 }
 
-/// 地址的写法随链不同，比如 TRON 用 Base58。
+/// 地址的写法随链不同,比如 TRON 用 Base58.
 pub struct Style<'a> {
     pub network: &'a str,
     pub manifest: &'a Manifest,
@@ -179,12 +179,12 @@ pub struct Classified {
     pub counterparty: Option<String>,
     pub rows: Vec<Row>,
     pub alerts: Vec<String>,
-    /// multicall 的内部调用。每一个都要让用户看到。
+    /// multicall 的内部调用.每一个都要让用户看到.
     pub inner: Vec<Classified>,
 }
 
 impl Classified {
-    /// 金额和对方写进行里，给列表展示用。单个动作时这些内容在页面顶部，不用重复。
+    /// 金额和对方写进行里,给列表展示用.单个动作时这些内容在页面顶部,不用重复.
     pub fn detailed(&self) -> ActionView {
         let mut rows = Vec::new();
         if let Some(amount) = &self.amount {
@@ -224,7 +224,7 @@ impl Classified {
     }
 }
 
-/// uint160 的最大值就是 Permit2 的「无限」。更大的额度也一样对待。
+/// uint160 的最大值就是 Permit2 的"无限".更大的额度也一样对待.
 fn is_unlimited(amount: &Word) -> bool {
     amount[..12] != [0; 12] || amount[12..] == [0xff; 20]
 }
@@ -277,7 +277,7 @@ fn approval(
             Row::text("合约清单", listed(style, contract)),
         ],
         alerts: if irregular {
-            vec!["授权参数格式异常，实际效果可能和显示的不同".to_string()]
+            vec!["授权参数格式异常,实际效果可能和显示的不同".to_string()]
         } else {
             Vec::new()
         },
@@ -304,7 +304,7 @@ fn unknown(contract: &str, data: &[u8]) -> Classified {
     }
 }
 
-/// 给一次合约调用定类别。`has_value` 表示这次调用同时转了原生币。
+/// 给一次合约调用定类别.`has_value` 表示这次调用同时转了原生币.
 pub fn classify(style: &Style, contract: &[u8; 20], data: &[u8], has_value: bool) -> Classified {
     classify_at(style, contract, data, has_value, 0)
 }
@@ -312,7 +312,7 @@ pub fn classify(style: &Style, contract: &[u8; 20], data: &[u8], has_value: bool
 fn classify_at(style: &Style, contract: &[u8; 20], data: &[u8], has_value: bool, depth: usize) -> Classified {
     let contract_text = (style.format)(contract);
     match decode(data) {
-        // 普通转账是白名单：合约在清单里，且没有附带原生币。其余一律无法识别。
+        // 普通转账是白名单:合约在清单里,且没有附带原生币.其余一律无法识别.
         Call::Transfer { to, amount } => {
             let in_manifest = style.manifest.lookup(style.network, &contract_text).is_some();
             if !in_manifest || has_value {
@@ -379,7 +379,7 @@ fn classify_at(style: &Style, contract: &[u8; 20], data: &[u8], has_value: bool,
                 .iter()
                 .map(|call| classify_at(style, contract, call, false, depth + 1))
                 .collect();
-            // 一组调用不算普通转账，最低是无法识别。
+            // 一组调用不算普通转账,最低是无法识别.
             let top = inner
                 .iter()
                 .map(|c| c.risk)
@@ -390,7 +390,7 @@ fn classify_at(style: &Style, contract: &[u8; 20], data: &[u8], has_value: bool,
             result.risk = top;
             result.title = "批量调用".to_string();
             result.rows.push(Row::text("内部调用", format!("{} 个", inner.len())));
-            // 只有一个动作是最高风险时才放到页面顶部，否则金额和对方会误导用户。
+            // 只有一个动作是最高风险时才放到页面顶部,否则金额和对方会误导用户.
             let mut leaders = inner.iter().filter(|c| c.risk == top);
             if let (Some(leader), None) = (leaders.next(), leaders.next())
                 && leader.risk > Risk::Unknown
@@ -408,7 +408,7 @@ fn classify_at(style: &Style, contract: &[u8; 20], data: &[u8], has_value: bool,
         }
         _ => {
             let mut result = unknown(&contract_text, data);
-            // 附带原生币的调用不适用已知函数的展示。
+            // 附带原生币的调用不适用已知函数的展示.
             if let Some(known) = style
                 .manifest
                 .function(style.network, &contract_text, &selector_hex(data))
@@ -632,7 +632,7 @@ mod tests {
                 .any(|a| a.rows.iter().any(|r| r.value == evm_text(&attacker)))
         );
         assert!(actions.iter().any(|a| a.rows.iter().any(|r| r.value == "无限 USDT")));
-        // 两个授权并列最高，顶部不能只显示其中一个。
+        // 两个授权并列最高,顶部不能只显示其中一个.
         assert_eq!(result.counterparty, None);
         assert_eq!(result.amount, None);
     }

@@ -1,7 +1,7 @@
-//! Bitcoin 交易：构建 PSBT、核对、核验。见 docs/04-security.md 第 2.6、2.7 节。
+//! Bitcoin 交易:构建 PSBT,核对,核验.见 docs/04-security.md 第 2.6,2.7 节.
 //!
-//! PSBT 来自网页端，里面的声明都不可信。路径和地址靠重新派生，金额靠前序交易的 txid，
-//! 有一项对不上就禁止签名。`prepare` 是核对、签名、核验共用的入口，三处看到的输入不可能不一致。
+//! PSBT 来自网页端,里面的声明都不可信.路径和地址靠重新派生,金额靠前序交易的 txid,
+//! 有一项对不上就禁止签名.`prepare` 是核对,签名,核验共用的入口,三处看到的输入不可能不一致.
 
 use crate::keys::PublicKeys;
 use crate::path::{DerivationPath, classify, validate_for_network};
@@ -30,14 +30,14 @@ use serde::Serialize;
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 
-/// 交易开销：版本、锁定时间、输入输出计数，加 SegWit 标记。单位是重量。
+/// 交易开销:版本,锁定时间,输入输出计数,加 SegWit 标记.单位是重量.
 const OVERHEAD_WEIGHT: u64 = 42;
-/// 每个输入固定的 41 字节：outpoint、脚本长度、sequence。
+/// 每个输入固定的 41 字节:outpoint,脚本长度,sequence.
 const INPUT_WEIGHT: u64 = 41 * 4;
-/// `select_coins` 不知道收款地址的类型，按最长的标准输出估算，宁可多留手续费。
+/// `select_coins` 不知道收款地址的类型,按最长的标准输出估算,宁可多留手续费.
 const PAYMENT_WEIGHT: u64 = 43 * 4;
 
-/// 一个可花费的输出。`prev_tx` 是前序交易的原始字节，只有全 Taproot 的交易可以不带。
+/// 一个可花费的输出.`prev_tx` 是前序交易的原始字节,只有全 Taproot 的交易可以不带.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Utxo {
     pub txid: String,
@@ -61,7 +61,7 @@ pub struct Selection {
     pub change: u64,
 }
 
-/// 输入声明的 sighash。
+/// 输入声明的 sighash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sighash {
     Ecdsa(EcdsaSighashType),
@@ -69,7 +69,7 @@ pub enum Sighash {
 }
 
 impl Sighash {
-    /// 签名承诺全部输入和全部输出。
+    /// 签名承诺全部输入和全部输出.
     fn commits_everything(self) -> bool {
         matches!(
             self,
@@ -104,7 +104,7 @@ impl Sighash {
     }
 }
 
-/// PSBT 声明的公钥。Taproot 只有 x 坐标。
+/// PSBT 声明的公钥.Taproot 只有 x 坐标.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StatedKey {
     Full(PublicKey),
@@ -120,14 +120,14 @@ impl StatedKey {
     }
 }
 
-/// PSBT 里本钱包指纹对应的派生信息。
+/// PSBT 里本钱包指纹对应的派生信息.
 struct Origin {
     key: StatedKey,
     path: DerivationPath,
     leaves: usize,
 }
 
-/// 本钱包的输入。路径已过白名单，声明的公钥能算出输入实际的 script。
+/// 本钱包的输入.路径已过白名单,声明的公钥能算出输入实际的 script.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OwnInput {
     pub path: DerivationPath,
@@ -138,15 +138,15 @@ pub struct OwnInput {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PreparedInput {
-    /// 这个输入花掉的输出，金额和 script 以它为准。
+    /// 这个输入花掉的输出,金额和 script 以它为准.
     pub prevout: TxOut,
-    /// `prevout` 是否由前序交易确认。
+    /// `prevout` 是否由前序交易确认.
     pub proven: bool,
-    /// 不属于本钱包时是 `None`。
+    /// 不属于本钱包时是 `None`.
     pub own: Option<OwnInput>,
 }
 
-/// 解析并确认过的 PSBT。
+/// 解析并确认过的 PSBT.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Prepared {
     pub psbt: Psbt,
@@ -167,7 +167,7 @@ fn p2tr(key: XOnlyPublicKey) -> ScriptBuf {
     ScriptBuf::new_p2tr(&Secp256k1::verification_only(), key, None)
 }
 
-/// 从公钥算 scriptPubKey。Taproot 按 BIP86，没有脚本树。
+/// 从公钥算 scriptPubKey.Taproot 按 BIP86,没有脚本树.
 pub fn script_for(kind: AccountKind, key: &PublicKey) -> Result<ScriptBuf, Forbid> {
     let compressed = CompressedPublicKey(*key);
     match kind {
@@ -183,7 +183,7 @@ fn redeem_script(key: &PublicKey) -> ScriptBuf {
     ScriptBuf::new_p2wpkh(&CompressedPublicKey(*key).wpubkey_hash())
 }
 
-/// 找出指纹是本钱包的派生信息。一个单签 script 只可能有一把钥匙，多于一条就不知道该用哪条。
+/// 找出指纹是本钱包的派生信息.一个单签 script 只可能有一把钥匙,多于一条就不知道该用哪条.
 fn origin(
     ecdsa: &BTreeMap<PublicKey, KeySource>,
     tap: &BTreeMap<XOnlyPublicKey, (Vec<TapLeafHash>, KeySource)>,
@@ -215,14 +215,14 @@ fn origin(
 }
 
 impl OwnInput {
-    /// 这个输入的签名是否承诺全部输入的金额和 script。
+    /// 这个输入的签名是否承诺全部输入的金额和 script.
     fn vouches_for_all(&self) -> bool {
         self.kind == AccountKind::Taproot && !self.sighash.anyone_can_pay()
     }
 }
 
 impl Origin {
-    /// BIP86 的单签 key path 才是本钱包的 Taproot。
+    /// BIP86 的单签 key path 才是本钱包的 Taproot.
     fn check_form(&self, kind: AccountKind) -> Result<(), Forbid> {
         let schnorr = matches!(self.key, StatedKey::XOnly(_));
         if schnorr != (kind == AccountKind::Taproot) || self.leaves != 0 {
@@ -232,8 +232,8 @@ impl Origin {
     }
 }
 
-/// 金额和 script 只从前序交易取，取不到时只有 Taproot 可以先用声明的值。
-/// 返回的布尔值表示这个值有没有经过前序交易确认。
+/// 金额和 script 只从前序交易取,取不到时只有 Taproot 可以先用声明的值.
+/// 返回的布尔值表示这个值有没有经过前序交易确认.
 fn spent_output(txin: &TxIn, input: &Input) -> Result<(TxOut, bool), Forbid> {
     if let Some(prev) = &input.non_witness_utxo {
         if prev.compute_txid() != txin.previous_output.txid {
@@ -260,7 +260,7 @@ fn input_sighash(input: &Input, kind: AccountKind, index: usize, outputs: usize)
     } else {
         Sighash::Ecdsa(input.ecdsa_hash_ty().map_err(|_| Forbid::Unsupported)?)
     };
-    // SINGLE 没有对应输出时，旧式 sighash 的原文是常量 1，这个签名能花掉这把钥匙的任何币。
+    // SINGLE 没有对应输出时,旧式 sighash 的原文是常量 1,这个签名能花掉这把钥匙的任何币.
     if sighash.single() && index >= outputs {
         return Err(Forbid::Unsupported);
     }
@@ -306,13 +306,13 @@ fn own_input(
     })
 }
 
-/// 解析 PSBT，找出本钱包的输入，确认每个输入的金额和 script。
+/// 解析 PSBT,找出本钱包的输入,确认每个输入的金额和 script.
 ///
-/// 这里只看 PSBT 自身。公钥对不对由调用方负责：`review` 用保存的公钥重新派生，
-/// 签名时用私钥派生，`verify` 没有账户公钥，靠签名本身。
+/// 这里只看 PSBT 自身.公钥对不对由调用方负责:`review` 用保存的公钥重新派生,
+/// 签名时用私钥派生,`verify` 没有账户公钥,靠签名本身.
 pub fn prepare(network: Network, payload: &[u8], fingerprint: [u8; 4]) -> Result<Prepared, Forbid> {
     let psbt = Psbt::deserialize(payload).map_err(|_| Forbid::ParseFailed)?;
-    // 解析器会忽略末尾多余的字节，重新编码必须回到完全相同的内容。
+    // 解析器会忽略末尾多余的字节,重新编码必须回到完全相同的内容.
     if psbt.serialize() != payload {
         return Err(Forbid::ParseFailed);
     }
@@ -345,11 +345,11 @@ pub fn prepare(network: Network, payload: &[u8], fingerprint: [u8; 4]) -> Result
         inputs.push(PreparedInput { prevout, proven, own });
     }
 
-    // 任何一个有效签名都必须来自一次真实的展示。Taproot 签名承诺全部输入的金额和 script，
-    // 声明有假它就无效。ECDSA 和 ANYONECANPAY 只承诺自己这个输入，别的输入造假时依然有效。
-    // 「是不是 Taproot」本身也只是 witness_utxo 的声明：把用户的 SegWit 币说成 Taproot，
-    // 分两次各骗一个 ECDSA 签名再拼起来，就是 CVE-2020-14199。
-    // 所以只要有这样的签名，其余输入都要有前序交易，Taproot 也不例外。
+    // 任何一个有效签名都必须来自一次真实的展示.Taproot 签名承诺全部输入的金额和 script,
+    // 声明有假它就无效.ECDSA 和 ANYONECANPAY 只承诺自己这个输入,别的输入造假时依然有效.
+    // "是不是 Taproot"本身也只是 witness_utxo 的声明:把用户的 SegWit 币说成 Taproot,
+    // 分两次各骗一个 ECDSA 签名再拼起来,就是 CVE-2020-14199.
+    // 所以只要有这样的签名,其余输入都要有前序交易,Taproot 也不例外.
     for (index, input) in inputs.iter().enumerate() {
         let weak = input.own.as_ref().is_some_and(|own| !own.vouches_for_all());
         let unproven = inputs
@@ -363,7 +363,7 @@ pub fn prepare(network: Network, payload: &[u8], fingerprint: [u8; 4]) -> Result
     Ok(Prepared { psbt, inputs })
 }
 
-/// 累加金额。超过总量上限的值不可能是真的。
+/// 累加金额.超过总量上限的值不可能是真的.
 fn total(mut values: impl Iterator<Item = Amount>) -> Result<Amount, Forbid> {
     values
         .try_fold(Amount::ZERO, |sum, value| sum.checked_add(value))
@@ -372,7 +372,7 @@ fn total(mut values: impl Iterator<Item = Amount>) -> Result<Amount, Forbid> {
 }
 
 impl Prepared {
-    /// 输入总额减输出总额。
+    /// 输入总额减输出总额.
     pub fn fee(&self) -> Result<u64, Forbid> {
         let spent = total(self.inputs.iter().map(|i| i.prevout.value))?;
         let created = total(self.psbt.unsigned_tx.output.iter().map(|o| o.value))?;
@@ -382,7 +382,7 @@ impl Prepared {
             .ok_or(Forbid::ParseFailed)
     }
 
-    /// 本钱包第 `index` 个输入要签的摘要。
+    /// 本钱包第 `index` 个输入要签的摘要.
     pub fn sighash(&self, index: usize) -> Result<[u8; 32], Forbid> {
         let input = self.inputs.get(index).ok_or(Forbid::ParseFailed)?;
         let own = input.own.as_ref().ok_or(Forbid::AddressMismatch)?;
@@ -395,7 +395,7 @@ impl Prepared {
     }
 }
 
-/// `code` 是 SegWit 的 P2WPKH script，或旧式的 scriptPubKey。Taproot 不用它。
+/// `code` 是 SegWit 的 P2WPKH script,或旧式的 scriptPubKey.Taproot 不用它.
 fn signature_hash(
     tx: &Transaction,
     index: usize,
@@ -444,8 +444,8 @@ fn derived_script(ctx: &ReviewContext, path: &DerivationPath, kind: AccountKind)
     script_for(kind, &key)
 }
 
-/// 输出是不是本钱包的找零。带本钱包指纹却对不上的输出一律拒绝，不能当成外部输出放过去。
-/// 返回找零索引。
+/// 输出是不是本钱包的找零.带本钱包指纹却对不上的输出一律拒绝,不能当成外部输出放过去.
+/// 返回找零索引.
 fn change_index(out: &TxOut, meta: &Output, network: Network, ctx: &ReviewContext) -> Result<Option<u32>, Forbid> {
     let Some(origin) = origin(&meta.bip32_derivation, &meta.tap_key_origins, ctx.keys.fingerprint)? else {
         return Ok(None);
@@ -472,7 +472,7 @@ fn change_index(out: &TxOut, meta: &Output, network: Network, ctx: &ReviewContex
     Ok(Some(*index))
 }
 
-/// 花费这种输入要加的重量。解锁脚本每字节算 4，见证每字节算 1，签名按最长算。
+/// 花费这种输入要加的重量.解锁脚本每字节算 4,见证每字节算 1,签名按最长算.
 fn spend_weight(kind: AccountKind) -> u64 {
     match kind {
         AccountKind::Taproot => 66,
@@ -482,7 +482,7 @@ fn spend_weight(kind: AccountKind) -> u64 {
     }
 }
 
-/// 其他钱包的输入只知道 script，看不出类型的按 SegWit 估算。
+/// 其他钱包的输入只知道 script,看不出类型的按 SegWit 估算.
 fn script_kind(script: &Script) -> AccountKind {
     if script.is_p2tr() {
         AccountKind::Taproot
@@ -495,7 +495,7 @@ fn script_kind(script: &Script) -> AccountKind {
     }
 }
 
-/// 签名后的虚拟大小。签名长度有 1 字节浮动，所以费率是估算值。
+/// 签名后的虚拟大小.签名长度有 1 字节浮动,所以费率是估算值.
 fn estimated_vsize(prepared: &Prepared) -> u64 {
     let spending: u64 = prepared
         .inputs
@@ -517,7 +517,7 @@ fn joined(labels: impl Iterator<Item = String>) -> String {
             unique.push(label);
         }
     }
-    unique.join("、")
+    unique.join(",")
 }
 
 pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forbid> {
@@ -554,7 +554,7 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
         }
         if !own.sighash.commits_everything() {
             builder.alerts.push(format!(
-                "第 {} 个输入的 sighash 是 {}，交易内容可能被改动",
+                "第 {} 个输入的 sighash 是 {},交易内容可能被改动",
                 index + 1,
                 own.sighash.label()
             ));
@@ -584,7 +584,7 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
                 if index > ctx.highest_change.of(network).saturating_add(policy::CHANGE_GAP) {
                     builder
                         .alerts
-                        .push(format!("找零索引 {index} 跳得太远，资金可能落到不容易找回的位置"));
+                        .push(format!("找零索引 {index} 跳得太远,资金可能落到不容易找回的位置"));
                 }
                 let address = text.ok_or(Forbid::AddressMismatch)?;
                 change_actions.push(ActionView {
@@ -596,7 +596,7 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
             None => {
                 sent += value;
                 if text.is_none() {
-                    builder.alerts.push("有输出不是标准地址，请核对原始脚本".to_string());
+                    builder.alerts.push("有输出不是标准地址,请核对原始脚本".to_string());
                 }
                 let shown = text.unwrap_or_else(|| out.script_pubkey.as_bytes().to_lower_hex_string());
                 external.push(ActionView {
@@ -644,7 +644,7 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
         let value = foreign.iter().sum::<u64>();
         builder.rows.push(Row::text(
             "其他钱包的输入",
-            format!("{} 个，共 {}", foreign.len(), coin(value)),
+            format!("{} 个,共 {}", foreign.len(), coin(value)),
         ));
     }
     builder.rows.push(Row::text("手续费", coin(fee)));
@@ -682,7 +682,7 @@ fn output_weight(kind: AccountKind) -> Result<u64, Error> {
     Ok((8 + 1 + script) * 4)
 }
 
-/// 低于这个金额的输出节点不转发，和 Bitcoin Core 默认的粉尘门限一致。
+/// 低于这个金额的输出节点不转发,和 Bitcoin Core 默认的粉尘门限一致.
 fn dust_limit(kind: AccountKind) -> u64 {
     match kind {
         AccountKind::Taproot => 330,
@@ -700,10 +700,10 @@ fn bitcoin_kind(path: &str) -> Result<AccountKind, Error> {
     Ok(info.kind)
 }
 
-/// 选币。从大到小取，够付金额和手续费就停。`fee_rate` 的单位是 sat/vB。
+/// 选币.从大到小取,够付金额和手续费就停.`fee_rate` 的单位是 sat/vB.
 ///
-/// 只知道总额，不知道收款地址，所以按一个最长的收款输出估算。一笔发给多个地址时，
-/// 每多一个输出要由调用方多留手续费。
+/// 只知道总额,不知道收款地址,所以按一个最长的收款输出估算.一笔发给多个地址时,
+/// 每多一个输出要由调用方多留手续费.
 pub fn select_coins(utxos: &[Utxo], amount: u64, fee_rate: u64, change_kind: AccountKind) -> Result<Selection, Error> {
     if amount == 0 || fee_rate == 0 {
         return Err(Error::InvalidParams);
@@ -720,7 +720,7 @@ pub fn select_coins(utxos: &[Utxo], amount: u64, fee_rate: u64, change_kind: Acc
     let mut value = 0u64;
     let mut inputs = Vec::new();
     for (utxo, cost) in sorted {
-        // 这个输入付不起自己的手续费，加上只会亏。
+        // 这个输入付不起自己的手续费,加上只会亏.
         if utxo.amount <= fee_for(cost)? {
             continue;
         }
@@ -750,16 +750,16 @@ pub fn select_coins(utxos: &[Utxo], amount: u64, fee_rate: u64, change_kind: Acc
     Err(Error::InsufficientFunds)
 }
 
-/// 替换交易的金额分配。
+/// 替换交易的金额分配.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct Replacement {
     pub fee: u64,
     pub change: u64,
 }
 
-/// RBF 用同一组输入提高手续费。费率不低于 `fee_rate`，也不低于原费率的 1.25 倍。
-/// 总额至少比原交易多付一次中继费（BIP-125）。`amount` 为 0 表示取消，全部回到找零。
-/// 太小的找零并入手续费，取消时不能这样，因为没有别的输出。
+/// RBF 用同一组输入提高手续费.费率不低于 `fee_rate`,也不低于原费率的 1.25 倍.
+/// 总额至少比原交易多付一次中继费(BIP-125).`amount` 为 0 表示取消,全部回到找零.
+/// 太小的找零并入手续费,取消时不能这样,因为没有别的输出.
 pub fn replacement(
     total: u64,
     amount: u64,
@@ -792,7 +792,7 @@ pub fn replacement(
     })
 }
 
-/// 请求里的手续费和估算的虚拟大小。
+/// 请求里的手续费和估算的虚拟大小.
 pub fn fee_info(network: Network, request: &SignRequest) -> Result<(u64, u64), Error> {
     let prepared = prepare(network, &request.payload, request.fingerprint).map_err(|_| Error::InvalidParams)?;
     let fee = prepared.fee().map_err(|_| Error::InvalidParams)?;
@@ -881,8 +881,8 @@ fn change_output(network: Network, keys: &PublicKeys, path: &str, amount: u64) -
     ))
 }
 
-/// 构建待签名的 PSBT，所有输入开启 RBF。`change` 是找零路径和金额。
-/// 有非 Taproot 输入时，Taproot 输入也要带前序交易，原因见 `prepare`。
+/// 构建待签名的 PSBT,所有输入开启 RBF.`change` 是找零路径和金额.
+/// 有非 Taproot 输入时,Taproot 输入也要带前序交易,原因见 `prepare`.
 pub fn build_psbt(
     network: Network,
     keys: &PublicKeys,
@@ -890,7 +890,7 @@ pub fn build_psbt(
     payments: &[Payment],
     change: Option<(&str, u64)>,
 ) -> Result<Vec<u8>, Error> {
-    // 没有收款方时全部回到找零，这是取消交易的写法，冷钱包显示「转给自己」。
+    // 没有收款方时全部回到找零,这是取消交易的写法,冷钱包显示"转给自己".
     if network.chain() != Chain::Bitcoin || inputs.is_empty() || (payments.is_empty() && change.is_none()) {
         return Err(Error::InvalidParams);
     }
@@ -972,7 +972,7 @@ fn check_signature<C: Verification>(
         }
         (StatedKey::XOnly(key), Sighash::Taproot(ty)) => {
             let signature = taproot::Signature::from_slice(bytes).map_err(|_| Error::BadSignature)?;
-            // 65 字节且尾字节是 0 的签名在共识上无效，解析器却会放过。
+            // 65 字节且尾字节是 0 的签名在共识上无效,解析器却会放过.
             let expected = if ty == TapSighashType::Default { 64 } else { 65 };
             if signature.sighash_type != ty || bytes.len() != expected {
                 return Err(Error::BadSignature);
@@ -985,7 +985,7 @@ fn check_signature<C: Verification>(
     }
 }
 
-/// 把验证过的签名写成最终的解锁脚本和见证。
+/// 把验证过的签名写成最终的解锁脚本和见证.
 fn finalize(target: &mut Input, own: &OwnInput, signature: &[u8]) -> Result<(), Error> {
     let push = |bytes: &[u8]| PushBytesBuf::try_from(bytes.to_vec()).map_err(|_| Error::BadSignature);
     let mut script_sig = ScriptBuf::new();
@@ -1013,7 +1013,7 @@ fn finalize(target: &mut Input, own: &OwnInput, signature: &[u8]) -> Result<(), 
     Ok(())
 }
 
-/// 用公钥逐个验证签名，装回 PSBT，提取原始交易。输出和金额都来自构建记录，签名改变不了它们。
+/// 用公钥逐个验证签名,装回 PSBT,提取原始交易.输出和金额都来自构建记录,签名改变不了它们.
 pub fn verify(network: Network, request: &SignRequest, response: &SignResponse) -> Result<Verified, Error> {
     if request.id != response.id {
         return Err(Error::ResponseMismatch);
@@ -1033,7 +1033,7 @@ pub fn verify(network: Network, request: &SignRequest, response: &SignResponse) 
                 check_signature(&secp, own, &Message::from_digest(digest), signature.as_slice())?;
                 finalize(target, own, signature.as_slice())?;
             }
-            // 其他钱包的输入不归这里签，必须已经带着最终的解锁数据。
+            // 其他钱包的输入不归这里签,必须已经带着最终的解锁数据.
             None if signature.is_empty()
                 && (target.final_script_sig.is_some() || target.final_script_witness.is_some()) => {}
             None => return Err(Error::BadSignature),
@@ -1065,7 +1065,7 @@ mod tests {
         }
     }
 
-    // BIP-143 的 Native P2WPKH 示例：
+    // BIP-143 的 Native P2WPKH 示例:
     // https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki#native-p2wpkh
     #[test]
     fn bip143_native_p2wpkh_sighash() {
@@ -1098,7 +1098,7 @@ mod tests {
         );
     }
 
-    // BIP-143 的 P2SH-P2WPKH 示例：
+    // BIP-143 的 P2SH-P2WPKH 示例:
     // https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki#p2sh-p2wpkh
     #[test]
     fn bip143_nested_p2wpkh_sighash() {
@@ -1132,7 +1132,7 @@ mod tests {
         );
     }
 
-    // BIP-341 的 wallet-test-vectors.json，keyPathSpending 全部 7 个输入：
+    // BIP-341 的 wallet-test-vectors.json,keyPathSpending 全部 7 个输入:
     // https://github.com/bitcoin/bips/blob/master/bip-0341/wallet-test-vectors.json
     #[test]
     fn bip341_key_path_sighash() {
@@ -1226,7 +1226,7 @@ mod tests {
         }
     }
 
-    // BIP-341 的 wallet-test-vectors.json，scriptPubKey 第一项，没有脚本树。
+    // BIP-341 的 wallet-test-vectors.json,scriptPubKey 第一项,没有脚本树.
     #[test]
     fn bip341_output_key_without_script_tree() {
         let internal = XOnlyPublicKey::from_slice(&unhex(
@@ -1243,15 +1243,15 @@ mod tests {
         );
     }
 
-    // BIP-174 的测试向量：https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki#test-vectors
+    // BIP-174 的测试向量:https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki#test-vectors
     #[test]
     fn bip174_invalid_psbts_are_refused() {
         let cases = [
-            // 不是 PSBT，是普通交易。
+            // 不是 PSBT,是普通交易.
             "0200000001268171371edff285e937adeea4b37b78000c0566cbb3ad64641713ca42171bf6000000006a",
-            // 声明的长度和实际不符。
+            // 声明的长度和实际不符.
             "70736274ff0100337401ff0700010000000100ff01000a73317428ff0000000001ff010301000001000000000000000076010000004100090000000000",
-            // 只有 magic。
+            // 只有 magic.
             "70736274ff",
         ];
         for case in cases {
@@ -1265,7 +1265,7 @@ mod tests {
 
     #[test]
     fn bip174_unknown_input_fields_round_trip() {
-        // BIP-174 的 PSBT with unknown types in the inputs。解析成功，只是输入都不属于这个钱包。
+        // BIP-174 的 PSBT with unknown types in the inputs.解析成功,只是输入都不属于这个钱包.
         let bytes = unhex(concat!(
             "70736274ff01003f0200000001ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000ffffffff",
             "010000000000000000036a010000000000000af00102030405060708090f0102030405060708090a0b0c0d0e0f0000",
@@ -1286,7 +1286,7 @@ mod tests {
     const SEGWIT: &str = "m/84'/0'/0'/0/0";
     const TAPROOT: &str = "m/86'/0'/0'/0/0";
 
-    /// 一个 SegWit 输入、一个收款输出的基准重量，加找零。
+    /// 一个 SegWit 输入,一个收款输出的基准重量,加找零.
     const ONE_IN: u64 = OVERHEAD_WEIGHT + PAYMENT_WEIGHT + INPUT_WEIGHT + 108;
 
     #[test]
@@ -1308,12 +1308,12 @@ mod tests {
     #[test]
     fn dust_change_goes_to_the_fee() {
         let fee_without_change = ONE_IN.div_ceil(4);
-        // 留下的找零低于 294 sat。
+        // 留下的找零低于 294 sat.
         let total = 100_000 + fee_without_change + 31 + 293;
         let picked = select_coins(&[coin(SEGWIT, total)], 100_000, 1, AccountKind::SegWit).unwrap();
         assert_eq!((picked.change, picked.fee), (0, total - 100_000));
 
-        // 正好到粉尘门限时保留找零。
+        // 正好到粉尘门限时保留找零.
         let total = total + 1;
         let picked = select_coins(&[coin(SEGWIT, total)], 100_000, 1, AccountKind::SegWit).unwrap();
         assert_eq!(picked.change, 294);
@@ -1389,7 +1389,7 @@ mod tests {
 
     #[test]
     fn large_expensive_coins_do_not_block_cheaper_ones() {
-        // 旧式币金额更大，排在前面，但付不起自己的 148 vB。选了它这笔就凑不够了。
+        // 旧式币金额更大,排在前面,但付不起自己的 148 vB.选了它这笔就凑不够了.
         let coins = [coin(SEGWIT, 100_000), coin("m/44'/0'/0'/0/0", 1_000), coin(SEGWIT, 900)];
         let picked = select_coins(&coins, 99_000, 10, AccountKind::SegWit).unwrap();
         assert_eq!(picked.inputs, vec![coins[0].clone(), coins[2].clone()]);

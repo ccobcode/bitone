@@ -1,4 +1,4 @@
-//! 按 IP 的令牌桶和 WebSocket 连接数上限。只用来控制成本，见 docs/04-security.md §5。
+//! 按 IP 的令牌桶和 WebSocket 连接数上限.只用来控制成本,见 docs/04-security.md §5.
 
 use axum::http::HeaderMap;
 use std::collections::{HashMap, HashSet};
@@ -30,7 +30,7 @@ impl Bucket {
     }
 }
 
-/// IPv6 用户通常独占一个 /64，按单个地址算等于没有限流。
+/// IPv6 用户通常独占一个 /64,按单个地址算等于没有限流.
 fn bucket_key(ip: IpAddr) -> IpAddr {
     match ip.to_canonical() {
         IpAddr::V6(v6) => IpAddr::V6(Ipv6Addr::from(u128::from(v6) & (!0 << 64))),
@@ -59,7 +59,7 @@ impl RateLimiter {
         let (burst, per_second) = (self.burst, self.per_second);
         let mut inner = self.inner.lock().unwrap();
         if now.duration_since(inner.swept) >= SWEEP_PERIOD {
-            // 回满的桶等于不存在，及时丢掉，IP 不在内存里多留，表也不会无限增长。
+            // 回满的桶等于不存在,及时丢掉,IP 不在内存里多留,表也不会无限增长.
             inner
                 .buckets
                 .retain(|_, bucket| bucket.refilled(now, per_second) < burst);
@@ -80,13 +80,13 @@ impl RateLimiter {
     }
 }
 
-/// 限流看到的客户端 IP。对端不是受信任代理时，转发头可以伪造，一律不读。
+/// 限流看到的客户端 IP.对端不是受信任代理时,转发头可以伪造,一律不读.
 pub fn client_ip(peer: IpAddr, trusted: &HashSet<IpAddr>, headers: &HeaderMap) -> IpAddr {
     let mut client = peer.to_canonical();
     if !trusted.contains(&client) {
         return client;
     }
-    // 从右往左走，右边离网关最近。第一个不受信任的地址就是客户端，再往左都可能是伪造的。
+    // 从右往左走,右边离网关最近.第一个不受信任的地址就是客户端,再往左都可能是伪造的.
     for value in headers.get_all("x-forwarded-for").iter().rev() {
         let Ok(value) = value.to_str() else { return client };
         for hop in value.rsplit(',') {
@@ -102,13 +102,13 @@ pub fn client_ip(peer: IpAddr, trusted: &HashSet<IpAddr>, headers: &HeaderMap) -
     client
 }
 
-/// 每个 IP 同时打开的 WebSocket 连接数。计数归零就删除，IP 不在内存里多留。
+/// 每个 IP 同时打开的 WebSocket 连接数.计数归零就删除,IP 不在内存里多留.
 pub struct ConnectionLimit {
     max: usize,
     counts: Arc<Mutex<HashMap<IpAddr, usize>>>,
 }
 
-/// 连接占用的名额，丢弃时归还。
+/// 连接占用的名额,丢弃时归还.
 pub struct ConnectionSlot {
     key: IpAddr,
     counts: Arc<Mutex<HashMap<IpAddr, usize>>>,
@@ -222,12 +222,12 @@ mod tests {
         let trusted = HashSet::from([ip("10.0.0.1"), ip("10.0.0.2")]);
         let peer = ip("10.0.0.1");
         assert_eq!(client_ip(peer, &trusted, &forwarded(&["1.1.1.1"])), ip("1.1.1.1"));
-        // 最左边的是客户端自己写的，不能采信。
+        // 最左边的是客户端自己写的,不能采信.
         assert_eq!(
             client_ip(peer, &trusted, &forwarded(&["6.6.6.6, 1.1.1.1, 10.0.0.2"])),
             ip("1.1.1.1")
         );
-        // 多个头按出现顺序拼接。
+        // 多个头按出现顺序拼接.
         assert_eq!(
             client_ip(peer, &trusted, &forwarded(&["6.6.6.6", "1.1.1.1"])),
             ip("1.1.1.1")

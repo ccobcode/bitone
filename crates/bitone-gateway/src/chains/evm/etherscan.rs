@@ -1,4 +1,4 @@
-//! Etherscan 兼容的索引服务。
+//! Etherscan 兼容的索引服务.
 
 use super::adapter::{Evm, Tips};
 use crate::upstream::{
@@ -7,7 +7,7 @@ use crate::upstream::{
 };
 use serde_json::Value;
 
-/// 索引服务的三类记录：普通交易、内部转账、代币转账。
+/// 索引服务的三类记录:普通交易,内部转账,代币转账.
 const ACTIONS: [&str; 3] = ["txlist", "txlistinternal", "tokentx"];
 const TOKEN_ACTION: &str = "tokentx";
 const PAGE_SIZE: usize = 50;
@@ -19,7 +19,7 @@ fn number(row: &Value, key: &str) -> Result<u64, Failed> {
         .ok_or(Failed)
 }
 
-/// 索引服务的一行记录。代币只保留清单里的，普通交易里金额为 0 的成功调用不是转账。
+/// 索引服务的一行记录.代币只保留清单里的,普通交易里金额为 0 的成功调用不是转账.
 fn history_item(row: &Value, action: &str, tokens: &[String], tips: &Tips) -> Result<Option<HistoryItem>, Failed> {
     let hash = row
         .get("hash")
@@ -94,7 +94,7 @@ impl Evm {
             ("startblock", &start),
         ];
         let reply = indexer.get_query("", &query).await?;
-        // 没有记录时 status 是 0 而 result 是空数组，限流时 result 是一段文本。
+        // 没有记录时 status 是 0 而 result 是空数组,限流时 result 是一段文本.
         let rows = reply.get("result").and_then(Value::as_array).ok_or(Failed)?;
         let items = rows
             .iter()

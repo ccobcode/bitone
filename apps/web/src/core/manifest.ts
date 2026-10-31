@@ -12,7 +12,6 @@ export interface AssetEntry {
     symbol: string;
     decimals: number;
     icon: IconName;
-    /** 至少显示的小数位. */
     minFraction: number;
     native: boolean;
 }

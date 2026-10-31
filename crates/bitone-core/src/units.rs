@@ -1,6 +1,6 @@
-//! 金额格式化。金额全程是字节或十进制字符串，不经过浮点。
+//! 金额格式化.金额全程是字节或十进制字符串,不经过浮点.
 
-/// 大端字节转十进制字符串。
+/// 大端字节转十进制字符串.
 pub fn decimal_from_be(bytes: &[u8]) -> String {
     let mut digits = vec![0u8];
     for &byte in bytes {
@@ -18,7 +18,7 @@ pub fn decimal_from_be(bytes: &[u8]) -> String {
     digits.iter().rev().map(|d| char::from(b'0' + d)).collect()
 }
 
-/// 把最小单位的十进制字符串换算成带小数的形式，去掉末尾的 0。
+/// 把最小单位的十进制字符串换算成带小数的形式,去掉末尾的 0.
 pub fn format_units(raw: &str, decimals: u8) -> String {
     let decimals = decimals as usize;
     let raw = raw.trim_start_matches('0');

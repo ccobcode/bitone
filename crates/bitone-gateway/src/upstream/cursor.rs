@@ -1,18 +1,18 @@
-//! 历史记录的分页。
+//! 历史记录的分页.
 
 use super::{HistoryItem, HistoryPage};
 use crate::error::ApiError;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashSet};
 
-/// 游标里单个续页标记的长度上限。
+/// 游标里单个续页标记的长度上限.
 const MAX_CURSOR_TOKEN: usize = 512;
 
-/// 分页游标。一次查询里每个地址可能有多条独立分页的记录流，这里记下每条流的续页标记。
-/// 键以地址在请求里的下标开头，流结束后从游标里删除。空表表示第一页。
+/// 分页游标.一次查询里每个地址可能有多条独立分页的记录流,这里记下每条流的续页标记.
+/// 键以地址在请求里的下标开头,流结束后从游标里删除.空表表示第一页.
 pub type Cursor = BTreeMap<String, String>;
 
-/// 校验客户端传回的游标。键和标记都可能被拼进上游请求，所以只放行固定的字符。
+/// 校验客户端传回的游标.键和标记都可能被拼进上游请求,所以只放行固定的字符.
 pub fn parse_cursor(text: &str, addresses: usize) -> Result<Cursor, ApiError> {
     let cursor: Cursor = serde_json::from_str(text).map_err(|_| ApiError::InvalidRequest)?;
     let safe = |text: &str| {
@@ -37,7 +37,7 @@ pub fn stream_index(key: &str) -> Option<usize> {
     key.split(':').next()?.parse().ok()
 }
 
-/// 这一页要查的流：第一页是全部，之后只查游标里还有下文的。
+/// 这一页要查的流:第一页是全部,之后只查游标里还有下文的.
 pub fn streams(all: impl Iterator<Item = String>, cursor: &Cursor) -> Vec<(String, Option<String>)> {
     if cursor.is_empty() {
         all.map(|key| (key, None)).collect()
@@ -49,14 +49,14 @@ pub fn streams(all: impl Iterator<Item = String>, cursor: &Cursor) -> Vec<(Strin
     }
 }
 
-/// 一条流的一页。
+/// 一条流的一页.
 pub struct StreamPage {
     pub key: String,
     pub next: Option<String>,
     pub items: Vec<HistoryItem>,
 }
 
-/// 合并各条流。同一笔转账可能同时出现在转出方和转入方的流里。
+/// 合并各条流.同一笔转账可能同时出现在转出方和转入方的流里.
 pub fn merge_pages(pages: Vec<StreamPage>) -> HistoryPage {
     let mut seen = HashSet::new();
     let mut page = HistoryPage::default();
@@ -67,7 +67,7 @@ pub fn merge_pages(pages: Vec<StreamPage>) -> HistoryPage {
             page.cursor.insert(stream.key, next);
         }
     }
-    // 没有时间的是内存池里的交易，排在最前面。
+    // 没有时间的是内存池里的交易,排在最前面.
     page.items.sort_by_key(|item| Reverse(item.time.unwrap_or(u64::MAX)));
     page
 }

@@ -192,7 +192,6 @@ export function Notice({
     );
 }
 
-/** 表单标签. */
 export const LABEL = "text-t2 text-text-3";
 
 interface ListRowProps {
@@ -238,7 +237,6 @@ export function Skeleton({ className = "" }: { className?: string }) {
     return <span aria-hidden="true" className={`skeleton ${className}`} />;
 }
 
-/** 读取中的列表. */
 export function SkeletonRows({ count = 3 }: { count?: number }) {
     return (
         <div aria-hidden="true" className="flex flex-col">

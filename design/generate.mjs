@@ -1,4 +1,4 @@
-// 从 tokens.json 生成两端的令牌文件。加 --check 时只比对，不写入。
+// 从 tokens.json 生成两端的令牌文件.加 --check 时只比对,不写入.
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const tokens = JSON.parse(readFileSync(join(root, "design/tokens.json"), "utf8"));
 const icons = JSON.parse(readFileSync(join(root, "design/icons.json"), "utf8"));
-const header = "由 design/generate.mjs 生成，不要手改。";
+const header = "由 design/generate.mjs 生成,不要手改.";
 
-/** `web` 是网页端专用的桌面按钮高度和图表颜色，只进 CSS，不影响冷钱包的 Kotlin 令牌。 */
+/** `web` 是网页端专用的桌面按钮高度和图表颜色,只进 CSS,不影响冷钱包的 Kotlin 令牌. */
 function css() {
     const web = tokens.web;
     const colors = (mode) =>
@@ -60,7 +60,7 @@ function camel(name) {
     return name.replace(/-(\w)/g, (_, c) => c.toUpperCase());
 }
 
-/** CSS 的 box-shadow 拆成层，Kotlin 用 Modifier.dropShadow 逐层画。 */
+/** CSS 的 box-shadow 拆成层,Kotlin 用 Modifier.dropShadow 逐层画. */
 function shadowLayers(value) {
     if (value === "none") return [];
     return value.split(/,\s*(?=0 \d+px)/).map((layer) => {
@@ -103,7 +103,7 @@ val DarkColors = ColorTokens(
 ${palette("dark")}
 )
 
-/** 一层阴影，对应 CSS box-shadow 的纵向偏移、模糊半径和颜色。 */
+/** 一层阴影,对应 CSS box-shadow 的纵向偏移,模糊半径和颜色. */
 data class ShadowLayer(val y: Dp, val blur: Dp, val color: Color)
 
 data class ElevationTokens(
@@ -136,7 +136,7 @@ object Size {
 ${dp(tokens.size, "dp")}
 }
 
-/** 动效令牌。时长单位是毫秒。 */
+/** 动效令牌.时长单位是毫秒. */
 object Motion {
 ${Object.entries(tokens.motion.duration)
     .map(([k, v]) => `    const val ${k} = ${v}`)
@@ -153,7 +153,7 @@ ${Object.entries(tokens.motion.easing)
     val rise = ${tokens.motion.rise}.dp
 }
 
-/** 二维码的静区、分段上限和轮播间隔，两端相同。间隔单位是毫秒，第一项是默认速度。 */
+/** 二维码的静区,分段上限和轮播间隔,两端相同.间隔单位是毫秒,第一项是默认速度. */
 object Qr {
     const val quiet = ${tokens.qr.quiet}
     const val maxSegments = ${tokens.qr["max-segments"]}
@@ -162,7 +162,7 @@ object Qr {
 `;
 }
 
-/** 线性图标的路径。网页端按名字查，冷钱包是常量，名字首字母大写。 */
+/** 线性图标的路径.网页端按名字查,冷钱包是常量,名字首字母大写. */
 function kotlinIcons() {
     const rows = Object.entries(icons).map(
         ([name, path]) => `    const val ${name[0].toUpperCase()}${name.slice(1)} = ${JSON.stringify(path)}`,
@@ -176,7 +176,7 @@ ${rows.join("\n")}
 `;
 }
 
-/** 词典以中文原文为键，网页端和冷钱包共用。放不进 @Composable 以外的常量，所以生成一个普通的 Map。 */
+/** 词典以中文原文为键,网页端和冷钱包共用.放不进 @Composable 以外的常量,所以生成一个普通的 Map. */
 const english = JSON.parse(readFileSync(join(root, "design/i18n.json"), "utf8"));
 
 function kotlinString(text) {
@@ -216,7 +216,7 @@ for (const [path, content] of outputs) {
             current = readFileSync(full, "utf8");
         } catch {}
         if (current !== content) {
-            console.error(`过期：${path}`);
+            console.error(`过期:${path}`);
             stale = true;
         }
     } else {

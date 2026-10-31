@@ -185,7 +185,6 @@ export function validateAddress(network: string, text: string): string {
 
 export type KeyEntry = Pick<PairingAccount, "chain" | "kind" | "path" | "key">;
 
-/** 核心库需要的账户公钥列表. */
 export function accountKeyList(accounts: readonly KeyEntry[]): KeyEntry[] {
     return accounts.map(({ chain, kind, path, key }) => ({ chain, kind, path, key }));
 }

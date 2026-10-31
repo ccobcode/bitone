@@ -1,4 +1,4 @@
-//! Solana 的上游适配器。
+//! Solana 的上游适配器.
 
 use crate::upstream::{
     Balance, Broadcast, Cursor, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, RawTx, Signal, StreamPage, Tx,
@@ -9,16 +9,16 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::{mpsc, watch};
 
-/// 主网已有版本 1 的交易，不声明这里的版本号时 getTransaction 会直接报错。
+/// 主网已有版本 1 的交易,不声明这里的版本号时 getTransaction 会直接报错.
 const MAX_TX_VERSION: u64 = 1;
-/// 代币账户的大小，用来算创建租金。Token-2022 带扩展的账户会更大。
+/// 代币账户的大小,用来算创建租金.Token-2022 带扩展的账户会更大.
 const TOKEN_ACCOUNT_SIZE: u64 = 165;
-/// 全网最低优先费经常是 0，只看分位数时三档都是 0，所以中和快两档有下限。
+/// 全网最低优先费经常是 0,只看分位数时三档都是 0,所以中和快两档有下限.
 const MEDIUM_FLOOR: u64 = 1000;
 const FAST_FLOOR: u64 = 100_000;
-/// 一次历史查询里每条记录流的条数。getTransaction 要逐笔调用，这个值不能大。
+/// 一次历史查询里每条记录流的条数.getTransaction 要逐笔调用,这个值不能大.
 const PAGE_SIZE: usize = 25;
-/// 跟块时往回看的 slot 数，约两分钟。
+/// 跟块时往回看的 slot 数,约两分钟.
 const RECENT_SLOTS: u64 = 300;
 
 pub struct Solana {
@@ -26,7 +26,7 @@ pub struct Solana {
     pub tokens: Vec<String>,
 }
 
-/// `getSignatureStatuses` 的一项映射成交易状态。带 err 就是失败，提交等级只决定阶段。
+/// `getSignatureStatuses` 的一项映射成交易状态.带 err 就是失败,提交等级只决定阶段.
 fn parse_tx(hash: &str, value: &Value, slot: u64, fee: Option<String>) -> Result<Tx, Failed> {
     if value.is_null() {
         return Ok(Tx::unknown(hash));
@@ -44,7 +44,7 @@ fn parse_tx(hash: &str, value: &Value, slot: u64, fee: Option<String>) -> Result
         (false, _) => TxStatus::Included,
     };
     let block = value.get("slot").and_then(Value::as_u64).ok_or(Failed)?;
-    // 最终确定后节点不再给确认数，用 slot 差代替，这个字段始终是数字。
+    // 最终确定后节点不再给确认数,用 slot 差代替,这个字段始终是数字.
     let confirmations = value
         .get("confirmations")
         .and_then(Value::as_u64)
@@ -79,7 +79,7 @@ fn fee_tiers(reply: &Value) -> Result<Value, Failed> {
     Ok(json!({"kind": "solana", "slow": slow, "medium": medium, "fast": fast}))
 }
 
-/// 账户存在但不是初始化过的 nonce 账户时，对调用方来说也是没有可用的 nonce。
+/// 账户存在但不是初始化过的 nonce 账户时,对调用方来说也是没有可用的 nonce.
 fn nonce_account(value: &Value) -> Result<Value, Failed> {
     let program = value.pointer("/data/program").and_then(Value::as_str);
     let kind = value.pointer("/data/parsed/type").and_then(Value::as_str);
@@ -99,14 +99,14 @@ fn is_already_processed(message: &str, data: &Value) -> bool {
         || data.get("err").and_then(Value::as_str) == Some("AlreadyProcessed")
 }
 
-/// 一笔交易给这批地址带来的净变化，和对手方。
+/// 一笔交易给这批地址带来的净变化,和对手方.
 struct Change<'a> {
     owner: &'a str,
     delta: i128,
     asset: &'a str,
 }
 
-/// 与变化方向相反、绝对值最大的账户就是对手方。多方交易里这只是近似值。
+/// 与变化方向相反,绝对值最大的账户就是对手方.多方交易里这只是近似值.
 fn counterparty<'a>(deltas: &'a [(&'a str, i128)], delta: i128) -> Option<&'a str> {
     deltas
         .iter()
@@ -153,11 +153,11 @@ fn lamports(meta: &Value, key: &str) -> Result<Vec<i128>, Failed> {
         .collect()
 }
 
-/// 所有者和代币维度的余额变化。
+/// 所有者和代币维度的余额变化.
 fn token_deltas(meta: &Value) -> Result<HashMap<(&str, &str), i128>, Failed> {
     let mut deltas = HashMap::new();
     for (key, sign) in [("preTokenBalances", -1), ("postTokenBalances", 1)] {
-        // 老交易没有这两个字段。
+        // 老交易没有这两个字段.
         let Some(rows) = meta.get(key).and_then(Value::as_array) else {
             continue;
         };
@@ -177,8 +177,8 @@ fn token_deltas(meta: &Value) -> Result<HashMap<(&str, &str), i128>, Failed> {
     Ok(deltas)
 }
 
-/// 用前后余额差还原一笔交易对这批地址的影响，这样内部指令和新版程序都能覆盖。
-/// 失败的交易只有手续费支付方有记录，金额为 0，否则用户看不到这笔扣费。
+/// 用前后余额差还原一笔交易对这批地址的影响,这样内部指令和新版程序都能覆盖.
+/// 失败的交易只有手续费支付方有记录,金额为 0,否则用户看不到这笔扣费.
 fn history_items(
     signature: &str,
     tx: &Value,
@@ -248,14 +248,14 @@ fn history_items(
     Ok(items)
 }
 
-/// 一页里的一个签名。
+/// 一页里的一个签名.
 struct SignatureRow {
     signature: String,
     finalized: bool,
 }
 
 impl Solana {
-    /// 带 `context` 和 `value` 的方法。
+    /// 带 `context` 和 `value` 的方法.
     async fn rpc(&self, method: &str, params: Value) -> Result<Value, Failed> {
         let body = json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params});
         self.http
@@ -270,7 +270,7 @@ impl Solana {
         self.http.rpc(method, params).await?.map_err(|_| Failed)
     }
 
-    /// 一个地址在某个代币下的总额。同一代币可以有多个代币账户，要加总。
+    /// 一个地址在某个代币下的总额.同一代币可以有多个代币账户,要加总.
     async fn token(&self, address: &str, mint: &str) -> Result<u128, Failed> {
         let params = json!([address, {"mint": mint}, {"encoding": "jsonParsed", "commitment": "confirmed"}]);
         let accounts = self.rpc("getTokenAccountsByOwner", params).await?;
@@ -299,8 +299,8 @@ impl Solana {
         Ok(out)
     }
 
-    /// 手续费只用于展示。getTransaction 对 processed 不可用，公共节点也常常限流，
-    /// 取不到时留空，不影响状态。
+    /// 手续费只用于展示.getTransaction 对 processed 不可用,公共节点也常常限流,
+    /// 取不到时留空,不影响状态.
     async fn fee(&self, hash: &str) -> Option<String> {
         let params = json!([hash, {
             "encoding": "json",
@@ -320,7 +320,7 @@ impl Solana {
         Ok(vec![parse_tx(hash, value, slot, fee)?])
     }
 
-    /// 代币转入不会出现在所有者地址的签名列表里，要单独查它的代币账户。
+    /// 代币转入不会出现在所有者地址的签名列表里,要单独查它的代币账户.
     pub(super) async fn token_accounts(&self, index: usize, address: &str) -> Result<Vec<String>, Failed> {
         let mut keys = Vec::new();
         for mint in &self.tokens {
@@ -351,7 +351,7 @@ impl Solana {
         }
         let reply = self.result("getSignaturesForAddress", json!([target, options])).await?;
         let rows = reply.as_array().ok_or(Failed)?;
-        // 新的在前，碰到水位之前的签名就不用再往后翻，也不用逐笔取交易详情。
+        // 新的在前,碰到水位之前的签名就不用再往后翻,也不用逐笔取交易详情.
         let slot = |row: &Value| row.get("slot").and_then(Value::as_u64);
         let fresh: Vec<&Value> = rows
             .iter()
@@ -475,7 +475,7 @@ impl Upstream for Solana {
 
     fn recent<'a>(&'a self, addresses: &'a [String], previous: u64) -> Query<'a, Vec<HistoryItem>> {
         Box::pin(async move {
-            // 推送比签名列表略快，往回多看一段，重复的记录由客户端按标识合并。
+            // 推送比签名列表略快,往回多看一段,重复的记录由客户端按标识合并.
             let since = previous.saturating_sub(RECENT_SLOTS);
             let cursor = Cursor::new();
             Ok(self.page(addresses, &cursor, Some(since)).await?.items)
@@ -498,7 +498,7 @@ impl Upstream for Solana {
 
     fn broadcast<'a>(&'a self, raw: &'a RawTx) -> BoxFuture<'a, Broadcast> {
         Box::pin(async move {
-            // durable nonce 刚推进时用 confirmed 才模拟得过，默认的 finalized 看到的是旧值。
+            // durable nonce 刚推进时用 confirmed 才模拟得过,默认的 finalized 看到的是旧值.
             let options = json!({"encoding": "base64", "preflightCommitment": "confirmed"});
             match self
                 .http
@@ -538,7 +538,7 @@ impl Solana {
 
     pub fn nonce_account<'a>(&'a self, address: &'a str) -> Query<'a, Value> {
         Box::pin(async move {
-            // 上一笔转账推进 nonce 后要马上能读到新值，所以不用默认的 finalized。
+            // 上一笔转账推进 nonce 后要马上能读到新值,所以不用默认的 finalized.
             let params = json!([address, {"encoding": "jsonParsed", "commitment": "confirmed"}]);
             nonce_account(&self.rpc("getAccountInfo", params).await?)
         })
@@ -656,7 +656,7 @@ mod tests {
             json!({"exists": false})
         );
         assert_eq!(nonce_account(&Value::Null).unwrap(), json!({"exists": false}));
-        // 普通系统账户。
+        // 普通系统账户.
         assert_eq!(
             nonce_account(&json!({"data": ["", "base64"], "lamports": 1})).unwrap(),
             json!({"exists": false})
@@ -742,7 +742,7 @@ mod tests {
         let own = HashSet::from([OWNER]);
         let tx = sample(Value::Null, &[OWNER, OTHER], &[1_000_000, 0], &[995_000, 0], tokens);
         let items = history_items("s", &tx, &own, &[MINT.to_string()], true).unwrap();
-        assert_eq!(items.len(), 1, "清单外的代币不返回，手续费不算转账");
+        assert_eq!(items.len(), 1, "清单外的代币不返回,手续费不算转账");
         assert_eq!(items[0].asset, MINT);
         assert_eq!(
             (items[0].from.as_deref(), items[0].to.as_deref()),

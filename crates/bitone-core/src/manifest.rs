@@ -1,5 +1,5 @@
-//! 内置清单。图标、符号、小数位都只按「网络加合约地址」查，没有按符号查找的入口。
-//! 见 docs/04-security.md 第 2.8、2.9 节。
+//! 内置清单.图标,符号,小数位都只按"网络加合约地址"查,没有按符号查找的入口.
+//! 见 docs/04-security.md 第 2.8,2.9 节.
 
 use crate::Error;
 use p256::ecdsa::signature::Verifier;
@@ -8,7 +8,7 @@ use p256::pkcs8::DecodePublicKey;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
-/// 厂商公钥，P-256 的 SPKI DER。和 APK 签名证书是同一把密钥，换公钥就是替换这个文件。
+/// 厂商公钥,P-256 的 SPKI DER.和 APK 签名证书是同一把密钥,换公钥就是替换这个文件.
 pub const VENDOR_KEY: [u8; 91] = *include_bytes!("../assets/manifest-key.der");
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,13 +25,13 @@ pub struct Asset {
 }
 
 impl Asset {
-    /// 图标用的键，`网络:合约`。
+    /// 图标用的键,`网络:合约`.
     pub fn key(&self) -> String {
         format!("{}:{}", self.network, self.contract)
     }
 }
 
-/// 已知的函数。只影响展示，不能降低风险类别。
+/// 已知的函数.只影响展示,不能降低风险类别.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KnownFunction {
@@ -56,7 +56,7 @@ impl Manifest {
         BUILTIN.get_or_init(|| serde_json::from_str(include_str!("../assets/manifest.json")).expect("内置清单有效"))
     }
 
-    /// EVM 地址不区分大小写，Base58 地址区分。
+    /// EVM 地址不区分大小写,Base58 地址区分.
     pub fn lookup(&self, network: &str, contract: &str) -> Option<&Asset> {
         let hex = contract.starts_with("0x");
         self.assets.iter().find(|a| {
@@ -81,8 +81,8 @@ impl Manifest {
         })
     }
 
-    /// 校验清单包。版本只增不减，签名不对或版本回退都拒绝。通过后整体覆盖内置清单。
-    /// 包的格式是 DER 编码的 ECDSA 签名加 JSON 原文，签名的长度写在它的第二个字节。
+    /// 校验清单包.版本只增不减,签名不对或版本回退都拒绝.通过后整体覆盖内置清单.
+    /// 包的格式是 DER 编码的 ECDSA 签名加 JSON 原文,签名的长度写在它的第二个字节.
     pub fn from_package(package: &[u8], key: &[u8], current: u32) -> Result<Self, Error> {
         let length = usize::from(*package.get(1).ok_or(Error::Decode)?) + 2;
         let (signature, body) = package.split_at_checked(length).ok_or(Error::Decode)?;

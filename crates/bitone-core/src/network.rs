@@ -1,4 +1,4 @@
-//! 网络定义，见 docs/03-system.md 第 5 节。
+//! 网络定义,见 docs/03-system.md 第 5 节.
 
 use minicbor::{Decode, Encode};
 
@@ -102,7 +102,7 @@ impl Network {
         }
     }
 
-    /// 界面上显示的名字。
+    /// 界面上显示的名字.
     pub fn label(self) -> &'static str {
         match self {
             Network::Bitcoin => "Bitcoin",

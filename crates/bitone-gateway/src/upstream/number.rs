@@ -1,4 +1,4 @@
-//! 上游返回的数字。
+//! 上游返回的数字.
 
 use super::Failed;
 use bitcoin::hex::{DisplayHex, FromHex};
@@ -6,7 +6,7 @@ use bitone_core::tx::evm::be_from_decimal;
 use bitone_core::units::decimal_from_be;
 use serde_json::Value;
 
-/// `0x` 开头的十六进制转十进制字符串。ERC-20 余额是 uint256，放不进任何原生整数。
+/// `0x` 开头的十六进制转十进制字符串.ERC-20 余额是 uint256,放不进任何原生整数.
 pub fn hex_to_decimal(hex: &str) -> Option<String> {
     let hex = hex
         .strip_prefix("0x")
@@ -19,7 +19,7 @@ pub fn hex_to_decimal(hex: &str) -> Option<String> {
     Some(decimal_from_be(&Vec::from_hex(&even).ok()?))
 }
 
-/// 十进制字符串转 `0x` 开头的十六进制，上限 uint256。
+/// 十进制字符串转 `0x` 开头的十六进制,上限 uint256.
 pub fn decimal_to_hex(decimal: &str) -> Option<String> {
     let hex = be_from_decimal(decimal).ok()?.to_lower_hex_string();
     let digits = hex.trim_start_matches('0');
@@ -36,7 +36,7 @@ pub fn hex_u128(value: &Value) -> Result<u128, Failed> {
     u128::from_str_radix(hex, 16).map_err(|_| Failed)
 }
 
-/// 十进制整数字符串，或者 JSON 整数。
+/// 十进制整数字符串,或者 JSON 整数.
 pub fn decimal(value: &Value) -> Result<String, Failed> {
     match value {
         Value::String(s) if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) => Ok(s.clone()),
@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     fn hex_to_decimal_rejects_garbage() {
-        // 合约不存在时 eth_call 返回 0x，不能当成余额 0。
+        // 合约不存在时 eth_call 返回 0x,不能当成余额 0.
         for bad in ["0x", "ff", "", "0xzz", &format!("0x1{}", "0".repeat(64))] {
             assert_eq!(hex_to_decimal(bad), None, "{bad}");
         }

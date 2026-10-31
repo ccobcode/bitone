@@ -1,22 +1,22 @@
-//! 一个网络的配置。各条链自己的选项由 `ChainSpec` 检查。
+//! 一个网络的配置.各条链自己的选项由 `ChainSpec` 检查.
 
 use super::{is_valid, spec};
 use bitone_core::Network;
 use serde::Deserialize;
 
-// ponytail: 各条链的选项都在这一个结构里，配置文件的格式才能不变。`deny_unknown_fields` 和 `flatten`
-// 不能同用，所以新链要加选项时还是改这里。选项多了以后按链分表。
+// ponytail: 各条链的选项都在这一个结构里,配置文件的格式才能不变.`deny_unknown_fields` 和 `flatten`
+// 不能同用,所以新链要加选项时还是改这里.选项多了以后按链分表.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NetworkConfig {
     pub upstreams: Vec<String>,
     #[serde(default)]
     pub tokens: Vec<String>,
-    /// TronGrid 的 API key，发给这个网络的全部上游。
+    /// TronGrid 的 API key,发给这个网络的全部上游.
     pub tron_api_key: Option<String>,
-    /// EVM 的 Etherscan 兼容索引服务，只用于交易历史。节点查不到地址的历史。
+    /// EVM 的 Etherscan 兼容索引服务,只用于交易历史.节点查不到地址的历史.
     pub indexer: Option<String>,
-    /// HyperSync 的 token。配了它，`indexer` 就按 HyperSync 的接口访问，否则按 Etherscan 的接口。
+    /// HyperSync 的 token.配了它,`indexer` 就按 HyperSync 的接口访问,否则按 Etherscan 的接口.
     pub indexer_token: Option<String>,
 }
 

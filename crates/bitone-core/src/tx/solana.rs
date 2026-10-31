@@ -1,7 +1,7 @@
-//! Solana 交易：严格解析、分类、构建和核验。规则见 docs/04-security.md 第 2.7 节。
+//! Solana 交易:严格解析,分类,构建和核验.规则见 docs/04-security.md 第 2.7 节.
 //!
-//! 载荷是消息字节，签名是消息的 ed25519 签名。解析后必须能重新编码回完全相同的字节，
-//! 这样冷钱包展示的内容和实际签名的内容不可能不一致。
+//! 载荷是消息字节,签名是消息的 ed25519 签名.解析后必须能重新编码回完全相同的字节,
+//! 这样冷钱包展示的内容和实际签名的内容不可能不一致.
 
 use crate::address::parse_solana_address;
 use crate::manifest::{Asset, Manifest};
@@ -45,10 +45,10 @@ const NONCE_SEED: &str = "bitone-nonce";
 const CREATE_NONCE_TITLE: &str = "创建 nonce 账户";
 const ADVANCE_NONCE_TITLE: &str = "作废已签名的交易";
 const CREATE_TOKEN_ACCOUNT_TITLE: &str = "创建代币账户";
-/// nonce 账户的数据长度。
+/// nonce 账户的数据长度.
 const NONCE_SPACE: u64 = 80;
 const LAMPORTS_PER_SIGNATURE: u64 = 5000;
-/// 没写 SetComputeUnitLimit 时每条指令的上限，算优先费时取这个偏高的值。
+/// 没写 SetComputeUnitLimit 时每条指令的上限,算优先费时取这个偏高的值.
 const DEFAULT_UNITS_PER_INSTRUCTION: u64 = 200_000;
 const MAX_COMPUTE_UNITS: u64 = 1_400_000;
 const MICRO_LAMPORTS_PER_LAMPORT: u128 = 1_000_000;
@@ -110,13 +110,13 @@ pub enum Version {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Instruction {
-    /// 程序在账户表里的下标。
+    /// 程序在账户表里的下标.
     pub program: u8,
     pub accounts: Vec<u8>,
     pub data: Vec<u8>,
 }
 
-/// 地址查找表的引用。表的内容在链上，冷钱包看不到。
+/// 地址查找表的引用.表的内容在链上,冷钱包看不到.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Lookup {
     pub table: [u8; 32],
@@ -131,7 +131,7 @@ pub struct Message {
     pub readonly_signed: u8,
     pub readonly_unsigned: u8,
     pub keys: Vec<[u8; 32]>,
-    /// durable nonce 交易这里是 nonce 值。
+    /// durable nonce 交易这里是 nonce 值.
     pub blockhash: [u8; 32],
     pub instructions: Vec<Instruction>,
     pub lookups: Vec<Lookup>,
@@ -196,7 +196,7 @@ impl Message {
         Ok(message)
     }
 
-    /// 和节点的 sanitize 规则一致。节点不接受的消息，这里也不展示。
+    /// 和节点的 sanitize 规则一致.节点不接受的消息,这里也不展示.
     fn check(&self) -> Result<(), Forbid> {
         let required = self.required_signatures as usize;
         let static_keys = self.keys.len();
@@ -221,7 +221,7 @@ impl Message {
             return Err(Forbid::ParseFailed);
         }
         for ix in &self.instructions {
-            // 手续费支付者不能是程序，程序也不能来自查找表。
+            // 手续费支付者不能是程序,程序也不能来自查找表.
             let program = ix.program as usize;
             if program == 0 || program >= static_keys {
                 return Err(Forbid::ParseFailed);
@@ -259,7 +259,7 @@ impl Message {
         out
     }
 
-    /// 来自查找表的地址数量。
+    /// 来自查找表的地址数量.
     pub fn lookup_count(&self) -> usize {
         self.lookups.iter().map(|l| l.writable.len() + l.readonly.len()).sum()
     }
@@ -291,7 +291,7 @@ pub fn nonce_account_address(payer: &[u8; 32]) -> Result<[u8; 32], Error> {
         .into())
 }
 
-/// 程序派生地址不能在曲线上，否则会有对应的私钥。
+/// 程序派生地址不能在曲线上,否则会有对应的私钥.
 fn find_program_address(seeds: &[&[u8]], program: &[u8; 32]) -> Result<[u8; 32], Error> {
     for bump in (1..=u8::MAX).rev() {
         let mut hasher = Sha256::new();
@@ -321,9 +321,9 @@ fn key_at(bytes: &[u8]) -> Option<[u8; 32]> {
     bytes.first_chunk::<32>().copied()
 }
 
-/// AllocateWithSeed。派生地址是公开的，任何人都能往里转一点钱，那样 CreateAccountWithSeed 就会失败，
-/// 这个钱包再也发不出交易。所以分三步：先转入租金，再分配空间，最后初始化。
-/// 分配要付款账户签名，攻击者只能存钱，抢不走这个地址。
+/// AllocateWithSeed.派生地址是公开的,任何人都能往里转一点钱,那样 CreateAccountWithSeed 就会失败,
+/// 这个钱包再也发不出交易.所以分三步:先转入租金,再分配空间,最后初始化.
+/// 分配要付款账户签名,攻击者只能存钱,抢不走这个地址.
 fn allocate_nonce_data(payer: &[u8; 32]) -> Vec<u8> {
     let mut data = 9u32.to_le_bytes().to_vec();
     data.extend_from_slice(payer);
@@ -340,14 +340,14 @@ fn initialize_nonce_data(authority: &[u8; 32]) -> Vec<u8> {
     data
 }
 
-/// 一条指令分析出来的结果。
+/// 一条指令分析出来的结果.
 struct Effect {
     risk: Risk,
     title: String,
     rows: Vec<Row>,
     amount: Option<AmountView>,
     counterparty: Option<(&'static str, String)>,
-    /// 代币收款方的所有者没有确认。
+    /// 代币收款方的所有者没有确认.
     unconfirmed_owner: bool,
 }
 
@@ -368,7 +368,7 @@ impl Effect {
     }
 }
 
-/// 一遍扫完全部指令。ComputeBudget 和本钱包的 AdvanceNonceAccount 不算动作，其余每条都有一个 `Effect`。
+/// 一遍扫完全部指令.ComputeBudget 和本钱包的 AdvanceNonceAccount 不算动作,其余每条都有一个 `Effect`.
 struct Scan<'a> {
     message: &'a Message,
     network: Network,
@@ -376,7 +376,7 @@ struct Scan<'a> {
     native: &'a Asset,
     payer: [u8; 32],
     nonce: [u8; 32],
-    /// 网页端声明的代币收款方所有者。只有推导得出目标账户时才采信。
+    /// 网页端声明的代币收款方所有者.只有推导得出目标账户时才采信.
     hint: Option<[u8; 32]>,
     unit_limit: Option<u32>,
     unit_price: Option<u64>,
@@ -388,7 +388,7 @@ impl Scan<'_> {
         self.message.keys[ix.program as usize]
     }
 
-    /// 查找表里的地址没有结果。
+    /// 查找表里的地址没有结果.
     fn account(&self, ix: &Instruction, position: usize) -> Option<[u8; 32]> {
         ix.accounts
             .get(position)
@@ -438,7 +438,7 @@ impl Scan<'_> {
         }
     }
 
-    /// 不在清单或小数位对不上时显示原始整数，不显示符号。
+    /// 不在清单或小数位对不上时显示原始整数,不显示符号.
     fn token_view(&self, mint: Option<&[u8; 32]>, decimals: Option<u8>, amount: u64) -> AmountView {
         let asset = mint
             .and_then(|mint| self.manifest.lookup(self.network.id(), &base58(mint)))
@@ -472,7 +472,7 @@ impl Scan<'_> {
             } else {
                 "只读"
             });
-            let label = format!("账户 {}（{}）", position + 1, marks.join("、"));
+            let label = format!("账户 {}({})", position + 1, marks.join(","));
             rows.push(Row::mono(&label, self.shown(ix, position)));
         }
         rows.push(Row::text("数据长度", format!("{} 字节", ix.data.len())));
@@ -487,7 +487,7 @@ impl Scan<'_> {
         effect
     }
 
-    /// 只有规范的形式才算普通转账。账户多余或数据有尾部字节时节点照样转账，所以金额和收款方都要显示。
+    /// 只有规范的形式才算普通转账.账户多余或数据有尾部字节时节点照样转账,所以金额和收款方都要显示.
     fn transfer_sol(&self, ix: &Instruction) -> Option<Effect> {
         let lamports = le_u64(ix.data.get(4..)?)?;
         let plain = ix.data.len() == 12 && ix.accounts.len() == 2 && !self.uses_lookup(ix);
@@ -507,7 +507,7 @@ impl Scan<'_> {
         Some(effect)
     }
 
-    /// 系统程序用 bincode 解码，多余的尾部字节会被忽略。权限类指令按前缀判断，不能因为尾部字节降级。
+    /// 系统程序用 bincode 解码,多余的尾部字节会被忽略.权限类指令按前缀判断,不能因为尾部字节降级.
     fn system(&self, ix: &Instruction) -> Effect {
         let Some((tag, rest)) = ix.data.split_first_chunk::<4>() else {
             return Effect::unknown("未知系统指令");
@@ -524,8 +524,8 @@ impl Scan<'_> {
         }
     }
 
-    /// 转入租金、分配空间、初始化三步，地址和 authority 都必须是本钱包的。
-    /// 这个标题是点按确认，所以交易里除了优先费不能有别的指令，否则转账会藏在标题后面。
+    /// 转入租金,分配空间,初始化三步,地址和 authority 都必须是本钱包的.
+    /// 这个标题是点按确认,所以交易里除了优先费不能有别的指令,否则转账会藏在标题后面.
     fn nonce_creation(&mut self, index: usize) -> Option<Effect> {
         let instructions = &self.message.instructions;
         let fund = instructions.get(index)?;
@@ -571,8 +571,8 @@ impl Scan<'_> {
             .filter(|owner| associated_token_address(owner, mint, program).as_ref() == Ok(destination))
     }
 
-    /// 只有规范的形式才可能算普通转账。账户多余、数据有尾部字节或地址来自查找表时节点照样转账，
-    /// 所以金额和目标都要显示，金额用原始整数。
+    /// 只有规范的形式才可能算普通转账.账户多余,数据有尾部字节或地址来自查找表时节点照样转账,
+    /// 所以金额和目标都要显示,金额用原始整数.
     fn transfer_checked(&self, ix: &Instruction, program: &[u8; 32], rest: &[u8]) -> Option<Effect> {
         let amount = le_u64(rest)?;
         let decimals = *rest.get(8)?;
@@ -625,7 +625,7 @@ impl Scan<'_> {
         decimals: Option<u8>,
         amount: u64,
     ) -> Effect {
-        // ApproveChecked 的账户表比 Approve 多一个 mint。
+        // ApproveChecked 的账户表比 Approve 多一个 mint.
         let shift = usize::from(mint.is_some() || decimals.is_some());
         let delegate = self.shown(ix, 1 + shift);
         let mut view = self.token_view(mint.as_ref(), decimals, amount);
@@ -649,7 +649,7 @@ impl Scan<'_> {
     fn set_authority(&self, ix: &Instruction, rest: &[u8]) -> Option<Effect> {
         let (&kind, rest) = rest.split_first()?;
         let new = match rest.split_first()? {
-            (0, _) => "无，权限被永久移除".to_string(),
+            (0, _) => "无,权限被永久移除".to_string(),
             (1, key) => base58(&key_at(key)?),
             _ => return None,
         };
@@ -666,7 +666,7 @@ impl Scan<'_> {
         Some(effect)
     }
 
-    /// 代币程序解码时也忽略尾部字节，规则同 `system`。低风险的类别才要求长度完全一致。
+    /// 代币程序解码时也忽略尾部字节,规则同 `system`.低风险的类别才要求长度完全一致.
     fn token(&self, ix: &Instruction, program: &[u8; 32]) -> Effect {
         let Some((&tag, rest)) = ix.data.split_first() else {
             return Effect::unknown("未知代币指令");
@@ -722,7 +722,7 @@ impl Scan<'_> {
         recognized().unwrap_or_else(|| Effect::unknown("其他关联代币账户指令"))
     }
 
-    /// 节点解码时同样忽略尾部字节，所以手续费按前缀算。形式不规范的指令按无法识别展示。
+    /// 节点解码时同样忽略尾部字节,所以手续费按前缀算.形式不规范的指令按无法识别展示.
     fn compute_budget(&mut self, ix: &Instruction) -> Option<Effect> {
         let plain = ix.accounts.is_empty();
         match ix.data.split_first() {
@@ -754,7 +754,7 @@ impl Scan<'_> {
                         None
                     } else {
                         self.alerts
-                            .push("AdvanceNonceAccount 不在第一条，或 nonce 账户不属于本钱包".to_string());
+                            .push("AdvanceNonceAccount 不在第一条,或 nonce 账户不属于本钱包".to_string());
                         Some(Effect::unknown("AdvanceNonceAccount"))
                     }
                 } else if let Some(effect) = self.nonce_creation(index) {
@@ -790,7 +790,7 @@ impl Scan<'_> {
         LAMPORTS_PER_SIGNATURE * self.message.required_signatures as u64
     }
 
-    /// 微 lamports 单价乘单元数，向上取整到 lamports。结果超过 64 位时取上限，节点也是饱和计算。
+    /// 微 lamports 单价乘单元数,向上取整到 lamports.结果超过 64 位时取上限,节点也是饱和计算.
     fn priority_fee(&self) -> u64 {
         let default_units = self.message.instructions.len() as u64 * DEFAULT_UNITS_PER_INSTRUCTION;
         let units = self.unit_limit.map_or(default_units, u64::from).min(MAX_COMPUTE_UNITS);
@@ -799,7 +799,7 @@ impl Scan<'_> {
     }
 }
 
-/// 消息不是 ABI 编码，方法选择器和疑似地址这些提示不适用。
+/// 消息不是 ABI 编码,方法选择器和疑似地址这些提示不适用.
 fn plain_lines(bytes: &[u8]) -> Vec<RawLine> {
     let mut lines = raw_lines(bytes);
     lines.iter_mut().for_each(|line| line.note = None);
@@ -831,7 +831,7 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
         alerts: Vec::new(),
     };
     let mut effects = scan.run();
-    // 只推进 nonce：之前用这个 nonce 值签名的交易全部作废。这是 Solana 上取消交易的写法。
+    // 只推进 nonce:之前用这个 nonce 值签名的交易全部作废.这是 Solana 上取消交易的写法.
     let cancels = effects.is_empty()
         && message.instructions.first().is_some_and(|ix| {
             scan.program(ix) == SYSTEM_PROGRAM && ix.data.starts_with(&4u32.to_le_bytes()) && scan.own_advance(0, ix)
@@ -840,7 +840,7 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
         let mut effect = Effect::new(Risk::Recognized, ADVANCE_NONCE_TITLE);
         effect.rows = vec![Row::mono("nonce 账户", base58(&scan.nonce))];
         effects.push(effect);
-        // 这一笔会让之前签过的交易失效，不能点一下就过去。
+        // 这一笔会让之前签过的交易失效,不能点一下就过去.
         scan.alerts.push("用当前 nonce 值签过名的交易都会作废".to_string());
     }
 
@@ -849,9 +849,9 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
     let nonce_creation = effects.iter().any(|e| e.title == CREATE_NONCE_TITLE);
     let token_accounts = effects.iter().filter(|e| e.title == CREATE_TOKEN_ACCOUNT_TITLE).count();
 
-    // 页面顶部只显示一个动作，用户看的就是它，所以它必须是唯一风险最高的动作。
-    // 最高的有多个，或者无法识别的指令没有金额和对方时，顶部留空，不能让小额动作盖住真正的动作。
-    // 全部动作都在 `actions` 里。
+    // 页面顶部只显示一个动作,用户看的就是它,所以它必须是唯一风险最高的动作.
+    // 最高的有多个,或者无法识别的指令没有金额和对方时,顶部留空,不能让小额动作盖住真正的动作.
+    // 全部动作都在 `actions` 里.
     let named: Vec<&Effect> = effects.iter().filter(|e| e.counterparty.is_some()).collect();
     let named_count = named.len();
     let top = named.iter().map(|e| e.risk).max();
@@ -892,14 +892,14 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
     }
     if named_count > 1 {
         scan.alerts
-            .push(format!("这笔交易包含 {named_count} 个转账、授权或权限变更，请逐个核对"));
+            .push(format!("这笔交易包含 {named_count} 个转账,授权或权限变更,请逐个核对"));
     }
     if unconfirmed {
         scan.alerts.push("无法确认代币收款方的所有者".to_string());
     }
     if token_accounts > 1 {
         scan.alerts
-            .push(format!("这笔交易创建 {token_accounts} 个代币账户，每个都要付租金"));
+            .push(format!("这笔交易创建 {token_accounts} 个代币账户,每个都要付租金"));
     }
     let (base_fee, priority_fee) = (scan.base_fee(), scan.priority_fee());
     if (base_fee as u128 + priority_fee as u128) > policy::fee_ceiling(network) {
@@ -949,7 +949,7 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
     Ok(review)
 }
 
-/// 构建指令时用的账户。
+/// 构建指令时用的账户.
 struct Meta {
     key: [u8; 32],
     signer: bool,
@@ -986,7 +986,7 @@ struct Call {
     data: Vec<u8>,
 }
 
-/// 账户表依次是可写签名者、只读签名者、可写非签名者、只读非签名者，同组内保持首次出现的顺序。
+/// 账户表依次是可写签名者,只读签名者,可写非签名者,只读非签名者,同组内保持首次出现的顺序.
 fn compile(payer: [u8; 32], blockhash: [u8; 32], calls: &[Call]) -> Message {
     fn merge(metas: &mut Vec<Meta>, meta: &Meta) {
         match metas.iter_mut().find(|m| m.key == meta.key) {
@@ -1076,7 +1076,7 @@ fn create_associated_token_account(payer: [u8; 32], account: [u8; 32], owner: [u
             readonly(SYSTEM_PROGRAM),
             readonly(TOKEN_PROGRAM),
         ],
-        // CreateIdempotent：签名等待期间账户被别人建好时，这笔交易不会失败。
+        // CreateIdempotent:签名等待期间账户被别人建好时,这笔交易不会失败.
         data: vec![1],
     }
 }
@@ -1102,21 +1102,21 @@ fn transfer_checked(
 pub struct TransferParams<'a> {
     pub network: Network,
     pub from: &'a str,
-    /// 收款方的所有者地址，代币转账时用它算出代币账户。
+    /// 收款方的所有者地址,代币转账时用它算出代币账户.
     pub to: &'a str,
-    /// 最小单位。
+    /// 最小单位.
     pub amount: u64,
-    /// 代币的 mint。留空是 SOL 转账。
+    /// 代币的 mint.留空是 SOL 转账.
     pub mint: Option<&'a str>,
     pub decimals: u8,
-    /// nonce 账户里当前的值，放在 blockhash 的位置。
+    /// nonce 账户里当前的值,放在 blockhash 的位置.
     pub nonce_value: [u8; 32],
     pub priority_micro_lamports: u64,
     pub compute_units: u32,
     pub create_recipient_ata: bool,
 }
 
-/// 构建转账，返回 legacy 消息字节。第一条指令是 AdvanceNonceAccount，代币只用 SPL Token 程序。
+/// 构建转账,返回 legacy 消息字节.第一条指令是 AdvanceNonceAccount,代币只用 SPL Token 程序.
 pub fn build_transfer(params: &TransferParams) -> Result<Vec<u8>, Error> {
     if params.network.chain() != Chain::Solana {
         return Err(Error::InvalidParams);
@@ -1152,14 +1152,14 @@ pub fn build_transfer(params: &TransferParams) -> Result<Vec<u8>, Error> {
     Ok(compile(payer, params.nonce_value, &calls).encode())
 }
 
-/// 只推进 nonce，用同一个 nonce 值签过名的交易随之作废。
+/// 只推进 nonce,用同一个 nonce 值签过名的交易随之作废.
 pub fn build_advance_nonce(payer: &str, nonce_value: [u8; 32]) -> Result<Vec<u8>, Error> {
     let payer = parse_solana_address(payer)?;
     let nonce = nonce_account_address(&payer)?;
     Ok(compile(payer, nonce_value, &[advance_nonce(nonce, payer)]).encode())
 }
 
-/// 创建本钱包的 nonce 账户。这一笔只能用 blockhash，有效期约 1 分钟。
+/// 创建本钱包的 nonce 账户.这一笔只能用 blockhash,有效期约 1 分钟.
 pub fn build_create_nonce(payer: &str, recent_blockhash: [u8; 32], lamports: u64) -> Result<Vec<u8>, Error> {
     let payer = parse_solana_address(payer)?;
     let nonce = nonce_account_address(&payer)?;
@@ -1183,14 +1183,14 @@ pub fn build_create_nonce(payer: &str, recent_blockhash: [u8; 32], lamports: u64
     Ok(compile(payer, recent_blockhash, &calls).encode())
 }
 
-/// `signer` 是手续费支付者的公钥，必须和消息里的账户 0 一致。
+/// `signer` 是手续费支付者的公钥,必须和消息里的账户 0 一致.
 pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> Result<Verified, Error> {
     let [signature] = response.signatures.as_slice() else {
         return Err(Error::BadSignature);
     };
     let signature: &[u8; 64] = signature.as_slice().try_into().map_err(|_| Error::BadSignature)?;
     let message = Message::decode(&request.payload).map_err(|_| Error::InvalidParams)?;
-    // 还缺其他人的签名时，这笔交易不能广播。
+    // 还缺其他人的签名时,这笔交易不能广播.
     if message.required_signatures != 1 {
         return Err(Error::InvalidParams);
     }
@@ -1278,7 +1278,7 @@ mod tests {
             assert_eq!(out, bytes);
             assert_eq!(read_len(&mut &*out), Ok(value));
         }
-        // 超过 16 位和 4 字节编码都不合法。
+        // 超过 16 位和 4 字节编码都不合法.
         let too_big: &[u8] = &[0xff, 0xff, 0x04];
         assert_eq!(read_len(&mut &*too_big), Err(Forbid::ParseFailed));
         let too_long: &[u8] = &[0x80, 0x80, 0x80, 0x01];
@@ -1294,7 +1294,7 @@ mod tests {
 
     #[test]
     fn non_canonical_lengths_are_refused() {
-        // 账户数 3 写成两字节的 0x83 0x00。
+        // 账户数 3 写成两字节的 0x83 0x00.
         let mut bytes = message().encode();
         bytes.splice(3..4, [0x83, 0x00]);
         assert_eq!(Message::decode(&bytes), Err(Forbid::ParseFailed));
@@ -1359,7 +1359,7 @@ mod tests {
         let mut m = v0();
         m.instructions[0].accounts = vec![6];
         assert_eq!(Message::decode(&m.encode()), Err(Forbid::ParseFailed));
-        // 程序不能来自查找表。
+        // 程序不能来自查找表.
         let mut m = v0();
         m.instructions[0].program = 3;
         assert_eq!(Message::decode(&m.encode()), Err(Forbid::ParseFailed));
@@ -1401,7 +1401,7 @@ mod tests {
         assert_eq!(writable, [true, true, false, true, false, true, true, false]);
     }
 
-    /// 期望值由 @solana/web3.js 的 `PublicKey.createWithSeed` 算出。
+    /// 期望值由 @solana/web3.js 的 `PublicKey.createWithSeed` 算出.
     #[test]
     fn nonce_address_matches_web3js() {
         let payer = parse_solana_address("HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk").unwrap();

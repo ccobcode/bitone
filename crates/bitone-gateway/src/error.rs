@@ -1,14 +1,14 @@
-//! 错误响应，格式见 docs/09-gateway-api.md。
+//! 错误响应,格式见 docs/09-gateway-api.md.
 //!
-//! 消息默认是固定文本，不回显地址和上游内容。只有节点拒绝交易或调用时才带节点原文，
-//! 这段文本由客户端自己的请求引起，只返回给它，不进日志。
+//! 消息默认是固定文本,不回显地址和上游内容.只有节点拒绝交易或调用时才带节点原文,
+//! 这段文本由客户端自己的请求引起,只返回给它,不进日志.
 
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
 
-/// 节点原文的长度上限，上游内容不可信。
+/// 节点原文的长度上限,上游内容不可信.
 const MAX_NODE_TEXT: usize = 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,7 +17,7 @@ pub enum ApiError {
     InvalidAddress,
     TooManyAddresses,
     InvalidRequest,
-    /// 接口不适用于这条链。
+    /// 接口不适用于这条链.
     WrongChain,
     InvalidHash,
     InvalidRawTx,
@@ -26,7 +26,7 @@ pub enum ApiError {
     BodyTooLarge,
     UpstreamUnavailable,
     RateLimited,
-    /// 节点拒绝了只读调用，比如估算时合约回滚。
+    /// 节点拒绝了只读调用,比如估算时合约回滚.
     CallRejected(String),
     BroadcastRejected(String),
 }
@@ -44,7 +44,7 @@ impl ApiError {
         ApiError::BroadcastRejected(node_text(text))
     }
 
-    /// HTTP 状态码、错误码、JSON-RPC 错误码。
+    /// HTTP 状态码,错误码,JSON-RPC 错误码.
     fn parts(&self) -> (StatusCode, &'static str, i32) {
         match self {
             ApiError::UnknownNetwork => (StatusCode::NOT_FOUND, "unknown_network", -32001),

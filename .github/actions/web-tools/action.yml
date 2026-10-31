@@ -1,5 +1,5 @@
 name: Web tools
-description: Node、pnpm、clang 和 wasm-bindgen。
+description: Node,pnpm,clang 和 wasm-bindgen.
 
 runs:
     using: composite

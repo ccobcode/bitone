@@ -1,4 +1,4 @@
-//! EVM。普通 JSON-RPC 节点。交易历史节点查不到，要配置索引服务。
+//! EVM.普通 JSON-RPC 节点.交易历史节点查不到,要配置索引服务.
 
 mod adapter;
 mod etherscan;
@@ -66,7 +66,7 @@ fn bearer(token: &str) -> Option<HeaderMap> {
 
 impl ChainSpec for Spec {
     fn is_valid_address(&self, _network: Network, address: &str) -> bool {
-        // ponytail: 不校验 EIP-55 大小写，只读查询写错也花不了钱。转账校验在网页端和冷钱包。
+        // ponytail: 不校验 EIP-55 大小写,只读查询写错也花不了钱.转账校验在网页端和冷钱包.
         address
             .strip_prefix("0x")
             .is_some_and(|hex| hex.len() == 40 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
@@ -76,7 +76,7 @@ impl ChainSpec for Spec {
         hash.strip_prefix("0x").is_some_and(is_hex64)
     }
 
-    /// 交易类型字节在 0x01 到 0x7f 之间，旧式交易是 RLP 列表，首字节至少 0xc0。
+    /// 交易类型字节在 0x01 到 0x7f 之间,旧式交易是 RLP 列表,首字节至少 0xc0.
     fn raw_hash(&self, bytes: &[u8]) -> Option<String> {
         match bytes.first()? {
             0x01..=0x7f | 0xc0.. => Some(format!("0x{}", keccak(bytes).to_lower_hex_string())),
@@ -110,7 +110,7 @@ impl ChainSpec for Spec {
         }
         if let Some(token) = &config.indexer_token {
             if config.indexer.is_none() {
-                return Err(format!("{id} 配了 indexer_token，没有 indexer"));
+                return Err(format!("{id} 配了 indexer_token,没有 indexer"));
             }
             if HeaderValue::from_str(token).is_err() {
                 return Err(format!("{id} 的 indexer_token 无效"));
@@ -119,7 +119,7 @@ impl ChainSpec for Spec {
         Ok(())
     }
 
-    /// 没有索引服务时查不到历史。
+    /// 没有索引服务时查不到历史.
     fn has_history(&self, config: &NetworkConfig) -> bool {
         config.indexer.is_some()
     }
@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn evm_hashes_the_whole_encoding() {
-        // EIP-155 文档里的旧式交易示例。
+        // EIP-155 文档里的旧式交易示例.
         let raw = "f86c098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a76400008025a028ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276a067cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83";
         let expected = "0x33469b22e9f636356c4160a87eb19df52b7412e8eac32a4a55ffe88ea8350788";
         assert_eq!(raw_tx(Network::Ethereum, raw).unwrap().hash, expected);

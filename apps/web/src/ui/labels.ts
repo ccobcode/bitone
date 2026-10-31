@@ -68,7 +68,6 @@ export function dayLabel(time: number, now = Date.now()): string {
     return date.getFullYear() === today.getFullYear() ? full.slice(5) : full;
 }
 
-/** 列表里的时分. */
 export function minuteLabel(time: number): string {
     const date = new Date(time);
     return `${pad(date.getHours())}:${pad(date.getMinutes())}`;

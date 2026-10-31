@@ -1,4 +1,4 @@
-//! 集成测试共用的部分：真实监听端口的网关、本地模拟上游、WebSocket 工具。
+//! 集成测试共用的部分:真实监听端口的网关,本地模拟上游,WebSocket 工具.
 #![allow(dead_code)]
 
 use axum::http::StatusCode;
@@ -24,13 +24,13 @@ pub async fn mock(router: Router) -> String {
     url
 }
 
-/// 一个已经关闭的端口，连接会被拒绝。
+/// 一个已经关闭的端口,连接会被拒绝.
 pub async fn dead_url() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     format!("http://{}", listener.local_addr().unwrap())
 }
 
-/// 节点调用过的方法名，按收到的顺序。
+/// 节点调用过的方法名,按收到的顺序.
 #[derive(Clone, Default)]
 pub struct Calls(Arc<Mutex<Vec<String>>>);
 
@@ -56,8 +56,8 @@ pub fn rpc_failure(code: i64, message: &str) -> Value {
     json!({"error": {"code": code, "message": message}})
 }
 
-/// JSON-RPC 模拟节点。`reply` 按方法和参数返回 `ok(...)` 或 `rpc_failure(...)`。
-/// 批量调用的响应故意反序，验证网关按 id 归位。
+/// JSON-RPC 模拟节点.`reply` 按方法和参数返回 `ok(...)` 或 `rpc_failure(...)`.
+/// 批量调用的响应故意反序,验证网关按 id 归位.
 pub async fn rpc_node(reply: impl Fn(&str, &Value) -> Value + Clone + Send + Sync + 'static) -> (String, Calls) {
     let calls = Calls::default();
     let log = calls.clone();
@@ -141,7 +141,7 @@ pub async fn send(ws: &mut Ws, message: Value) {
     ws.send(Message::text(message.to_string())).await.unwrap();
 }
 
-/// 下一条文本消息，跳过心跳。
+/// 下一条文本消息,跳过心跳.
 pub async fn next_json(ws: &mut Ws) -> Value {
     timeout(Duration::from_secs(5), async {
         loop {

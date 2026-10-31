@@ -28,8 +28,6 @@ class WalletFlow(
     private val hardwareKey = platform.hardwareKey
     private val guard = PinGuard(store, platform.clock, hardwareKey::lockChanged)
 
-    // 导航
-
     var stack by mutableStateOf(listOf<Screen>(Screen.Booting))
         private set
 
@@ -48,12 +46,8 @@ class WalletFlow(
 
     private var noticeSerial = 0
 
-    // 自检
-
     var report by mutableStateOf<SelfCheckReport?>(null)
         private set
-
-    // 子流程
 
     val session = Session(platform, work)
     val pin = PinEntry(platform.core)
@@ -148,8 +142,6 @@ class WalletFlow(
             )
         }
 
-    // 启动和自检
-
     /** 启动和每次回到前台都调用,见 docs/04 §2.2. */
     fun onResume() {
         scope.launch {
@@ -232,8 +224,6 @@ class WalletFlow(
         stack = stack + next
     }
 
-    // 返回键
-
     /** 页面上打开的弹层和全屏二维码.返回键先关最后打开的那个,都关了才离开页面. */
     private val layers = mutableListOf<() -> Unit>()
 
@@ -301,8 +291,6 @@ class WalletFlow(
             if (serial == noticeSerial) notice = null
         }
     }
-
-    // 会话
 
     private fun walletLost() {
         scan.dropRequest()

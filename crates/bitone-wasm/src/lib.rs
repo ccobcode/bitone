@@ -1,4 +1,4 @@
-//! 网页端的 WASM 绑定。这里不依赖 `bitone-signer`，构建产物里没有任何签名代码。
+//! 网页端的 WASM 绑定.这里不依赖 `bitone-signer`,构建产物里没有任何签名代码.
 
 use bitone_core::hex::{DisplayHex, FromHex};
 use bitone_core::keys::PublicKeys;
@@ -39,7 +39,7 @@ struct NetworkInfo {
     chain_id: Option<u64>,
 }
 
-/// 网络表内置在网页端，不从网关获取，见 docs/04-security.md 第 5 节。
+/// 网络表内置在网页端,不从网关获取,见 docs/04-security.md 第 5 节.
 #[wasm_bindgen]
 pub fn networks() -> Result<JsValue, JsError> {
     let list: Vec<NetworkInfo> = Network::ALL
@@ -60,7 +60,7 @@ struct Account {
     chain: &'static str,
     kind: &'static str,
     path: String,
-    /// 这个账户用在哪：`mainnet`、`testnet` 或两者都用的 `both`。网页端按它分开主网和测试网。
+    /// 这个账户用在哪:`mainnet`,`testnet` 或两者都用的 `both`.网页端按它分开主网和测试网.
     scope: &'static str,
     #[serde(with = "serde_bytes")]
     key: Vec<u8>,
@@ -101,7 +101,7 @@ fn pairing(export: AccountsExport) -> Pairing {
     }
 }
 
-/// 扫码接收器。每扫到一帧调用一次 `receive`，收齐后读取结果。
+/// 扫码接收器.每扫到一帧调用一次 `receive`,收齐后读取结果.
 #[wasm_bindgen]
 #[derive(Default)]
 pub struct FrameReceiver {
@@ -115,7 +115,7 @@ impl FrameReceiver {
         Self::default()
     }
 
-    /// 返回进度，0 到 1。
+    /// 返回进度,0 到 1.
     pub fn receive(&mut self, part: &str) -> Result<f32, JsError> {
         self.decoder.receive(part).map_err(js_error)?;
         Ok(self.decoder.progress())
@@ -125,12 +125,12 @@ impl FrameReceiver {
         self.decoder.complete()
     }
 
-    /// 收齐后的原始消息。
+    /// 收齐后的原始消息.
     pub fn message(&self) -> Result<Vec<u8>, JsError> {
         self.decoder.message().map_err(js_error)
     }
 
-    /// 解析配对数据。不是观察钱包二维码时报错。
+    /// 解析配对数据.不是观察钱包二维码时报错.
     pub fn accounts(&self) -> Result<JsValue, JsError> {
         if self.decoder.ur_type() != Some(UR_ACCOUNTS) {
             return Err(js_error(bitone_core::Error::UnknownUrType));
@@ -141,13 +141,13 @@ impl FrameReceiver {
     }
 }
 
-/// 从账户扩展公钥派生 Bitcoin 地址。
+/// 从账户扩展公钥派生 Bitcoin 地址.
 #[wasm_bindgen(js_name = bitcoinAddress)]
 pub fn bitcoin_address(xpub: &[u8], kind: &str, change: bool, index: u32, network_id: &str) -> Result<String, JsError> {
     address::bitcoin_address(xpub, self::kind(kind)?, change, index, network(network_id)?).map_err(js_error)
 }
 
-/// EVM、TRON、Solana 账户公钥对应的地址。
+/// EVM,TRON,Solana 账户公钥对应的地址.
 #[wasm_bindgen(js_name = accountAddress)]
 pub fn account_address(chain: &str, key: &[u8]) -> Result<String, JsError> {
     match chain {
@@ -166,7 +166,7 @@ struct Spec {
     path: &'static str,
 }
 
-/// 这个模式下的账户，顺序就是显示顺序。
+/// 这个模式下的账户,顺序就是显示顺序.
 #[wasm_bindgen(js_name = accountSpecs)]
 pub fn specs(testnet: bool) -> Result<JsValue, JsError> {
     let mode = if testnet { Mode::Testnet } else { Mode::Mainnet };
@@ -181,7 +181,7 @@ pub fn specs(testnet: bool) -> Result<JsValue, JsError> {
     to_js(&list)
 }
 
-/// 地址核对二维码。路径与网络冲突时报错。`fingerprint` 是 8 位十六进制。
+/// 地址核对二维码.路径与网络冲突时报错.`fingerprint` 是 8 位十六进制.
 #[wasm_bindgen(js_name = addressFrame)]
 pub fn address_frame(fingerprint: &str, network_id: &str, path: &str, address: &str) -> Result<String, JsError> {
     AddressCheck::new(parse_fingerprint(fingerprint)?, network(network_id)?, path, address)
@@ -189,31 +189,31 @@ pub fn address_frame(fingerprint: &str, network_id: &str, path: &str, address: &
         .map_err(js_error)
 }
 
-/// UR 帧的二维码模块矩阵，由页面自己画出来。
+/// UR 帧的二维码模块矩阵,由页面自己画出来.
 #[wasm_bindgen(js_name = qrMatrix)]
 pub fn qr_matrix(part: &str) -> Result<JsValue, JsError> {
     to_js(&qr::matrix(part).map_err(js_error)?)
 }
 
-/// 普通文本的二维码，比如给付款方扫的收款地址。
+/// 普通文本的二维码,比如给付款方扫的收款地址.
 #[wasm_bindgen(js_name = qrText)]
 pub fn qr_text(text: &str) -> Result<JsValue, JsError> {
     to_js(&qr::text_matrix(text).map_err(js_error)?)
 }
 
-/// 内置清单。网页端和冷钱包用同一份，这里是唯一来源。
+/// 内置清单.网页端和冷钱包用同一份,这里是唯一来源.
 #[wasm_bindgen]
 pub fn assets() -> Result<JsValue, JsError> {
     to_js(&Manifest::builtin().assets)
 }
 
-/// 校验收款地址属于这个网络，返回规范写法。
+/// 校验收款地址属于这个网络,返回规范写法.
 #[wasm_bindgen(js_name = validateAddress)]
 pub fn validate_address(network_id: &str, text: &str) -> Result<String, JsError> {
     address::validate(network(network_id)?, text).map_err(js_error)
 }
 
-/// 分帧发送。`ur_type` 是 `request` 或 `manifest`。
+/// 分帧发送.`ur_type` 是 `request` 或 `manifest`.
 #[wasm_bindgen]
 pub struct FrameSender {
     encoder: FrameEncoder,
@@ -246,7 +246,7 @@ impl FrameSender {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RequestHeader {
-    /// 由页面用 `crypto.getRandomValues` 生成。WASM 里不放随机数。
+    /// 由页面用 `crypto.getRandomValues` 生成.WASM 里不放随机数.
     #[serde(with = "serde_bytes")]
     id: Vec<u8>,
     fingerprint: String,
@@ -428,7 +428,7 @@ struct SolanaAdvanceArgs {
     nonce_value: String,
 }
 
-/// 只推进 nonce，用同一个 nonce 值签过名的交易随之作废。
+/// 只推进 nonce,用同一个 nonce 值签过名的交易随之作废.
 #[wasm_bindgen(js_name = buildSolanaAdvanceNonce)]
 pub fn build_solana_advance_nonce(args: JsValue) -> Result<Vec<u8>, JsError> {
     let args: SolanaAdvanceArgs = parse(args)?;
@@ -436,7 +436,7 @@ pub fn build_solana_advance_nonce(args: JsValue) -> Result<Vec<u8>, JsError> {
     args.header.request(vec![args.path], payload, None)
 }
 
-/// 本钱包的 nonce 账户地址。
+/// 本钱包的 nonce 账户地址.
 #[wasm_bindgen(js_name = solanaNonceAddress)]
 pub fn solana_nonce_address(payer: &str) -> Result<String, JsError> {
     let key = hex32(payer)?;
@@ -467,7 +467,7 @@ impl From<UtxoArgs> for bitcoin::Utxo {
     }
 }
 
-/// 选币。选出后页面要用 `raw-txs` 取回前序交易，再调用 `buildBitcoinTransfer`。
+/// 选币.选出后页面要用 `raw-txs` 取回前序交易,再调用 `buildBitcoinTransfer`.
 #[wasm_bindgen(js_name = selectBitcoinCoins)]
 pub fn select_bitcoin_coins(utxos: JsValue, amount: u64, fee_rate: u64, change_kind: &str) -> Result<JsValue, JsError> {
     let list: Vec<UtxoArgs> = parse(utxos)?;
@@ -482,7 +482,7 @@ struct FeeInfo {
     vsize: u64,
 }
 
-/// PSBT 的手续费和估算的虚拟大小。
+/// PSBT 的手续费和估算的虚拟大小.
 #[wasm_bindgen(js_name = bitcoinFeeInfo)]
 pub fn bitcoin_fee_info(request: &[u8]) -> Result<JsValue, JsError> {
     let request = SignRequest::decode(request).map_err(js_error)?;
@@ -490,7 +490,7 @@ pub fn bitcoin_fee_info(request: &[u8]) -> Result<JsValue, JsError> {
     to_js(&FeeInfo { fee, vsize })
 }
 
-/// RBF 用同一组输入提高手续费。`amount` 为 0 表示取消。
+/// RBF 用同一组输入提高手续费.`amount` 为 0 表示取消.
 #[wasm_bindgen(js_name = bitcoinReplacement)]
 pub fn bitcoin_replacement(
     total: u64,
@@ -503,7 +503,7 @@ pub fn bitcoin_replacement(
     to_js(&bitcoin::replacement(total, amount, old_fee, vsize, fee_rate, kind(change_kind)?).map_err(js_error)?)
 }
 
-/// ERC-20 的 transfer 调用数据，十六进制，用于估算 Gas。
+/// ERC-20 的 transfer 调用数据,十六进制,用于估算 Gas.
 #[wasm_bindgen(js_name = evmTransferData)]
 pub fn evm_transfer_data(to: &str, amount: &str) -> Result<String, JsError> {
     let recipient = address::parse_evm_address(to).map_err(js_error)?;
@@ -512,7 +512,7 @@ pub fn evm_transfer_data(to: &str, amount: &str) -> Result<String, JsError> {
     Ok(format!("0x{}", data.to_lower_hex_string()))
 }
 
-/// 校验清单包，返回版本号。冷钱包导入时还会再校验一次。
+/// 校验清单包,返回版本号.冷钱包导入时还会再校验一次.
 #[wasm_bindgen(js_name = verifyManifestPackage)]
 pub fn verify_manifest_package(package: &[u8], current_version: u32) -> Result<u32, JsError> {
     Ok(Manifest::from_package(package, &VENDOR_KEY, current_version)
@@ -520,7 +520,7 @@ pub fn verify_manifest_package(package: &[u8], current_version: u32) -> Result<u
         .version)
 }
 
-/// 界面上显示的网络名。
+/// 界面上显示的网络名.
 #[wasm_bindgen(js_name = networkLabel)]
 pub fn network_label(id: &str) -> Result<String, JsError> {
     Ok(network(id)?.label().to_string())
@@ -563,7 +563,7 @@ struct BitcoinArgs {
     header: RequestHeader,
     keys: Vec<KeyArgs>,
     inputs: Vec<UtxoArgs>,
-    /// 留空表示取消，全部回到找零。
+    /// 留空表示取消,全部回到找零.
     to: Option<String>,
     #[serde(default)]
     amount: u64,
@@ -589,7 +589,7 @@ pub fn build_bitcoin_transfer(args: JsValue) -> Result<Vec<u8>, JsError> {
     args.header.request(Vec::new(), payload, None)
 }
 
-/// 用和冷钱包相同的代码预览核对结果。这里的结果只用于提示，判断以冷钱包屏幕为准。
+/// 用和冷钱包相同的代码预览核对结果.这里的结果只用于提示,判断以冷钱包屏幕为准.
 #[wasm_bindgen(js_name = previewRequest)]
 pub fn preview_request(request: &[u8], keys: JsValue) -> Result<JsValue, JsError> {
     let request = SignRequest::decode(request).map_err(js_error)?;
@@ -612,7 +612,7 @@ struct Checked {
     hash: String,
 }
 
-/// 广播前核验。用公钥验证签名，并装回构建记录，见 docs/03-system.md 第 8 节。
+/// 广播前核验.用公钥验证签名,并装回构建记录,见 docs/03-system.md 第 8 节.
 #[wasm_bindgen(js_name = verifyResponse)]
 pub fn verify_response(request: &[u8], response: &[u8], signer: &[u8]) -> Result<JsValue, JsError> {
     let request = SignRequest::decode(request).map_err(js_error)?;

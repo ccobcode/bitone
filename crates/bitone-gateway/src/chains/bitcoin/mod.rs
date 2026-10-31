@@ -1,4 +1,4 @@
-//! Bitcoin。上游写成 `tcp://` 或 `ssl://` 是 Electrum 协议，写成 `http(s)://` 是 Esplora 接口。
+//! Bitcoin.上游写成 `tcp://` 或 `ssl://` 是 Electrum 协议,写成 `http(s)://` 是 Esplora 接口.
 
 mod electrum;
 mod esplora;
@@ -29,16 +29,16 @@ pub struct Utxo {
     pub txid: String,
     pub vout: u32,
     pub amount: String,
-    /// 0 表示还在内存池。
+    /// 0 表示还在内存池.
     pub height: u64,
 }
 
-/// 只有 Bitcoin 有的查询，两种上游都要实现。
+/// 只有 Bitcoin 有的查询,两种上游都要实现.
 trait Queries: Send + Sync {
-    /// 这批地址里有过交易的。
+    /// 这批地址里有过交易的.
     fn used<'a>(&'a self, addresses: &'a [String]) -> Query<'a, Vec<String>>;
     fn utxos<'a>(&'a self, addresses: &'a [String]) -> Query<'a, Vec<Utxo>>;
-    /// 上游没有的交易不出现在结果里。
+    /// 上游没有的交易不出现在结果里.
     fn raw_txs<'a>(&'a self, txids: &'a [String]) -> Query<'a, BTreeMap<String, String>>;
 }
 
@@ -82,7 +82,7 @@ fn has_host_and_port(url: &str) -> bool {
 
 impl ChainSpec for Spec {
     fn is_valid_address(&self, network: Network, address: &str) -> bool {
-        // Testnet4、Signet、Testnet3 的地址格式相同，都按测试网校验。
+        // Testnet4,Signet,Testnet3 的地址格式相同,都按测试网校验.
         let expected = match network {
             Network::Bitcoin => bitcoin::Network::Bitcoin,
             _ => bitcoin::Network::Testnet,
@@ -115,7 +115,7 @@ impl ChainSpec for Spec {
         let id = network.id();
         match transport(url) {
             Some(Transport::TlsUnverified) if network.mode() == Mode::Mainnet => {
-                Err(format!("{id} 是主网，上游必须验证证书"))
+                Err(format!("{id} 是主网,上游必须验证证书"))
             }
             Some(_) if !has_host_and_port(url) => Err(format!("{id} 的 Electrum 上游要写主机和端口")),
             Some(_) => Ok(()),
@@ -166,7 +166,7 @@ mod tests {
             "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"
         );
         assert_eq!(raw.hex(), GENESIS);
-        // 尾部多余的字节不是合法交易。
+        // 尾部多余的字节不是合法交易.
         assert!(raw_tx(Network::Bitcoin, &format!("{GENESIS}00")).is_err());
     }
 }

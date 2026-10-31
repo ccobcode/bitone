@@ -1,4 +1,4 @@
-//! Solana 的跟块。
+//! Solana 的跟块.
 
 use super::adapter::Solana;
 use crate::upstream::{Failed, Signal, Socket, next_message, open_socket, send_call};
@@ -10,34 +10,34 @@ use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{Instant, MissedTickBehavior, interval};
 
-/// 两次查代币账户的最短间隔。公共节点按 IP 限流，这个查询不能跟着日志走。
+/// 两次查代币账户的最短间隔.公共节点按 IP 限流,这个查询不能跟着日志走.
 const LOOKUP_PACE: Duration = Duration::from_secs(2);
-/// 还有代币账户没查到时，隔这么久也要对账。查询一直失败不能让地址等下去。
+/// 还有代币账户没查到时,隔这么久也要对账.查询一直失败不能让地址等下去.
 const RECONCILE_PACE: Duration = Duration::from_secs(30);
 
-/// 一个订阅属于谁，退订用哪个方法。
+/// 一个订阅属于谁,退订用哪个方法.
 struct Subscription {
     owner: String,
     unsubscribe: &'static str,
 }
 
-/// 长连接上的订阅。回复和推送都只有编号，要自己对应回地址。
+/// 长连接上的订阅.回复和推送都只有编号,要自己对应回地址.
 #[derive(Default)]
 struct Watching {
     next: u64,
     owners: HashSet<String>,
-    /// 账户到所有者。
+    /// 账户到所有者.
     accounts: HashMap<String, String>,
     requests: HashMap<u64, Subscription>,
     subscriptions: HashMap<u64, Subscription>,
-    /// 要看一遍代币账户的所有者。
+    /// 要看一遍代币账户的所有者.
     stale: HashSet<String>,
-    /// 有新的订阅还没对账。订阅生效之前的变化节点不会推送。
+    /// 有新的订阅还没对账.订阅生效之前的变化节点不会推送.
     unsettled: bool,
 }
 
 impl Watching {
-    /// 新的请求编号。1 留给 `slotSubscribe`。
+    /// 新的请求编号.1 留给 `slotSubscribe`.
     fn id(&mut self) -> u64 {
         self.next += 1;
         self.next + 1
@@ -61,8 +61,8 @@ impl Watching {
         send_call(socket, id, "accountSubscribe", json!([account, options])).await
     }
 
-    /// 订阅一个地址本身的余额和提到它的交易，代币账户之后再查。
-    /// 一个订阅只能写一个地址，公共节点也不开放 `blockSubscribe`，所以逐个订阅。
+    /// 订阅一个地址本身的余额和提到它的交易,代币账户之后再查.
+    /// 一个订阅只能写一个地址,公共节点也不开放 `blockSubscribe`,所以逐个订阅.
     async fn watch_owner(&mut self, socket: &mut Socket, owner: &str) -> Result<(), Failed> {
         self.owners.insert(owner.to_string());
         self.stale.insert(owner.to_string());
@@ -99,7 +99,7 @@ impl Watching {
 
 type Lookup<'a> = BoxFuture<'a, (String, Result<Vec<String>, Failed>)>;
 
-/// 等正在进行的查询。没有查询时一直等，`select!` 走其他分支。
+/// 等正在进行的查询.没有查询时一直等,`select!` 走其他分支.
 async fn finish(lookup: &mut Option<Lookup<'_>>) -> (String, Result<Vec<String>, Failed>) {
     match lookup {
         Some(running) => running.await,
@@ -108,9 +108,9 @@ async fn finish(lookup: &mut Option<Lookup<'_>>) -> (String, Result<Vec<String>,
 }
 
 impl Solana {
-    /// 跟块。`slotSubscribe` 给高度，账户和日志订阅由节点推送变化，不用查询。
-    /// 新的代币账户创建时会提到所有者，所以收到日志时重新看一次它的代币账户。这个查询在后台一次
-    /// 跑一个，既不能挡住读推送，失败了也只影响这个地址，下一拍再试。
+    /// 跟块.`slotSubscribe` 给高度,账户和日志订阅由节点推送变化,不用查询.
+    /// 新的代币账户创建时会提到所有者,所以收到日志时重新看一次它的代币账户.这个查询在后台一次
+    /// 跑一个,既不能挡住读推送,失败了也只影响这个地址,下一拍再试.
     pub(super) async fn follow(
         &self,
         mut addresses: watch::Receiver<Vec<String>>,
@@ -141,7 +141,7 @@ impl Solana {
                     }
                     if let (Some(id), Some(result)) = (id, message.get("result").and_then(Value::as_u64)) {
                         if let Some(subscription) = state.requests.remove(&id) {
-                            // 等回复期间地址可能已经没有人看了。
+                            // 等回复期间地址可能已经没有人看了.
                             if state.owners.contains(&subscription.owner) {
                                 state.subscriptions.insert(result, subscription);
                             } else {

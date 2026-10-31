@@ -1,6 +1,6 @@
-//! EVM 交易：严格解析、分类、构建和核验。
+//! EVM 交易:严格解析,分类,构建和核验.
 //!
-//! 解析后必须能重新编码回完全相同的字节，这样冷钱包展示的内容和实际签名的内容不可能不一致。
+//! 解析后必须能重新编码回完全相同的字节,这样冷钱包展示的内容和实际签名的内容不可能不一致.
 
 use crate::address::{eth_address_bytes, evm_text, parse_evm_address};
 use crate::path::DerivationPath;
@@ -28,9 +28,9 @@ pub struct Authorization {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Fees {
-    /// 类型 0 和 1。
+    /// 类型 0 和 1.
     GasPrice(u128),
-    /// 类型 2 和 4。
+    /// 类型 2 和 4.
     Dynamic { max_priority: u128, max_fee: u128 },
 }
 
@@ -44,10 +44,10 @@ pub struct UnsignedTx {
     pub to: Option<[u8; 20]>,
     pub value: Vec<u8>,
     pub data: Vec<u8>,
-    /// 访问列表的原始编码，含列表头。
+    /// 访问列表的原始编码,含列表头.
     pub access_list: Vec<u8>,
     pub access_list_len: usize,
-    /// 授权列表的原始编码，含列表头。只有类型 4 有。
+    /// 授权列表的原始编码,含列表头.只有类型 4 有.
     pub authorization_list: Vec<u8>,
     pub authorizations: Vec<Authorization>,
 }
@@ -257,7 +257,7 @@ impl UnsignedTx {
         out
     }
 
-    /// 未签名编码，也就是签名哈希的原文。
+    /// 未签名编码,也就是签名哈希的原文.
     pub fn encode(&self) -> Vec<u8> {
         let mut fields = self.fields();
         if self.tx_type == 0 {
@@ -268,7 +268,7 @@ impl UnsignedTx {
         self.wrap(fields)
     }
 
-    /// 装上签名，得到可以广播的原始交易。
+    /// 装上签名,得到可以广播的原始交易.
     pub fn assemble(&self, signature: &[u8; 65]) -> Vec<u8> {
         let mut fields = self.fields();
         let parity = signature[64] as u64;
@@ -283,7 +283,7 @@ impl UnsignedTx {
         self.wrap(fields)
     }
 
-    /// 最高手续费，单位是最小单位。
+    /// 最高手续费,单位是最小单位.
     pub fn fee_cap(&self) -> u128 {
         let price = match self.fees {
             Fees::GasPrice(price) => price,
@@ -402,7 +402,7 @@ fn review_tx(
     builder.counterparty = classified.counterparty.clone();
     builder.alerts.extend(classified.alerts.iter().cloned());
     let mut actions = classified.actions();
-    // 有账户委托时页面顶部是新控制方，所以这笔交易本身的金额和收款方要放进列表，否则用户看不到。
+    // 有账户委托时页面顶部是新控制方,所以这笔交易本身的金额和收款方要放进列表,否则用户看不到.
     if !tx.authorizations.is_empty() {
         actions[0] = classified.detailed();
     }
@@ -453,7 +453,6 @@ fn review_tx(
     Ok(builder.finish(network.id()))
 }
 
-/// 这个请求的签名哈希。
 pub fn signing_hash(request: &SignRequest) -> Result<[u8; 32], Forbid> {
     match request.kind {
         KIND_TRANSACTION => Ok(keccak(&UnsignedTx::decode(&request.payload)?.encode())),
@@ -468,9 +467,9 @@ pub fn signing_hash(request: &SignRequest) -> Result<[u8; 32], Forbid> {
 pub struct TransferParams<'a> {
     pub network: Network,
     pub to: &'a str,
-    /// 最小单位的十进制字符串。
+    /// 最小单位的十进制字符串.
     pub amount: &'a str,
-    /// 代币合约。留空是原生币转账。
+    /// 代币合约.留空是原生币转账.
     pub contract: Option<&'a str>,
     pub nonce: u64,
     pub gas_limit: u64,
@@ -478,7 +477,7 @@ pub struct TransferParams<'a> {
     pub max_priority: u128,
 }
 
-/// 十进制字符串转大端字节，去掉前导 0。
+/// 十进制字符串转大端字节,去掉前导 0.
 pub fn be_from_decimal(text: &str) -> Result<Vec<u8>, Error> {
     if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
         return Err(Error::InvalidParams);
@@ -502,7 +501,7 @@ pub fn be_from_decimal(text: &str) -> Result<Vec<u8>, Error> {
     Ok(bytes)
 }
 
-/// ERC-20 的 transfer 调用数据。估算 Gas 时也要用。
+/// ERC-20 的 transfer 调用数据.估算 Gas 时也要用.
 pub fn transfer_data(recipient: &[u8; 20], amount: &[u8]) -> Vec<u8> {
     let mut data = vec![0xa9, 0x05, 0x9c, 0xbb];
     data.extend_from_slice(&[0; 12]);
@@ -512,7 +511,7 @@ pub fn transfer_data(recipient: &[u8; 20], amount: &[u8]) -> Vec<u8> {
     data
 }
 
-/// 构建 EIP-1559 转账。
+/// 构建 EIP-1559 转账.
 pub fn build_transfer(params: &TransferParams) -> Result<UnsignedTx, Error> {
     let chain_id = params.network.evm_chain_id().ok_or(Error::InvalidParams)?;
     let recipient = parse_evm_address(params.to)?;

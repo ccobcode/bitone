@@ -1,4 +1,4 @@
-//! 冷钱包的 UniFFI 绑定。助记词和种子都留在 Rust 对象里，Kotlin 和 Swift 只持有句柄。
+//! 冷钱包的 UniFFI 绑定.助记词和种子都留在 Rust 对象里,Kotlin 和 Swift 只持有句柄.
 
 use bitone_core::hex::DisplayHex;
 use bitone_core::keys::PublicKeys;
@@ -22,7 +22,7 @@ pub enum WalletError {
     InvalidPin,
     #[error("PIN 错误或数据损坏")]
     WrongPin,
-    // 字段不能叫 message，它和 Kotlin 的 Throwable.message 冲突。
+    // 字段不能叫 message,它和 Kotlin 的 Throwable.message 冲突.
     #[error("{reason}")]
     Other { reason: String },
 }
@@ -49,7 +49,7 @@ impl From<bitone_core::Error> for WalletError {
     }
 }
 
-/// 一道验证题：第 `index` 个词（从 0 起）是 `options` 里的哪一个。
+/// 一道验证题:第 `index` 个词(从 0 起)是 `options` 里的哪一个.
 #[derive(uniffi::Record)]
 pub struct QuizItem {
     pub index: u32,
@@ -91,7 +91,7 @@ pub struct ReviewAmount {
     pub text: String,
     pub symbol: Option<String>,
     pub asset: Option<String>,
-    /// 内置清单里的图标名，不在清单时为空。
+    /// 内置清单里的图标名,不在清单时为空.
     pub icon: Option<String>,
     pub unlimited: bool,
 }
@@ -109,7 +109,7 @@ pub struct ReviewRawLine {
     pub note: Option<String>,
 }
 
-/// 核对页要显示的全部内容。分类都在核心库里完成，界面只负责画出来。
+/// 核对页要显示的全部内容.分类都在核心库里完成,界面只负责画出来.
 #[derive(uniffi::Record)]
 pub struct ReviewResult {
     pub risk: RiskLevel,
@@ -123,9 +123,9 @@ pub struct ReviewResult {
     pub actions: Vec<ReviewAction>,
     pub rows: Vec<ReviewRow>,
     pub raw: Vec<ReviewRawLine>,
-    /// 指纹对不上，要提示检查 BIP39 密码。
+    /// 指纹对不上,要提示检查 BIP39 密码.
     pub fingerprint_mismatch: bool,
-    /// 请求里的主密钥指纹。解析失败时为空。
+    /// 请求里的主密钥指纹.解析失败时为空.
     pub request_fingerprint: Option<String>,
 }
 
@@ -207,7 +207,7 @@ fn kind_name(kind: AccountKind) -> &'static str {
     }
 }
 
-/// A9 的内容。
+/// A9 的内容.
 #[derive(uniffi::Record)]
 pub struct AddressReview {
     pub belongs: bool,
@@ -215,14 +215,14 @@ pub struct AddressReview {
     pub path: String,
     pub address: String,
     pub derived: String,
-    /// 地址类型，比如 Native SegWit。
+    /// 地址类型,比如 Native SegWit.
     pub kind: String,
     pub fingerprint_mismatch: bool,
-    /// 请求里的主密钥指纹。
+    /// 请求里的主密钥指纹.
     pub request_fingerprint: String,
 }
 
-/// A3 的一行账户。
+/// A3 的一行账户.
 #[derive(uniffi::Record)]
 pub struct AccountRow {
     pub kind: String,
@@ -230,16 +230,16 @@ pub struct AccountRow {
     pub address: String,
 }
 
-/// 签名结果。`change_index` 要写回本机，下一笔交易核对时用。
+/// 签名结果.`change_index` 要写回本机,下一笔交易核对时用.
 #[derive(uniffi::Record)]
 pub struct SignOutcome {
     pub frames: std::sync::Arc<FrameStream>,
     pub change_index: Option<u32>,
-    /// `change_index` 属于测试币账户。
+    /// `change_index` 属于测试币账户.
     pub change_is_testnet: bool,
 }
 
-/// 最高找零索引。测试币和主网分开记，平台层只负责保存。
+/// 最高找零索引.测试币和主网分开记,平台层只负责保存.
 #[derive(uniffi::Record, Clone, Copy)]
 pub struct ChangeIndexes {
     pub mainnet: u32,
@@ -255,7 +255,7 @@ impl From<ChangeIndexes> for HighestChange {
     }
 }
 
-/// 没有传清单包时用内置清单。传了就重新验签，本机文件也不信任。
+/// 没有传清单包时用内置清单.传了就重新验签,本机文件也不信任.
 fn load_manifest(package: Option<Vec<u8>>) -> Result<std::borrow::Cow<'static, Manifest>, WalletError> {
     match package {
         None => Ok(std::borrow::Cow::Borrowed(Manifest::builtin())),
@@ -263,7 +263,7 @@ fn load_manifest(package: Option<Vec<u8>>) -> Result<std::borrow::Cow<'static, M
     }
 }
 
-/// 建钱包过程中的助记词。设置 PIN 之后就不再需要这个对象。
+/// 建钱包过程中的助记词.设置 PIN 之后就不再需要这个对象.
 #[derive(uniffi::Object)]
 pub struct WalletDraft {
     entropy: Zeroizing<Vec<u8>>,
@@ -288,7 +288,7 @@ impl WalletDraft {
         })
     }
 
-    /// 只在 A2 显示时调用。字符串经过 JVM 后无法清除，不要长期持有。
+    /// 只在 A2 显示时调用.字符串经过 JVM 后无法清除,不要长期持有.
     pub fn words(&self) -> Result<Vec<String>, WalletError> {
         Ok(mnemonic::words(&self.entropy)?)
     }
@@ -324,13 +324,13 @@ impl WalletDraft {
         Ok(mnemonic::words(&self.entropy)?.get(index as usize) == Some(&word))
     }
 
-    /// `tag` 是硬件对这个 PIN 算出的 HMAC。
+    /// `tag` 是硬件对这个 PIN 算出的 HMAC.
     pub fn seal(&self, pin: String, tag: Vec<u8>) -> Result<Vec<u8>, WalletError> {
         Ok(vault::seal(&self.entropy, &pin, &tag, vault::KdfParams::DEFAULT)?)
     }
 }
 
-/// 解锁后的钱包，随对象销毁清除种子。
+/// 解锁后的钱包,随对象销毁清除种子.
 #[derive(uniffi::Object)]
 pub struct UnlockedWallet {
     wallet: Wallet,
@@ -348,7 +348,7 @@ impl UnlockedWallet {
         })
     }
 
-    /// 解开旧格式，只用于迁移。`sealed` 是去掉硬件那层之后的内容。
+    /// 解开旧格式,只用于迁移.`sealed` 是去掉硬件那层之后的内容.
     #[uniffi::constructor]
     pub fn open_legacy(sealed: Vec<u8>, pin: String, passphrase: String) -> Result<Self, WalletError> {
         let entropy = vault::open_legacy(&sealed, &pin)?;
@@ -367,17 +367,17 @@ impl UnlockedWallet {
         Ok(mnemonic::words(&self.entropy)?)
     }
 
-    /// 修改 PIN 和迁移用。助记词留在 Rust 里，不经过 JVM。
+    /// 修改 PIN 和迁移用.助记词留在 Rust 里,不经过 JVM.
     pub fn seal(&self, pin: String, tag: Vec<u8>) -> Result<Vec<u8>, WalletError> {
         Ok(vault::seal(&self.entropy, &pin, &tag, vault::KdfParams::DEFAULT)?)
     }
 
-    /// 公钥写入本机，之后核对交易不用解锁。BIP39 密码钱包不要落盘，只放内存。
+    /// 公钥写入本机,之后核对交易不用解锁.BIP39 密码钱包不要落盘,只放内存.
     pub fn public_keys(&self, imported: bool) -> Result<Vec<u8>, WalletError> {
         Ok(self.wallet.public_keys(imported)?)
     }
 
-    /// 重新核对后签名。核对不通过时返回错误，不接触私钥。
+    /// 重新核对后签名.核对不通过时返回错误,不接触私钥.
     pub fn sign_request(
         &self,
         message: Vec<u8>,
@@ -408,7 +408,7 @@ impl UnlockedWallet {
     }
 }
 
-/// 循环取帧，交给二维码显示。
+/// 循环取帧,交给二维码显示.
 #[derive(uniffi::Object)]
 pub struct FrameStream {
     encoder: Mutex<FrameEncoder>,
@@ -425,7 +425,6 @@ impl FrameStream {
     }
 }
 
-/// 扫码接收。
 #[derive(uniffi::Object, Default)]
 pub struct FrameReceiver {
     decoder: Mutex<FrameDecoder>,
@@ -452,18 +451,18 @@ impl FrameReceiver {
         self.decoder.lock().expect("锁未中毒").ur_type().map(String::from)
     }
 
-    /// 收齐后取出消息，交给 `review_request` 或 `review_address`。
+    /// 收齐后取出消息,交给 `review_request` 或 `review_address`.
     pub fn message(&self) -> Result<Vec<u8>, WalletError> {
         Ok(self.decoder.lock().expect("锁未中毒").message()?)
     }
 
-    /// 这条消息一共多少帧，收到第一帧之前是 0。
+    /// 这条消息一共多少帧,收到第一帧之前是 0.
     pub fn fragment_count(&self) -> u32 {
         self.decoder.lock().expect("锁未中毒").fragment_count() as u32
     }
 }
 
-/// 解析并分类。这一步不需要 PIN，所有失败都变成「禁止签名」。
+/// 解析并分类.这一步不需要 PIN,所有失败都变成"禁止签名".
 #[uniffi::export]
 pub fn review_request(
     message: Vec<u8>,
@@ -489,7 +488,7 @@ pub fn review_request(
     Ok(review_result(tx::review(&request, &ctx), &manifest, Some(fingerprint)))
 }
 
-/// A3 的账户和地址。不需要 PIN。
+/// A3 的账户和地址.不需要 PIN.
 #[uniffi::export]
 pub fn account_rows(public_keys: Vec<u8>) -> Result<Vec<AccountRow>, WalletError> {
     let keys = PublicKeys::decode(&public_keys)?;
@@ -536,13 +535,12 @@ pub fn review_address(message: Vec<u8>, public_keys: Vec<u8>) -> Result<AddressR
     }
 }
 
-/// 校验清单包，返回版本号。校验通过后由平台层保存原始字节。
+/// 校验清单包,返回版本号.校验通过后由平台层保存原始字节.
 #[uniffi::export]
 pub fn verify_manifest(package: Vec<u8>, current_version: u32) -> Result<u32, WalletError> {
     Ok(Manifest::from_package(&package, &VENDOR_KEY, current_version)?.version)
 }
 
-/// 当前清单的版本号。
 #[uniffi::export]
 pub fn manifest_version(package: Option<Vec<u8>>) -> Result<u32, WalletError> {
     Ok(load_manifest(package)?.version)
@@ -557,7 +555,7 @@ pub fn qr_matrix(part: String) -> Result<QrMatrix, WalletError> {
     })
 }
 
-/// 普通文本的二维码，比如给付款方扫的收款地址。内容不转大写。
+/// 普通文本的二维码,比如给付款方扫的收款地址.内容不转大写.
 #[uniffi::export]
 pub fn qr_text(text: String) -> Result<QrMatrix, WalletError> {
     let matrix = qr::text_matrix(&text)?;
@@ -567,26 +565,26 @@ pub fn qr_text(text: String) -> Result<QrMatrix, WalletError> {
     })
 }
 
-/// 账户的收款地址，从本机保存的公钥算出，不经过网页端。`account_path` 是 `AccountRow.path`。
+/// 账户的收款地址,从本机保存的公钥算出,不经过网页端.`account_path` 是 `AccountRow.path`.
 #[uniffi::export]
 pub fn receive_address(public_keys: Vec<u8>, account_path: String, index: u32) -> Result<String, WalletError> {
     let keys = PublicKeys::decode(&public_keys)?;
     Ok(keys.receive_address(&account_path, index)?)
 }
 
-/// 本机保存的密文是不是当前格式。不是时要先走迁移。
+/// 本机保存的密文是不是当前格式.不是时要先走迁移.
 #[uniffi::export]
 pub fn is_bound_vault(sealed: Vec<u8>) -> bool {
     vault::is_bound(&sealed)
 }
 
-/// 设置 PIN 时拒绝太容易猜的。
+/// 设置 PIN 时拒绝太容易猜的.
 #[uniffi::export]
 pub fn is_weak_pin(pin: String) -> bool {
     vault::is_weak_pin(&pin)
 }
 
-/// 内置清单的一项。
+/// 内置清单的一项.
 #[derive(uniffi::Record)]
 pub struct ManifestEntry {
     pub network: String,
@@ -596,7 +594,7 @@ pub struct ManifestEntry {
     pub icon: String,
 }
 
-/// 内置清单的全部代币，用于 A12 展示。原生币也在里面。
+/// 内置清单的全部代币,用于 A12 展示.原生币也在里面.
 #[uniffi::export]
 pub fn manifest_entries(package: Option<Vec<u8>>) -> Result<Vec<ManifestEntry>, WalletError> {
     let manifest = load_manifest(package)?;

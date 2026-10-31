@@ -39,7 +39,6 @@ internal interface FlowHost {
     /** 公钥不在手边时进 A7 读公钥,读到之后回到发起的页面. */
     fun loadKeys()
 
-    /** 新钱包落盘. */
     fun walletSaved(saved: WalletMeta)
 
     /** 硬件密钥丢失,只能用助记词恢复. */
@@ -51,6 +50,5 @@ internal interface FlowHost {
     /** 钱包已抹除,清掉全部子流程的状态. */
     fun walletErased()
 
-    /** 本机保存的清单换了. */
     suspend fun manifestChanged()
 }

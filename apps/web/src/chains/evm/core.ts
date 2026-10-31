@@ -1,4 +1,3 @@
-// EVM 的核心库绑定.
 import type { RequestHeader } from "../../core";
 import { buildEvmTransfer as wasmBuildEvm, evmTransferData } from "../../core/pkg/bitone_wasm";
 

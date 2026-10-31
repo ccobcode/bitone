@@ -1,4 +1,4 @@
-//! 请求的解析和校验，公共接口和各条链的接口共用。校验都在调用上游之前，错误的请求不产生上游成本。
+//! 请求的解析和校验,公共接口和各条链的接口共用.校验都在调用上游之前,错误的请求不产生上游成本.
 
 use super::{is_valid, is_valid_hash};
 use crate::error::ApiError;
@@ -16,9 +16,7 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-/// 单次请求的地址上限。
 pub const MAX_ADDRESSES: usize = 100;
-/// 单次请求的交易哈希上限。
 pub const MAX_HASHES: usize = 100;
 
 pub type Shared = State<Arc<Networks>>;
@@ -43,7 +41,7 @@ pub fn addresses_from(network: Network, body: Body) -> Result<Vec<String>, ApiEr
     checked(network, request.addresses, MAX_ADDRESSES)
 }
 
-/// 校验数量和格式，再按原顺序去重。
+/// 校验数量和格式,再按原顺序去重.
 pub fn checked(network: Network, addresses: Vec<String>, limit: usize) -> Result<Vec<String>, ApiError> {
     if addresses.len() > limit {
         return Err(ApiError::TooManyAddresses);
@@ -55,7 +53,7 @@ pub fn checked(network: Network, addresses: Vec<String>, limit: usize) -> Result
     Ok(addresses.into_iter().filter(|a| seen.insert(a.clone())).collect())
 }
 
-/// 校验数量和格式，再按原顺序去重。
+/// 校验数量和格式,再按原顺序去重.
 pub fn checked_hashes(network: Network, hashes: Vec<String>, limit: usize) -> Result<Vec<String>, ApiError> {
     if hashes.len() > limit {
         return Err(ApiError::TooManyHashes);
@@ -75,7 +73,7 @@ pub fn checked_address(network: Network, address: String) -> Result<String, ApiE
     }
 }
 
-/// 可选字段空着和不写是一回事。
+/// 可选字段空着和不写是一回事.
 pub fn present(value: Option<String>) -> Option<String> {
     value.filter(|text| !text.is_empty())
 }

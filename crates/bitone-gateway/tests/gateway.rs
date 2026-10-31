@@ -1,4 +1,4 @@
-//! 集成测试。网关真实监听本地端口，上游全部是本地起的 axum 模拟服务，不访问外网。
+//! 集成测试.网关真实监听本地端口,上游全部是本地起的 axum 模拟服务,不访问外网.
 
 mod common;
 
@@ -56,7 +56,7 @@ fn pairs(expected: &[(&str, &str)]) -> Vec<(String, String)> {
 
 // ---- 模拟上游 ----
 
-/// EVM 节点。响应故意反序，验证网关按 id 归位。余额可以在测试中途修改。
+/// EVM 节点.响应故意反序,验证网关按 id 归位.余额可以在测试中途修改.
 #[derive(Clone)]
 struct EvmNode {
     native: Arc<Mutex<String>>,
@@ -77,7 +77,7 @@ impl EvmNode {
         (node, mock(router).await)
     }
 
-    /// 余额只会在新块里变化。
+    /// 余额只会在新块里变化.
     fn set_native(&self, native: &str) {
         *self.native.lock().unwrap() = native.into();
         self.next_block();
@@ -95,7 +95,7 @@ impl EvmNode {
         self.balance_calls.load(Ordering::SeqCst)
     }
 
-    /// 等到网关至少又轮询了一次。
+    /// 等到网关至少又轮询了一次.
     async fn wait_for_poll(&self) {
         let start = self.hits();
         timeout(Duration::from_secs(5), async {
@@ -188,7 +188,7 @@ async fn bitcoin_is_funded_minus_spent_on_chain() {
         }),
     );
     let url = mock(esplora).await;
-    // 上游地址带路径和结尾斜杠。
+    // 上游地址带路径和结尾斜杠.
     let gateway = Gateway::start(&format!("[networks.bitcoin]\nupstreams = ['{url}/api/']")).await;
     let (status, body) = gateway.balances("bitcoin", &[BTC]).await;
     assert_eq!(status, StatusCode::OK);
@@ -237,7 +237,7 @@ async fn evm_splits_large_queries_into_batches() {
     assert_eq!(status, StatusCode::OK);
     let balances = body["balances"].as_array().unwrap();
     assert_eq!(balances.len(), 200);
-    // 分批之后地址和资产的对应关系不能乱。
+    // 分批之后地址和资产的对应关系不能乱.
     for (i, pair) in balances.chunks(2).enumerate() {
         assert_eq!(pair[0]["address"], addresses[i].as_str());
         assert_eq!(pair[0]["amount"], "1");
@@ -349,9 +349,9 @@ async fn fails_over_past_every_kind_of_bad_upstream() {
         Router::new().route("/", post(|| async { StatusCode::INTERNAL_SERVER_ERROR })),
         Router::new().route("/", post(|| async { StatusCode::TOO_MANY_REQUESTS })),
         Router::new().route("/", post(|| async { "不是 JSON" })),
-        // 被限流时回一个错误对象，不是数组。
+        // 被限流时回一个错误对象,不是数组.
         Router::new().route("/", post(|| async { Json(json!({"error": {"code": -32005}})) })),
-        // 缺一项。
+        // 缺一项.
         Router::new().route(
             "/",
             post({
@@ -359,17 +359,17 @@ async fn fails_over_past_every_kind_of_bad_upstream() {
                 move || async move { Json(r) }
             }),
         ),
-        // 单项出错。
+        // 单项出错.
         Router::new().route(
             "/",
             post(|| async { Json(json!([{"id": 0, "error": {"code": -32000}}, {"id": 1, "result": "0x1"}])) }),
         ),
-        // 合约不存在，不能当成 0。
+        // 合约不存在,不能当成 0.
         Router::new().route(
             "/",
             post(|| async { Json(json!([{"id": 0, "result": "0x1"}, {"id": 1, "result": "0x"}])) }),
         ),
-        // id 越界。
+        // id 越界.
         Router::new().route(
             "/",
             post(|| async { Json(json!([{"id": 0, "result": "0x1"}, {"id": 9, "result": "0x1"}])) }),
@@ -388,7 +388,7 @@ async fn fails_over_past_every_kind_of_bad_upstream() {
 
 #[tokio::test]
 async fn redirects_are_not_followed() {
-    // 跟随重定向会把查询的地址带到配置之外的服务器。
+    // 跟随重定向会把查询的地址带到配置之外的服务器.
     let (trap, trap_url) = EvmNode::start("0x9").await;
     let (_, good) = EvmNode::start("0x5").await;
     let redirect = Router::new().route(
@@ -451,7 +451,7 @@ async fn all_upstreams_down_is_503() {
     let (status, body) = gateway.balances("ethereum", &[EVM]).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(error_code(&body), "upstream_unavailable");
-    // 错误信息不能带上游地址。
+    // 错误信息不能带上游地址.
     assert_eq!(body["error"]["message"], "上游不可用");
 }
 
@@ -488,7 +488,7 @@ async fn invalid_addresses_are_rejected_before_any_upstream_call() {
             json!({"error": {"code": "invalid_address", "message": "地址格式错误"}})
         );
     }
-    // 一批里有一个错的，整批拒绝。
+    // 一批里有一个错的,整批拒绝.
     assert_eq!(
         gateway.balances("ethereum", &[EVM, "0x1234"]).await.0,
         StatusCode::BAD_REQUEST
@@ -544,7 +544,7 @@ async fn rate_limit_returns_the_error_format() {
     let (status, body) = gateway.balances("ethereum", &[EVM]).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(error_code(&body), "rate_limited");
-    // 配额用完后握手也被拒绝。
+    // 配额用完后握手也被拒绝.
     assert!(connect_async(gateway.ws.as_str()).await.is_err());
 }
 
@@ -572,7 +572,7 @@ async fn ws_pushes_only_when_balance_changes() {
     let mut ws = gateway.ws().await;
     let id = subscribe(&mut ws, &[EVM]).await;
 
-    // 余额没变时多轮询几次，不应该有推送。
+    // 余额没变时多轮询几次,不应该有推送.
     for _ in 0..3 {
         node.wait_for_poll().await;
     }
@@ -583,13 +583,13 @@ async fn ws_pushes_only_when_balance_changes() {
     let (_, http) = gateway.balances("ethereum", &[EVM]).await;
     assert_eq!(update["jsonrpc"], "2.0");
     assert_eq!(update["method"], "update");
-    assert!(update.get("id").is_none(), "推送是通知，不能带 id");
+    assert!(update.get("id").is_none(), "推送是通知,不能带 id");
     assert_eq!(update["params"]["subscription"], id.as_str());
     assert_eq!(update["params"]["height"], 2);
     assert_eq!(update["params"]["txs"], json!([]));
     assert_eq!(update["params"]["balances"], http["balances"], "格式要与 HTTP 接口相同");
 
-    // 同一个变化只推一次，再变再推。
+    // 同一个变化只推一次,再变再推.
     assert!(timeout(Duration::from_millis(50), next_json(&mut ws)).await.is_err());
     node.set_native("0x3");
     let update = next_json(&mut ws).await;
@@ -600,7 +600,7 @@ async fn ws_pushes_only_when_balance_changes() {
     );
 }
 
-/// 没有变化的新块也要通知高度，客户端靠它推进游标，靠 `previous` 发现漏了推送。
+/// 没有变化的新块也要通知高度,客户端靠它推进游标,靠 `previous` 发现漏了推送.
 #[tokio::test]
 async fn ws_reports_every_new_height() {
     let (node, url) = EvmNode::start("0x1").await;
@@ -618,7 +618,7 @@ async fn ws_reports_every_new_height() {
     assert_eq!(second["params"]["height"], 3);
 }
 
-/// 同一个地址有多少订阅，一轮都只查一次。
+/// 同一个地址有多少订阅,一轮都只查一次.
 #[tokio::test]
 async fn ws_subscribers_share_one_round() {
     let (node, url) = EvmNode::start("0x1").await;
@@ -635,7 +635,7 @@ async fn ws_subscribers_share_one_round() {
     assert_eq!(node.balance_calls() - before, 1);
 }
 
-/// 有订阅才跟块，闲时不访问上游。
+/// 有订阅才跟块,闲时不访问上游.
 #[tokio::test]
 async fn ws_follows_only_while_someone_is_subscribed() {
     let (node, url) = EvmNode::start("0x1").await;
@@ -653,7 +653,7 @@ async fn ws_follows_only_while_someone_is_subscribed() {
     assert_eq!(node.hits(), after, "最后一个订阅离开后跟块停止");
 }
 
-/// 公共 Esplora 按 IP 限流，80 个地址每轮都查撑不住。余额只算已确认，所以高度没变就不查地址。
+/// 公共 Esplora 按 IP 限流,80 个地址每轮都查撑不住.余额只算已确认,所以高度没变就不查地址.
 #[tokio::test]
 async fn ws_bitcoin_requeries_addresses_only_when_the_tip_moves() {
     let (hits, height, funded) = (
@@ -717,7 +717,7 @@ async fn ws_baseline_is_taken_before_the_subscribe_reply() {
     let gateway = Gateway::start(&evm_config(&[&url], FAST_POLL)).await;
     let mut ws = gateway.ws().await;
     subscribe(&mut ws, &[EVM]).await;
-    // 收到回复后马上发生的变化一定要推送。
+    // 收到回复后马上发生的变化一定要推送.
     node.set_native("0x2");
     assert_eq!(next_json(&mut ws).await["params"]["balances"][0]["amount"], "2");
 }
@@ -729,7 +729,7 @@ async fn ws_pushes_after_upstream_recovers_from_failed_baseline() {
     let mut ws = gateway.ws().await;
     let id = subscribe(&mut ws, &[EVM]).await;
 
-    // 上游恢复：同一个端口开始监听。
+    // 上游恢复:同一个端口开始监听.
     let (node, _) = EvmNode::start("0x7").await;
     node.next_block();
     let router = Router::new().route("/", post(evm_rpc)).with_state(node);
@@ -773,7 +773,7 @@ async fn ws_reports_errors() {
     assert_eq!(reply["error"]["code"], -32700);
     assert_eq!(reply["id"], Value::Null);
 
-    // 通知不回复：下一条收到的是后面这个请求的回复。
+    // 通知不回复:下一条收到的是后面这个请求的回复.
     send(&mut ws, json!({"jsonrpc": "2.0", "method": "nope"})).await;
     assert_eq!(
         call(&mut ws, json!({"jsonrpc": "2.0", "id": 2, "method": "nope"})).await["id"],
@@ -801,7 +801,7 @@ async fn ws_address_cap_is_per_connection() {
     let addresses: Vec<String> = (0..100).map(|i| format!("0x{i:040x}")).collect();
     let mut ws = gateway.ws().await;
 
-    // 上限按连接累计，不是按单次订阅。
+    // 上限按连接累计,不是按单次订阅.
     let mut first = Value::Null;
     for id in 1..=50 {
         let reply = call(&mut ws, subscribe_message(id, &addresses)).await;
@@ -811,12 +811,12 @@ async fn ws_address_cap_is_per_connection() {
     let reply = call(&mut ws, subscribe_message(51, &addresses[..1])).await;
     assert_eq!(reply["error"]["data"]["code"], "too_many_addresses");
 
-    // 退订后释放额度。
+    // 退订后释放额度.
     let unsubscribe = json!({"jsonrpc": "2.0", "id": 52, "method": "unsubscribe", "params": [first]});
     assert_eq!(call(&mut ws, unsubscribe).await["result"], true);
     assert!(call(&mut ws, subscribe_message(53, &addresses)).await["result"].is_string());
 
-    // 另一个连接的额度是独立的。
+    // 另一个连接的额度是独立的.
     let mut other = gateway.ws().await;
     assert!(call(&mut other, subscribe_message(1, &addresses)).await["result"].is_string());
 }
@@ -861,47 +861,42 @@ async fn ws_unsubscribe_stops_polling() {
 }
 
 async fn assert_polling_stops(node: &EvmNode) {
-    // 留出在途请求结束的时间。
+    // 留出在途请求结束的时间.
     sleep(Duration::from_millis(100)).await;
     let hits = node.hits();
     sleep(Duration::from_millis(100)).await;
     assert_eq!(node.hits(), hits, "订阅还在轮询上游");
 }
 
-#[tokio::test]
-async fn ws_disconnect_clears_subscriptions() {
+/// 一个已经订阅的客户端,节点开始被轮询.网关要活到测试结束,所以一起返回.
+async fn polled_client(config: &str) -> (EvmNode, Gateway, Ws) {
     let (node, url) = EvmNode::start("0x1").await;
-    let gateway = Gateway::start(&evm_config(&[&url], FAST_POLL)).await;
+    let gateway = Gateway::start(&evm_config(&[&url], config)).await;
     let mut ws = gateway.ws().await;
     subscribe(&mut ws, &[EVM]).await;
     node.wait_for_poll().await;
+    (node, gateway, ws)
+}
+
+#[tokio::test]
+async fn ws_disconnect_clears_subscriptions() {
+    let (node, _gateway, ws) = polled_client(FAST_POLL).await;
     drop(ws);
     assert_polling_stops(&node).await;
 }
 
 #[tokio::test]
 async fn ws_close_frame_clears_subscriptions() {
-    let (node, url) = EvmNode::start("0x1").await;
-    let gateway = Gateway::start(&evm_config(&[&url], FAST_POLL)).await;
-    let mut ws = gateway.ws().await;
-    subscribe(&mut ws, &[EVM]).await;
-    node.wait_for_poll().await;
+    let (node, _gateway, mut ws) = polled_client(FAST_POLL).await;
     ws.close(None).await.unwrap();
     assert_polling_stops(&node).await;
 }
 
 #[tokio::test]
 async fn ws_silent_client_is_dropped_by_heartbeat() {
-    let (node, url) = EvmNode::start("0x1").await;
-    let gateway = Gateway::start(&evm_config(
-        &[&url],
-        "ws_poll_interval_ms = 10\nfollow_poll_interval_ms = 10\nws_heartbeat_ms = 20",
-    ))
-    .await;
-    // 连接保持着，但不再读取，也就不会回 pong。
-    let mut ws = gateway.ws().await;
-    subscribe(&mut ws, &[EVM]).await;
-    node.wait_for_poll().await;
+    // 连接保持着,但不再读取,也就不会回 pong.
+    let config = "ws_poll_interval_ms = 10\nfollow_poll_interval_ms = 10\nws_heartbeat_ms = 20";
+    let (node, _gateway, ws) = polled_client(config).await;
     assert_polling_stops(&node).await;
     drop(ws);
 }
@@ -991,7 +986,7 @@ async fn every_response_has_security_headers() {
     ] {
         assert_security_headers(&gateway.get(path).await);
     }
-    // 错误响应和方法不允许也要带。
+    // 错误响应和方法不允许也要带.
     let post = reqwest::Client::new()
         .post(format!("{}/v1/version", gateway.base))
         .send()
@@ -1028,7 +1023,7 @@ async fn websocket_handshake_has_security_headers() {
 #[tokio::test]
 async fn spa_routes_fall_back_to_index() {
     let gateway = hosted("spa", "").await;
-    // /assets/usdt 是资产详情，和静态资源目录同名，刷新时也要回到页面。
+    // /assets/usdt 是资产详情,和静态资源目录同名,刷新时也要回到页面.
     for path in [
         "/",
         "/index.html",

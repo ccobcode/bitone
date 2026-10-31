@@ -1,8 +1,8 @@
-//! 跟块。每个网络一个任务，所有订阅共用，第一个订阅到来时启动，最后一个离开时停止。设计见 docs/03-system.md §4.1.1。
+//! 跟块.每个网络一个任务,所有订阅共用,第一个订阅到来时启动,最后一个离开时停止.设计见 docs/03-system.md §4.1.1.
 //!
-//! 这里只处理 `watch` 发来的信号：只有高度时不访问上游，地址有动静才查这些地址的余额和交易。
-//! 上游没有长连接时退回轮询：每个新高度查一次全部地址，靠余额变化发现交易。
-//! 每条推送带上一轮的高度，客户端发现接不上就重新取快照。
+//! 这里只处理 `watch` 发来的信号:只有高度时不访问上游,地址有动静才查这些地址的余额和交易.
+//! 上游没有长连接时退回轮询:每个新高度查一次全部地址,靠余额变化发现交易.
+//! 每条推送带上一轮的高度,客户端发现接不上就重新取快照.
 
 use crate::upstream::{Balance, HistoryItem, Networks, Pool, Signal};
 use bitone_core::Network;
@@ -15,15 +15,15 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, timeout};
 
-/// 每批查询的地址数，与 HTTP 接口的单次上限一致。
+/// 每批查询的地址数,与 HTTP 接口的单次上限一致.
 const CHUNK: usize = 100;
 const SIGNAL_QUEUE: usize = 64;
 
-/// 只有高度变化时两轮之间的最短间隔。BSC 和 Solana 不到一秒一个块，没有必要每块都通知。
-/// 地址有动静时不等它。
+/// 只有高度变化时两轮之间的最短间隔.BSC 和 Solana 不到一秒一个块,没有必要每块都通知.
+/// 地址有动静时不等它.
 const ROUND_INTERVAL: Duration = Duration::from_secs(3);
 
-/// 丢弃时中止任务。
+/// 丢弃时中止任务.
 pub struct AbortOnDrop(pub JoinHandle<()>);
 
 impl Drop for AbortOnDrop {
@@ -32,8 +32,8 @@ impl Drop for AbortOnDrop {
     }
 }
 
-/// 分批查询当前余额，按地址分组。第一次失败就结束本轮，上游故障时不逐批等超时。
-/// 没查到的地址不出现在结果里。
+/// 分批查询当前余额,按地址分组.第一次失败就结束本轮,上游故障时不逐批等超时.
+/// 没查到的地址不出现在结果里.
 pub async fn current_balances(pool: &Pool, addresses: &[String]) -> HashMap<String, Vec<Balance>> {
     let mut grouped: HashMap<String, Vec<Balance>> = HashMap::new();
     for chunk in addresses.chunks(CHUNK) {
@@ -50,12 +50,12 @@ pub async fn current_balances(pool: &Pool, addresses: &[String]) -> HashMap<Stri
 struct Progress {
     height: Option<u64>,
     balances: HashMap<String, Vec<Balance>>,
-    /// 上一条推送没发出去。下一条的 `txs` 是空，客户端补取这批地址。
+    /// 上一条推送没发出去.下一条的 `txs` 是空,客户端补取这批地址.
     lost: bool,
 }
 
-/// 一个订阅。基线要在回复订阅 ID 之前取好，客户端随后取的快照才不会漏掉变化。
-/// 高度要在基线之前取，两者之间出块时下一轮一定会重查。
+/// 一个订阅.基线要在回复订阅 ID 之前取好,客户端随后取的快照才不会漏掉变化.
+/// 高度要在基线之前取,两者之间出块时下一轮一定会重查.
 pub struct Watcher {
     subscription: String,
     addresses: Vec<String>,
@@ -94,8 +94,8 @@ impl Watcher {
         json!({"jsonrpc": "2.0", "method": "update", "params": params}).to_string()
     }
 
-    /// 给这个订阅发一轮结果。长连接下只有被触发的地址才会再查，发不出去的变化不会自己回来，
-    /// 所以记下来，下一条的 `txs` 是空，客户端自己补取。交易没取到时也一样，余额照常推送。
+    /// 给这个订阅发一轮结果.长连接下只有被触发的地址才会再查,发不出去的变化不会自己回来,
+    /// 所以记下来,下一条的 `txs` 是空,客户端自己补取.交易没取到时也一样,余额照常推送.
     async fn notify(
         &self,
         pool: &Pool,
@@ -134,7 +134,7 @@ impl Watcher {
             .flatten()
             .cloned()
             .collect();
-        // 客户端读不过来时不能卡住其他订阅。
+        // 客户端读不过来时不能卡住其他订阅.
         let update = self.update(height, previous, &balances, txs.as_deref());
         let sent = self.out.try_send(update).is_ok();
         let mut progress = self.progress.lock().expect("跟块状态被污染");
@@ -159,14 +159,14 @@ struct Shared {
 
 pub struct Follower {
     network: Network,
-    /// 查不到推送时轮询高度的间隔。
+    /// 查不到推送时轮询高度的间隔.
     poll_interval: Duration,
     shared: Mutex<Shared>,
-    /// 全部被订阅的地址，长连接据此增加上游订阅。
+    /// 全部被订阅的地址,长连接据此增加上游订阅.
     watched: watch::Sender<Vec<String>>,
 }
 
-/// 一个订阅的成员资格，丢弃时退出，最后一个退出时跟块停止。
+/// 一个订阅的成员资格,丢弃时退出,最后一个退出时跟块停止.
 pub struct Member {
     follower: Arc<Follower>,
     key: u64,
@@ -217,7 +217,7 @@ impl Follower {
         }
     }
 
-    /// 有订阅还没看过这个高度。
+    /// 有订阅还没看过这个高度.
     fn behind(&self, head: u64) -> bool {
         let shared = self.lock();
         shared.watchers.values().any(|watcher| {
@@ -226,7 +226,7 @@ impl Follower {
         })
     }
 
-    /// 查一轮并通知全部订阅。`query` 里的地址都查到才推进，否则返回假，这些地址下一轮重查。
+    /// 查一轮并通知全部订阅.`query` 里的地址都查到才推进,否则返回假,这些地址下一轮重查.
     async fn round(&self, pool: &Pool, height: u64, query: &[String], touched: &HashSet<String>) -> bool {
         let watchers: Vec<Arc<Watcher>> = self.lock().watchers.values().cloned().collect();
         let current = current_balances(pool, query).await;
@@ -241,7 +241,7 @@ impl Follower {
     }
 }
 
-/// 一轮要处理的信号，处理之前到达的会合并。
+/// 一轮要处理的信号,处理之前到达的会合并.
 #[derive(Default)]
 struct Pending {
     head: Option<u64>,
@@ -268,7 +268,7 @@ impl Pending {
         }
     }
 
-    /// 这一轮要查余额的地址。长连接正常时只查有动静的，查不到推送时查全部。
+    /// 这一轮要查余额的地址.长连接正常时只查有动静的,查不到推送时查全部.
     fn query(&self, watched: &[String]) -> Vec<String> {
         let all = !self.live || self.reconcile;
         let wanted = |address: &&String| all || self.touched.contains(*address);
@@ -292,14 +292,14 @@ async fn follow(networks: Arc<Networks>, follower: Arc<Follower>) {
     };
     let pause = ROUND_INTERVAL.min(poll_interval);
     let mut next = Instant::now();
-    // 查询失败后隔一段再试，节点不稳时不能每个块都查一遍。
+    // 查询失败后隔一段再试,节点不稳时不能每个块都查一遍.
     let mut retry = Instant::now();
     let mut pending = Pending::default();
     loop {
         match timeout(poll_interval, incoming.recv()).await {
             Ok(Some(signal)) => pending.take(signal),
             Ok(None) => return,
-            // 长连接还在时安静就是没有动静，不用查。
+            // 长连接还在时安静就是没有动静,不用查.
             Err(_) if pending.live => {}
             Err(_) => pending.head = pool.head().await.ok().or(pending.head),
         }
@@ -358,7 +358,7 @@ mod tests {
         }
     }
 
-    /// 队列满时推送发不出去。长连接下这些地址不会再被查询，只能让客户端自己补。
+    /// 队列满时推送发不出去.长连接下这些地址不会再被查询,只能让客户端自己补.
     #[tokio::test]
     async fn an_update_the_queue_refused_makes_the_next_one_ask_for_a_refill() {
         let pool = Pool::new(vec![Box::new(Quiet)], true, Duration::from_secs(1));

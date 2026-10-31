@@ -1,4 +1,4 @@
-//! EVM 的上游适配器。
+//! EVM 的上游适配器.
 
 use crate::upstream::{
     Balance, Broadcast, Cursor, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, RawTx, Signal, Tx, TxStatus,
@@ -10,25 +10,25 @@ use std::collections::BTreeMap;
 use std::iter::once;
 use tokio::sync::{mpsc, watch};
 
-/// ERC-20 的 balanceOf(address)。
+/// ERC-20 的 balanceOf(address).
 const BALANCE_OF: &str = "70a08231";
-/// 单个 JSON-RPC 批次的调用数。服务商对批次大小都有上限。
+/// 单个 JSON-RPC 批次的调用数.服务商对批次大小都有上限.
 pub(super) const BATCH_SIZE: usize = 100;
-/// 查询一笔交易要两个调用。
+/// 查询一笔交易要两个调用.
 const TX_BATCH: usize = BATCH_SIZE / 2;
-/// 手续费按最近这么多个区块统计。
+/// 手续费按最近这么多个区块统计.
 const FEE_BLOCKS: &str = "0x14";
-/// 慢、中、快三档的优先费分位。
+/// 慢,中,快三档的优先费分位.
 const FEE_PERCENTILES: [u64; 3] = [25, 50, 75];
-/// 三档最高单价相对基础费的倍数，分子分母。基础费每个区块最多涨 12.5%，给足余量。
+/// 三档最高单价相对基础费的倍数,分子分母.基础费每个区块最多涨 12.5%,给足余量.
 const BASE_FEE_MARGIN: [(u128, u128); 3] = [(5, 4), (3, 2), (2, 1)];
-/// 节点报出这些内容时，交易已经在内存池里。各家客户端的写法不同，有的是错误名，
-/// 所以先去掉空格和下划线再比较。
+/// 节点报出这些内容时,交易已经在内存池里.各家客户端的写法不同,有的是错误名,
+/// 所以先去掉空格和下划线再比较.
 const ALREADY_KNOWN: [&str; 3] = ["alreadyknown", "knowntransaction", "alreadyimported"];
-/// ERC-20 的 Transfer 事件。
+/// ERC-20 的 Transfer 事件.
 pub(super) const TRANSFER: &str = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
-/// 查交易历史的服务。节点查不到地址的历史。
+/// 查交易历史的服务.节点查不到地址的历史.
 pub enum Indexer {
     Etherscan(Http),
     HyperSync(Http),
@@ -49,16 +49,16 @@ pub(super) fn evm_call(address: &str, asset: &str) -> (&'static str, Value) {
     ("eth_call", json!([{"to": asset, "data": data}, "latest"]))
 }
 
-/// 链上的三个位置。
+/// 链上的三个位置.
 pub(super) struct Tips {
     pub(super) latest: u64,
-    /// 有些节点不支持 `safe`，比如 Polygon。它只是中间阶段，缺了不影响完成标准。
+    /// 有些节点不支持 `safe`,比如 Polygon.它只是中间阶段,缺了不影响完成标准.
     pub(super) safe: Option<u64>,
     pub(super) finalized: u64,
 }
 
 impl Tips {
-    /// 先看 `finalized`：BSC 的 `safe` 可能比 `finalized` 还低。
+    /// 先看 `finalized`:BSC 的 `safe` 可能比 `finalized` 还低.
     fn stage(&self, block: u64) -> &'static str {
         if block <= self.finalized {
             "finalized"
@@ -70,7 +70,7 @@ impl Tips {
     }
 }
 
-/// 回执映射成交易状态。回执里的 status 决定成败，和区块是否最终确定无关。
+/// 回执映射成交易状态.回执里的 status 决定成败,和区块是否最终确定无关.
 fn parse_tx(hash: &str, receipt: &Value, tx: &Value, tips: &Tips) -> Result<Tx, Failed> {
     if receipt.is_null() {
         return Ok(if tx.is_null() {
@@ -79,7 +79,7 @@ fn parse_tx(hash: &str, receipt: &Value, tx: &Value, tips: &Tips) -> Result<Tx, 
             Tx::pending(hash)
         });
     }
-    // 有的节点对待打包的交易也返回回执，这时区块号是空的。
+    // 有的节点对待打包的交易也返回回执,这时区块号是空的.
     let block = match receipt.get("blockNumber") {
         Some(Value::Null) | None => return Ok(Tx::pending(hash)),
         Some(block) => hex_u64(block)?,
@@ -112,7 +112,7 @@ fn parse_tx(hash: &str, receipt: &Value, tx: &Value, tips: &Tips) -> Result<Tx, 
     })
 }
 
-/// 非零优先费的中位数。空块的优先费是 0，算进去会把估算压低。
+/// 非零优先费的中位数.空块的优先费是 0,算进去会把估算压低.
 fn median_reward(rewards: &[Value], percentile: usize) -> Result<Option<u128>, Failed> {
     let mut values = Vec::new();
     for block in rewards {
@@ -126,7 +126,7 @@ fn median_reward(rewards: &[Value], percentile: usize) -> Result<Option<u128>, F
 }
 
 fn fee_tiers(history: &Value, suggested: &Value) -> Result<Value, Failed> {
-    // 最后一项是下一个区块的基础费。
+    // 最后一项是下一个区块的基础费.
     let base = hex_u128(
         history
             .get("baseFeePerGas")
@@ -141,7 +141,7 @@ fn fee_tiers(history: &Value, suggested: &Value) -> Result<Value, Failed> {
     for (index, (numerator, denominator)) in BASE_FEE_MARGIN.into_iter().enumerate() {
         let priority = match median_reward(rewards, index)? {
             Some(priority) => priority,
-            // 最近的区块都是空的，节点的建议值就是下限，低于它可能不被打包。
+            // 最近的区块都是空的,节点的建议值就是下限,低于它可能不被打包.
             None => hex_u128(suggested)?,
         }
         .max(floor);
@@ -159,7 +159,7 @@ fn is_already_known(message: &str) -> bool {
 }
 
 impl Evm {
-    /// 发一批调用，结果按请求顺序返回，每项的错误单独保留。批量响应不保证顺序，要按 id 归位。
+    /// 发一批调用,结果按请求顺序返回,每项的错误单独保留.批量响应不保证顺序,要按 id 归位.
     async fn batch_items(&self, calls: &[(&str, Value)]) -> Result<Vec<Option<Value>>, Failed> {
         let body: Vec<Value> = calls
             .iter()
@@ -167,7 +167,7 @@ impl Evm {
             .map(|(id, (method, params))| json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
             .collect();
         let reply = self.http.post(&Value::Array(body)).await?;
-        // 被限流时有的服务商只回一个错误对象，不是数组。
+        // 被限流时有的服务商只回一个错误对象,不是数组.
         let items = reply.as_array().ok_or(Failed)?;
         let mut results = vec![None; calls.len()];
         for item in items {
@@ -178,7 +178,7 @@ impl Evm {
         results.into_iter().map(|result| result.ok_or(Failed)).collect()
     }
 
-    /// 一批调用，任何一项出错都算失败。
+    /// 一批调用,任何一项出错都算失败.
     pub(super) async fn batch(&self, calls: &[(&str, Value)]) -> Result<Vec<Value>, Failed> {
         self.batch_items(calls)
             .await?
@@ -229,7 +229,7 @@ impl Evm {
     }
 }
 
-/// 日志的地址参数和结果都是补零到 32 字节的小写地址。
+/// 日志的地址参数和结果都是补零到 32 字节的小写地址.
 pub(super) fn log_topic(address: &str) -> String {
     format!("0x{:0>64}", address[2..].to_ascii_lowercase())
 }
@@ -309,7 +309,7 @@ impl Upstream for Evm {
         })
     }
 
-    /// 没有配置索引服务时明确报错。返回空列表会让用户以为没有交易记录。
+    /// 没有配置索引服务时明确报错.返回空列表会让用户以为没有交易记录.
     fn history<'a>(
         &'a self,
         addresses: &'a [String],
@@ -339,7 +339,7 @@ impl Upstream for Evm {
 }
 
 impl Evm {
-    /// 内层的 `Err` 是节点拒绝这次调用，带节点原文。
+    /// 内层的 `Err` 是节点拒绝这次调用,带节点原文.
     pub fn estimate<'a>(&'a self, call: &'a Value) -> Query<'a, Result<Value, String>> {
         Box::pin(async move {
             match self.http.rpc("eth_estimateGas", json!([call])).await? {
@@ -443,7 +443,7 @@ mod tests {
 
     #[test]
     fn a_receipt_without_a_clear_status_is_never_a_success() {
-        // 拜占庭分叉之前的回执只有 root，没有 status。
+        // 拜占庭分叉之前的回执只有 root,没有 status.
         let mut old = receipt(1, "0x1");
         old.as_object_mut().unwrap().remove("status");
         assert!(parse_tx(HASH, &old, &json!({}), &tips()).is_err());
@@ -453,7 +453,7 @@ mod tests {
 
     #[test]
     fn safe_below_finalized_does_not_downgrade_the_stage() {
-        // BSC 上观察到的情况。
+        // BSC 上观察到的情况.
         let tips = Tips {
             latest: 100,
             safe: Some(70),
@@ -523,7 +523,7 @@ mod tests {
         let fees = fee_tiers(&history, &json!("0x2faf080")).unwrap();
         assert_eq!(fees["baseFee"], "0");
         assert_eq!(fees["slow"], json!({"maxFee": "50000000", "priority": "50000000"}));
-        // 新链没有 reward 字段。
+        // 新链没有 reward 字段.
         let fees = fee_tiers(&json!({"baseFeePerGas": ["0x4"]}), &json!("0x1")).unwrap();
         assert_eq!(fees["fast"], json!({"maxFee": "9", "priority": "1"}));
     }

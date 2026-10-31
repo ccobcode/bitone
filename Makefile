@@ -2,8 +2,8 @@ VERSION   ?= 0.1.0
 DIST_DIR  := dist/bitone
 DIST_NAME := bitone-v$(VERSION)-$(shell uname -s | tr '[:upper:]' '[:lower:]')-$(shell uname -m)
 
-# Homebrew 的 cargo 排在 PATH 前面时会绕过 rust-toolchain.toml，这里固定用 rustup 的工具链。
-# macOS 自带的 make 执行简单命令时不看改过的 PATH，所以都写完整路径。
+# Homebrew 的 cargo 排在 PATH 前面时会绕过 rust-toolchain.toml,这里固定用 rustup 的工具链.
+# macOS 自带的 make 执行简单命令时不看改过的 PATH,所以都写完整路径.
 RUST_BIN     := $(shell rustup which cargo | xargs dirname)
 CARGO        := PATH=$(RUST_BIN):$(HOME)/.cargo/bin:$$PATH cargo
 WASM_BINDGEN := $(HOME)/.cargo/bin/wasm-bindgen
@@ -16,30 +16,30 @@ GRADLE       := cd apps/mobile && JAVA_HOME=$(JAVA_HOME) ./gradlew --console=pla
 PRETTIER ?= apps/web/node_modules/.bin/prettier
 WASM_OUT := apps/web/src/core/pkg
 MOBILE   := apps/mobile/androidApp/src/main
-# 有本地配置时优先用它，里面可以放 API key，不进仓库。
+# 有本地配置时优先用它,里面可以放 API key,不进仓库.
 GATEWAY  ?= $(if $(wildcard gateway.local.toml),gateway.local.toml,crates/bitone-gateway/gateway.example.toml)
 
-# iOS 只能在 macOS 上编译。
+# iOS 只能在 macOS 上编译.
 IOS_CHECK := $(if $(filter Darwin,$(shell uname -s)),:shared:compileKotlinIosSimulatorArm64)
 
-# 去掉本机绝对路径，否则换一台机器构建出来的 .so 不一样。
+# 去掉本机绝对路径,否则换一台机器构建出来的 .so 不一样.
 REPRO_FLAGS := --remap-path-prefix=$(CURDIR)=/src --remap-path-prefix=$(HOME)/.cargo=/cargo \
 	--remap-path-prefix=$(HOME)/.rustup=/rustup
 
 .PHONY: dev gateway dist dist-server dist-android clean \
-	test test-rust test-web test-android test-copy check-copy \
+	test test-rust test-web test-android test-punct check-punct fix-punct test-copy check-copy \
 	format format-check lint audit hooks \
 	tokens tokens-check wasm android-core
 
-# Development: 网关和网页端都在宿主机，网页端用 Vite 把 /v1 代理到网关
+# Development: 网关和网页端都在宿主机,网页端用 Vite 把 /v1 代理到网关
 dev: apps/web/node_modules wasm
 	@trap 'kill 0' EXIT; $(CARGO) run -p bitone-gateway -- --config $(GATEWAY) & pnpm -C apps/web dev
 
 gateway:
 	$(CARGO) run -p bitone-gateway -- --config $(GATEWAY)
 
-# Distribution: 网关和网页端按平台打包，APK 单独产出。Linux arm64 上没有 NDK，所以两者分开。
-# APK 未签名，发布后在本地签名，签名私钥不进 CI。
+# Distribution: 网关和网页端按平台打包,APK 单独产出.Linux arm64 上没有 NDK,所以两者分开.
+# APK 未签名,发布后在本地签名,签名私钥不进 CI.
 dist: dist-server dist-android
 
 dist-server: apps/web/node_modules wasm
@@ -70,7 +70,7 @@ clean:
 
 # Test & Quality
 test: test-rust test-web test-android
-	$(MAKE) test-copy check-copy tokens-check format-check lint
+	$(MAKE) test-punct check-punct test-copy check-copy tokens-check format-check lint
 
 test-rust:
 	$(CARGO) test --workspace
@@ -83,6 +83,15 @@ test-web: apps/web/node_modules wasm
 test-android: android-core
 	$(GRADLE) :androidApp:assembleDebug :androidApp:assembleRelease :shared:testAndroidHostTest \
 		:androidApp:testDebugUnitTest $(IOS_CHECK)
+
+test-punct:
+	node --test scripts/fullwidth.test.mjs
+
+check-punct:
+	node scripts/fullwidth.mjs
+
+fix-punct:
+	node scripts/fullwidth.mjs --fix
 
 test-copy:
 	node --test scripts/copy-check.test.mjs

@@ -20,6 +20,7 @@ import {
     fakePrevTx,
     gatewayError,
     initCore,
+    stubOffline,
     pairWallet,
     scriptFor,
     stubGateway,
@@ -898,10 +899,7 @@ describe("广播", () => {
             evmGateway();
             return signed();
         })();
-        vi.stubGlobal(
-            "fetch",
-            vi.fn(async () => Promise.reject(new TypeError("failed"))),
-        );
+        stubOffline();
         expect(await broadcastTx(tx.id)).toMatchObject({ state: "uncertain", lastError: "连接失败" });
     });
 

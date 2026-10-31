@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# 用真实的 anvil 节点跑一遍网关的 EVM 接口：nonce、fees、estimate、broadcast、tx、回滚交易报 failed。
-# 全程只碰本机。结束时停止并删除容器，退出码非 0 表示有检查没通过。
+# 用真实的 anvil 节点跑一遍网关的 EVM 接口:nonce,fees,estimate,broadcast,tx,回滚交易报 failed.
+# 全程只碰本机.结束时停止并删除容器,退出码非 0 表示有检查没通过.
 #
-# 用法：crates/bitone-gateway/scripts/localnet-evm.sh
-# 依赖：Docker、rustup、python3、curl。
+# 用法:crates/bitone-gateway/scripts/localnet-evm.sh
+# 依赖:Docker,rustup,python3,curl.
 set -euo pipefail
 
 IMAGE=ghcr.io/foundry-rs/foundry:latest
@@ -14,13 +14,12 @@ GATEWAY_PID=""
 PASSED=0
 FAILED=0
 
-# anvil 的默认开发账户，公开的测试私钥，只在本机这条链上有意义。
+# anvil 的默认开发账户,公开的测试私钥,只在本机这条链上有意义.
 KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 FROM=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 TO=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
-# 没有余额的账户。
 POOR_KEY=0x0000000000000000000000000000000000000000000000000000000000000abc
-# 运行时代码是 PUSH1 0 PUSH1 0 REVERT，任何调用都回滚。
+# 运行时代码是 PUSH1 0 PUSH1 0 REVERT,任何调用都回滚.
 REVERTER_INIT=0x6460006000fd6000526005601bf3
 
 cleanup() {
@@ -36,12 +35,12 @@ check() {
     echo "通过 $name"
     PASSED=$((PASSED + 1))
   else
-    echo "失败 ${name}：期望 ${expected}，实际 ${actual}"
+    echo "失败 ${name}:期望 ${expected},实际 ${actual}"
     FAILED=$((FAILED + 1))
   fi
 }
 
-# 从标准输入的 JSON 里取一个字段，路径用点分隔。
+# 从标准输入的 JSON 里取一个字段,路径用点分隔.
 field() {
   python3 -c '
 import json, sys
@@ -59,14 +58,14 @@ cast_in_container() { docker exec "$CONTAINER" cast "$@"; }
 tx_field() { api_post /v1/ethereum/tx "{\"hashes\":[\"$1\"]}" | field "txs.0.$2"; }
 broadcast() { api_post /v1/ethereum/broadcast "{\"raw\":\"$1\"}"; }
 
-# 签一笔交易。手续费写死，这样不依赖估算结果。
+# 签一笔交易.手续费写死,这样不依赖估算结果.
 sign() {
   cast_in_container mktx --rpc-url http://127.0.0.1:8545 --private-key "$1" --gas-price 100gwei --priority-gas-price 1gwei "${@:2}"
 }
 
 echo "== 启动 anvil"
-# 每个 epoch 2 个 slot：safe 比 latest 落后 2 块，finalized 落后 4 块，几次出块就能走完全部阶段。
-# 关闭自动出块，才能看到内存池状态。
+# 每个 epoch 2 个 slot:safe 比 latest 落后 2 块,finalized 落后 4 块,几次出块就能走完全部阶段.
+# 关闭自动出块,才能看到内存池状态.
 docker run -d --name "$CONTAINER" -p 127.0.0.1::8545 --entrypoint anvil "$IMAGE" \
   --host 0.0.0.0 --no-mining --slots-in-an-epoch 2 >/dev/null
 NODE="http://$(docker port "$CONTAINER" 8545/tcp | head -1)"
@@ -164,7 +163,7 @@ check "部署成功" "$(tx_field "$DEPLOY" status)" included
 
 REPLY=$(api_post /v1/ethereum/estimate "{\"from\":\"$FROM\",\"to\":\"$CONTRACT\"}")
 echo "估算回滚 $REPLY"
-check "估算回滚是 invalid_request，不是上游故障" "$(echo "$REPLY" | field error.code)" invalid_request
+check "估算回滚是 invalid_request,不是上游故障" "$(echo "$REPLY" | field error.code)" invalid_request
 
 RAW=$(sign "$KEY" --nonce 2 --gas-limit 100000 "$CONTRACT")
 REVERTED=$(cast_in_container keccak "$RAW")
@@ -178,5 +177,5 @@ check "最终确定后仍然是 failed" "$(tx_field "$REVERTED" status)" failed
 check "最终确定后阶段是 finalized" "$(tx_field "$REVERTED" stage)" finalized
 
 echo
-echo "通过 $PASSED 项，失败 $FAILED 项"
+echo "通过 $PASSED 项,失败 $FAILED 项"
 [[ "$FAILED" -eq 0 ]]

@@ -1,4 +1,4 @@
-//! HyperSync 索引服务。
+//! HyperSync 索引服务.
 
 use super::adapter::{Evm, TRANSFER, item_status, log_topic, topic_address};
 use crate::upstream::{
@@ -7,7 +7,7 @@ use crate::upstream::{
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
-/// HyperSync 返回的字段。
+/// HyperSync 返回的字段.
 fn hypersync_fields() -> Value {
     json!({
         "block": ["number", "timestamp"],
@@ -16,7 +16,7 @@ fn hypersync_fields() -> Value {
     })
 }
 
-/// 金额为 0 时可能是空的 `0x`，不能当成格式错误。
+/// 金额为 0 时可能是空的 `0x`,不能当成格式错误.
 fn hex_amount(value: Option<&Value>) -> Result<String, Failed> {
     match value.and_then(Value::as_str).ok_or(Failed)? {
         "0x" => Ok("0".to_string()),
@@ -25,10 +25,10 @@ fn hex_amount(value: Option<&Value>) -> Result<String, Failed> {
 }
 
 impl Evm {
-    /// HyperSync 的一页，一个请求算一页。它只能从旧到新扫，所以游标是下一个要扫的区块。
-    /// 免费额度是每分钟 15 次，跟块不用它，只用来补历史。
-    // ponytail: 记录多到一个请求扫不完时，最早的在前，中间的要翻页才看得到。
-    // 这类地址多了以后改成从最新的区块往回分段扫。
+    /// HyperSync 的一页,一个请求算一页.它只能从旧到新扫,所以游标是下一个要扫的区块.
+    /// 免费额度是每分钟 15 次,跟块不用它,只用来补历史.
+    // ponytail: 记录多到一个请求扫不完时,最早的在前,中间的要翻页才看得到.
+    // 这类地址多了以后改成从最新的区块往回分段扫.
     pub(super) async fn hypersync_page(
         &self,
         indexer: &Http,
@@ -120,7 +120,7 @@ impl Evm {
             items,
         };
         Ok(HistoryPage {
-            // 它可能比节点慢几个块，水位不能超过它扫到的位置。
+            // 它可能比节点慢几个块,水位不能超过它扫到的位置.
             checkpoint: tips.finalized.min(archive),
             ..merge_pages(vec![page])
         })

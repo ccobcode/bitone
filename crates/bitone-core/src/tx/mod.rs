@@ -1,7 +1,7 @@
-//! 交易解析、分类、构建和核验。
+//! 交易解析,分类,构建和核验.
 //!
-//! 冷钱包的处理顺序见 docs/03-system.md 第 6 节：核对指纹，校验路径和网络，解析载荷，分类，展示。
-//! 任何一步失败都变成「禁止签名」，不存在解析失败却能继续的路径。
+//! 冷钱包的处理顺序见 docs/03-system.md 第 6 节:核对指纹,校验路径和网络,解析载荷,分类,展示.
+//! 任何一步失败都变成"禁止签名",不存在解析失败却能继续的路径.
 
 pub mod abi;
 pub mod bitcoin;
@@ -18,8 +18,8 @@ use crate::request::{SignRequest, SignResponse};
 use crate::review::{Forbid, RawLine, Review};
 use crate::{AccountKind, Chain, Error, Mode, Network};
 
-/// 本机已签过的最高找零索引，见 docs/04-security.md 第 2.6 节。
-/// 测试币的索引不能放宽主网的告警，所以分开记。
+/// 本机已签过的最高找零索引,见 docs/04-security.md 第 2.6 节.
+/// 测试币的索引不能放宽主网的告警,所以分开记.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct HighestChange {
     pub mainnet: u32,
@@ -58,20 +58,20 @@ fn try_review(request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forb
     }
 }
 
-/// 冷钱包核对收款地址的结果。见 docs/04-security.md 第 4 节。
+/// 冷钱包核对收款地址的结果.见 docs/04-security.md 第 4 节.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AddressResult {
     pub belongs: bool,
     pub network: String,
     pub path: String,
-    /// 二维码里的地址。
+    /// 二维码里的地址.
     pub address: String,
-    /// 冷钱包从路径派生出的地址。
+    /// 冷钱包从路径派生出的地址.
     pub derived: String,
     pub kind: AccountKind,
 }
 
-/// 从路径重新派生，再和二维码里的地址比对。
+/// 从路径重新派生,再和二维码里的地址比对.
 pub fn check_address(check: &AddressCheck, keys: &PublicKeys) -> Result<AddressResult, Forbid> {
     if check.fingerprint != keys.fingerprint {
         return Err(Forbid::FingerprintMismatch);
@@ -96,17 +96,17 @@ pub fn check_address(check: &AddressCheck, keys: &PublicKeys) -> Result<AddressR
     })
 }
 
-/// 网页端广播前的结果。
+/// 网页端广播前的结果.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Verified {
-    /// 可以直接广播的原始交易。
+    /// 可以直接广播的原始交易.
     pub raw: Vec<u8>,
-    /// 交易哈希，用于跟踪。
+    /// 交易哈希,用于跟踪.
     pub hash: String,
 }
 
-/// 用公钥验证签名，并把签名装回构建记录。见 docs/03-system.md 第 8 节。
-/// `signer` 是付款账户的公钥，Bitcoin 的公钥在 PSBT 里，可以留空。
+/// 用公钥验证签名,并把签名装回构建记录.见 docs/03-system.md 第 8 节.
+/// `signer` 是付款账户的公钥,Bitcoin 的公钥在 PSBT 里,可以留空.
 pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> Result<Verified, Error> {
     if request.id != response.id {
         return Err(Error::ResponseMismatch);
@@ -120,7 +120,7 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
     }
 }
 
-/// 单路径的请求（EVM、TRON、Solana）取出并校验路径。
+/// 单路径的请求(EVM,TRON,Solana)取出并校验路径.
 pub(crate) fn signer_path(request: &SignRequest, network: Network) -> Result<DerivationPath, Forbid> {
     let [path] = request.paths.as_slice() else {
         return Err(Forbid::PathNotAllowed);
@@ -133,7 +133,7 @@ pub(crate) fn signer_path(request: &SignRequest, network: Network) -> Result<Der
     Ok(path)
 }
 
-/// 验证 65 字节的 r、s、恢复位，要求低 s。EVM 和 TRON 都不接受高 s。
+/// 验证 65 字节的 r,s,恢复位,要求低 s.EVM 和 TRON 都不接受高 s.
 pub(crate) fn check_signature(hash: &[u8; 32], signature: &[u8; 65], signer: &[u8]) -> Result<(), Error> {
     use ::bitcoin::secp256k1::{Message, PublicKey, Secp256k1, ecdsa};
     let recovery = ecdsa::RecoveryId::from_i32(signature[64] as i32).map_err(|_| Error::BadSignature)?;
@@ -154,7 +154,7 @@ pub(crate) fn check_signature(hash: &[u8; 32], signature: &[u8; 65], signer: &[u
     Ok(())
 }
 
-/// 原始数据分行：选择器一行，之后每 32 字节一行，标出疑似地址和大额数值。
+/// 原始数据分行:选择器一行,之后每 32 字节一行,标出疑似地址和大额数值.
 pub fn raw_lines(data: &[u8]) -> Vec<RawLine> {
     let hex = |bytes: &[u8]| bytes.to_lower_hex_string();
     if data.len() < 4 {

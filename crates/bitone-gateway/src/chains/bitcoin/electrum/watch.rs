@@ -1,4 +1,4 @@
-//! Electrum 的跟块。
+//! Electrum 的跟块.
 
 use super::{Electrum, address_hash, by_address};
 use crate::upstream::{Failed, Signal};
@@ -8,14 +8,14 @@ use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{interval, timeout};
 
-/// 长连接的心跳。服务器会断开长时间没有请求的连接，连接死了也要靠它发现。
+/// 长连接的心跳.服务器会断开长时间没有请求的连接,连接死了也要靠它发现.
 const PING_INTERVAL: Duration = Duration::from_secs(60);
-/// 长连接上一次请求的时限。这里没有 `Pool` 的总时限，服务器不回应时要自己放弃。
+/// 长连接上一次请求的时限.这里没有 `Pool` 的总时限,服务器不回应时要自己放弃.
 const CALL_TIMEOUT: Duration = Duration::from_secs(15);
-/// 一批订阅的地址数。公共服务器处理得慢，时限按批算。
+/// 一批订阅的地址数.公共服务器处理得慢,时限按批算.
 const SUBSCRIBE_BATCH: usize = 100;
 
-/// 把一条推送转给跟块任务。没有 id 的消息只有这两种。
+/// 把一条推送转给跟块任务.没有 id 的消息只有这两种.
 async fn forward(
     message: &Value,
     owners: &HashMap<String, String>,
@@ -31,7 +31,7 @@ async fn forward(
         }
         Some("blockchain.scripthash.subscribe") => {
             let hash = params.and_then(|params| params.get(0)).and_then(Value::as_str);
-            // 退订之前已经发出的推送还会到，这时地址已经没有人看了。
+            // 退订之前已经发出的推送还会到,这时地址已经没有人看了.
             let Some(owner) = hash.and_then(|hash| owners.get(hash)) else {
                 return Ok(());
             };
@@ -43,7 +43,7 @@ async fn forward(
 }
 
 impl Electrum {
-    /// 一条长连接：订阅区块头和全部地址，把推送转给跟块任务。推送包含内存池里的交易。
+    /// 一条长连接:订阅区块头和全部地址,把推送转给跟块任务.推送包含内存池里的交易.
     pub(super) async fn follow(
         &self,
         mut addresses: watch::Receiver<Vec<String>>,
@@ -72,7 +72,7 @@ impl Electrum {
                 owners.insert(address_hash(address)?, address.clone());
             }
             known.extend(fresh.iter().cloned());
-            // 基线比这里的订阅早，换连接时还可能错过了推送。这段时间的变化服务器不会再说，补查一次。
+            // 基线比这里的订阅早,换连接时还可能错过了推送.这段时间的变化服务器不会再说,补查一次.
             if !fresh.is_empty() {
                 signals.send(Signal::Touched(fresh)).await.map_err(|_| Failed)?;
             }

@@ -1,4 +1,4 @@
-//! 待签名请求和签名结果，见 docs/03-system.md 第 6 节。
+//! 待签名请求和签名结果,见 docs/03-system.md 第 6 节.
 
 use crate::Error;
 use crate::protocol::{FrameEncoder, UR_RESPONSE, VERSION, check_limits};
@@ -23,13 +23,13 @@ pub struct SignRequest {
     pub network: String,
     #[n(4)]
     pub kind: u8,
-    /// 签名用的路径。Bitcoin 的路径在 PSBT 里，这里留空。
+    /// 签名用的路径.Bitcoin 的路径在 PSBT 里,这里留空.
     #[n(5)]
     pub paths: Vec<String>,
     #[n(6)]
     #[cbor(with = "minicbor::bytes")]
     pub payload: Vec<u8>,
-    /// 网页端的声明，比如 Solana 代币收款方的所有者。冷钱包验证通过才显示，不能作为判断依据。
+    /// 网页端的声明,比如 Solana 代币收款方的所有者.冷钱包验证通过才显示,不能作为判断依据.
     #[n(7)]
     pub hint: Option<String>,
 }
@@ -57,7 +57,7 @@ pub struct SignResponse {
     #[n(1)]
     #[cbor(with = "minicbor::bytes")]
     pub id: [u8; 16],
-    /// EVM、TRON 是 65 字节的 r、s、恢复位。Solana 是 64 字节。Bitcoin 每个输入一项。
+    /// EVM,TRON 是 65 字节的 r,s,恢复位.Solana 是 64 字节.Bitcoin 每个输入一项.
     #[n(2)]
     pub signatures: Vec<ByteVec>,
 }

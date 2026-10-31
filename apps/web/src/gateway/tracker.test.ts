@@ -6,6 +6,7 @@ import {
     draftFor,
     gatewayError,
     initCore,
+    stubOffline,
     pairWallet,
     must,
     stubGateway,
@@ -164,10 +165,7 @@ describe("轮询", () => {
     it("网关断开时状态不变", async () => {
         chain();
         const tx = await sent();
-        vi.stubGlobal(
-            "fetch",
-            vi.fn(async () => Promise.reject(new TypeError("failed"))),
-        );
+        stubOffline();
         expect(await pollOpenTxs(["ethereum"])).toBe(false);
         expect(await db.txs.get(tx.id)).toMatchObject({ state: "broadcast", conflicts: 0 });
     });

@@ -40,7 +40,7 @@ jobs:
                   distribution: microsoft
                   java-version: 21
             - run: npm install --global pnpm@12.4.2
-            - run: make test-copy check-copy tokens-check format-check
+            - run: make test-punct check-punct test-copy check-copy tokens-check format-check
 
     rust:
         name: Rust
@@ -57,6 +57,8 @@ jobs:
                       ~/.cargo/registry
                       ~/.cargo/git
                       ~/.cargo/bin
+                      ~/.cargo/.crates.toml
+                      ~/.cargo/.crates2.json
                       target
                   key: rust-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
                   restore-keys: rust-
@@ -76,6 +78,8 @@ jobs:
                       ~/.cargo/registry
                       ~/.cargo/git
                       ~/.cargo/bin
+                      ~/.cargo/.crates.toml
+                      ~/.cargo/.crates2.json
                       target
                   key: web-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
                   restore-keys: web-
@@ -94,6 +98,8 @@ jobs:
                       ~/.cargo/registry
                       ~/.cargo/git
                       ~/.cargo/bin
+                      ~/.cargo/.crates.toml
+                      ~/.cargo/.crates2.json
                       target
                   key: android-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
                   restore-keys: android-

@@ -1,5 +1,5 @@
-//! 美元价格。上游是 CoinGecko 的 simple/price 格式，映射到 `网络:合约` 的键。
-//! 价格只是展示，不参与任何判断。配置时只接受主网资产，见 config.rs。
+//! 美元价格.上游是 CoinGecko 的 simple/price 格式,映射到 `网络:合约` 的键.
+//! 价格只是展示,不参与任何判断.配置时只接受主网资产,见 config.rs.
 
 use crate::cache::Cached;
 use crate::config::PricesConfig;
@@ -20,13 +20,13 @@ pub struct Prices {
     client: Client,
     url: String,
     headers: HeaderMap,
-    /// 价格键和资产 ID。
+    /// 价格键和资产 ID.
     ids: Vec<(String, String)>,
     timeout: Duration,
     cache: Cached<PriceMap>,
 }
 
-/// 上游没有的资产不出现在结果里，出现但不是正常数字的算上游异常。
+/// 上游没有的资产不出现在结果里,出现但不是正常数字的算上游异常.
 fn parse(reply: &Value, ids: &[(String, String)]) -> Option<PriceMap> {
     let reply = reply.as_object()?;
     let mut prices = PriceMap::new();

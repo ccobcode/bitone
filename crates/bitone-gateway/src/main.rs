@@ -1,5 +1,5 @@
-//! 用法：bitone-gateway [--config 文件] [--listen 地址] [--web-dir 目录] [--trusted-proxy IP]
-//! 配置文件默认是当前目录的 gateway.toml，命令行的值优先。
+//! 用法:bitone-gateway [--config 文件] [--listen 地址] [--web-dir 目录] [--trusted-proxy IP]
+//! 配置文件默认是当前目录的 gateway.toml,命令行的值优先.
 
 use bitone_gateway::config::{Config, Options};
 use std::error::Error;

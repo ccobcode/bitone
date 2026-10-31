@@ -95,7 +95,6 @@ export interface TxRecord {
     expiresAt: number | null;
     hardExpiry: boolean;
     timeline: TimelineEntry[];
-    /** 这笔替换的是哪一笔. */
     replaces?: string;
     replacedBy?: string;
     attempts: number;

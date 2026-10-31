@@ -1,4 +1,4 @@
-//! EIP-712。只接受 Permit 和 Permit2，其余一律禁止，见 docs/04-security.md 第 2.7 节。
+//! EIP-712.只接受 Permit 和 Permit2,其余一律禁止,见 docs/04-security.md 第 2.7 节.
 
 use super::{keccak, signer_path_row};
 use crate::Network;
@@ -12,8 +12,8 @@ use bitcoin::hex::FromHex;
 use serde_json::Value;
 use std::collections::BTreeSet;
 
-/// 接受的消息和它们的规范类型串，逐字比对。名字相同但字段不同的是另一种消息，
-/// 比如 DAI 的 Permit 用 `allowed` 代替 `value`，这里显示的额度就和实际授权无关。
+/// 接受的消息和它们的规范类型串,逐字比对.名字相同但字段不同的是另一种消息,
+/// 比如 DAI 的 Permit 用 `allowed` 代替 `value`,这里显示的额度就和实际授权无关.
 const ACCEPTED: [(&str, &str); 5] = [
     (
         "Permit",
@@ -85,7 +85,7 @@ fn encode_type(types: &Value, primary: &str) -> Result<String, Forbid> {
     Ok(out)
 }
 
-/// 数值可以是 JSON 数字、十进制字符串或十六进制字符串。
+/// 数值可以是 JSON 数字,十进制字符串或十六进制字符串.
 fn uint_word(value: &Value) -> Result<[u8; 32], Forbid> {
     let text = match value {
         Value::Number(n) => n.as_u64().ok_or(Forbid::ParseFailed)?.to_string(),
@@ -162,7 +162,7 @@ fn encode_value(types: &Value, kind: &str, value: &Value) -> Result<[u8; 32], Fo
 
 fn hash_struct(types: &Value, name: &str, value: &Value) -> Result<[u8; 32], Forbid> {
     let fields = field_list(types, name)?;
-    // 不进哈希的键不能留下，否则屏幕上的内容可以和签名无关。
+    // 不进哈希的键不能留下,否则屏幕上的内容可以和签名无关.
     if value.as_object().map(|object| object.len()) != Some(fields.len()) {
         return Err(Forbid::ParseFailed);
     }
@@ -174,7 +174,7 @@ fn hash_struct(types: &Value, name: &str, value: &Value) -> Result<[u8; 32], For
     Ok(keccak(&encoded))
 }
 
-/// `eth_signTypedData_v4` 的哈希。
+/// `eth_signTypedData_v4` 的哈希.
 pub fn typed_data_hash(data: &Value) -> Result<[u8; 32], Forbid> {
     let types = &data["types"];
     let primary = data["primaryType"].as_str().ok_or(Forbid::ParseFailed)?;
@@ -184,7 +184,7 @@ pub fn typed_data_hash(data: &Value) -> Result<[u8; 32], Forbid> {
     Ok(keccak(&preimage))
 }
 
-/// 类型来自请求，不可信。核对读的字段都要确实进了哈希，域里的网络和合约也要真的被签名承诺。
+/// 类型来自请求,不可信.核对读的字段都要确实进了哈希,域里的网络和合约也要真的被签名承诺.
 fn check_schema(data: &Value) -> Result<(), Forbid> {
     let types = &data["types"];
     let primary = data["primaryType"].as_str().ok_or(Forbid::MessageSigning)?;
@@ -211,7 +211,7 @@ fn text_field<'a>(value: &'a Value, name: &str) -> Result<&'a str, Forbid> {
 
 type Grant = (String, [u8; 32]);
 
-/// 被授权方、代币和额度。批量授权取全部代币。
+/// 被授权方,代币和额度.批量授权取全部代币.
 fn permit_grants(data: &Value) -> Result<(String, Vec<Grant>), Forbid> {
     let message = &data["message"];
     let spender = text_field(message, "spender")?.to_string();
@@ -320,7 +320,7 @@ mod tests {
     use bitcoin::hex::DisplayHex;
     use serde_json::json;
 
-    /// 期望值是 EIP-2612 和 Permit2 合约里的常量，防止类型串抄错。
+    /// 期望值是 EIP-2612 和 Permit2 合约里的常量,防止类型串抄错.
     #[test]
     fn accepted_types_match_the_contracts() {
         let hashes = [
@@ -335,7 +335,7 @@ mod tests {
         }
     }
 
-    /// EIP-712 规范里的 Mail 示例。
+    /// EIP-712 规范里的 Mail 示例.
     #[test]
     fn matches_the_eip712_example() {
         let data = json!({

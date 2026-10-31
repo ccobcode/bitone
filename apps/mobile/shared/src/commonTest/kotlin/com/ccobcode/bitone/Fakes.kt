@@ -3,6 +3,7 @@ package com.ccobcode.bitone
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.ccobcode.bitone.flow.Accounts
+import com.ccobcode.bitone.flow.Screen
 import com.ccobcode.bitone.flow.WalletFlow
 import com.ccobcode.bitone.platform.AccountAddress
 import com.ccobcode.bitone.platform.AddressReview
@@ -36,8 +37,15 @@ import com.ccobcode.bitone.platform.WalletCore
 import com.ccobcode.bitone.platform.WalletCoreException
 import com.ccobcode.bitone.platform.WalletDraft
 import com.ccobcode.bitone.platform.WalletMeta
+import kotlin.test.assertEquals
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 
 val GoodFacts =
     DeviceFacts(
@@ -611,4 +619,58 @@ class Rig(
             scope,
             work,
         )
+}
+
+/** backgroundScope 的任务不算在 advanceUntilIdle 里,所以单独建作用域. */
+@OptIn(ExperimentalCoroutinesApi::class)
+fun TestScope.newRig(): Rig {
+    val dispatcher = StandardTestDispatcher(testScheduler)
+    val scope = CoroutineScope(dispatcher + SupervisorJob() + CoroutineExceptionHandler { _, _ -> })
+    return Rig(scope, dispatcher)
+}
+
+/** 已有钱包的状态,不走一遍创建流程. */
+@OptIn(ExperimentalCoroutinesApi::class)
+fun TestScope.readyRig(
+    pin: String,
+    passphrase: Boolean = false,
+    cached: Boolean = true,
+    setup: (Rig) -> Unit = {},
+): Rig {
+    val rig = newRig()
+    rig.store.meta = WalletMeta(false, passphrase, if (passphrase) null else MAIN_FINGERPRINT)
+    rig.store.vault = boundVault(pin)
+    if (!passphrase && cached) rig.store.publicKeys = keysFor(MAIN_FINGERPRINT)
+    setup(rig)
+    rig.flow.onResume()
+    advanceUntilIdle()
+    assertEquals(Screen.Home, rig.flow.screen)
+    return rig
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+fun TestScope.openScan(flow: WalletFlow) {
+    flow.scan.open()
+    advanceUntilIdle()
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+fun TestScope.feed(flow: WalletFlow, parts: List<String>) = parts.forEach {
+    flow.scan.onScanned(it)
+    advanceUntilIdle()
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+fun TestScope.submit(flow: WalletFlow, pin: String, passphrase: String = "") {
+    pin.forEach(flow.unlock::digit)
+    passphrase.forEach(flow.unlock::passphraseInput)
+    flow.unlock.submit()
+    advanceUntilIdle()
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+fun TestScope.passSelfCheck(rig: Rig) {
+    rig.check.facts = GoodFacts
+    rig.flow.retryCheck()
+    advanceUntilIdle()
 }

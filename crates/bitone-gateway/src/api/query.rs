@@ -1,6 +1,6 @@
-//! 每条链都有的 HTTP 接口，格式见 docs/09-gateway-api.md。只属于一条链的接口在这条链的目录里。
+//! 每条链都有的 HTTP 接口,格式见 docs/09-gateway-api.md.只属于一条链的接口在这条链的目录里.
 //!
-//! 每个处理函数的顺序相同：网络、请求体、业务校验、上游。
+//! 每个处理函数的顺序相同:网络,请求体,业务校验,上游.
 
 use super::AppState;
 use crate::chains::request::{
@@ -30,7 +30,7 @@ struct HistoryRequest {
     addresses: Vec<String>,
     #[serde(default)]
     cursor: Option<String>,
-    /// 上次返回的 `checkpoint`。只查这之后的记录。
+    /// 上次返回的 `checkpoint`.只查这之后的记录.
     #[serde(default)]
     since: Option<String>,
 }

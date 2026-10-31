@@ -1,17 +1,17 @@
-# 自部署：网页端和网关同域，一个容器。见 docs/04-security.md 第 3 节。
-# 构建：docker build -f docker/selfhost.Dockerfile -t bitone .
-# 运行：docker run -p 127.0.0.1:8787:8787 bitone
-# 镜像自带示例配置。要填 API key 时挂载自己的配置：-v ./gateway.toml:/etc/bitone/gateway.toml
+# 自部署:网页端和网关同域,一个容器.见 docs/04-security.md 第 3 节.
+# 构建:docker build -f docker/selfhost.Dockerfile -t bitone .
+# 运行:docker run -p 127.0.0.1:8787:8787 bitone
+# 镜像自带示例配置.要填 API key 时挂载自己的配置:-v ./gateway.toml:/etc/bitone/gateway.toml
 
 FROM rust:1.95-slim-bookworm@sha256:d7482085ff5b415f84dba5647ae71606650bdef00db7aeb69f4b3d170c3e4082 AS rust
 RUN apt-get update && apt-get install -y --no-install-recommends clang llvm pkg-config
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo install wasm-bindgen-cli --version 0.2.130 --locked
 WORKDIR /src
-# 不复制 rust-toolchain.toml，否则会多下载 Android 和 iOS 目标。
+# 不复制 rust-toolchain.toml,否则会多下载 Android 和 iOS 目标.
 COPY Cargo.toml Cargo.lock rustfmt.toml ./
 COPY crates crates
-# 容器里的 clang 自带 wasm 目标。
+# 容器里的 clang 自带 wasm 目标.
 ENV CC_wasm32_unknown_unknown=clang AR_wasm32_unknown_unknown=llvm-ar
 RUN cargo build --release -p bitone-gateway \
     && cargo build --release -p bitone-wasm --target wasm32-unknown-unknown \

@@ -4,9 +4,7 @@ import { parseAmount } from "../core/amount";
 import type { ChainObservation, ChainStatus } from "../data/machine";
 import { t } from "../core/i18n";
 
-/** 单次请求的地址上限. */
 export const MAX_ADDRESSES = 100;
-/** 一次快照的条目上限. */
 export const MAX_SNAPSHOT_ITEMS = 1000;
 
 export interface Balance {

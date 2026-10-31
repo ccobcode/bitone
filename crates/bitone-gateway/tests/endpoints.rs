@@ -1,5 +1,5 @@
-//! 查询接口和广播的集成测试，上游都是本地模拟服务。
-//! 重点是 failed 不被报成成功、广播幂等、广播超时和不适用的链。
+//! 查询接口和广播的集成测试,上游都是本地模拟服务.
+//! 重点是 failed 不被报成成功,广播幂等,广播超时和不适用的链.
 
 mod common;
 
@@ -24,13 +24,13 @@ const TRON: &str = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 const SOLANA: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const SOLANA_MINT: &str = "So11111111111111111111111111111111111111112";
 
-/// 创世块的 coinbase。
+/// 创世块的 coinbase.
 const BTC_RAW: &str = "01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff4d04ffff001d0104455468652054696d65732030332f4a616e2f32303039204368616e63656c6c6f72206f6e206272696e6b206f66207365636f6e64206261696c6f757420666f722062616e6b73ffffffff0100f2052a01000000434104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000";
 const BTC_TXID: &str = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b";
-/// EIP-155 文档里的交易示例。
+/// EIP-155 文档里的交易示例.
 const EVM_RAW: &str = "0xf86c098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a76400008025a028ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276a067cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83";
 const EVM_HASH: &str = "0x33469b22e9f636356c4160a87eb19df52b7412e8eac32a4a55ffe88ea8350788";
-/// 第一个字段长度 3 的 protobuf，raw_data 是 `aabbcc`。
+/// 第一个字段长度 3 的 protobuf,raw_data 是 `aabbcc`.
 const TRON_RAW: &str = "0a03aabbcc";
 
 fn hex_hash(seed: char) -> String {
@@ -181,7 +181,7 @@ async fn hash_lists_are_capped_at_100() {
 
 #[derive(Clone, Default)]
 struct Esplora {
-    /// `POST /tx` 的固定响应。
+    /// `POST /tx` 的固定响应.
     broadcast: Arc<Mutex<Option<(u16, String)>>>,
     posted: Arc<Mutex<Vec<String>>>,
     tx: Arc<Mutex<Option<Value>>>,
@@ -453,7 +453,7 @@ async fn bitcoin_history_pages_through_the_chain() {
     assert_eq!(delta["cursor"], Value::Null, "碰到水位就不用再翻页");
 }
 
-/// 比特币每个地址都要单独查，公共节点按 IP 限流，所以高度没变时一个地址都不能查。
+/// 比特币每个地址都要单独查,公共节点按 IP 限流,所以高度没变时一个地址都不能查.
 #[tokio::test]
 async fn bitcoin_history_skips_addresses_when_the_tip_has_not_moved() {
     let hits = Arc::new(AtomicUsize::new(0));
@@ -530,7 +530,7 @@ async fn bitcoin_rejection_carries_the_node_text_and_is_not_retried() {
 
 #[tokio::test]
 async fn bitcoin_spent_inputs_are_accepted_when_the_tx_is_on_chain() {
-    // 交易上链后找零又被花掉，节点只会报输入缺失。
+    // 交易上链后找零又被花掉,节点只会报输入缺失.
     let (node, url) = Esplora::start(400, "bad-txns-inputs-missingorspent").await;
     node.set_tx(btc_confirmed(90));
     let gateway = Gateway::start(&network_config("bitcoin", &url)).await;
@@ -547,11 +547,7 @@ async fn bitcoin_server_errors_are_not_rejections() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(error_code(&reply), "upstream_unavailable");
     assert_eq!(first.hits.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        second.hits.load(Ordering::SeqCst),
-        0,
-        "请求可能已经到达节点，不能换上游"
-    );
+    assert_eq!(second.hits.load(Ordering::SeqCst), 0, "请求可能已经到达节点,不能换上游");
 }
 
 #[tokio::test]
@@ -570,7 +566,7 @@ fn evm_block(number: u64) -> Value {
     json!({"number": format!("{number:#x}"), "hash": "0x1"})
 }
 
-/// 区块标签固定：latest 100，safe 90，finalized 80。
+/// 区块标签固定:latest 100,safe 90,finalized 80.
 fn tags(method: &str, params: &Value) -> Option<Value> {
     match (method, params[0].as_str()) {
         ("eth_blockNumber", _) => Some(ok(json!("0x64"))),
@@ -652,7 +648,7 @@ async fn evm_receipt_without_status_is_not_reported_as_success() {
 
 #[tokio::test]
 async fn evm_works_without_the_safe_tag() {
-    // Polygon 的公共节点这样回复。
+    // Polygon 的公共节点这样回复.
     let (url, _) = rpc_node(|method, params| match (method, params[0].as_str()) {
         ("eth_getBlockByNumber", Some("safe")) => rpc_failure(-32000, "safe block not found"),
         ("eth_getTransactionReceipt", _) => ok(evm_receipt(85, "0x1")),
@@ -685,7 +681,7 @@ async fn evm_without_a_finalized_tag_cannot_claim_finality() {
     let gateway = Gateway::start(&network_config("ethereum", &a)).await;
     let (status, _) = gateway.post("/v1/ethereum/tx", &json!({"hashes": [EVM_HASH]})).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    // 另一个上游支持时切过去。
+    // 另一个上游支持时切过去.
     let gateway = Gateway::start(&two_upstreams("ethereum", &a, &b)).await;
     let (status, reply) = gateway.post("/v1/ethereum/tx", &json!({"hashes": [EVM_HASH]})).await;
     assert_eq!(
@@ -809,7 +805,7 @@ async fn evm_estimate_fails_over_on_node_trouble() {
     assert_eq!((status, reply), (StatusCode::OK, json!({"gas": "21000"})));
 }
 
-/// 发送固定结果的 EVM 节点，可以指定这笔交易在链上能不能查到。
+/// 发送固定结果的 EVM 节点,可以指定这笔交易在链上能不能查到.
 async fn evm_broadcast_node(send: Value, on_chain: bool) -> (String, Calls) {
     rpc_node(move |method, params| {
         tags(method, params).unwrap_or_else(|| match method {
@@ -862,7 +858,7 @@ async fn evm_nonce_too_low_is_success_only_if_this_tx_is_on_chain() {
     let (status, reply, _) = evm_broadcast(rpc_failure(-32000, "nonce too low"), true).await;
     assert_eq!((status, reply["hash"].as_str()), (StatusCode::OK, Some(EVM_HASH)));
 
-    // 同一个 nonce 被另一笔交易用掉了，这是真正的拒绝。
+    // 同一个 nonce 被另一笔交易用掉了,这是真正的拒绝.
     let (status, reply, _) = evm_broadcast(rpc_failure(-32000, "nonce too low"), false).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
@@ -945,7 +941,7 @@ async fn broadcast_timeout_is_neither_success_nor_failure_and_is_not_resent() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(error_code(&reply), "upstream_unavailable");
     assert_eq!(hits.load(Ordering::SeqCst), 1);
-    assert_eq!(calls.total(), 0, "超时的交易可能已经到达节点，不能发给下一个上游");
+    assert_eq!(calls.total(), 0, "超时的交易可能已经到达节点,不能发给下一个上游");
 }
 
 #[tokio::test]
@@ -970,7 +966,7 @@ fn indexer_row(hash: &str, value: &str, is_error: &str, block: u64) -> Value {
     })
 }
 
-/// Etherscan 兼容接口。`rows` 按 action 和 page 查表。
+/// Etherscan 兼容接口.`rows` 按 action 和 page 查表.
 async fn indexer(rows: HashMap<(String, String), Value>) -> String {
     let handler = move |Query(query): Query<HashMap<String, String>>| {
         assert_eq!(query["module"], "account");
@@ -1137,7 +1133,7 @@ struct TronNode {
     broadcast: Arc<Mutex<Value>>,
     keys: Arc<Mutex<Vec<String>>>,
     sent: Arc<AtomicUsize>,
-    /// 已激活的账户。
+    /// 已激活的账户.
     activated: Arc<Mutex<Vec<String>>>,
 }
 
@@ -1595,7 +1591,7 @@ async fn solana_err_is_failed_even_when_finalized() {
 async fn solana_unknown_signature_and_a_missing_fee() {
     assert_eq!(solana_status(Value::Null).await["status"], "unknown");
 
-    // 手续费取不到不影响状态。
+    // 手续费取不到不影响状态.
     let (url, _) = rpc_node(|method, _| match method {
         "getSignatureStatuses" => ok(json!({"context": {"slot": 100}, "value": [
             {"slot": 90, "confirmations": 1, "err": null, "confirmationStatus": "confirmed"},
@@ -1722,7 +1718,7 @@ async fn solana_estimate_looks_for_the_token_account() {
     );
     let (_, reply) = gateway.post("/v1/solana/estimate", &body(&without, SOLANA_MINT)).await;
     assert_eq!(reply, json!({"recipientTokenAccount": false, "rent": "1488440"}));
-    // 原生币不需要代币账户，也不用问节点。
+    // 原生币不需要代币账户,也不用问节点.
     let (_, reply) = gateway.post("/v1/solana/estimate", &body(&without, "")).await;
     assert_eq!(reply, json!({"recipientTokenAccount": true, "rent": "0"}));
 }
@@ -1772,7 +1768,7 @@ async fn solana_broadcast_outcomes() {
         "Transaction simulation failed: Blockhash not found"
     );
 
-    // nonce 已经推进，这笔交易其实上链了。
+    // nonce 已经推进,这笔交易其实上链了.
     let landed = json!({"slot": 90, "confirmations": null, "err": null, "confirmationStatus": "finalized"});
     let (status, _, _) = solana_broadcast(rejected, landed).await;
     assert_eq!(status, StatusCode::OK);
@@ -1839,7 +1835,7 @@ async fn solana_history_reads_owner_and_token_accounts() {
             })
         }
         "getTransaction" => {
-            // 手续费由第一个账户支付。
+            // 手续费由第一个账户支付.
             let (keys, meta) = if params[0] == a.as_str() {
                 let meta =
                     json!({"err": null, "fee": 5000, "preBalances": [1000000, 0], "postBalances": [895000, 100000]});
@@ -1900,7 +1896,7 @@ async fn prices_map_coingecko_ids_to_network_keys_and_are_cached() {
                 assert_eq!(query["ids"], "ethereum,tether");
                 assert_eq!(query["vs_currencies"], "usd");
                 assert_eq!(headers["x-cg-demo-api-key"], "k");
-                // CoinGecko 对没有 User-Agent 的请求返回 403。
+                // CoinGecko 对没有 User-Agent 的请求返回 403.
                 assert!(headers["user-agent"].to_str().unwrap().starts_with("bitone-gateway/"));
                 async { Json(json!({"ethereum": {"usd": 3400.12}, "tether": {"usd": 1}})) }
             },

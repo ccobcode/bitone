@@ -30,7 +30,6 @@ export function amountText(tx: TxRecord): string {
     return formatAsset(tx.network, tx.asset, BigInt(tx.amount));
 }
 
-/** 这笔走到了哪一步. */
 export function finalityState(tx: Pick<TxRecord, "state">): { done: boolean; packed: boolean } {
     const done = tx.state === "confirmed";
     return { done, packed: tx.state === "confirming" || tx.state === "failed" || done };

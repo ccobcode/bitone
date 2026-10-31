@@ -26,6 +26,15 @@ export function initCore(): void {
     initCoreSync(readFileSync(new URL("./core/pkg/bitone_wasm_bg.wasm", import.meta.url)));
 }
 
+export function stubFetch(respond: (path: string, init?: RequestInit) => Promise<Response>): void {
+    vi.stubGlobal("fetch", vi.fn(respond));
+}
+
+/** 连不上网关. */
+export function stubOffline(): void {
+    stubFetch(async () => Promise.reject(new TypeError("failed")));
+}
+
 export function loadPairing(): Pairing {
     const receiver = new PairingReceiver();
     const frames = readFileSync(new URL("./core/__fixtures__/pairing.txt", import.meta.url), "utf8")

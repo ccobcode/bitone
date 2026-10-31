@@ -1,9 +1,9 @@
-//! 核对结果。解析和分类都在核心库里完成，界面只负责画出来，所以 Android 和 iOS 的判断不会不一致。
+//! 核对结果.解析和分类都在核心库里完成,界面只负责画出来,所以 Android 和 iOS 的判断不会不一致.
 
 use serde::Serialize;
 use thiserror::Error;
 
-/// 风险从低到高排序，一笔交易取全部动作里最高的一个。见 docs/04-security.md 第 2.7 节。
+/// 风险从低到高排序,一笔交易取全部动作里最高的一个.见 docs/04-security.md 第 2.7 节.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Risk {
@@ -31,19 +31,19 @@ impl Risk {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Confirm {
-    /// 点按，再输 PIN。
+    /// 点按,再输 PIN.
     Tap,
-    /// 长按 3 秒，再输 PIN。
+    /// 长按 3 秒,再输 PIN.
     Hold,
-    /// 不可签名。
+    /// 不可签名.
     Refuse,
 }
 
-/// 禁止签名的原因。见 docs/04-security.md 第 2.7 节。
+/// 禁止签名的原因.见 docs/04-security.md 第 2.7 节.
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Forbid {
-    #[error("这个请求不属于本钱包，如果用了 BIP39 密码，请检查是否输错")]
+    #[error("这个请求不属于本钱包,如果用了 BIP39 密码,请检查是否输错")]
     FingerprintMismatch,
     #[error("网络不支持")]
     UnknownNetwork,
@@ -57,15 +57,15 @@ pub enum Forbid {
     ParseFailed,
     #[error("Chain ID 与网络不符")]
     ChainIdMismatch,
-    #[error("这笔交易没有 Chain ID，签名可以在多条链上重放")]
+    #[error("这笔交易没有 Chain ID,签名可以在多条链上重放")]
     LegacyWithoutChainId,
-    #[error("这个授权的 chain_id 为 0，对所有链生效")]
+    #[error("这个授权的 chain_id 为 0,对所有链生效")]
     UniversalAuthorization,
     #[error("不支持裸哈希签名")]
     RawHashSigning,
     #[error("不支持消息签名")]
     MessageSigning,
-    #[error("缺少必需的前序交易，无法确认输入金额")]
+    #[error("缺少必需的前序交易,无法确认输入金额")]
     MissingPrevTx,
     #[error("前序交易与输入不符")]
     PrevTxMismatch,
@@ -99,18 +99,18 @@ impl Row {
     }
 }
 
-/// 金额。`symbol` 为空表示不在内置清单，`text` 是原始整数。
+/// 金额.`symbol` 为空表示不在内置清单,`text` 是原始整数.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AmountView {
     pub text: String,
     pub symbol: Option<String>,
-    /// 内置清单的条目，`网络:合约`，用来取图标。
+    /// 内置清单的条目,`网络:合约`,用来取图标.
     pub asset: Option<String>,
     pub unlimited: bool,
 }
 
-/// 一个动作：一次调用、一条指令或一个输出。
+/// 一个动作:一次调用,一条指令或一个输出.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionView {
@@ -119,7 +119,7 @@ pub struct ActionView {
     pub rows: Vec<Row>,
 }
 
-/// 原始数据的一行。`note` 是分析出的提示，比如疑似地址。
+/// 原始数据的一行.`note` 是分析出的提示,比如疑似地址.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RawLine {
@@ -135,16 +135,16 @@ pub struct Review {
     pub network: String,
     pub title: String,
     pub amount: Option<AmountView>,
-    /// 收款地址、被授权方、新控制方等。
+    /// 收款地址,被授权方,新控制方等.
     pub counterparty_label: Option<String>,
     pub counterparty: Option<String>,
-    /// 高风险原因。不为空时要长按。
+    /// 高风险原因.不为空时要长按.
     pub alerts: Vec<String>,
     pub actions: Vec<ActionView>,
     pub rows: Vec<Row>,
     pub raw: Vec<RawLine>,
     pub forbidden: Option<Forbid>,
-    /// Bitcoin 这笔交易用到的最高找零索引。签名后冷钱包要把它存下来。
+    /// Bitcoin 这笔交易用到的最高找零索引.签名后冷钱包要把它存下来.
     pub change_index: Option<u32>,
 }
 
@@ -172,7 +172,7 @@ impl Review {
     }
 }
 
-/// 收集动作，最后统一算出风险和确认方式，页面不用自己判断。
+/// 收集动作,最后统一算出风险和确认方式,页面不用自己判断.
 #[derive(Default)]
 pub struct ReviewBuilder {
     pub amount: Option<AmountView>,

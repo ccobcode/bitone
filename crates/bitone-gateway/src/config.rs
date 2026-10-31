@@ -1,4 +1,4 @@
-//! 配置文件。示例见 gateway.example.toml。
+//! 配置文件.示例见 gateway.example.toml.
 
 use crate::chains::{NetworkConfig, check_url, is_valid};
 use axum::http::{HeaderName, HeaderValue};
@@ -15,18 +15,18 @@ const COINGECKO_SIMPLE_PRICE: &str = "https://api.coingecko.com/api/v3/simple/pr
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub listen: SocketAddr,
-    /// 配置后同进程托管网页端静态文件，即自部署模式。
+    /// 配置后同进程托管网页端静态文件,即自部署模式.
     pub web_dir: Option<PathBuf>,
-    /// 一个上游一次查询的总时限，超时切换下一个。
+    /// 一个上游一次查询的总时限,超时切换下一个.
     pub upstream_timeout_ms: u64,
-    /// 交易、高度、价格这几个单值频道轮询上游的间隔。
+    /// 交易,高度,价格这几个单值频道轮询上游的间隔.
     pub ws_poll_interval_ms: u64,
-    /// 跟块退回轮询时查高度的间隔。
+    /// 跟块退回轮询时查高度的间隔.
     pub follow_poll_interval_ms: u64,
     pub ws_heartbeat_ms: u64,
     pub rate_limit_burst: f64,
     pub rate_limit_per_second: f64,
-    /// 只有来自这些 IP 的请求才读 X-Forwarded-For。默认为空，不信任任何代理。
+    /// 只有来自这些 IP 的请求才读 X-Forwarded-For.默认为空,不信任任何代理.
     pub trusted_proxies: Vec<IpAddr>,
     pub ws_max_connections_per_ip: usize,
     pub prices: Option<PricesConfig>,
@@ -37,12 +37,12 @@ pub struct Config {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PricesConfig {
-    /// CoinGecko 的 simple/price 格式。
+    /// CoinGecko 的 simple/price 格式.
     #[serde(default = "coingecko_simple_price")]
     pub url: String,
     pub api_key_header: Option<String>,
     pub api_key: Option<String>,
-    /// `网络:合约` 到价格源资产 ID 的映射。原生币的合约写 `native`。
+    /// `网络:合约` 到价格源资产 ID 的映射.原生币的合约写 `native`.
     pub ids: BTreeMap<String, String>,
 }
 
@@ -56,11 +56,11 @@ impl Default for Config {
             listen: SocketAddr::from(([127, 0, 0, 1], 8787)),
             web_dir: None,
             upstream_timeout_ms: 10_000,
-            // Electrum 查交易状态每次都要开一条 TLS 连接，太频繁公共服务器会限流。
+            // Electrum 查交易状态每次都要开一条 TLS 连接,太频繁公共服务器会限流.
             ws_poll_interval_ms: 15_000,
             follow_poll_interval_ms: 6_000,
             ws_heartbeat_ms: 30_000,
-            // 放宽阈值，运营商 NAT 下很多用户共用一个 IP。
+            // 放宽阈值,运营商 NAT 下很多用户共用一个 IP.
             rate_limit_burst: 1200.0,
             rate_limit_per_second: 20.0,
             trusted_proxies: Vec::new(),
@@ -109,7 +109,7 @@ impl PricesConfig {
     }
 }
 
-/// 命令行参数，优先于配置文件。镜像靠它固定监听地址和网页目录，配置文件不用改就能挂载。
+/// 命令行参数,优先于配置文件.镜像靠它固定监听地址和网页目录,配置文件不用改就能挂载.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Options {
     pub config: Option<PathBuf>,
@@ -158,7 +158,7 @@ impl Config {
 
     fn read(text: &str) -> Result<Config, String> {
         let mut config: Config = toml::from_str(text).map_err(|e| format!("配置格式错误: {e}"))?;
-        // 没有上游等于没有配置这个网络。
+        // 没有上游等于没有配置这个网络.
         config.networks.retain(|_, network| !network.upstreams.is_empty());
         Ok(config)
     }
@@ -174,7 +174,7 @@ impl Config {
             return Err("超时和间隔必须大于 0".into());
         }
         if self.rate_limit_burst < 1.0 || self.rate_limit_per_second <= 0.0 {
-            return Err("rate_limit_burst 至少为 1，rate_limit_per_second 必须大于 0".into());
+            return Err("rate_limit_burst 至少为 1,rate_limit_per_second 必须大于 0".into());
         }
         if self.ws_max_connections_per_ip == 0 {
             return Err("ws_max_connections_per_ip 至少为 1".into());
@@ -240,7 +240,7 @@ mod tests {
         }
     }
 
-    /// 命令行的目录替换配置文件里的，所以配置文件里的旧目录不存在时也能启动。
+    /// 命令行的目录替换配置文件里的,所以配置文件里的旧目录不存在时也能启动.
     #[test]
     fn command_line_overrides_the_file() {
         let dir = std::env::temp_dir().join(format!("bitone-config-{}", std::process::id()));
@@ -282,7 +282,7 @@ mod tests {
         assert!(config.trusted_proxies.is_empty(), "默认不信任任何代理");
     }
 
-    /// 配置漏掉的网络和代币，网页端完全看不到，所以示例配置必须覆盖内置清单。
+    /// 配置漏掉的网络和代币,网页端完全看不到,所以示例配置必须覆盖内置清单.
     #[test]
     fn example_config_covers_the_builtin_manifest() {
         let config = Config::parse(include_str!("../gateway.example.toml")).unwrap();

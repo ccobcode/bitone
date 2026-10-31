@@ -1,19 +1,19 @@
-//! 两种上游共用的解析和归纳规则。Electrum 的查询结果也转成 Esplora 的形状，规则只有一份。
+//! 两种上游共用的解析和归纳规则.Electrum 的查询结果也转成 Esplora 的形状,规则只有一份.
 
 use crate::upstream::{Failed, Flows, HistoryItem, NATIVE, Output, Tx, TxStatus};
 use bitone_core::Mode;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashSet};
 
-/// 完成标准，见 docs/03-system.md §9。
+/// 完成标准,见 docs/03-system.md §9.
 pub const FINAL_CONFIRMATIONS: u64 = 6;
-/// 手续费档位对应的目标确认块数。
+/// 手续费档位对应的目标确认块数.
 pub const FAST_TARGET: u64 = 1;
 pub const MEDIUM_TARGET: u64 = 6;
 pub const SLOW_TARGET: u64 = 144;
-/// 输入输出超过这么多就不带明细。批量付款的一笔能有几千个输出，只有这种交易退回按批归纳。
+/// 输入输出超过这么多就不带明细.批量付款的一笔能有几千个输出,只有这种交易退回按批归纳.
 const MAX_FLOWS: usize = 256;
-/// 节点报出这些内容时，交易已经在内存池或链上。不同版本的措辞都有。
+/// 节点报出这些内容时,交易已经在内存池或链上.不同版本的措辞都有.
 const ALREADY_KNOWN: [&str; 5] = [
     "txn-already-known",
     "txn-already-in-mempool",
@@ -34,7 +34,7 @@ fn status_for(confirmed: bool, confirmations: u64) -> TxStatus {
     }
 }
 
-/// `/tx/{txid}` 的响应映射成交易状态。
+/// `/tx/{txid}` 的响应映射成交易状态.
 pub fn parse_tx(hash: &str, reply: &Value, tip: u64) -> Result<Tx, Failed> {
     let status = reply.get("status").ok_or(Failed)?;
     if !status.get("confirmed").and_then(Value::as_bool).ok_or(Failed)? {
@@ -53,7 +53,7 @@ pub fn parse_tx(hash: &str, reply: &Value, tip: u64) -> Result<Tx, Failed> {
     })
 }
 
-/// 取不小于目标的最近档位，没有时取最大的档位。
+/// 取不小于目标的最近档位,没有时取最大的档位.
 fn estimate_for(estimates: &BTreeMap<u64, f64>, target: u64) -> Option<f64> {
     estimates
         .range(target..)
@@ -62,7 +62,7 @@ fn estimate_for(estimates: &BTreeMap<u64, f64>, target: u64) -> Option<f64> {
         .map(|(_, rate)| *rate)
 }
 
-/// 网页端用整数费率。向上取整，下限 1 sat/vB，低于这个值的交易很多节点不转发。
+/// 网页端用整数费率.向上取整,下限 1 sat/vB,低于这个值的交易很多节点不转发.
 pub fn fee_rates(reply: &Value, mode: Mode) -> Result<Value, Failed> {
     let mut estimates = BTreeMap::new();
     for (target, rate) in reply.as_object().ok_or(Failed)? {
@@ -74,7 +74,7 @@ pub fn fee_rates(reply: &Value, mode: Mode) -> Result<Value, Failed> {
                 .ok_or(Failed)?,
         );
     }
-    // 测试网经常没有估算数据，主网没有就是上游出了问题。
+    // 测试网经常没有估算数据,主网没有就是上游出了问题.
     if estimates.is_empty() && mode == Mode::Mainnet {
         return Err(Failed);
     }
@@ -97,8 +97,8 @@ fn address_of(output: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// `/address/{address}/txs` 里的一笔交易，按这批地址的视角归纳：
-/// 输入里有自己的地址算转出，金额是付给别人的部分，否则算转入，金额是收到的部分。
+/// `/address/{address}/txs` 里的一笔交易,按这批地址的视角归纳:
+/// 输入里有自己的地址算转出,金额是付给别人的部分,否则算转入,金额是收到的部分.
 pub fn history_item(tx: &Value, own: &HashSet<&str>, tip: u64) -> Result<HistoryItem, Failed> {
     let hash = tx.get("txid").and_then(Value::as_str).ok_or(Failed)?.to_string();
     let status = tx.get("status").ok_or(Failed)?;
@@ -108,7 +108,7 @@ pub fn history_item(tx: &Value, own: &HashSet<&str>, tip: u64) -> Result<History
         return Err(Failed);
     }
 
-    // coinbase 的 prevout 是 null。
+    // coinbase 的 prevout 是 null.
     let vin = tx.get("vin").and_then(Value::as_array).ok_or(Failed)?;
     let inputs: Vec<String> = vin
         .iter()
@@ -131,13 +131,13 @@ pub fn history_item(tx: &Value, own: &HashSet<&str>, tip: u64) -> Result<History
             .try_fold(0u64, |sum, (_, value)| sum.checked_add(*value))
             .ok_or(Failed)
     };
-    // 数据输出没有地址，不算收款方。
+    // 数据输出没有地址,不算收款方.
     let first = |list: &[&(Option<String>, u64)]| list.iter().find_map(|(address, _)| address.clone());
 
     let (from, to, amount) = match inputs.iter().find(|input| own.contains(input.as_str())) {
         Some(sender) => match first(&others) {
             Some(recipient) => (Some(sender.clone()), Some(recipient), total(&others)?),
-            // 没有付给别人，是转给自己。
+            // 没有付给别人,是转给自己.
             None => (Some(sender.clone()), first(&mine), total(&mine)?),
         },
         None => (inputs.first().cloned(), first(&mine), total(&mine)?),
@@ -213,7 +213,7 @@ mod tests {
             fee_rates(&reply, Mode::Mainnet).unwrap(),
             json!({"kind": "bitcoin", "slow": 1, "medium": 3, "fast": 9})
         );
-        // 估算不一定单调。
+        // 估算不一定单调.
         let reply = json!({"1": 2, "6": 5, "144": 9});
         assert_eq!(
             fee_rates(&reply, Mode::Mainnet).unwrap(),

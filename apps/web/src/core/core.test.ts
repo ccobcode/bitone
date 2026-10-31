@@ -1,5 +1,5 @@
 import { deriveAddress } from "../chains";
-import { must } from "../testing";
+import { initCore, must } from "../testing";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -8,7 +8,6 @@ import {
     PairingReceiver,
     UrReceiver,
     addressFrame,
-    initCoreSync,
     manifestPackageVersion,
     networkList,
     networkName,
@@ -41,9 +40,7 @@ function address(pairing: Pairing, path: string): string {
     return deriveAddress(account, "mainnet", 0, 0);
 }
 
-beforeAll(() => {
-    initCoreSync(readFileSync(new URL("./pkg/bitone_wasm_bg.wasm", import.meta.url)));
-});
+beforeAll(initCore);
 
 describe("配对数据", () => {
     it("解出指纹和四条链的地址", () => {

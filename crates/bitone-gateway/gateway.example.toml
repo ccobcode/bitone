@@ -1,15 +1,15 @@
-# 用法：bitone-gateway --config gateway.example.toml
-# 这是配置模板。本地要填 key 时复制成仓库根目录的 gateway.local.toml，这个文件不进 Git。
-# 上游能看到查询的地址。介意的话换成自己的节点。
-# 下面的键除 networks 外都可以省略，这里写的就是默认值。
+# 用法:bitone-gateway --config gateway.example.toml
+# 这是配置模板.本地要填 key 时复制成仓库根目录的 gateway.local.toml,这个文件不进 Git.
+# 上游能看到查询的地址.介意的话换成自己的节点.
+# 下面的键除 networks 外都可以省略,这里写的就是默认值.
 
 listen = "127.0.0.1:8787"
 
-# 自部署：取消注释后同进程托管网页端，目录里要有 index.html。
+# 自部署:取消注释后同进程托管网页端,目录里要有 index.html.
 # web_dir = "/srv/bitone/web"
 
 upstream_timeout_ms = 10000
-# 上游没有长连接时轮询区块高度的间隔。有订阅才跟块，闲时不访问上游。
+# 上游没有长连接时轮询区块高度的间隔.有订阅才跟块,闲时不访问上游.
 ws_poll_interval_ms = 15000
 follow_poll_interval_ms = 6000
 ws_heartbeat_ms = 30000
@@ -17,13 +17,13 @@ rate_limit_burst = 1200
 rate_limit_per_second = 20
 ws_max_connections_per_ip = 64
 
-# 部署在反向代理或负载均衡后面时，填代理的 IP。
-# 只有来自这些 IP 的请求才读 X-Forwarded-For，默认不信任任何代理。
+# 部署在反向代理或负载均衡后面时,填代理的 IP.
+# 只有来自这些 IP 的请求才读 X-Forwarded-For,默认不信任任何代理.
 trusted_proxies = []
 
-# 价格上游是 CoinGecko 的 simple/price 格式。删掉这一段后 /v1/prices 返回空。
-# 键是 网络:合约，只接受主网资产，值是 CoinGecko 的资产 ID。
-# 测试网资产由网页端按同链同符号的主网资产计价。
+# 价格上游是 CoinGecko 的 simple/price 格式.删掉这一段后 /v1/prices 返回空.
+# 键是 网络:合约,只接受主网资产,值是 CoinGecko 的资产 ID.
+# 测试网资产由网页端按同链同符号的主网资产计价.
 [prices]
 url = "https://api.coingecko.com/api/v3/simple/price"
 # api_key_header = "x-cg-demo-api-key"
@@ -47,14 +47,14 @@ url = "https://api.coingecko.com/api/v3/simple/price"
 "solana:Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" = "tether"
 "solana:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" = "usd-coin"
 
-# 每个网络配一个或多个上游，失败时切换下一个。没有配置的网络不对外提供。
-# 网络标识见 docs/03-system.md 第 5 节。
-# tokens 是查询余额的代币，没有列出的代币网页端看不到。
+# 每个网络配一个或多个上游,失败时切换下一个.没有配置的网络不对外提供.
+# 网络标识见 docs/03-system.md 第 5 节.
+# tokens 是查询余额的代币,没有列出的代币网页端看不到.
 
-# Bitcoin 优先用 Electrum 协议：一个连接批量查询，不用自己存区块。Esplora 只做备用。
-# ssl:// 验证证书，ssl-insecure:// 不验证，只允许测试网，tcp:// 只用于同机或内网的服务器。
-# 自建 electrs 或 Fulcrum 时把地址写在最前面，其他不用改。
-# 公共服务器由志愿者运营，能看到查询的地址。
+# Bitcoin 优先用 Electrum 协议:一个连接批量查询,不用自己存区块.Esplora 只做备用.
+# ssl:// 验证证书,ssl-insecure:// 不验证,只允许测试网,tcp:// 只用于同机或内网的服务器.
+# 自建 electrs 或 Fulcrum 时把地址写在最前面,其他不用改.
+# 公共服务器由志愿者运营,能看到查询的地址.
 
 [networks.bitcoin]
 upstreams = [
@@ -88,13 +88,13 @@ upstreams = [
     "https://mempool.space/testnet/api",
 ]
 
-# EVM 的交易历史要配 indexer，格式是 Etherscan 的 account 接口，Blockscout 也兼容。
-# 节点查不到地址的历史，不配置时 history 返回 upstream_unavailable。
-# BSC、Polygon 和它们的测试网没有不用 key 的索引服务，没有配置时只有订阅期间的交易和本机发出的交易。
-# 有 HyperSync token 时这样配，这个网络的 indexer 就按 HyperSync 的接口访问：
+# EVM 的交易历史要配 indexer,格式是 Etherscan 的 account 接口,Blockscout 也兼容.
+# 节点查不到地址的历史,不配置时 history 返回 upstream_unavailable.
+# BSC,Polygon 和它们的测试网没有不用 key 的索引服务,没有配置时只有订阅期间的交易和本机发出的交易.
+# 有 HyperSync token 时这样配,这个网络的 indexer 就按 HyperSync 的接口访问:
 # indexer = "https://56.hypersync.xyz"
 # indexer_token = "你的 token"
-# 免费 token 每分钟 15 次，所有网络共用，只用来补历史，跟块不用它。
+# 免费 token 每分钟 15 次,所有网络共用,只用来补历史,跟块不用它.
 [networks.ethereum]
 upstreams = ["https://ethereum-rpc.publicnode.com", "https://eth.drpc.org"]
 indexer = "https://api.routescan.io/v2/network/mainnet/evm/1/etherscan/api"
@@ -133,7 +133,7 @@ tokens = [
 upstreams = ["https://polygon-amoy-bor-rpc.publicnode.com"]
 tokens = ["0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582"]  # USDC
 
-# tron_api_key 放在 TRON-PRO-API-KEY 请求头里，发给这个网络的全部上游。
+# tron_api_key 放在 TRON-PRO-API-KEY 请求头里,发给这个网络的全部上游.
 [networks.tron]
 upstreams = ["https://api.trongrid.io"]
 # tron_api_key = "你的 key"

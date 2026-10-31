@@ -1,4 +1,3 @@
-// Solana 的核心库绑定.
 import type { RequestHeader } from "../../core";
 import {
     buildSolanaAdvanceNonce as wasmBuildSolanaAdvance,

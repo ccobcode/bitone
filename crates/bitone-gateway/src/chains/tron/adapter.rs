@@ -1,4 +1,4 @@
-//! TRON 的上游适配器。
+//! TRON 的上游适配器.
 
 use crate::upstream::{
     Balance, Broadcast, Cursor, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, RawTx, Signal, StreamPage, Tx,
@@ -12,22 +12,22 @@ use std::collections::BTreeMap;
 use tokio::sync::{mpsc, watch};
 
 const SUCCESS: &str = "SUCCESS";
-/// 交易已经被节点收到。
+/// 交易已经被节点收到.
 const DUPLICATE: &str = "DUP_TRANSACTION_ERROR";
-/// 这些返回码说的是节点状态，不是这笔交易不合法。
+/// 这些返回码说的是节点状态,不是这笔交易不合法.
 const NODE_BUSY: [&str; 4] = [
     "SERVER_BUSY",
     "NO_CONNECTION",
     "NOT_ENOUGH_EFFECTIVE_CONNECTION",
     "BLOCK_UNSOLIDIFIED",
 ];
-/// 普通转账的带宽。
+/// 普通转账的带宽.
 const TRANSFER_BANDWIDTH: u64 = 268;
-/// 合约调用在 raw_data 之外的带宽：`fee_limit` 6 字节、外层长度前缀 3 字节、
-/// 签名 67 字节、结果预留 64 字节。按主网 USDT 转账的 345 校准。
+/// 合约调用在 raw_data 之外的带宽:`fee_limit` 6 字节,外层长度前缀 3 字节,
+/// 签名 67 字节,结果预留 64 字节.按主网 USDT 转账的 345 校准.
 const CALL_OVERHEAD: u64 = 140;
 const PAGE_SIZE: &str = "50";
-/// 原生币记录流的键，代币流用清单下标。
+/// 原生币记录流的键,代币流用清单下标.
 const NATIVE_STREAM: &str = "native";
 
 pub struct Tron {
@@ -35,7 +35,7 @@ pub struct Tron {
     pub tokens: Vec<String>,
 }
 
-/// 估算费用的请求，字段都已校验。
+/// 估算费用的请求,字段都已校验.
 pub struct Estimate {
     pub from: String,
     pub to: String,
@@ -43,7 +43,7 @@ pub struct Estimate {
     pub data: Option<String>,
 }
 
-/// 查不到时节点返回空对象。
+/// 查不到时节点返回空对象.
 fn found(reply: &Value) -> bool {
     reply.as_object().is_some_and(|fields| !fields.is_empty())
 }
@@ -55,13 +55,13 @@ fn block_number(block: &Value) -> Result<u64, Failed> {
         .ok_or(Failed)
 }
 
-/// `gettransactioninfobyid` 和 `gettransactionbyid` 映射成交易状态。
-/// 合约结果不是 SUCCESS 就是失败，普通转账也有这个字段。
+/// `gettransactioninfobyid` 和 `gettransactionbyid` 映射成交易状态.
+/// 合约结果不是 SUCCESS 就是失败,普通转账也有这个字段.
 fn parse_tx(hash: &str, info: &Value, tx: &Value, confirmed: bool, tip: u64) -> Result<Tx, Failed> {
     let block = info.get("blockNumber").and_then(Value::as_u64).ok_or(Failed)?;
     let result = tx.pointer("/ret/0/contractRet").and_then(Value::as_str).ok_or(Failed)?;
     let failed = result != SUCCESS || info.get("result").and_then(Value::as_str) == Some("FAILED");
-    // 手续费为 0 时没有这个字段。
+    // 手续费为 0 时没有这个字段.
     let fee = info.get("fee").map_or(Ok("0".to_string()), decimal)?;
     let status = match (failed, confirmed) {
         (true, _) => TxStatus::Failed,
@@ -78,7 +78,7 @@ fn parse_tx(hash: &str, info: &Value, tx: &Value, confirmed: bool, tip: u64) -> 
     })
 }
 
-/// 引用区块，见 docs/03-system.md §9。取高度的低 2 字节和区块 ID 的第 8 到 16 字节。
+/// 引用区块,见 docs/03-system.md §9.取高度的低 2 字节和区块 ID 的第 8 到 16 字节.
 fn ref_block(block: &Value) -> Result<Value, Failed> {
     let number = block_number(block)?;
     let id = block
@@ -86,7 +86,7 @@ fn ref_block(block: &Value) -> Result<Value, Failed> {
         .and_then(Value::as_str)
         .filter(|id| id.len() == 64)
         .ok_or(Failed)?;
-    // 区块 ID 的前 8 字节就是高度，对不上说明数据有问题。
+    // 区块 ID 的前 8 字节就是高度,对不上说明数据有问题.
     if u64::from_str_radix(id.get(..16).ok_or(Failed)?, 16).map_err(|_| Failed)? != number {
         return Err(Failed);
     }
@@ -101,7 +101,7 @@ fn ref_block(block: &Value) -> Result<Value, Failed> {
     }))
 }
 
-/// 节点的 JSON 省略值为 0 的字段，所以键在而值缺失就是 0，键不在才是异常。
+/// 节点的 JSON 省略值为 0 的字段,所以键在而值缺失就是 0,键不在才是异常.
 fn chain_parameter(reply: &Value, key: &str) -> Result<u64, Failed> {
     let parameters = reply.get("chainParameter").and_then(Value::as_array).ok_or(Failed)?;
     let parameter = parameters
@@ -114,7 +114,7 @@ fn chain_parameter(reply: &Value, key: &str) -> Result<u64, Failed> {
 }
 
 fn resource(reply: &Value, account: &Value) -> Value {
-    // 用量为 0 时没有这些字段。
+    // 用量为 0 时没有这些字段.
     let field = |key: &str| reply.get(key).and_then(Value::as_u64).unwrap_or(0);
     let free = field("freeNetLimit").saturating_sub(field("freeNetUsed"));
     let staked = field("NetLimit").saturating_sub(field("NetUsed"));
@@ -122,7 +122,7 @@ fn resource(reply: &Value, account: &Value) -> Value {
     json!({"bandwidth": free + staked, "energy": energy, "activated": found(account)})
 }
 
-/// 合约调用的模拟结果。回滚时 `result.result` 仍然是 true，要看 `transaction.ret` 和 `message`。
+/// 合约调用的模拟结果.回滚时 `result.result` 仍然是 true,要看 `transaction.ret` 和 `message`.
 fn simulated(reply: &Value) -> Result<Result<Value, String>, Failed> {
     let result = reply.get("result").ok_or(Failed)?;
     let message = result.get("message").and_then(Value::as_str).unwrap_or("调用失败");
@@ -150,8 +150,8 @@ fn base58_address(hex: &str) -> Result<String, Failed> {
     Ok(base58::encode_check(&bytes))
 }
 
-/// `/v1/accounts/{address}/transactions` 的一行。只有两种记录：普通转账，以及失败的合约调用。
-/// 成功的代币转账在代币流里，其余系统合约不是转账。
+/// `/v1/accounts/{address}/transactions` 的一行.只有两种记录:普通转账,以及失败的合约调用.
+/// 成功的代币转账在代币流里,其余系统合约不是转账.
 fn native_item(row: &Value) -> Result<Option<HistoryItem>, Failed> {
     let contract = row.pointer("/raw_data/contract/0").ok_or(Failed)?;
     let kind = contract.get("type").and_then(Value::as_str).ok_or(Failed)?;
@@ -185,7 +185,7 @@ fn native_item(row: &Value) -> Result<Option<HistoryItem>, Failed> {
     }))
 }
 
-/// `/v1/accounts/{address}/transactions/trc20` 的一行。这个接口只有成功的 Transfer 事件。
+/// `/v1/accounts/{address}/transactions/trc20` 的一行.这个接口只有成功的 Transfer 事件.
 fn token_item(row: &Value, token: &str) -> Result<Option<HistoryItem>, Failed> {
     if row.get("type").and_then(Value::as_str) != Some("Transfer") {
         return Ok(None);
@@ -203,7 +203,7 @@ fn token_item(row: &Value, token: &str) -> Result<Option<HistoryItem>, Failed> {
     }))
 }
 
-/// 广播接口的响应。
+/// 广播接口的响应.
 fn submitted(reply: &Value) -> Result<(), Option<String>> {
     let code = reply.get("code").and_then(Value::as_str).unwrap_or_default();
     if reply.get("result").and_then(Value::as_bool) == Some(true) || code == DUPLICATE {
@@ -237,9 +237,9 @@ impl Tron {
 
     async fn address(&self, address: &str) -> Result<Vec<Balance>, Failed> {
         let reply = self.http.get(&format!("/v1/accounts/{address}")).await?;
-        // 未激活的账户 data 是空数组，这是余额为 0，不是错误。
+        // 未激活的账户 data 是空数组,这是余额为 0,不是错误.
         let account = reply.get("data").and_then(Value::as_array).ok_or(Failed)?.first();
-        // 余额为 0 的账户可能没有 balance 字段。
+        // 余额为 0 的账户可能没有 balance 字段.
         let native = account
             .and_then(|a| a.get("balance"))
             .map_or(Ok("0".to_string()), decimal)?;
@@ -252,7 +252,7 @@ impl Tron {
         Ok(out)
     }
 
-    /// `walletsolidity` 查得到才算区块确认。查不到再问全节点，这时交易可能刚上链。
+    /// `walletsolidity` 查得到才算区块确认.查不到再问全节点,这时交易可能刚上链.
     async fn tx(&self, hash: &str, tip: u64) -> Result<Vec<Tx>, Failed> {
         let value = json!({"value": hash});
         let receipt = self
@@ -284,7 +284,7 @@ impl Tron {
         Ok(vec![(address.clone(), resource(&reply, &account))])
     }
 
-    /// 普通转账不需要模拟。收款方未激活时要付激活费，两项费用都来自链参数。
+    /// 普通转账不需要模拟.收款方未激活时要付激活费,两项费用都来自链参数.
     async fn estimate_transfer(&self, to: &str) -> Result<Value, Failed> {
         let fee = if found(&self.account(to).await?) {
             0
@@ -296,7 +296,7 @@ impl Tron {
         Ok(json!({"energy": "0", "bandwidth": TRANSFER_BANDWIDTH.to_string(), "activationFee": fee.to_string()}))
     }
 
-    /// 最新已确认区块的时间，单位是毫秒。
+    /// 最新已确认区块的时间,单位是毫秒.
     async fn confirmed_time(&self) -> Result<u64, Failed> {
         let block = self.http.post_to("/walletsolidity/getnowblock", &json!({})).await?;
         block
@@ -305,7 +305,7 @@ impl Tron {
             .ok_or(Failed)
     }
 
-    /// 一页记录。`confirmed` 时只取已确认的记录，这时的状态都是最终状态。
+    /// 一页记录.`confirmed` 时只取已确认的记录,这时的状态都是最终状态.
     async fn page(
         &self,
         addresses: &[String],
@@ -359,7 +359,7 @@ impl Tron {
         }
         let path = match contract {
             None => {
-                // 不混入内部交易，它们的结构不同。
+                // 不混入内部交易,它们的结构不同.
                 query.push(("search_internal", "false"));
                 format!("/v1/accounts/{address}/transactions")
             }
@@ -401,7 +401,7 @@ impl Tron {
     }
 }
 
-/// 跟块时也取还没确认的记录，确认之前状态是 `included`。
+/// 跟块时也取还没确认的记录,确认之前状态是 `included`.
 fn unconfirmed(mut item: HistoryItem, confirmed: u64) -> HistoryItem {
     let newer = item.time.is_some_and(|time| time * 1000 > confirmed);
     if newer && item.status == TxStatus::Finalized {
@@ -417,7 +417,7 @@ impl Upstream for Tron {
         })
     }
 
-    /// 只取已确认的记录时，刚到账的转账不在推送里，要等下次活动才看得到。
+    /// 只取已确认的记录时,刚到账的转账不在推送里,要等下次活动才看得到.
     fn recent<'a>(&'a self, addresses: &'a [String], _previous: u64) -> Query<'a, Vec<HistoryItem>> {
         Box::pin(async move {
             let confirmed = self.confirmed_time().await?;
@@ -462,7 +462,7 @@ impl Upstream for Tron {
         since: Option<u64>,
     ) -> Query<'a, HistoryPage> {
         Box::pin(async move {
-            // 这里只有已确认的记录，所以水位是最新已确认区块的时间。
+            // 这里只有已确认的记录,所以水位是最新已确认区块的时间.
             let checkpoint = self.confirmed_time().await?;
             let page = self.page(addresses, cursor, since, true).await?;
             Ok(HistoryPage { checkpoint, ..page })
@@ -475,7 +475,7 @@ impl Upstream for Tron {
 }
 
 impl Tron {
-    /// 内层的 `Err` 是节点拒绝这次调用，带节点原文。
+    /// 内层的 `Err` 是节点拒绝这次调用,带节点原文.
     pub fn estimate<'a>(&'a self, request: &'a Estimate) -> Query<'a, Result<Value, String>> {
         Box::pin(async move {
             let Some(contract) = &request.contract else {
@@ -731,7 +731,7 @@ mod tests {
     fn chain_parameters_must_be_present() {
         let reply = json!({"chainParameter": [{"key": "getEnergyFee", "value": 420}, {"key": "zero"}, {"key": "bad", "value": "1"}]});
         assert_eq!(chain_parameter(&reply, "getEnergyFee").unwrap(), 420);
-        // 值为 0 时节点不写 value。
+        // 值为 0 时节点不写 value.
         assert_eq!(chain_parameter(&reply, "zero").unwrap(), 0);
         assert!(chain_parameter(&reply, "bad").is_err());
         assert!(chain_parameter(&reply, "getTransactionFee").is_err());

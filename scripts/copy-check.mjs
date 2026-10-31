@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// 文案扫描，规则见 docs/06-ui.md 第 8 节：不用「·」分隔信息，不用分号。
-// 码点按数值构造，源码不出现被禁止的字面。
+// 文案扫描,规则见 docs/06-ui.md 第 8 节:不用"·"分隔信息,不用分号.
+// 码点按数值构造,源码不出现被禁止的字面.
 import { execFileSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -11,15 +11,15 @@ const SEMICOLON = String.fromCodePoint(0xff1b);
 const BINARY =
     /\.(png|jpe?g|gif|webp|ico|bmp|tiff?|woff2?|ttf|otf|eot|pdf|zip|gz|tgz|bz2|xz|7z|rar|mp4|webm|mp3|wav|wasm|so|a|db|sqlite3?|bin|der|jar)$/i;
 
-// 引用规则本身时可以出现。
-const QUOTED_DOT = String.fromCodePoint(0x300c) + DOT + String.fromCodePoint(0x300d);
+// 引用规则本身时可以出现.
+const QUOTED_DOT = `"${DOT}"`;
 
-/** 文件里不算文案的部分：Markdown 的代码块和行内代码。 */
+/** 文件里不算文案的部分:Markdown 的代码块和行内代码. */
 function stripCode(line, inFence) {
     return inFence ? "" : line.replace(/`[^`]*`/g, "");
 }
 
-/** 返回每处命中的行号 (1 起)、列号 (1 起) 和字符。`.md` 和提交信息里半角分号也算。 */
+/** 返回每处命中的行号 (1 起),列号 (1 起) 和字符.`.md` 和提交信息里半角分号也算. */
 export function scanText(text, { prose = false } = {}) {
     const hits = [];
     let inFence = false;
@@ -84,7 +84,7 @@ function main(args) {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     const count = main(process.argv.slice(2));
     if (count > 0) {
-        console.error(`共 ${count} 处，见 docs/06-ui.md 第 8 节`);
+        console.error(`共 ${count} 处,见 docs/06-ui.md 第 8 节`);
         process.exit(1);
     }
 }

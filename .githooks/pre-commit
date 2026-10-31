@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 node scripts/copy-check.mjs --staged
+node scripts/fullwidth.mjs --staged

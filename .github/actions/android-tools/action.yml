@@ -1,5 +1,5 @@
 name: Android tools
-description: JDK、NDK 和 cargo-ndk。
+description: JDK,NDK 和 cargo-ndk.
 
 runs:
     using: composite

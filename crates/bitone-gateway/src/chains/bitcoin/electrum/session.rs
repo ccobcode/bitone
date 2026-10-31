@@ -1,4 +1,4 @@
-//! Electrum 的连接：上游地址的写法、TLS 和请求响应。
+//! Electrum 的连接:上游地址的写法,TLS 和请求响应.
 
 use super::{history_row, not_found, output_of, script_hash};
 use crate::upstream::Failed;
@@ -14,19 +14,19 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
-/// 一次写入的请求数。公共服务器按连接计费，太大容易被断开。
+/// 一次写入的请求数.公共服务器按连接计费,太大容易被断开.
 const BATCH: usize = 100;
-/// 单行响应的上限。上游的数据不可信，不能让它撑爆内存。
+/// 单行响应的上限.上游的数据不可信,不能让它撑爆内存.
 const MAX_LINE: u64 = 16 << 20;
 
-/// 上游地址的写法，决定是否验证证书。
+/// 上游地址的写法,决定是否验证证书.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Transport {
-    /// `tcp://`，只用于同机或内网自建的服务器。
+    /// `tcp://`,只用于同机或内网自建的服务器.
     Plain,
-    /// `ssl://`，验证证书。
+    /// `ssl://`,验证证书.
     Tls,
-    /// `ssl-insecure://`，不验证证书。公共测试网服务器大多是自签名，配置层拒绝主网这样写。
+    /// `ssl-insecure://`,不验证证书.公共测试网服务器大多是自签名,配置层拒绝主网这样写.
     TlsUnverified,
 }
 
@@ -39,7 +39,7 @@ pub fn transport(url: &str) -> Option<Transport> {
     }
 }
 
-/// 不信任证书，也就不用核对握手签名。公共测试网的自签名证书是 X.509 v1，核对时解析不了。
+/// 不信任证书,也就不用核对握手签名.公共测试网的自签名证书是 X.509 v1,核对时解析不了.
 #[derive(Debug)]
 struct AcceptAnyCertificate(Arc<CryptoProvider>);
 
@@ -112,14 +112,14 @@ pub(super) type Call = (&'static str, Value);
 pub(super) struct Session {
     pub(super) stream: BufReader<Box<dyn Stream>>,
     pub(super) next: u64,
-    /// 读到一半的行。等推送时读取可能被打断，下次接着读。
+    /// 读到一半的行.等推送时读取可能被打断,下次接着读.
     pub(super) line: Vec<u8>,
-    /// 等回复时收到的推送，回复处理完再看。
+    /// 等回复时收到的推送,回复处理完再看.
     pub(super) pushes: Vec<Value>,
 }
 
 impl Session {
-    /// 读一条消息。可以被 `select!` 打断，读到一半的内容留在 `line` 里。
+    /// 读一条消息.可以被 `select!` 打断,读到一半的内容留在 `line` 里.
     pub(super) async fn read_message(&mut self) -> Result<Value, Failed> {
         let read = (&mut self.stream)
             .take(MAX_LINE)
@@ -136,7 +136,7 @@ impl Session {
     pub(super) async fn read_reply(&mut self) -> Result<(u64, Reply), Failed> {
         loop {
             let message = self.read_message().await?;
-            // 区块头和地址订阅的推送没有 id。
+            // 区块头和地址订阅的推送没有 id.
             let Some(id) = message.get("id").and_then(Value::as_u64) else {
                 self.pushes.push(message);
                 continue;
@@ -153,7 +153,7 @@ impl Session {
         }
     }
 
-    /// 批量请求，结果顺序和请求相同。连接级的失败是 `Failed`，单项的错误留给调用方判断。
+    /// 批量请求,结果顺序和请求相同.连接级的失败是 `Failed`,单项的错误留给调用方判断.
     pub(super) async fn call(&mut self, calls: &[Call]) -> Result<Vec<Reply>, Failed> {
         let mut replies = Vec::with_capacity(calls.len());
         for chunk in calls.chunks(BATCH) {
@@ -194,7 +194,7 @@ impl Session {
         header.get("height").and_then(Value::as_u64).ok_or(Failed)
     }
 
-    /// 取一批原始交易。查不到的不在结果里。
+    /// 取一批原始交易.查不到的不在结果里.
     pub(super) async fn transactions(&mut self, txids: &BTreeSet<Txid>) -> Result<HashMap<Txid, Transaction>, Failed> {
         let calls: Vec<Call> = txids
             .iter()
@@ -213,10 +213,10 @@ impl Session {
         Ok(found)
     }
 
-    /// 交易所在的高度，`None` 是还在内存池。协议没有按交易查高度的方法，Blockstream 和
-    /// mempool.space 的服务器也不支持 verbose，所以从交易涉及的脚本历史里找。
-    /// 历史太长的脚本服务器会报错，OP_RETURN 不进索引，所以输入和输出都查，找到一个就够。
-    /// 都找不到时调用方换上游。
+    /// 交易所在的高度,`None` 是还在内存池.协议没有按交易查高度的方法,Blockstream 和
+    /// mempool.space 的服务器也不支持 verbose,所以从交易涉及的脚本历史里找.
+    /// 历史太长的脚本服务器会报错,OP_RETURN 不进索引,所以输入和输出都查,找到一个就够.
+    /// 都找不到时调用方换上游.
     pub(super) async fn heights(
         &mut self,
         txs: &HashMap<Txid, Transaction>,
@@ -254,7 +254,7 @@ impl Session {
         Ok(heights)
     }
 
-    /// 这批交易花费的前序交易，用来知道输入的地址和金额。
+    /// 这批交易花费的前序交易,用来知道输入的地址和金额.
     pub(super) async fn previous(&mut self, txs: &[&Transaction]) -> Result<HashMap<Txid, Transaction>, Failed> {
         let txids: BTreeSet<Txid> = txs
             .iter()
@@ -266,7 +266,7 @@ impl Session {
         self.transactions(&txids).await
     }
 
-    /// 区块时间在区块头的第 68 字节，小端 4 字节。
+    /// 区块时间在区块头的第 68 字节,小端 4 字节.
     pub(super) async fn block_times(&mut self, heights: &BTreeSet<u64>) -> Result<HashMap<u64, u32>, Failed> {
         let calls: Vec<Call> = heights
             .iter()

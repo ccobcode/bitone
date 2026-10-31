@@ -1,4 +1,4 @@
-//! WebSocket 的 tx、blocks、prices 频道，受信任代理，单 IP 连接数上限。
+//! WebSocket 的 tx,blocks,prices 频道,受信任代理,单 IP 连接数上限.
 
 mod common;
 
@@ -27,7 +27,7 @@ fn tx_subscribe(id: u64, hash: &str) -> Value {
     subscribe(id, json!({"channel": "tx", "network": "ethereum", "hash": hash}))
 }
 
-/// 可以在测试中途修改的 EVM 节点，区块标签固定：latest 100，safe 90，finalized 80。
+/// 可以在测试中途修改的 EVM 节点,区块标签固定:latest 100,safe 90,finalized 80.
 #[derive(Clone)]
 struct Node {
     receipt: Arc<Mutex<Value>>,
@@ -128,7 +128,7 @@ async fn tx_channel_pushes_every_status_change_and_stops_at_finality() {
     let update = next_json(&mut ws).await;
     assert_eq!(update["params"]["tx"]["status"], "finalized");
 
-    // 到达最终状态后不再轮询。
+    // 到达最终状态后不再轮询.
     sleep(Duration::from_millis(100)).await;
     let polls = node.polls();
     sleep(Duration::from_millis(100)).await;
@@ -147,7 +147,7 @@ async fn tx_channel_reports_failed_and_keeps_watching_until_final() {
     assert_eq!(update["params"]["tx"]["status"], "failed");
     assert_eq!(update["params"]["tx"]["stage"], "latest");
 
-    // 重组后这笔交易可能成功，所以失败但未最终确定时要继续看。
+    // 重组后这笔交易可能成功,所以失败但未最终确定时要继续看.
     node.set_receipt(95, "0x1");
     assert_eq!(next_json(&mut ws).await["params"]["tx"]["status"], "included");
 
@@ -182,7 +182,7 @@ async fn tx_channel_pushes_after_a_failed_baseline() {
     let mut ws = gateway.ws().await;
     assert!(call(&mut ws, tx_subscribe(1, &hash())).await["result"].is_string());
 
-    // 上游恢复：同一个端口开始监听。
+    // 上游恢复:同一个端口开始监听.
     let (node, url) = Node::start().await;
     node.set_receipt(95, "0x1");
     let proxy = Router::new().fallback(move |request: axum::extract::Request| {
@@ -276,7 +276,7 @@ async fn blocks_channel_pushes_new_heights() {
     assert_silent(&mut ws).await;
 
     *node.height.lock().unwrap() = 123;
-    // 高度缓存几秒，这里要等缓存过期。
+    // 高度缓存几秒,这里要等缓存过期.
     let update = timeout(Duration::from_secs(6), async {
         loop {
             let message = next_json(&mut ws).await;
@@ -334,7 +334,7 @@ async fn prices_channel_pushes_after_a_failed_baseline() {
     let gateway = Gateway::start(&text).await;
     let mut ws = gateway.ws().await;
     let id = call(&mut ws, subscribe(1, json!({"channel": "prices"}))).await["result"].clone();
-    // 失败只缓存 1 秒，之后的成功结果要推送出来。
+    // 失败只缓存 1 秒,之后的成功结果要推送出来.
     let update = next_json(&mut ws).await;
     assert_eq!(
         update["params"],
@@ -352,26 +352,19 @@ async fn limited_status(gateway: &Gateway, forwarded: Option<&str>) -> StatusCod
     request.send().await.unwrap().status()
 }
 
+/// 没有配置代理,或者请求不是代理发来的,都不读转发头.
 #[tokio::test]
-async fn forwarded_header_is_ignored_by_default() {
-    let gateway = Gateway::start("rate_limit_burst = 1\nrate_limit_per_second = 0.001").await;
-    assert_eq!(limited_status(&gateway, Some("1.1.1.1")).await, StatusCode::OK);
-    assert_eq!(
-        limited_status(&gateway, Some("2.2.2.2")).await,
-        StatusCode::TOO_MANY_REQUESTS,
-        "伪造转发头不能换一个桶"
-    );
-}
-
-#[tokio::test]
-async fn forwarded_header_is_ignored_from_other_peers() {
-    let config = "rate_limit_burst = 1\nrate_limit_per_second = 0.001\ntrusted_proxies = ['10.0.0.1']";
-    let gateway = Gateway::start(config).await;
-    assert_eq!(limited_status(&gateway, Some("1.1.1.1")).await, StatusCode::OK);
-    assert_eq!(
-        limited_status(&gateway, Some("2.2.2.2")).await,
-        StatusCode::TOO_MANY_REQUESTS
-    );
+async fn forwarded_header_is_ignored_unless_the_peer_is_trusted() {
+    let limits = "rate_limit_burst = 1\nrate_limit_per_second = 0.001";
+    for config in [limits.to_string(), format!("{limits}\ntrusted_proxies = ['10.0.0.1']")] {
+        let gateway = Gateway::start(&config).await;
+        assert_eq!(limited_status(&gateway, Some("1.1.1.1")).await, StatusCode::OK);
+        assert_eq!(
+            limited_status(&gateway, Some("2.2.2.2")).await,
+            StatusCode::TOO_MANY_REQUESTS,
+            "伪造转发头不能换一个桶"
+        );
+    }
 }
 
 #[tokio::test]
@@ -384,12 +377,12 @@ async fn trusted_proxies_give_each_client_its_own_bucket() {
         limited_status(&gateway, Some("1.1.1.1")).await,
         StatusCode::TOO_MANY_REQUESTS
     );
-    // 客户端自己写在左边的内容不算数。
+    // 客户端自己写在左边的内容不算数.
     assert_eq!(
         limited_status(&gateway, Some("9.9.9.9, 2.2.2.2")).await,
         StatusCode::TOO_MANY_REQUESTS
     );
-    // 没有转发头时就是代理自己。
+    // 没有转发头时就是代理自己.
     assert_eq!(limited_status(&gateway, None).await, StatusCode::OK);
     assert_eq!(limited_status(&gateway, None).await, StatusCode::TOO_MANY_REQUESTS);
 }
@@ -421,7 +414,7 @@ async fn websocket_connections_are_capped_per_ip() {
     let body: Value = serde_json::from_slice(response.body().as_deref().unwrap()).unwrap();
     assert_eq!(error_code(&body), "rate_limited");
 
-    // 连接断开后名额归还。
+    // 连接断开后名额归还.
     drop(first);
     timeout(Duration::from_secs(5), async {
         while connect_async(gateway.ws.as_str()).await.is_err() {

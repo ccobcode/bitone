@@ -1,5 +1,5 @@
-//! 网关的分层约定。依赖只能向下：`api`、`follow` 用 `chains`，`chains` 用 `upstream`。
-//! 每条链一个目录，目录之间互不引用，共享层不出现具体的链，加一条链只加一个目录。
+//! 网关的分层约定.依赖只能向下:`api`,`follow` 用 `chains`,`chains` 用 `upstream`.
+//! 每条链一个目录,目录之间互不引用,共享层不出现具体的链,加一条链只加一个目录.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,7 +10,7 @@ fn source() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
 }
 
-/// 目录下的全部 Rust 文件，去掉测试模块。测试可以写具体的链。
+/// 目录下的全部 Rust 文件,去掉测试模块.测试可以写具体的链.
 fn files(path: &Path) -> Vec<(PathBuf, String)> {
     if path.is_file() {
         let text = fs::read_to_string(path).unwrap();

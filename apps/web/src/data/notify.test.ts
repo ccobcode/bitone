@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { initCore } from "../testing";
+import { USDT, initCore } from "../testing";
 import { fetchHistory, fetchSnapshot, type HistoryItem } from "../gateway/client";
 import { db, type ChainEntry } from "./db";
 import { applyChainUpdate, syncFeed } from "./feed";
@@ -22,7 +22,6 @@ vi.mock("../gateway/client", async (actual) => ({
 
 const ME = "0x000000000000000000000000000000000000aaaa";
 const PEER = "0x000000000000000000000000000000000000bbbb";
-const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 const own = new Set([ME]);
 const STREAM = { network: "ethereum", addresses: [ME] };
 const ONE_ETH = 10n ** 18n;

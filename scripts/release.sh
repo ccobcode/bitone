@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# 给 CI 建好的草稿 Release 签名，然后转为正式发布。在仓库根目录运行。
+# 给 CI 建好的草稿 Release 签名,然后转为正式发布.在仓库根目录运行.
 #
 #   scripts/release.sh v1.2.3 --key <key.der.gpg> --cert <cert.pem>
 #
-# 口令由 gpg 询问，脚本不读取。私钥只经过管道，不写文件。
+# 口令由 gpg 询问,脚本不读取.私钥只经过管道,不写文件.
 set -euo pipefail
 
-# CA 证书和 APK 证书共用一把私钥，传错证书时 apksigner 不会报错，所以固定指纹。
+# CA 证书和 APK 证书共用一把私钥,传错证书时 apksigner 不会报错,所以固定指纹.
 APK_CERT_SHA256=d9f761bbbaf9cf637e579a88c69b04391de49d1853f6a078424f098edbe97c73
 PACKAGE=com.ccobcode.bitone
 PUBLIC_KEY=crates/bitone-core/assets/manifest-key.der
 MANIFEST=crates/bitone-core/assets/manifest.json
 
 die() {
-    echo "发布中止：$*" >&2
+    echo "发布中止:$*" >&2
     exit 1
 }
 
@@ -26,7 +26,7 @@ manifest_version() {
 }
 
 tag=${1:-}
-[[ $tag =~ ^v[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}$ ]] || die "tag 要写成 vX.Y.Z，每段不超过 99"
+[[ $tag =~ ^v[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}$ ]] || die "tag 要写成 vX.Y.Z,每段不超过 99"
 shift
 key='' cert=''
 while (($# > 1)); do
@@ -48,12 +48,12 @@ export PATH=$build_tools:$JAVA_HOME/bin:$PATH
 GPG_TTY=$(tty || true)
 export GPG_TTY
 
-# 先做不需要口令的检查。
+# 先做不需要口令的检查.
 git fetch --quiet --tags origin main
 git merge-base --is-ancestor "$tag" origin/main || die "$tag 不在 main 上"
 
 fingerprint=$(openssl x509 -in "$cert" -noout -fingerprint -sha256 | cut -d= -f2 | tr -d : | tr A-F a-f)
-[[ $fingerprint == "$APK_CERT_SHA256" ]] || die "证书指纹是 ${fingerprint}，不是 APK 证书"
+[[ $fingerprint == "$APK_CERT_SHA256" ]] || die "证书指纹是 ${fingerprint},不是 APK 证书"
 cmp -s <(openssl x509 -in "$cert" -noout -pubkey | openssl pkey -pubin -outform DER) \
     <(git show "$tag:$PUBLIC_KEY") || die "证书的公钥和 $tag 里的 manifest-key.der 不一致"
 
@@ -78,7 +78,7 @@ certificates=$(apksigner verify --min-sdk-version 31 --print-certs "$signed")
 [[ $certificates == *"SHA-256 digest: $APK_CERT_SHA256"* ]] || die "签名后的证书指纹不对"
 assets=("$signed")
 
-# 内置清单的版本比上一个 tag 高时，才发布扫码更新用的清单包。
+# 内置清单的版本比上一个 tag 高时,才发布扫码更新用的清单包.
 previous=$(git describe --tags --abbrev=0 "$tag^" 2>/dev/null || true)
 if [[ -n $previous ]] && (($(manifest_version "$tag") > $(manifest_version "$previous"))); then
     work=$(mktemp -d)

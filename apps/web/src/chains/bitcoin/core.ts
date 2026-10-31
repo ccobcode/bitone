@@ -1,4 +1,3 @@
-// Bitcoin 的核心库绑定.
 import {
     primaryNetwork,
     type AccountKind,

@@ -40,6 +40,6 @@ pub enum Error {
     InvalidAddress,
     #[error("余额不足")]
     InsufficientFunds,
-    #[error("金额太小，节点不会转发")]
+    #[error("金额太小,节点不会转发")]
     Dust,
 }

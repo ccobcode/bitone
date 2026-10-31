@@ -1,5 +1,5 @@
-//! 跟块和快照的集成测试，上游都是本地模拟服务。
-//! 重点是没有索引服务时也能解析交易、一部分失败不影响其余，以及水位分组。
+//! 跟块和快照的集成测试,上游都是本地模拟服务.
+//! 重点是没有索引服务时也能解析交易,一部分失败不影响其余,以及水位分组.
 
 mod common;
 
@@ -29,7 +29,7 @@ fn padded(address: &str) -> String {
     format!("0x{:0>64}", address[2..].to_lowercase())
 }
 
-/// 一条模拟的 EVM 链。
+/// 一条模拟的 EVM 链.
 #[derive(Default)]
 struct Scene {
     block: u64,
@@ -94,7 +94,7 @@ fn evm_config(url: &str) -> String {
     )
 }
 
-/// 快照一行一个 JSON。
+/// 快照一行一个 JSON.
 async fn snapshot(gateway: &Gateway, body: &Value) -> Vec<Value> {
     let url = format!("{}/v1/snapshot", gateway.base);
     let response = reqwest::Client::new().post(url).json(body).send().await.unwrap();
@@ -125,7 +125,7 @@ async fn evm_update_parses_the_block_without_an_indexer() {
             vec![
                 json!({"hash": "0xaa", "from": OTHER, "to": own, "value": "0x10"}),
                 json!({"hash": "0xbb", "from": OTHER, "to": OTHER, "value": "0x99"}),
-                // 成功的零金额调用不是转账，这和索引服务的规则一致。
+                // 成功的零金额调用不是转账,这和索引服务的规则一致.
                 json!({"hash": "0xcc", "from": own, "to": USDT, "value": "0x0"}),
             ],
         );
@@ -219,7 +219,7 @@ async fn snapshot_groups_addresses_by_their_checkpoint() {
         {"network": "bitcoin", "address": other},
     ]});
     let results = snapshot(&gateway, &body).await;
-    assert_eq!(results.len(), 2, "新地址没有水位，要单独查");
+    assert_eq!(results.len(), 2, "新地址没有水位,要单独查");
     let known = results.iter().find(|row| row["addresses"] == json!([BTC])).unwrap();
     assert_eq!(known["history"]["unchanged"], true);
     assert_eq!(known["height"], 100);
@@ -228,7 +228,7 @@ async fn snapshot_groups_addresses_by_their_checkpoint() {
     assert_eq!(fresh["history"]["checkpoint"], "95");
 }
 
-/// 慢的网络不能拖住快的网络。
+/// 慢的网络不能拖住快的网络.
 #[tokio::test]
 async fn snapshot_sends_each_group_as_soon_as_it_is_ready() {
     let (_, fast) = evm_chain().await;
@@ -252,7 +252,7 @@ async fn snapshot_sends_each_group_as_soon_as_it_is_ready() {
     drop(hang);
 }
 
-/// HyperSync 的响应：一笔原生币收款、一笔零金额调用、一笔失败的调用、一条代币转账。
+/// HyperSync 的响应:一笔原生币收款,一笔零金额调用,一笔失败的调用,一条代币转账.
 fn hypersync_reply() -> Value {
     json!({
         "next_block": 201,
@@ -356,20 +356,20 @@ async fn snapshot_validates_before_it_reaches_the_upstream() {
     }
 }
 
-// ---- 长连接：没有动静的地址不发余额请求 ----
+// ---- 长连接:没有动静的地址不发余额请求 ----
 
-/// 同一个地址上提供 HTTP 和 WebSocket 的模拟节点。
+/// 同一个地址上提供 HTTP 和 WebSocket 的模拟节点.
 #[derive(Clone)]
 struct SocketNode {
     url: String,
-    /// 客户端发来的订阅，按收到的顺序。
+    /// 客户端发来的订阅,按收到的顺序.
     subscribed: Arc<Mutex<Vec<Value>>>,
-    /// 发给所有连接的推送。
+    /// 发给所有连接的推送.
     pushes: broadcast::Sender<String>,
     calls: Calls,
-    /// 这种订阅回错误。写方法名，或者 `eth_subscribe` 的第一个参数。
+    /// 这种订阅回错误.写方法名,或者 `eth_subscribe` 的第一个参数.
     reject: Arc<Mutex<Option<String>>>,
-    /// `eth_getBalance` 不回应。
+    /// `eth_getBalance` 不回应.
     stall: Arc<AtomicBool>,
 }
 
@@ -478,7 +478,7 @@ async fn evm_socket_node(chain: &Chain) -> SocketNode {
     .await
 }
 
-/// 只有高度时不访问上游，代币由节点推送，订阅多少地址都不用每轮 `balanceOf`。
+/// 只有高度时不访问上游,代币由节点推送,订阅多少地址都不用每轮 `balanceOf`.
 #[tokio::test]
 async fn evm_tokens_are_pushed_by_the_node_not_polled() {
     let (chain, _) = evm_chain().await;
@@ -492,9 +492,9 @@ async fn evm_tokens_are_pushed_by_the_node_not_polled() {
     assert_eq!(filters[1]["params"][1]["topics"][1], json!([padded(EVM)]), "转出");
     assert_eq!(filters[2]["params"][1]["topics"][2], json!([padded(EVM)]), "转入");
 
+    // 高度只从推送来,节点的 block 不动.否则切到推送之前的轮询会先看到新高度,多查一轮.
     // 第一个块要取原生币基线,取到后对账一次,这一次会查代币.
     let baseline = node.calls.count("eth_call");
-    chain.lock().unwrap().block = 11;
     node.push(new_head(11));
     let update = next_json(&mut ws).await;
     assert_eq!(update["params"]["height"], 11);
@@ -507,7 +507,6 @@ async fn evm_tokens_are_pushed_by_the_node_not_polled() {
     .expect("第一个块之后要对账");
 
     let token_calls = node.calls.count("eth_call");
-    chain.lock().unwrap().block = 12;
     node.push(new_head(12));
     let update = next_json(&mut ws).await;
     assert_eq!(update["params"]["height"], 12);
@@ -534,7 +533,7 @@ async fn evm_tokens_are_pushed_by_the_node_not_polled() {
     assert_eq!(update["params"]["txs"][0]["hash"], "0xdd", "推送后不用等下一个块");
 }
 
-/// 原生币没有日志，内部转账也不在交易列表里，只有余额能发现。
+/// 原生币没有日志,内部转账也不在交易列表里,只有余额能发现.
 #[tokio::test]
 async fn evm_native_changes_are_found_by_the_balance_batch() {
     let (chain, _) = evm_chain().await;
@@ -567,7 +566,7 @@ async fn evm_native_changes_are_found_by_the_balance_batch() {
     assert_eq!(update["params"]["balances"][0]["amount"], "5");
 }
 
-/// 原生币隔几秒才查一次，发现变化时高度可能已经过了这笔交易所在的块，交易不能漏掉。
+/// 原生币隔几秒才查一次,发现变化时高度可能已经过了这笔交易所在的块,交易不能漏掉.
 #[tokio::test]
 async fn evm_native_tx_is_found_when_the_change_is_noticed_blocks_later() {
     let (chain, _) = evm_chain().await;
@@ -579,7 +578,7 @@ async fn evm_native_tx_is_found_when_the_change_is_noticed_blocks_later() {
     chain.lock().unwrap().block = 11;
     node.push(new_head(11));
     next_json(&mut ws).await;
-    // 等这一块的余额基线取完，否则这次变化算在基线里。
+    // 等这一块的余额基线取完,否则这次变化算在基线里.
     sleep(Duration::from_millis(300)).await;
 
     {
@@ -607,7 +606,7 @@ async fn evm_native_tx_is_found_when_the_change_is_noticed_blocks_later() {
     assert_eq!(update["params"]["txs"][0]["hash"], "0xee");
 }
 
-/// 订阅之后的第一个块就带着变化时，长连接还没有基线，这笔不能丢。
+/// 订阅之后的第一个块就带着变化时,长连接还没有基线,这笔不能丢.
 #[tokio::test]
 async fn evm_change_in_the_first_block_after_subscribing_is_not_lost() {
     let (chain, _) = evm_chain().await;
@@ -636,7 +635,7 @@ async fn evm_change_in_the_first_block_after_subscribing_is_not_lost() {
     assert_eq!(update["params"]["balances"][0]["amount"], "5");
 }
 
-/// 账户变化由节点推送，slot 再快也没有余额请求。
+/// 账户变化由节点推送,slot 再快也没有余额请求.
 #[tokio::test]
 async fn solana_changes_are_pushed_by_the_node_not_polled() {
     const OWNER: &str = "11111111111111111111111111111111";
@@ -681,7 +680,7 @@ async fn solana_changes_are_pushed_by_the_node_not_polled() {
     );
     assert_eq!(node.methods("logsSubscribe")[0]["params"][1]["commitment"], "confirmed");
 
-    // 订阅生效后对账一次，之后 slot 不再触发余额查询。
+    // 订阅生效后对账一次,之后 slot 不再触发余额查询.
     node.push(json!({"method": "slotNotification", "params": {"result": {"slot": 199}}}));
     next_json(&mut ws).await;
     sleep(Duration::from_millis(50)).await;
@@ -700,7 +699,7 @@ async fn solana_changes_are_pushed_by_the_node_not_polled() {
     assert_eq!(update["params"]["balances"][0]["amount"], "9");
 }
 
-/// TRON 没有推送，按块解析。一轮的请求数和地址数无关，地址没出现在区块里就不查它。
+/// TRON 没有推送,按块解析.一轮的请求数和地址数无关,地址没出现在区块里就不查它.
 #[tokio::test]
 async fn tron_parses_blocks_instead_of_querying_each_address() {
     const OWNER: &str = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
@@ -733,7 +732,7 @@ async fn tron_parses_blocks_instead_of_querying_each_address() {
             "/v1/accounts/{address}",
             get(move || {
                 *reads.lock().unwrap() += 1;
-                // 这笔转账在 101 块到账。
+                // 这笔转账在 101 块到账.
                 let balance = if *balance_tip.lock().unwrap() > 100 { 8 } else { 5 };
                 async move { axum::Json(json!({"data": [{"balance": balance}]})) }
             }),
@@ -741,7 +740,7 @@ async fn tron_parses_blocks_instead_of_querying_each_address() {
         .route(
             "/v1/accounts/{address}/transactions",
             get(move |RawQuery(query): RawQuery| async move {
-                // 只查已确认的记录时看不到刚上链的交易。
+                // 只查已确认的记录时看不到刚上链的交易.
                 let confirmed = query.is_some_and(|query| query.contains("only_confirmed"));
                 let transfer = json!({
                     "txID": "ab".repeat(32),
@@ -770,12 +769,12 @@ async fn tron_parses_blocks_instead_of_querying_each_address() {
     sleep(Duration::from_millis(100)).await;
     let baseline = *accounts.lock().unwrap();
     *parts.lock().unwrap() = 101;
-    // 按块轮询的间隔是 6 秒，等待消息的上限是 5 秒。
+    // 按块轮询的间隔是 6 秒,等待消息的上限是 5 秒.
     sleep(Duration::from_secs(4)).await;
     let update = next_json(&mut ws).await;
     assert_eq!(update["params"]["height"], 101);
     assert_eq!(update["params"]["balances"][0]["amount"], "8");
-    assert_eq!(*accounts.lock().unwrap(), baseline + 1, "只查区块里出现的地址，查一次");
+    assert_eq!(*accounts.lock().unwrap(), baseline + 1, "只查区块里出现的地址,查一次");
     assert_eq!(update["params"]["txs"][0]["status"], "included", "刚上链的转账也要推送");
 }
 
@@ -789,7 +788,7 @@ fn token_log(block: u64) -> Value {
     })
 }
 
-/// 跟块先进入长连接状态，之后高度只靠推送，节点不再被轮询。
+/// 跟块先进入长连接状态,之后高度只靠推送,节点不再被轮询.
 async fn live_evm_gateway(chain: &Chain, node: &SocketNode, extra: &str) -> (Gateway, common::Ws) {
     let gateway = Gateway::start(&format!("{extra}{}", evm_config(&node.url))).await;
     let mut ws = gateway.ws().await;
@@ -801,7 +800,7 @@ async fn live_evm_gateway(chain: &Chain, node: &SocketNode, extra: &str) -> (Gat
     (gateway, ws)
 }
 
-/// 余额查询失败时这轮的动静要留着，否则节点恢复后余额一直是旧值。
+/// 余额查询失败时这轮的动静要留着,否则节点恢复后余额一直是旧值.
 #[tokio::test]
 async fn a_failed_balance_query_keeps_the_touched_address() {
     let (chain, _) = evm_chain().await;
@@ -826,7 +825,7 @@ async fn a_failed_balance_query_keeps_the_touched_address() {
     );
 }
 
-/// HTTP 请求也要有时限。节点不回应时不能卡住长连接，否则既不换节点也不退回轮询。
+/// HTTP 请求也要有时限.节点不回应时不能卡住长连接,否则既不换节点也不退回轮询.
 #[tokio::test]
 async fn a_node_that_stops_answering_falls_back_to_polling() {
     let (chain, _) = evm_chain().await;
@@ -843,10 +842,10 @@ async fn a_node_that_stops_answering_falls_back_to_polling() {
     sleep(Duration::from_millis(500)).await;
     node.stall.store(false, Ordering::Relaxed);
     chain.lock().unwrap().block = 12;
-    assert_eq!(next_json(&mut ws).await["params"]["height"], 12, "没有新块推送，靠轮询");
+    assert_eq!(next_json(&mut ws).await["params"]["height"], 12, "没有新块推送,靠轮询");
 }
 
-/// 日志订阅被拒绝时这条连接收不到代币转账，要退回轮询，不能当作没事。
+/// 日志订阅被拒绝时这条连接收不到代币转账,要退回轮询,不能当作没事.
 #[tokio::test]
 async fn a_rejected_log_subscription_falls_back_to_polling() {
     let (chain, _) = evm_chain().await;
@@ -856,7 +855,7 @@ async fn a_rejected_log_subscription_falls_back_to_polling() {
     let mut ws = gateway.ws().await;
     assert!(call(&mut ws, subscribe(&[EVM])).await["result"].is_string());
     node.wait_for("eth_subscribe", 2).await;
-    // 连接可能已经断开了，这时没有人收这条推送。
+    // 连接可能已经断开了,这时没有人收这条推送.
     let _ = node.pushes.send(new_head(10).to_string());
     sleep(Duration::from_millis(100)).await;
 
@@ -870,7 +869,7 @@ async fn a_rejected_log_subscription_falls_back_to_polling() {
     assert!(balances.iter().any(|row| row["amount"] == "9"), "{update}");
 }
 
-/// 回看范围放不下时不能报成功，`txs` 为空时客户端自己补取。
+/// 回看范围放不下时不能报成功,`txs` 为空时客户端自己补取.
 #[tokio::test]
 async fn evm_update_admits_a_gap_it_cannot_scan() {
     let (chain, url) = evm_chain().await;
@@ -889,7 +888,7 @@ async fn evm_update_admits_a_gap_it_cannot_scan() {
     assert_eq!(update["params"]["txs"], Value::Null, "{update}");
 }
 
-/// 组由客户端指定，一个请求不能打出任意多的上游并发。
+/// 组由客户端指定,一个请求不能打出任意多的上游并发.
 #[tokio::test]
 async fn snapshot_limits_how_many_groups_run_at_once() {
     let (running, peak) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
@@ -932,7 +931,7 @@ const SOLANA_OWNER: &str = "11111111111111111111111111111111";
 const SOLANA_OTHER: &str = "11111111111111111111111111111112";
 const SOLANA_TOKEN: &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
-/// `fail` 打开后代币账户的查询失败，公共节点限流时就是这样。
+/// `fail` 打开后代币账户的查询失败,公共节点限流时就是这样.
 async fn solana_node(lamports: Arc<Mutex<u64>>, fail: Arc<AtomicBool>) -> SocketNode {
     let height = lamports.clone();
     SocketNode::start(
@@ -964,7 +963,7 @@ fn solana_subscribe(id: u64, owner: &str) -> Value {
            "params": {"channel": "addresses", "network": "solana", "addresses": [owner]}})
 }
 
-/// 订阅被拒时不再对账，这个地址也不会重试，所以要退回轮询。
+/// 订阅被拒时不再对账,这个地址也不会重试,所以要退回轮询.
 #[tokio::test]
 async fn solana_rejected_subscription_falls_back_to_polling() {
     let lamports = Arc::new(Mutex::new(5u64));
@@ -974,7 +973,7 @@ async fn solana_rejected_subscription_falls_back_to_polling() {
     let mut ws = gateway.ws().await;
     assert!(call(&mut ws, solana_subscribe(1, SOLANA_OWNER)).await["result"].is_string());
     node.wait_for("logsSubscribe", 1).await;
-    // 连接可能已经断开了，这时没有人收这条推送。
+    // 连接可能已经断开了,这时没有人收这条推送.
     let slot = json!({"method": "slotNotification", "params": {"result": {"slot": 100}}});
     let _ = node.pushes.send(slot.to_string());
     sleep(Duration::from_millis(100)).await;
@@ -984,7 +983,7 @@ async fn solana_rejected_subscription_falls_back_to_polling() {
     assert_eq!(update["params"]["balances"][0]["amount"], "9", "{update}");
 }
 
-/// 日志很多时不能跟着查代币账户。查询失败也只影响这一次，不能断开全部订阅。
+/// 日志很多时不能跟着查代币账户.查询失败也只影响这一次,不能断开全部订阅.
 #[tokio::test]
 async fn solana_log_flood_neither_blocks_nor_breaks_the_connection() {
     let fail = Arc::new(AtomicBool::new(false));
@@ -995,7 +994,7 @@ async fn solana_log_flood_neither_blocks_nor_breaks_the_connection() {
     node.wait_for("accountSubscribe", 2).await;
     node.wait_for("logsSubscribe", 1).await;
     sleep(Duration::from_millis(50)).await;
-    // 收到第一个 slot 才算长连接在工作，这之前网关还在轮询。
+    // 收到第一个 slot 才算长连接在工作,这之前网关还在轮询.
     node.push(json!({"method": "slotNotification", "params": {"result": {"slot": 200}}}));
     assert_eq!(next_json(&mut ws).await["params"]["height"], 200);
 
@@ -1008,7 +1007,7 @@ async fn solana_log_flood_neither_blocks_nor_breaks_the_connection() {
     let polls = node.calls.count("getSlot");
     fail.store(false, Ordering::Relaxed);
     sleep(Duration::from_millis(200)).await;
-    assert_eq!(node.calls.count("getSlot"), polls, "连接没断，不用退回轮询");
+    assert_eq!(node.calls.count("getSlot"), polls, "连接没断,不用退回轮询");
     node.push(json!({"method": "slotNotification", "params": {"result": {"slot": 500}}}));
     let mut height = json!(null);
     for _ in 0..6 {
@@ -1020,7 +1019,7 @@ async fn solana_log_flood_neither_blocks_nor_breaks_the_connection() {
     assert_eq!(height, 500);
 }
 
-/// 没有人看的地址要退订，上游的订阅不能只增不减。
+/// 没有人看的地址要退订,上游的订阅不能只增不减.
 #[tokio::test]
 async fn solana_unsubscribes_addresses_nobody_watches() {
     let node = solana_node(Arc::new(Mutex::new(5)), Arc::default()).await;

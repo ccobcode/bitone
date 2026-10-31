@@ -1,14 +1,14 @@
-//! 公共链上数据的短缓存，只用于手续费、区块和价格，见 docs/03-system.md §4.1。
-//! 和地址、交易相关的查询不能放进来。
+//! 公共链上数据的短缓存,只用于手续费,区块和价格,见 docs/03-system.md §4.1.
+//! 和地址,交易相关的查询不能放进来.
 
 use crate::error::ApiError;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
-/// 失败也缓存一小段时间。排队的请求不用逐个等上游超时。
+/// 失败也缓存一小段时间.排队的请求不用逐个等上游超时.
 const FAILURE_TTL: Duration = Duration::from_secs(1);
 
-/// 单个值的缓存。到期时只有一个请求回源，其余的等它的结果。
+/// 单个值的缓存.到期时只有一个请求回源,其余的等它的结果.
 pub struct Cached<T> {
     ttl: Duration,
     slot: Mutex<Option<(Instant, Result<T, ApiError>)>>,

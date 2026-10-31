@@ -85,11 +85,9 @@ export interface ChainSpec {
     deriveAddress: DeriveAddress;
     /** 记录页的条目带输入输出,从哪批地址看都是同一笔,所以一笔只留一条. */
     wholeTxEntries: boolean;
-    /** 交易哈希区分大小写. */
     caseSensitiveHash: boolean;
     /** 用户输入的地址经过了校验和检查. */
     checksummed(typed: string, canonical: string): boolean;
-    /** 核验签名用的公钥. */
     signerKey(account: Pick<Account, "key">): Uint8Array;
     parseFees(body: Record<string, unknown>): Fees;
     /** 链上失败的说明,存进时间线,显示时才翻译. */
@@ -100,7 +98,6 @@ export interface ChainSpec {
     changeIndex?(tx: TxRecord): number | null;
     /** 这一组交易的序号有没有被用掉.没有序号的链不实现. */
     spentFlags?(network: string, txs: readonly TxRecord[]): Promise<Map<string, boolean>>;
-    /** 地址发现失败时的提示. */
     discoveryNotice?(): string;
 
     transfer(draft: TransferDraft, fees: FeeSource): Promise<Built>;

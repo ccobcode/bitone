@@ -45,15 +45,12 @@ private const val SHIMMER_FROM = 0.3f
 private const val SHIMMER_PEAK = 0.5f
 private const val SHIMMER_TO = 0.7f
 
-/** 进入. */
 fun <T> enterSpec(duration: Int = Motion.normal, delay: Int = 0): FiniteAnimationSpec<T> =
     tween(duration, delay, Motion.emphasizedEasing)
 
-/** 状态变化. */
 fun <T> stateSpec(duration: Int = Motion.normal): FiniteAnimationSpec<T> =
     tween(duration, easing = Motion.standardEasing)
 
-/** 离开. */
 fun <T> exitSpec(duration: Int = Motion.normal): FiniteAnimationSpec<T> = tween(duration, easing = Motion.exitEasing)
 
 /**

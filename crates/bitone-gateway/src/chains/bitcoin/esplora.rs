@@ -1,4 +1,4 @@
-//! Bitcoin 的 Esplora 接口。Blockstream 和 mempool.space 都提供。
+//! Bitcoin 的 Esplora 接口.Blockstream 和 mempool.space 都提供.
 
 use super::shape::{FINAL_CONFIRMATIONS, fee_rates, history_item, is_already_known, parse_tx};
 use super::{Queries, Utxo};
@@ -13,7 +13,7 @@ use reqwest::{Method, StatusCode};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 
-/// Esplora 确认交易的分页大小。
+/// Esplora 确认交易的分页大小.
 const CHAIN_PAGE: usize = 25;
 
 pub struct Esplora {
@@ -21,7 +21,7 @@ pub struct Esplora {
     pub network: Network,
 }
 
-/// 还在内存池的交易没有高度，总是算新的。
+/// 还在内存池的交易没有高度,总是算新的.
 fn newer_than(tx: &Value, since: Option<u64>) -> bool {
     let height = tx.pointer("/status/block_height").and_then(Value::as_u64);
     since.is_none_or(|since| height.is_none_or(|height| height > since))
@@ -38,7 +38,7 @@ impl Esplora {
             .map_err(|_| Failed)
     }
 
-    /// 查询结果用 `Vec` 包一层，和 `run_all` 的形状一致。
+    /// 查询结果用 `Vec` 包一层,和 `run_all` 的形状一致.
     async fn tx_count(&self, address: &str) -> Result<Vec<u64>, Failed> {
         let reply = self.http.get(&format!("/address/{address}")).await?;
         let count = |key: &str| reply.pointer(key).and_then(Value::as_u64).unwrap_or(0);
@@ -122,13 +122,13 @@ impl Esplora {
         };
         let reply = self.http.get(&path).await?;
         let txs = reply.as_array().ok_or(Failed)?;
-        // 新的在前，碰到水位之前的交易就不用再往后翻了。
+        // 新的在前,碰到水位之前的交易就不用再往后翻了.
         let fresh: Vec<&Value> = txs.iter().filter(|tx| newer_than(tx, since)).collect();
         let items = fresh
             .iter()
             .map(|tx| history_item(tx, own, tip))
             .collect::<Result<Vec<_>, _>>()?;
-        // 内存池部分不分页，下一页从最后一笔已确认的交易往后。
+        // 内存池部分不分页,下一页从最后一笔已确认的交易往后.
         let chain: Vec<&HistoryItem> = items.iter().filter(|item| item.status != TxStatus::Pending).collect();
         let next = (fresh.len() == txs.len() && chain.len() >= CHAIN_PAGE)
             .then(|| chain.last().map(|item| item.hash.clone()))
@@ -143,7 +143,7 @@ impl Esplora {
         if status.is_success() {
             return Ok(Broadcast::Accepted);
         }
-        // Esplora 把节点的拒绝放在 400 里，其他状态码是服务自身的问题。
+        // Esplora 把节点的拒绝放在 400 里,其他状态码是服务自身的问题.
         if status != StatusCode::BAD_REQUEST {
             return Ok(Broadcast::Unknown);
         }
@@ -183,7 +183,7 @@ impl Upstream for Esplora {
         Box::pin(async move {
             let tip = self.tip().await?;
             let checkpoint = (tip + 1).saturating_sub(FINAL_CONFIRMATIONS);
-            // 公共节点按 IP 限流，一批地址要逐个查。高度没变就没有新的已确认交易，一个地址也不用查。
+            // 公共节点按 IP 限流,一批地址要逐个查.高度没变就没有新的已确认交易,一个地址也不用查.
             if cursor.is_empty() && since == Some(checkpoint) {
                 return Ok(HistoryPage {
                     checkpoint,

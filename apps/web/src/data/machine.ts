@@ -98,7 +98,6 @@ function isFinalStage(stage: string | null): boolean {
     return stage === null || stage === "finalized";
 }
 
-/** 链上失败的说明. */
 export function failureNote(tx: Pick<TxRecord, "chain">): string {
     return chainOf(tx.chain).failureNote;
 }

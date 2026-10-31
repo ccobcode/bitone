@@ -1,4 +1,3 @@
-// TRON 的核心库绑定.
 import type { RequestHeader } from "../../core";
 import { buildTronTransfer as wasmBuildTron } from "../../core/pkg/bitone_wasm";
 

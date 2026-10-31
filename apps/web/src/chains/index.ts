@@ -25,7 +25,6 @@ const CHAINS: Record<Chain, ChainSpec> = { bitcoin, evm, tron, solana };
 /** 界面上按这个顺序列出. */
 export const CHAIN_LIST: readonly ChainSpec[] = Object.values(CHAINS);
 
-/** 新建联系人时默认选中的链. */
 export const DEFAULT_CONTACT_CHAIN: Chain = "evm";
 
 /** 不认识的网络用这个图标. */

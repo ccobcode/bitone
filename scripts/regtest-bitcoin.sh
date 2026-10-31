@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# 在 Docker 的 regtest 节点上验证 Bitcoin 的构建、核对、签名、核验。
-# 用法：scripts/regtest-bitcoin.sh
-# 每次都用新容器，退出时删除，可以重复运行。
+# 在 Docker 的 regtest 节点上验证 Bitcoin 的构建,核对,签名,核验.
+# 用法:scripts/regtest-bitcoin.sh
+# 每次都用新容器,退出时删除,可以重复运行.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

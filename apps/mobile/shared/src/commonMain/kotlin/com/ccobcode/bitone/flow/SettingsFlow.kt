@@ -45,8 +45,6 @@ class SettingsFlow internal constructor(private val host: FlowHost, private val 
         applyLanguage()
     }
 
-    // 查看助记词
-
     var viewWords by mutableStateOf(emptyList<String>())
         private set
 
@@ -69,8 +67,6 @@ class SettingsFlow internal constructor(private val host: FlowHost, private val 
         viewWords = emptyList()
         host.stack = host.stack.filterNot { it == Screen.ViewWords }
     }
-
-    // 修改 PIN
 
     /** A10 修改 PIN 复用 A2c.先输新 PIN,最后在 A7 输当前 PIN,钱包只在最后一步解开一次. */
     var changingPin by mutableStateOf(false)
@@ -110,8 +106,6 @@ class SettingsFlow internal constructor(private val host: FlowHost, private val 
         changingPin = false
         host.stack = host.stack.filterNot { it == Screen.SetPin || it == Screen.Unlock }
     }
-
-    // 抹除
 
     /** 设置页的二次确认之后才调用.自检通过,PIN 正确才抹除,错误计入 [PinGuard]. */
     fun startWipe() = host.guarded {

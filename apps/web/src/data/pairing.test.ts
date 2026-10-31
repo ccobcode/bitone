@@ -1,7 +1,6 @@
-import { must } from "../testing";
-import { readFileSync } from "node:fs";
+import { initCore, loadPairing, must } from "../testing";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { PairingReceiver, initCoreSync, type Mode, type Pairing } from "../core";
+import { type Mode, type Pairing } from "../core";
 import { clearLocalData, db } from "./db";
 import { GAP_LIMIT, addressPath, ensureAddress, savePairing, selectableAccounts, walletId } from "./pairing";
 
@@ -13,13 +12,8 @@ const EVM_PATH = "m/44'/60'/0'/0/0";
 const save = (name: string, paths = allPaths(), mode: Mode = "mainnet") => savePairing(pairing, { name, paths, mode });
 
 beforeAll(() => {
-    initCoreSync(readFileSync(new URL("../core/pkg/bitone_wasm_bg.wasm", import.meta.url)));
-    const receiver = new PairingReceiver();
-    const frames = readFileSync(new URL("../core/__fixtures__/pairing.txt", import.meta.url), "utf8")
-        .trim()
-        .split("\n");
-    for (const frame of frames) if (!receiver.complete) receiver.feed(frame);
-    pairing = receiver.pairing();
+    initCore();
+    pairing = loadPairing();
 });
 
 beforeEach(clearLocalData);

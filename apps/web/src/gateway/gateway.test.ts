@@ -1,7 +1,6 @@
-import { readFileSync } from "node:fs";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { initCoreSync } from "../core";
 import type { Account, Address } from "../data/db";
+import { EVM_ADDRESS as EVM, TRON_ADDRESS, USDT, initCore, stubFetch, stubOffline } from "../testing";
 import { buildRows, buildTargets } from "./assets";
 import {
     GatewayError,
@@ -14,9 +13,6 @@ import {
     type Balance,
 } from "./client";
 import { BalanceSocket, retryDelay } from "./socket";
-
-const EVM = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
-const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
 const evmAccount: Account = {
     id: "w:evm",
@@ -43,9 +39,7 @@ const address = (accountId: string, value: string, index = 0): Address => ({
     verified: false,
 });
 
-beforeAll(() => {
-    initCoreSync(readFileSync(new URL("../core/pkg/bitone_wasm_bg.wasm", import.meta.url)));
-});
+beforeAll(initCore);
 
 afterEach(() => {
     vi.unstubAllGlobals();
@@ -72,8 +66,8 @@ describe("parseBalances", () => {
     });
 
     it("Base58 地址区分大小写", () => {
-        const tron = "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH";
-        expect(parseBalances([{ address: tron.toLowerCase(), asset: "native", amount: "1" }], [tron])).toEqual([]);
+        const row = { address: TRON_ADDRESS.toLowerCase(), asset: "native", amount: "1" };
+        expect(parseBalances([row], [TRON_ADDRESS])).toEqual([]);
     });
 
     it("重复条目不会累加", () => {
@@ -112,10 +106,7 @@ describe("fetchSnapshot", () => {
                 controller.close();
             },
         });
-        vi.stubGlobal(
-            "fetch",
-            vi.fn(async () => new Response(body)),
-        );
+        stubFetch(async () => new Response(body));
         const [ok, failed] = await collect();
         expect(ok).toMatchObject({ height: 7, history: null, error: null });
         expect(ok?.balances).toEqual([]);
@@ -123,28 +114,16 @@ describe("fetchSnapshot", () => {
     });
 
     it("网关错误带错误码,连不上时也是 GatewayError", async () => {
-        vi.stubGlobal(
-            "fetch",
-            vi.fn(async () => Response.json({ error: { code: "rate_limited", message: "x" } }, { status: 429 })),
-        );
+        stubFetch(async () => Response.json({ error: { code: "rate_limited", message: "x" } }, { status: 429 }));
         await expect(collect()).rejects.toMatchObject({ code: "rate_limited" });
-        vi.stubGlobal(
-            "fetch",
-            vi.fn(async () => Promise.reject(new TypeError("failed"))),
-        );
+        stubOffline();
         await expect(collect()).rejects.toBeInstanceOf(GatewayError);
     });
 
     it("正文不完整时报错,不完整的最后一行不算结果", async () => {
-        vi.stubGlobal(
-            "fetch",
-            vi.fn(async () => new Response("<html></html>\n")),
-        );
+        stubFetch(async () => new Response("<html></html>\n"));
         await expect(collect()).rejects.toBeInstanceOf(GatewayError);
-        vi.stubGlobal(
-            "fetch",
-            vi.fn(async () => new Response('{"network":"bitcoin"')),
-        );
+        stubFetch(async () => new Response('{"network":"bitcoin"'));
         expect(await collect()).toEqual([]);
     });
 });

@@ -1,5 +1,5 @@
-//! Electrum 上游的集成测试，上游是本地的行分隔 JSON-RPC 服务器。
-//! 重点是批量响应按 id 归位、广播幂等、增量历史和换上游。
+//! Electrum 上游的集成测试,上游是本地的行分隔 JSON-RPC 服务器.
+//! 重点是批量响应按 id 归位,广播幂等,增量历史和换上游.
 
 mod common;
 
@@ -24,7 +24,7 @@ const BTC: &str = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu";
 const BTC_OTHER: &str = "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr";
 const TIME: u64 = 1_700_000_000;
 
-/// 服务器主动推送的入口，连接着的会话都收得到。空字符串让服务器断开连接。
+/// 服务器主动推送的入口,连接着的会话都收得到.空字符串让服务器断开连接.
 type Pushes = broadcast::Sender<String>;
 
 async fn server(reply: impl Fn(&str, &Value) -> Value + Clone + Send + Sync + 'static) -> (String, Calls) {
@@ -32,7 +32,7 @@ async fn server(reply: impl Fn(&str, &Value) -> Value + Clone + Send + Sync + 's
     (url, calls)
 }
 
-/// 一次读到的请求反序回复，前面夹一条没有 id 的推送，验证网关按 id 归位。
+/// 一次读到的请求反序回复,前面夹一条没有 id 的推送,验证网关按 id 归位.
 async fn pushing_server(
     reply: impl Fn(&str, &Value) -> Value + Clone + Send + Sync + 'static,
 ) -> (String, Calls, Pushes) {
@@ -144,7 +144,7 @@ fn outpoint(parent: &Transaction, vout: u32) -> OutPoint {
     OutPoint::new(parent.compute_txid(), vout)
 }
 
-/// 区块时间在区块头的第 68 字节。
+/// 区块时间在区块头的第 68 字节.
 fn header(height: u64) -> String {
     let time = (TIME + height) as u32;
     format!(
@@ -170,7 +170,7 @@ impl Chain {
         }
     }
 
-    /// `height` 是 0 表示在内存池，`addresses` 是这笔交易出现在谁的历史里。
+    /// `height` 是 0 表示在内存池,`addresses` 是这笔交易出现在谁的历史里.
     fn add(&mut self, tx: &Transaction, height: i64, addresses: &[&str]) {
         let txid = tx.compute_txid();
         self.txs.insert(txid, (tx.clone(), height));
@@ -217,7 +217,7 @@ impl Chain {
     }
 }
 
-/// 一条收款和一条带找零的付款。
+/// 一条收款和一条带找零的付款.
 fn payment_pair() -> (Transaction, Transaction, Transaction) {
     let parent = tx(&[OutPoint::null()], vec![pay(BTC_OTHER, 200_000)]);
     let incoming = tx(&[outpoint(&parent, 0)], vec![pay(BTC, 150_000), pay(BTC_OTHER, 40_000)]);
@@ -357,7 +357,7 @@ async fn tx_status_covers_every_stage() {
     );
 }
 
-/// 收款方的地址可能很热门，服务器会拒绝返回太长的历史，这时用找零的历史。
+/// 收款方的地址可能很热门,服务器会拒绝返回太长的历史,这时用找零的历史.
 #[tokio::test]
 async fn tx_status_skips_a_script_whose_history_is_too_large() {
     let (parent, incoming, _) = payment_pair();
@@ -377,7 +377,7 @@ async fn tx_status_skips_a_script_whose_history_is_too_large() {
     assert_eq!(reply["txs"][0]["fee"], "10000");
 }
 
-/// 只有 OP_RETURN 输出的交易不进输出的索引，要靠它花费的脚本找到。
+/// 只有 OP_RETURN 输出的交易不进输出的索引,要靠它花费的脚本找到.
 #[tokio::test]
 async fn tx_status_finds_a_burn_through_its_inputs() {
     let parent = tx(&[OutPoint::null()], vec![pay(BTC, 1_000)]);
@@ -397,7 +397,7 @@ async fn tx_status_finds_a_burn_through_its_inputs() {
     assert_eq!(reply["txs"][0]["fee"], "1000");
 }
 
-/// 找不到高度时不能把已上链的交易报成查不到。
+/// 找不到高度时不能把已上链的交易报成查不到.
 #[tokio::test]
 async fn tx_status_moves_on_when_no_output_history_has_the_tx() {
     let (parent, incoming, _) = payment_pair();
@@ -423,7 +423,7 @@ async fn history_reads_direction_amount_and_time_from_raw_transactions() {
     chain.add(&parent, 50, &[]);
     chain.add(&coinbase, 60, &[BTC]);
     chain.add(&incoming, 95, &[BTC]);
-    // 找零回到自己，同一笔在两个地址的历史里只算一条。
+    // 找零回到自己,同一笔在两个地址的历史里只算一条.
     chain.add(&outgoing, 96, &[BTC, BTC_OTHER]);
     chain.add(&mempool, -1, &[BTC]);
     let (url, _) = chain.serve().await;
@@ -445,7 +445,7 @@ async fn history_reads_direction_amount_and_time_from_raw_transactions() {
             .map(|item| item["hash"].as_str().unwrap())
             .collect::<Vec<_>>(),
         hashes,
-        "内存池排最前，其余新的在前"
+        "内存池排最前,其余新的在前"
     );
     assert_eq!(items[0]["status"], "pending");
     assert_eq!(items[0]["time"], Value::Null);
@@ -549,7 +549,7 @@ async fn history_skips_addresses_when_the_tip_has_not_moved() {
     assert_eq!(calls.count("blockchain.scripthash.get_history"), 1);
 }
 
-/// 前序交易超过一批的上限时分批发送，结果不能错位。
+/// 前序交易超过一批的上限时分批发送,结果不能错位.
 #[tokio::test]
 async fn history_with_more_parents_than_one_batch_stays_in_order() {
     let sender = |seed: u32| {
@@ -698,7 +698,7 @@ async fn broadcast_rejection_carries_the_text_and_is_not_retried() {
     }
 }
 
-/// 交易上链后找零又被花掉，节点只会报输入缺失。
+/// 交易上链后找零又被花掉,节点只会报输入缺失.
 #[tokio::test]
 async fn broadcast_of_a_spent_tx_on_chain_is_accepted() {
     let (parent, incoming, _) = payment_pair();
@@ -734,7 +734,7 @@ async fn broadcast_server_errors_are_not_rejections_and_are_not_retried() {
         let (status, reply) = gateway.post("/v1/bitcoin/broadcast", &body).await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(error_code(&reply), "upstream_unavailable");
-        assert_eq!(second.total(), 0, "请求可能已经到达节点，不能换上游");
+        assert_eq!(second.total(), 0, "请求可能已经到达节点,不能换上游");
     }
 }
 
@@ -789,7 +789,7 @@ async fn wait_for_calls(calls: &Calls, method: &str, count: usize) {
     .unwrap_or_else(|_| panic!("等 {method} 超时"));
 }
 
-/// 内存池里的交易不改变已确认余额，只有服务器的推送能让用户立刻看到。
+/// 内存池里的交易不改变已确认余额,只有服务器的推送能让用户立刻看到.
 #[tokio::test]
 async fn long_connection_reports_mempool_transactions_at_once() {
     let (parent, _, _) = payment_pair();
@@ -807,20 +807,20 @@ async fn long_connection_reports_mempool_transactions_at_once() {
     let mut ws = gateway.ws().await;
     assert!(call(&mut ws, watch("bitcoin", &[BTC])).await["result"].is_string());
     wait_for_calls(&calls, "blockchain.scripthash.subscribe", 1).await;
-    // 建立连接时补查一次，内容为空，这里先消费掉。
+    // 建立连接时补查一次,内容为空,这里先消费掉.
     assert_eq!(next_json(&mut ws).await["params"]["txs"], json!([]));
 
     let incoming = tx(&[outpoint(&parent, 0)], vec![pay(BTC, 1_000)]);
     chain.lock().unwrap().add(&incoming, 0, &[BTC]);
     pushes.send(status_push(BTC)).unwrap();
     let update = next_json(&mut ws).await;
-    assert_eq!(update["params"]["height"], 100, "高度没变，交易照样推送");
+    assert_eq!(update["params"]["height"], 100, "高度没变,交易照样推送");
     assert_eq!(update["params"]["txs"][0]["hash"], incoming.compute_txid().to_string());
     assert_eq!(update["params"]["txs"][0]["status"], "pending");
     assert_eq!(
         calls.count("blockchain.scripthash.subscribe"),
         1,
-        "地址只订阅一次，不轮询"
+        "地址只订阅一次,不轮询"
     );
 
     chain.lock().unwrap().tip = 101;
@@ -832,7 +832,7 @@ async fn long_connection_reports_mempool_transactions_at_once() {
     );
 }
 
-/// 连接断了要换上游，重新订阅，并补一次断开期间可能错过的变化。
+/// 连接断了要换上游,重新订阅,并补一次断开期间可能错过的变化.
 #[tokio::test]
 async fn long_connection_moves_on_when_the_server_goes_away() {
     let (parent, _, _) = payment_pair();
@@ -855,7 +855,7 @@ async fn long_connection_moves_on_when_the_server_goes_away() {
     wait_for_calls(&first_calls, "blockchain.scripthash.subscribe", 1).await;
     assert_eq!(next_json(&mut ws).await["params"]["txs"], json!([]));
 
-    // 这笔交易到达时连接已经断了，服务器不会推送。
+    // 这笔交易到达时连接已经断了,服务器不会推送.
     chain.lock().unwrap().add(&incoming, 0, &[BTC]);
     pushes.send(String::new()).unwrap();
     wait_for_calls(&second_calls, "blockchain.scripthash.subscribe", 1).await;
@@ -863,7 +863,7 @@ async fn long_connection_moves_on_when_the_server_goes_away() {
     assert_eq!(update["params"]["txs"][0]["status"], "pending");
 }
 
-/// 基线比上游订阅早，后加入的地址在这段时间到账时服务器不会推送，要补查一次。
+/// 基线比上游订阅早,后加入的地址在这段时间到账时服务器不会推送,要补查一次.
 #[tokio::test]
 async fn an_address_added_later_is_checked_after_it_is_subscribed() {
     let (parent, _, _) = payment_pair();
@@ -897,7 +897,7 @@ async fn an_address_added_later_is_checked_after_it_is_subscribed() {
     assert_eq!(update["params"]["txs"][0]["hash"], txid, "{update}");
 }
 
-/// 没有人看的地址要退订，退订之后服务器发来的推送也不能断开连接。
+/// 没有人看的地址要退订,退订之后服务器发来的推送也不能断开连接.
 #[tokio::test]
 async fn long_connection_unsubscribes_addresses_nobody_watches() {
     let (parent, _, _) = payment_pair();

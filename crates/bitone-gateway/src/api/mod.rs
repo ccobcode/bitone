@@ -1,4 +1,4 @@
-//! 对外接口：路由、中间件、HTTP 处理函数和 WebSocket。
+//! 对外接口:路由,中间件,HTTP 处理函数和 WebSocket.
 
 use crate::chains;
 use crate::config::Config;
@@ -31,24 +31,24 @@ mod query;
 mod snapshot;
 mod ws;
 
-/// 请求体上限。101 个最长地址也只有约 10 KiB，超过地址上限时先报数量错误。
+/// 请求体上限.101 个最长地址也只有约 10 KiB,超过地址上限时先报数量错误.
 const MAX_BODY: usize = 64 * 1024;
-/// 广播的请求体上限。标准交易最大约 400 KB，十六进制翻倍。
+/// 广播的请求体上限.标准交易最大约 400 KB,十六进制翻倍.
 const MAX_BROADCAST_BODY: usize = 1024 * 1024;
-/// 快照的请求体上限，放得下 1000 个带合约的条目。
+/// 快照的请求体上限,放得下 1000 个带合约的条目.
 const MAX_SNAPSHOT_BODY: usize = 256 * 1024;
-/// 连接上游的时限。连接失败时请求肯定没有发出，广播可以放心换上游，
-/// 所以要和总时限区分开，不能让没响应的地址耗尽总时限。
+/// 连接上游的时限.连接失败时请求肯定没有发出,广播可以放心换上游,
+/// 所以要和总时限区分开,不能让没响应的地址耗尽总时限.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
-/// CoinGecko 拒绝没有 User-Agent 的请求。这里只有网关版本，没有用户信息。
+/// CoinGecko 拒绝没有 User-Agent 的请求.这里只有网关版本,没有用户信息.
 const USER_AGENT: &str = concat!("bitone-gateway/", env!("CARGO_PKG_VERSION"));
 
-/// 见 docs/04-security.md §3。
+/// 见 docs/04-security.md §3.
 const CSP: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; \
     img-src 'self'; manifest-src 'self'; font-src 'self'; connect-src 'self'; \
     frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 
-/// 限流中间件算出的客户端 IP，存在请求扩展里。
+/// 限流中间件算出的客户端 IP,存在请求扩展里.
 #[derive(Clone, Copy)]
 pub struct ClientIp(IpAddr);
 
@@ -60,7 +60,7 @@ pub struct AppState {
     ws_connections: ConnectionLimit,
     trusted_proxies: HashSet<IpAddr>,
     pub metrics: Metrics,
-    /// 退出信号。发送端的 `closed()` 用来等 WebSocket 连接收尾，所以这里不保存接收端。
+    /// 退出信号.发送端的 `closed()` 用来等 WebSocket 连接收尾,所以这里不保存接收端.
     pub closing: watch::Sender<bool>,
     poll_interval: Duration,
     heartbeat: Duration,
@@ -68,12 +68,12 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(config: &Config) -> io::Result<Self> {
-        // 不跟随重定向，否则查询的地址会被带到配置之外的服务器。
+        // 不跟随重定向,否则查询的地址会被带到配置之外的服务器.
         let upstream_timeout = Duration::from_millis(config.upstream_timeout_ms);
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(CONNECT_TIMEOUT.min(upstream_timeout))
-            // 跟块的长连接里也有 HTTP 查询，那里没有 `Pool` 的总时限，节点不回应时会一直卡住。
+            // 跟块的长连接里也有 HTTP 查询,那里没有 `Pool` 的总时限,节点不回应时会一直卡住.
             .timeout(upstream_timeout)
             .user_agent(USER_AGENT)
             .build()
@@ -154,7 +154,7 @@ async fn record_metrics(State(state): State<Arc<AppState>>, request: Request, ne
 }
 
 pub fn router(state: Arc<AppState>, web_dir: Option<&std::path::Path>) -> Router {
-    // 这些接口只读网络，各条链自己的接口也在这一组。
+    // 这些接口只读网络,各条链自己的接口也在这一组.
     let queries = Router::new()
         .route(
             "/snapshot",
@@ -171,7 +171,7 @@ pub fn router(state: Arc<AppState>, web_dir: Option<&std::path::Path>) -> Router
         .route("/{network}/history", post(query::history))
         .merge(chains::routes())
         .with_state(state.networks.clone());
-    // /v1 下的未知路径在这里返回 404，不能落到 SPA 回退上。
+    // /v1 下的未知路径在这里返回 404,不能落到 SPA 回退上.
     let api = Router::new()
         .route("/version", get(version))
         .route("/prices", get(query::prices))
@@ -186,8 +186,8 @@ pub fn router(state: Arc<AppState>, web_dir: Option<&std::path::Path>) -> Router
         Some(dir) => {
             let index = dir.join("index.html");
             let spa = move |uri: Uri| async move {
-                // 带扩展名的路径是静态资源，缺失时要返回 404，不能拿 HTML 冒充脚本。
-                // nest 接不住 /v1/ 这个路径本身，所以这里也要排除。
+                // 带扩展名的路径是静态资源,缺失时要返回 404,不能拿 HTML 冒充脚本.
+                // nest 接不住 /v1/ 这个路径本身,所以这里也要排除.
                 let path = uri.path();
                 let is_asset = path.rsplit('/').next().is_some_and(|name| name.contains('.'));
                 match tokio::fs::read(&index).await {
@@ -199,7 +199,7 @@ pub fn router(state: Arc<AppState>, web_dir: Option<&std::path::Path>) -> Router
         }
         None => app.fallback(|| async { StatusCode::NOT_FOUND }),
     };
-    // 这两层在最外面，404、429 和 WebSocket 握手也都经过它们。
+    // 这两层在最外面,404,429 和 WebSocket 握手也都经过它们.
     app.layer(from_fn(security_headers))
         .layer(from_fn_with_state(state, record_metrics))
 }

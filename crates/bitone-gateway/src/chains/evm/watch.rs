@@ -1,4 +1,4 @@
-//! EVM 的跟块。
+//! EVM 的跟块.
 
 use super::adapter::{BATCH_SIZE, Evm, TRANSFER, evm_call, item_status, log_topic, topic_address};
 use crate::upstream::{
@@ -10,21 +10,21 @@ use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 
-/// 跟块时最多回看的区块数。这里要取完整区块，只在地址有变化时才查。
+/// 跟块时最多回看的区块数.这里要取完整区块,只在地址有变化时才查.
 const MAX_SCAN: u64 = 32;
-/// 跟块时往回多看的区块数。原生币隔几秒才查一次，发现变化时已经过了好几个块，
-/// BSC 一秒两个块。重复的记录由客户端按标识合并。
+/// 跟块时往回多看的区块数.原生币隔几秒才查一次,发现变化时已经过了好几个块,
+/// BSC 一秒两个块.重复的记录由客户端按标识合并.
 const SCAN_BACK: u64 = 16;
-/// 查原生币余额的最短间隔。
+/// 查原生币余额的最短间隔.
 const NATIVE_CHECK: Duration = Duration::from_secs(3);
 
-/// 有地址还没有原生币基线。基线在订阅之后才取到，这段时间的变化要靠对账找回来。
+/// 有地址还没有原生币基线.基线在订阅之后才取到,这段时间的变化要靠对账找回来.
 fn needs_baseline(natives: &HashMap<String, String>, owners: &HashMap<String, String>) -> bool {
     owners.values().any(|address| !natives.contains_key(address))
 }
 
 impl Evm {
-    /// 一批地址的原生币余额。比完整区块轻得多，还能发现区块交易列表里没有的内部转账。
+    /// 一批地址的原生币余额.比完整区块轻得多,还能发现区块交易列表里没有的内部转账.
     async fn native_balances(&self, addresses: &[String]) -> Result<HashMap<String, String>, Failed> {
         let calls: Vec<(&str, Value)> = addresses.iter().map(|a| evm_call(a, NATIVE)).collect();
         let results = run_all(calls.chunks(BATCH_SIZE).map(|chunk| self.batch(chunk)).collect()).await?;
@@ -35,9 +35,9 @@ impl Evm {
             .collect()
     }
 
-    /// 跟块。`newHeads` 给高度。代币转账用 `logs` 订阅，由节点按地址过滤，内部转账也在里面，
-    /// `removed` 的日志同样算动静。原生币转账没有日志，内部转账也不在区块的交易列表里，
-    /// 免费节点又没有 trace，所以出块时批量查一次原生币余额。
+    /// 跟块.`newHeads` 给高度.代币转账用 `logs` 订阅,由节点按地址过滤,内部转账也在里面,
+    /// `removed` 的日志同样算动静.原生币转账没有日志,内部转账也不在区块的交易列表里,
+    /// 免费节点又没有 trace,所以出块时批量查一次原生币余额.
     pub(super) async fn follow(
         &self,
         mut addresses: watch::Receiver<Vec<String>>,
@@ -46,7 +46,7 @@ impl Evm {
         let mut socket = open_socket(self.http.socket_url()).await?;
         send_call(&mut socket, 1, "eth_subscribe", json!(["newHeads"])).await?;
         let mut next_id = 2;
-        // 等回复的订阅。被拒绝时这条连接收不到这些推送，换上游或者退回轮询。
+        // 等回复的订阅.被拒绝时这条连接收不到这些推送,换上游或者退回轮询.
         let mut subscribing = HashSet::from([1]);
         let mut filters: Vec<String> = Vec::new();
         let mut owners: HashMap<String, String> = HashMap::new();
@@ -91,7 +91,7 @@ impl Evm {
                                 .collect();
                             natives = current;
                             signals.send(Signal::Touched(touched)).await.map_err(|_| Failed)?;
-                            // 这里的基线比订阅的基线晚，两者之间的变化要靠对账找回来。
+                            // 这里的基线比订阅的基线晚,两者之间的变化要靠对账找回来.
                             if fresh {
                                 signals.send(Signal::Reconcile).await.map_err(|_| Failed)?;
                             }
@@ -121,13 +121,13 @@ impl Evm {
         }
     }
 
-    /// 直接从节点取最近的交易。索引服务有延迟，BSC 和 Polygon 也没有免费的，所以跟块不用它。
-    // ponytail: 合约内部转入的原生币在区块里看不到，只更新余额，交易记录要等索引服务。
-    // 没有索引服务的网络要显示这部分时接 trace 接口。
+    /// 直接从节点取最近的交易.索引服务有延迟,BSC 和 Polygon 也没有免费的,所以跟块不用它.
+    // ponytail: 合约内部转入的原生币在区块里看不到,只更新余额,交易记录要等索引服务.
+    // 没有索引服务的网络要显示这部分时接 trace 接口.
     pub(super) async fn scan(&self, addresses: &[String], previous: u64) -> Result<Vec<HistoryItem>, Failed> {
         let tips = self.tips().await?;
         let oldest = tips.latest.saturating_sub(MAX_SCAN - 1);
-        // 中间有看不到的块时不能报成功，失败时 `txs` 是空，客户端自己补取。
+        // 中间有看不到的块时不能报成功,失败时 `txs` 是空,客户端自己补取.
         if previous + 1 < oldest {
             return Err(Failed);
         }
@@ -185,7 +185,7 @@ impl Evm {
         for ((block, tx, from, to), receipt) in native.into_iter().zip(&receipts) {
             let failed = receipt.get("status").and_then(Value::as_str) == Some("0x0");
             let amount = hex_to_decimal(tx.get("value").and_then(Value::as_str).ok_or(Failed)?).ok_or(Failed)?;
-            // 和索引服务的规则一样：金额为 0 的成功调用不是转账。
+            // 和索引服务的规则一样:金额为 0 的成功调用不是转账.
             if amount == "0" && !failed {
                 continue;
             }
@@ -221,7 +221,7 @@ impl Evm {
                 flows: None,
             });
         }
-        // 自己转给自己的代币会同时出现在转出和转入两次查询里。
+        // 自己转给自己的代币会同时出现在转出和转入两次查询里.
         let mut seen = HashSet::new();
         items.retain(|item| seen.insert(item.clone()));
         Ok(items)
@@ -238,7 +238,7 @@ mod tests {
             .collect()
     }
 
-    /// 地址等量替换时数量不变，比较数量会跳过对账。
+    /// 地址等量替换时数量不变,比较数量会跳过对账.
     #[test]
     fn a_replaced_address_needs_a_baseline() {
         let natives = HashMap::from([("a".to_string(), "0x1".to_string())]);

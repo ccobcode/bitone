@@ -1,5 +1,5 @@
-//! Bitcoin 的 Electrum 协议上游。一个连接批量查询，公共服务器和自建的 electrs、Fulcrum 是同一个协议。
-//! 查询结果转成 Esplora 的形状，解析和归纳规则只有一份。
+//! Bitcoin 的 Electrum 协议上游.一个连接批量查询,公共服务器和自建的 electrs,Fulcrum 是同一个协议.
+//! 查询结果转成 Esplora 的形状,解析和归纳规则只有一份.
 
 use super::shape::{
     FAST_TARGET, FINAL_CONFIRMATIONS, MEDIUM_TARGET, SLOW_TARGET, fee_rates, history_item, is_already_known, parse_tx,
@@ -30,15 +30,15 @@ use tokio_rustls::TlsConnector;
 mod session;
 mod watch;
 
-/// 退订从 1.4.2 开始才有，老服务器按 1.4 协商。
+/// 退订从 1.4.2 开始才有,老服务器按 1.4 协商.
 const PROTOCOLS: [&str; 2] = ["1.4", "1.4.2"];
-/// 历史每页的交易数。每笔还要取它花费的前序交易，太多会碰到上游超时。
+/// 历史每页的交易数.每笔还要取它花费的前序交易,太多会碰到上游超时.
 const PAGE: usize = 25;
-/// `blockchain.estimatefee` 的单位是 BTC/kB，网页端用 sat/vB。
+/// `blockchain.estimatefee` 的单位是 BTC/kB,网页端用 sat/vB.
 const SAT_PER_VB: f64 = 100_000.0;
-/// ElectrumX 和 Fulcrum 拒绝交易时都用这个错误码，其他错误码是服务自身的问题。
+/// ElectrumX 和 Fulcrum 拒绝交易时都用这个错误码,其他错误码是服务自身的问题.
 const REJECTED: i64 = 1;
-/// electrs 系的错误码不区分拒绝和节点故障，要看它转述的节点错误码，这三个是交易本身的问题。
+/// electrs 系的错误码不区分拒绝和节点故障,要看它转述的节点错误码,这三个是交易本身的问题.
 const NODE_REJECTIONS: [&str; 3] = ["-25", "-26", "-27"];
 
 fn is_rejection(error: &RpcError) -> bool {
@@ -51,7 +51,7 @@ fn not_found(error: &RpcError) -> bool {
     message.contains("no such") || message.contains("not found")
 }
 
-/// 协议用脚本的 SHA-256 倒序作为地址的索引。
+/// 协议用脚本的 SHA-256 倒序作为地址的索引.
 fn script_hash(script: &Script) -> String {
     let mut hash = sha256::Hash::hash(script.as_bytes()).to_byte_array();
     hash.reverse();
@@ -63,7 +63,7 @@ fn address_hash(address: &str) -> Result<String, Failed> {
     Ok(script_hash(&address.script_pubkey()))
 }
 
-/// 高度是 0 和 -1 都表示还在内存池。
+/// 高度是 0 和 -1 都表示还在内存池.
 fn history_row(row: &Value) -> Result<(Txid, Option<u64>), Failed> {
     let txid = row.get("tx_hash").and_then(Value::as_str).ok_or(Failed)?;
     let height = row.get("height").and_then(Value::as_i64).ok_or(Failed)?;
@@ -126,7 +126,7 @@ impl Electrum {
         }
     }
 
-    // ponytail: 每次查询开一个连接。公共服务器开始限制连接数时，改成每个上游一条长连接。
+    // ponytail: 每次查询开一个连接.公共服务器开始限制连接数时,改成每个上游一条长连接.
     async fn open(&self) -> Result<Session, Failed> {
         let tcp = TcpStream::connect((self.host.as_str(), self.port))
             .await
@@ -155,7 +155,7 @@ impl Electrum {
             .map(|address| address.to_string())
     }
 
-    /// 转成 Esplora 的形状，归纳规则只有一份。
+    /// 转成 Esplora 的形状,归纳规则只有一份.
     fn esplora_shape(
         &self,
         tx: &Transaction,
@@ -168,7 +168,7 @@ impl Electrum {
             .input
             .iter()
             .map(|input| {
-                // coinbase 没有前序交易。
+                // coinbase 没有前序交易.
                 if input.previous_output.is_null() {
                     return Ok(json!({"prevout": null}));
                 }
@@ -195,7 +195,7 @@ impl Electrum {
             });
         }
 
-        // 同一笔交易可能出现在多个地址的历史里。
+        // 同一笔交易可能出现在多个地址的历史里.
         let mut heights: BTreeMap<Txid, Option<u64>> = BTreeMap::new();
         for reply in session
             .call(&by_address("blockchain.scripthash.get_history", addresses)?)
@@ -213,8 +213,8 @@ impl Electrum {
                 _ => true,
             })
             .collect();
-        // 内存池的排最前，其余新的在前。
-        // ponytail: 用偏移翻页，翻页途中内存池交易消失会漏一条。真遇到时改成按高度和 txid 定位。
+        // 内存池的排最前,其余新的在前.
+        // ponytail: 用偏移翻页,翻页途中内存池交易消失会漏一条.真遇到时改成按高度和 txid 定位.
         rows.sort_by_key(|(_, height)| std::cmp::Reverse(height.unwrap_or(u64::MAX)));
 
         let offset: usize = cursor
@@ -321,7 +321,7 @@ impl Electrum {
         let replies = self.open().await?.call(&calls).await?;
         let mut rates = Map::new();
         for (target, reply) in targets.iter().zip(replies) {
-            // 节点没有足够的数据时返回 -1 或者报错，测试网经常这样。
+            // 节点没有足够的数据时返回 -1 或者报错,测试网经常这样.
             let Ok(rate) = reply else {
                 continue;
             };
@@ -365,7 +365,7 @@ impl Electrum {
             Ok(Some(Ok(_))) => Broadcast::Accepted,
             Ok(Some(Err(error))) if is_already_known(&error.message) => Broadcast::Accepted,
             Ok(Some(Err(error))) if is_rejection(&error) => rejected(self, raw, error.message).await,
-            // 请求可能已经到达节点，不能换上游重发，也不能当成拒绝。
+            // 请求可能已经到达节点,不能换上游重发,也不能当成拒绝.
             _ => Broadcast::Unknown,
         }
     }
@@ -380,7 +380,7 @@ impl Upstream for Electrum {
 
     fn recent<'a>(&'a self, addresses: &'a [String], previous: u64) -> Query<'a, Vec<HistoryItem>> {
         Box::pin(async move {
-            // 从不可回滚的位置之前开始，这样不会命中「高度没变」的捷径，内存池的交易也在里面。
+            // 从不可回滚的位置之前开始,这样不会命中"高度没变"的捷径,内存池的交易也在里面.
             let since = previous.saturating_sub(FINAL_CONFIRMATIONS);
             let cursor = Cursor::new();
             Ok(self.page(addresses, &cursor, Some(since)).await?.items)

@@ -10,7 +10,7 @@ concurrency:
 permissions:
     contents: read
 
-# 发布构建不用缓存，缓存可能被其他分支的构建污染。
+# 发布构建不用缓存,缓存可能被其他分支的构建污染.
 env:
     LLVM: /usr/bin
     IMAGE: ghcr.io/${{ github.repository }}
@@ -85,7 +85,7 @@ jobs:
                   docker build -f docker/selfhost.Dockerfile -t "$tag" .
                   docker push "$tag"
 
-    # 这里只建草稿。APK 由 scripts/release.sh 在本地签名后转为正式发布，CI 不碰签名私钥。
+    # 这里只建草稿.APK 由 scripts/release.sh 在本地签名后转为正式发布,CI 不碰签名私钥.
     draft:
         name: Draft Release
         needs: [server, android, image]

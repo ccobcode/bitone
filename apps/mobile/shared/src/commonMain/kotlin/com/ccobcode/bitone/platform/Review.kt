@@ -64,7 +64,6 @@ class AddressReview(
     /** 地址类型,比如 Native SegWit. */
     val kind: String,
     val fingerprintMismatch: Boolean,
-    /** 请求里的主密钥指纹. */
     val requestFingerprint: String? = null,
 )
 

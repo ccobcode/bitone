@@ -1,4 +1,4 @@
-//! 从公钥算地址。网页端和冷钱包用同一份代码，冷钱包用它核对请求里的地址。
+//! 从公钥算地址.网页端和冷钱包用同一份代码,冷钱包用它核对请求里的地址.
 
 use crate::{AccountKind, Chain, Error, Network};
 use bitcoin::address::NetworkUnchecked;
@@ -8,7 +8,7 @@ use bitcoin::secp256k1::{PublicKey, Secp256k1};
 use bitcoin::{Address, CompressedPublicKey, KnownHrp, NetworkKind};
 use sha3::{Digest, Keccak256};
 
-/// 校验收款地址属于这个网络，返回规范写法。
+/// 校验收款地址属于这个网络,返回规范写法.
 pub fn validate(network: Network, text: &str) -> Result<String, Error> {
     match network.chain() {
         Chain::Bitcoin => {
@@ -44,7 +44,7 @@ fn network_kind(network: Network) -> NetworkKind {
     }
 }
 
-/// 从账户扩展公钥派生 Bitcoin 地址。`change` 为真时是找零地址。
+/// 从账户扩展公钥派生 Bitcoin 地址.`change` 为真时是找零地址.
 pub fn bitcoin_address(
     xpub: &[u8],
     kind: AccountKind,
@@ -62,7 +62,7 @@ pub fn bitcoin_address(
     bitcoin_address_from_key(&key.public_key.serialize(), kind, network)
 }
 
-/// 从压缩公钥算 Bitcoin 地址。
+/// 从压缩公钥算 Bitcoin 地址.
 pub fn bitcoin_address_from_key(compressed: &[u8], kind: AccountKind, network: Network) -> Result<String, Error> {
     let secp = Secp256k1::verification_only();
     let key = PublicKey::from_slice(compressed).map_err(|_| Error::InvalidKey)?;
@@ -77,14 +77,14 @@ pub fn bitcoin_address_from_key(compressed: &[u8], kind: AccountKind, network: N
     Ok(address.to_string())
 }
 
-/// 公钥对应的 20 字节地址，EVM 和 TRON 相同。
+/// 公钥对应的 20 字节地址,EVM 和 TRON 相同.
 pub fn eth_address_bytes(compressed: &[u8]) -> Result<[u8; 20], Error> {
     let key = PublicKey::from_slice(compressed).map_err(|_| Error::InvalidKey)?;
     let digest = Keccak256::digest(&key.serialize_uncompressed()[1..]);
     Ok(digest[12..].try_into().expect("20 字节"))
 }
 
-/// EVM 地址，带 EIP-55 校验大小写。
+/// EVM 地址,带 EIP-55 校验大小写.
 pub fn evm_address(compressed: &[u8]) -> Result<String, Error> {
     Ok(evm_text(&eth_address_bytes(compressed)?))
 }
@@ -100,7 +100,7 @@ pub fn evm_text(address: &[u8; 20]) -> String {
     out
 }
 
-/// 解析 EVM 地址。全大写或全小写不带校验，大小写混合时必须符合 EIP-55。
+/// 解析 EVM 地址.全大写或全小写不带校验,大小写混合时必须符合 EIP-55.
 pub fn parse_evm_address(text: &str) -> Result<[u8; 20], Error> {
     let hex = text.strip_prefix("0x").ok_or(Error::InvalidAddress)?;
     if hex.len() != 40 || !hex.is_ascii() {

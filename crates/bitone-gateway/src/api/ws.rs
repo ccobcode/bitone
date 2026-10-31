@@ -1,7 +1,7 @@
-//! WebSocket，JSON-RPC 2.0，见 docs/09-gateway-api.md。
+//! WebSocket,JSON-RPC 2.0,见 docs/09-gateway-api.md.
 //!
-//! 每个订阅是一个任务，句柄只存在于连接的内存里，连接结束时任务随之中止。
-//! 地址频道由 follow.rs 共用的跟块任务推送，其余频道各自轮询。单 IP 的连接数和单连接的订阅数都有上限。
+//! 每个订阅是一个任务,句柄只存在于连接的内存里,连接结束时任务随之中止.
+//! 地址频道由 follow.rs 共用的跟块任务推送,其余频道各自轮询.单 IP 的连接数和单连接的订阅数都有上限.
 
 use super::limit::ConnectionSlot;
 use super::{AppState, ClientIp};
@@ -26,16 +26,16 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, interval_at, sleep, timeout};
 
-/// 单连接的地址上限，所有订阅合计。同一个地址在三个 Bitcoin 测试网上算三个。
+/// 单连接的地址上限,所有订阅合计.同一个地址在三个 Bitcoin 测试网上算三个.
 const MAX_ADDRESSES: usize = 5000;
-/// 单连接的交易上限，见 docs/03-system.md §4.3。
+/// 单连接的交易上限,见 docs/03-system.md §4.3.
 const MAX_TXS: usize = 100;
-/// 单连接的 blocks 和 prices 订阅合计。每个网络一个，再加一个价格，正常用法到不了这个数。
+/// 单连接的 blocks 和 prices 订阅合计.每个网络一个,再加一个价格,正常用法到不了这个数.
 const MAX_FEEDS: usize = Network::ALL.len() + 1;
-/// 一条消息的上限，放得下 1000 个最长的地址。
+/// 一条消息的上限,放得下 1000 个最长的地址.
 const MAX_MESSAGE: usize = 128 * 1024;
 const OUTBOUND_QUEUE: usize = 64;
-/// 客户端不读数据时，超过这个时间就断开。
+/// 客户端不读数据时,超过这个时间就断开.
 const SEND_TIMEOUT: Duration = Duration::from_secs(10);
 
 const PARSE_ERROR: i32 = -32700;
@@ -82,19 +82,19 @@ fn rpc_error(id: Value, code: i32, message: &str) -> String {
     json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}).to_string()
 }
 
-/// 业务错误带上 HTTP 接口的错误码，放在 data 里。
+/// 业务错误带上 HTTP 接口的错误码,放在 data 里.
 fn api_error(id: Value, error: &ApiError) -> String {
     let error = json!({"code": error.rpc_code(), "message": error.message(), "data": {"code": error.code()}});
     json!({"jsonrpc": "2.0", "id": id, "error": error}).to_string()
 }
 
-/// 单值频道的推送，`params` 是一个对象，这里补上订阅 ID。
+/// 单值频道的推送,`params` 是一个对象,这里补上订阅 ID.
 fn push(subscription: &str, mut params: Value) -> String {
     params["subscription"] = json!(subscription);
     json!({"jsonrpc": "2.0", "method": "update", "params": params}).to_string()
 }
 
-/// 加入这个网络的跟块，一直占着成员资格，直到连接结束或退订。
+/// 加入这个网络的跟块,一直占着成员资格,直到连接结束或退订.
 async fn follow_addresses(
     state: Arc<AppState>,
     network: Network,
@@ -106,8 +106,8 @@ async fn follow_addresses(
     let (Some(pool), Some(follower)) = (state.networks.pool(network), state.followers.get(&network)) else {
         return;
     };
-    // 先取基线再回复订阅 ID。客户端收到回复后取一次快照，之后的变化一定会被推送。
-    // 基线缺失的地址（上游故障）在下一次查询成功时推送，宁可多推一次，不能漏掉。
+    // 先取基线再回复订阅 ID.客户端收到回复后取一次快照,之后的变化一定会被推送.
+    // 基线缺失的地址(上游故障)在下一次查询成功时推送,宁可多推一次,不能漏掉.
     let height = pool.head().await.ok();
     let baseline = current_balances(pool, &addresses).await;
     let watcher = Watcher::new(id.clone(), addresses, out.clone(), height, baseline);
@@ -117,15 +117,15 @@ async fn follow_addresses(
     }
 }
 
-/// 单值频道的轮询规则。
+/// 单值频道的轮询规则.
 struct Feed<T> {
     changed: fn(&T, &T) -> bool,
     finished: fn(&T) -> bool,
     params: fn(&T) -> Value,
 }
 
-/// 轮询一个值，变化时推送。和地址频道一样，先取基线再回复订阅 ID，
-/// 基线取不到时下一次查询成功就推送，宁可多推一次，不能漏掉。
+/// 轮询一个值,变化时推送.和地址频道一样,先取基线再回复订阅 ID,
+/// 基线取不到时下一次查询成功就推送,宁可多推一次,不能漏掉.
 async fn watch<T, Fetch, Output>(
     interval: Duration,
     id: String,
@@ -153,7 +153,7 @@ async fn watch<T, Fetch, Output>(
     }
 }
 
-/// 订阅占用的额度。
+/// 订阅占用的额度.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Quota {
     Addresses,
@@ -176,13 +176,13 @@ struct Connection {
 }
 
 impl Connection {
-    /// 处理一条消息，返回要立刻发送的回复。subscribe 成功时由轮询任务回复。
+    /// 处理一条消息,返回要立刻发送的回复.subscribe 成功时由轮询任务回复.
     fn handle(&mut self, text: &str) -> Option<String> {
         let Ok(value) = serde_json::from_str::<Value>(text) else {
             return Some(rpc_error(Value::Null, PARSE_ERROR, "解析失败"));
         };
         let id = value.get("id").cloned().unwrap_or(Value::Null);
-        // 通知没有 id，不能回复。这里的方法都需要回复，所以直接忽略。
+        // 通知没有 id,不能回复.这里的方法都需要回复,所以直接忽略.
         if id.is_null() {
             return None;
         }
@@ -196,7 +196,7 @@ impl Connection {
         match request.method.as_str() {
             "subscribe" => self.subscribe(id, request.params),
             "unsubscribe" => Some(self.unsubscribe(id, &request.params)),
-            // 浏览器看不到 WebSocket 的 ping 帧，要靠这个发现连接已经断了。
+            // 浏览器看不到 WebSocket 的 ping 帧,要靠这个发现连接已经断了.
             "ping" => Some(rpc_result(id, json!("pong"))),
             _ => Some(rpc_error(id, METHOD_NOT_FOUND, "方法不存在")),
         }
@@ -235,7 +235,7 @@ impl Connection {
         }
     }
 
-    /// 校验订阅并启动轮询任务。回复由任务在取到基线后发送。
+    /// 校验订阅并启动轮询任务.回复由任务在取到基线后发送.
     fn start(
         &self,
         id: &str,
@@ -329,7 +329,7 @@ impl Connection {
         }
     }
 
-    /// 参数是订阅 ID，接受字符串、单元素数组和 `{"subscription": ID}` 三种写法。
+    /// 参数是订阅 ID,接受字符串,单元素数组和 `{"subscription": ID}` 三种写法.
     fn unsubscribe(&mut self, id: Value, params: &Value) -> String {
         let subscription = params
             .as_str()
@@ -342,7 +342,7 @@ impl Connection {
     }
 }
 
-/// `_slot` 占着单 IP 的连接名额，这个函数返回时归还。
+/// `_slot` 占着单 IP 的连接名额,这个函数返回时归还.
 async fn run(mut socket: WebSocket, state: Arc<AppState>, ip: IpAddr, _slot: ConnectionSlot) {
     let period = state.heartbeat;
     let mut closing = state.closing.subscribe();
@@ -372,7 +372,7 @@ async fn run(mut socket: WebSocket, state: Arc<AppState>, ip: IpAddr, _slot: Con
             }
             Some(text) = outbound.recv() => Message::text(text),
             _ = heartbeat.tick() => {
-                // 连续两个周期没有任何数据，对端已经失联，这里断开才能退出跟块。
+                // 连续两个周期没有任何数据,对端已经失联,这里断开才能退出跟块.
                 if last_seen.elapsed() > period * 2 {
                     break;
                 }

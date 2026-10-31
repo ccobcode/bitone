@@ -21,12 +21,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -43,24 +39,15 @@ private const val MANIFEST = "bitone-manifest"
 @OptIn(ExperimentalCoroutinesApi::class)
 class SignFlowTest {
 
-    private fun TestScope.rig(setup: (Rig) -> Unit = {}): Rig {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val scope = CoroutineScope(dispatcher + SupervisorJob() + CoroutineExceptionHandler { _, _ -> })
-        return Rig(scope, dispatcher).also(setup)
-    }
+    private fun TestScope.rig(setup: (Rig) -> Unit = {}) = newRig().also(setup)
 
-    /** 已有钱包的状态,不走一遍创建流程. */
-    private fun TestScope.ready(passphrase: Boolean = false, cached: Boolean = true, setup: (Rig) -> Unit = {}): Rig {
-        val rig = rig {
-            it.store.meta = WalletMeta(false, passphrase, if (passphrase) null else MAIN_FINGERPRINT)
-            it.store.vault = boundVault(PIN)
-            if (!passphrase && cached) it.store.publicKeys = keysFor(MAIN_FINGERPRINT)
-            setup(it)
-        }
-        rig.flow.onResume()
+    private fun TestScope.ready(passphrase: Boolean = false, cached: Boolean = true, setup: (Rig) -> Unit = {}) =
+        readyRig(PIN, passphrase, cached, setup)
+
+    private fun TestScope.openViewWords(flow: WalletFlow) {
+        flow.openSettings()
+        flow.settings.startViewWords()
         advanceUntilIdle()
-        assertEquals(Screen.Home, rig.flow.screen)
-        return rig
     }
 
     @Test
@@ -87,16 +74,6 @@ class SignFlowTest {
         assertEquals(Screen.ParseFailed, rig.flow.screen)
     }
 
-    private fun TestScope.openScan(flow: WalletFlow) {
-        flow.scan.open()
-        advanceUntilIdle()
-    }
-
-    private fun TestScope.feed(flow: WalletFlow, parts: List<String>) = parts.forEach {
-        flow.scan.onScanned(it)
-        advanceUntilIdle()
-    }
-
     private fun TestScope.scanRequest(rig: Rig) {
         openScan(rig.flow)
         assertEquals(Screen.Scan, rig.flow.screen)
@@ -116,13 +93,6 @@ class SignFlowTest {
         advanceUntilIdle()
         assertEquals(Screen.Unlock, rig.flow.screen)
         assertEquals(UnlockPurpose.Sign, rig.flow.unlock.purpose)
-    }
-
-    private fun TestScope.submit(flow: WalletFlow, pin: String, passphrase: String = "") {
-        pin.forEach(flow.unlock::digit)
-        passphrase.forEach(flow.unlock::passphraseInput)
-        flow.unlock.submit()
-        advanceUntilIdle()
     }
 
     // 页面分支
@@ -470,9 +440,7 @@ class SignFlowTest {
         assertEquals(0, rig.core.opens)
 
         // 处理好之后回到 A7,请求还在.
-        rig.check.facts = GoodFacts
-        flow.retryCheck()
-        advanceUntilIdle()
+        passSelfCheck(rig)
         assertEquals(Screen.Unlock, flow.screen)
         assertNotNull(flow.scan.review)
         submit(flow, PIN)
@@ -866,9 +834,7 @@ class SignFlowTest {
     fun viewingWordsNeedsPinAndClosesTheWallet() = runTest {
         val rig = ready()
         val flow = rig.flow
-        flow.openSettings()
-        flow.settings.startViewWords()
-        advanceUntilIdle()
+        openViewWords(flow)
         assertEquals(Screen.Unlock, flow.screen)
         assertTrue(flow.settings.viewWords.isEmpty())
 
@@ -889,9 +855,7 @@ class SignFlowTest {
     fun wordsLeaveMemoryInBackground() = runTest {
         val rig = ready()
         val flow = rig.flow
-        flow.openSettings()
-        flow.settings.startViewWords()
-        advanceUntilIdle()
+        openViewWords(flow)
         submit(flow, PIN)
         flow.onBackground()
         assertEquals(Screen.Settings, flow.screen)
@@ -902,9 +866,7 @@ class SignFlowTest {
     fun failedSelfCheckClosesTheWordsPage() = runTest {
         val rig = ready()
         val flow = rig.flow
-        flow.openSettings()
-        flow.settings.startViewWords()
-        advanceUntilIdle()
+        openViewWords(flow)
         submit(flow, PIN)
         assertEquals(Screen.ViewWords, flow.screen)
 
@@ -915,9 +877,7 @@ class SignFlowTest {
         assertEquals(Screen.SelfCheckFailed, flow.screen)
         assertTrue(flow.settings.viewWords.isEmpty())
 
-        rig.check.facts = GoodFacts
-        flow.retryCheck()
-        advanceUntilIdle()
+        passSelfCheck(rig)
         assertEquals(Screen.Settings, flow.screen)
     }
 
@@ -935,9 +895,7 @@ class SignFlowTest {
     @Test
     fun viewingWordsNeedsNoPassphrase() = runTest {
         val rig = ready(passphrase = true)
-        rig.flow.openSettings()
-        rig.flow.settings.startViewWords()
-        advanceUntilIdle()
+        openViewWords(rig.flow)
         assertFalse(rig.flow.unlock.needsPassphrase)
         submit(rig.flow, PIN)
         assertEquals(Screen.ViewWords, rig.flow.screen)

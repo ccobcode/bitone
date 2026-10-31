@@ -7,7 +7,6 @@ import com.ccobcode.bitone.flow.Network
 import com.ccobcode.bitone.flow.ScanResult
 import com.ccobcode.bitone.flow.Screen
 import com.ccobcode.bitone.flow.UnlockPurpose
-import com.ccobcode.bitone.flow.WalletFlow
 import com.ccobcode.bitone.flow.accountsFor
 import com.ccobcode.bitone.platform.AccountAddress
 import com.ccobcode.bitone.platform.PinRecord
@@ -20,11 +19,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -37,31 +32,8 @@ private const val REQUEST = "bitone-request"
 /** 抹除,更新清单,弱 PIN,收款页和 BIP39 密码钱包的公钥. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class GuardedActionsTest {
-    private fun TestScope.ready(passphrase: Boolean = false, setup: (Rig) -> Unit = {}): Rig {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val scope = CoroutineScope(dispatcher + SupervisorJob() + CoroutineExceptionHandler { _, _ -> })
-        val rig = Rig(scope, dispatcher)
-        rig.store.meta = WalletMeta(false, passphrase, if (passphrase) null else MAIN_FINGERPRINT)
-        rig.store.vault = boundVault(PIN)
-        if (!passphrase) rig.store.publicKeys = keysFor(MAIN_FINGERPRINT)
-        setup(rig)
-        rig.flow.onResume()
-        advanceUntilIdle()
-        assertEquals(Screen.Home, rig.flow.screen)
-        return rig
-    }
-
-    private fun TestScope.submit(flow: WalletFlow, pin: String, passphrase: String = "") {
-        pin.forEach(flow.unlock::digit)
-        passphrase.forEach(flow.unlock::passphraseInput)
-        flow.unlock.submit()
-        advanceUntilIdle()
-    }
-
-    private fun TestScope.feed(flow: WalletFlow, parts: List<String>) = parts.forEach {
-        flow.scan.onScanned(it)
-        advanceUntilIdle()
-    }
+    private fun TestScope.ready(passphrase: Boolean = false, setup: (Rig) -> Unit = {}) =
+        readyRig(PIN, passphrase, setup = setup)
 
     private fun TestScope.toWipePin(rig: Rig) {
         rig.flow.openSettings()
@@ -83,8 +55,7 @@ class GuardedActionsTest {
         rig.core.manifestVersions["pack"] = 2u
         rig.flow.openSettings()
         rig.flow.manifest.open()
-        rig.flow.scan.open()
-        advanceUntilIdle()
+        openScan(rig.flow)
         feed(rig.flow, frames(MANIFEST, 2, "pack"))
         assertEquals(Screen.Manifest, rig.flow.screen)
     }
@@ -247,8 +218,7 @@ class GuardedActionsTest {
         val rig = ready()
         rig.flow.openSettings()
         rig.flow.manifest.open()
-        rig.flow.scan.open()
-        advanceUntilIdle()
+        openScan(rig.flow)
         feed(rig.flow, frames(MANIFEST, 1, "forged"))
         assertEquals(Screen.ParseFailed, rig.flow.screen)
         assertEquals("签名无效", rig.flow.scan.failure)
@@ -296,16 +266,14 @@ class GuardedActionsTest {
     fun backgroundForgetsSessionKeys() = runTest {
         val rig = ready(passphrase = true) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
         val flow = rig.flow
-        flow.scan.open()
-        advanceUntilIdle()
+        openScan(flow)
         feed(flow, frames(REQUEST))
         submit(flow, PIN, "pass")
         assertEquals(Screen.Review, flow.screen)
         flow.scan.exitRequest()
 
         flow.onBackground()
-        flow.scan.open()
-        advanceUntilIdle()
+        openScan(flow)
         feed(flow, frames(REQUEST))
         assertEquals(Screen.Unlock, flow.screen)
         assertEquals(UnlockPurpose.LoadKeys, flow.unlock.purpose)
@@ -315,8 +283,7 @@ class GuardedActionsTest {
     fun backgroundKeepsKeysWhileBusy() = runTest {
         val rig = ready(passphrase = true) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
         val flow = rig.flow
-        flow.scan.open()
-        advanceUntilIdle()
+        openScan(flow)
         feed(flow, frames(REQUEST))
         PIN.forEach(flow.unlock::digit)
         "pass".forEach(flow.unlock::passphraseInput)
@@ -327,8 +294,7 @@ class GuardedActionsTest {
         assertEquals(Screen.Review, flow.screen)
         flow.scan.exitRequest()
 
-        flow.scan.open()
-        advanceUntilIdle()
+        openScan(flow)
         feed(flow, frames(REQUEST))
         assertEquals(Screen.Review, flow.screen)
     }
@@ -337,8 +303,7 @@ class GuardedActionsTest {
     fun cachedKeysSurviveBackground() = runTest {
         val rig = ready()
         rig.flow.onBackground()
-        rig.flow.scan.open()
-        advanceUntilIdle()
+        openScan(rig.flow)
         feed(rig.flow, frames(REQUEST))
         assertEquals(Screen.Review, rig.flow.screen)
     }
@@ -353,8 +318,7 @@ class GuardedActionsTest {
         rig.flow.session.loadAddresses()
         advanceUntilIdle()
         assertTrue(rig.flow.session.addresses.isEmpty())
-        rig.flow.scan.open()
-        advanceUntilIdle()
+        openScan(rig.flow)
         feed(rig.flow, frames(REQUEST))
         assertEquals(UnlockPurpose.LoadKeys, rig.flow.unlock.purpose)
         submit(rig.flow, PIN)

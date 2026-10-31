@@ -1,7 +1,7 @@
-//! TRON 交易：严格解析、分类、构建和核验。规则见 docs/04-security.md 第 2.7 节。
+//! TRON 交易:严格解析,分类,构建和核验.规则见 docs/04-security.md 第 2.7 节.
 //!
-//! 载荷是 `raw_data` 的 protobuf 字节，签名哈希是它的 SHA-256。解析后必须能重新编码回完全相同的字节，
-//! 这样冷钱包展示的内容和实际签名的内容不可能不一致。
+//! 载荷是 `raw_data` 的 protobuf 字节,签名哈希是它的 SHA-256.解析后必须能重新编码回完全相同的字节,
+//! 这样冷钱包展示的内容和实际签名的内容不可能不一致.
 
 use crate::address::{eth_address_bytes, parse_tron_address, tron_text};
 use crate::policy;
@@ -17,15 +17,15 @@ use sha2::{Digest, Sha256};
 
 const ADDRESS_PREFIX: u8 = 0x41;
 const TYPE_URL_PREFIX: &str = "type.googleapis.com/protocol.";
-/// 协议允许的最长有效期。
+/// 协议允许的最长有效期.
 const MAX_VALIDITY_MS: u64 = 24 * 60 * 60 * 1000;
 
 const TRANSFER_CONTRACT: u64 = 1;
 const TRIGGER_CONTRACT: u64 = 31;
 const PERMISSION_UPDATE_CONTRACT: u64 = 46;
 
-/// 合约类型的名字和 `owner_address` 所在字段。大多数是字段 1，但 TransferAsset、AccountUpdate、
-/// SetAccountId 是字段 2。不在表里的类型确认不了发起方，一律拒绝。
+/// 合约类型的名字和 `owner_address` 所在字段.大多数是字段 1,但 TransferAsset,AccountUpdate,
+/// SetAccountId 是字段 2.不在表里的类型确认不了发起方,一律拒绝.
 fn contract_info(kind: u64) -> Option<(&'static str, u64)> {
     Some(match kind {
         0 => ("AccountCreateContract", 1),
@@ -70,14 +70,14 @@ fn contract_info(kind: u64) -> Option<(&'static str, u64)> {
     })
 }
 
-/// protobuf 的变长整数。多余的编码一律拒绝，同一笔交易不能有两种写法。
+/// protobuf 的变长整数.多余的编码一律拒绝,同一笔交易不能有两种写法.
 pub fn read_varint(buf: &mut &[u8]) -> Result<u64, Forbid> {
     let mut value = 0u64;
     for shift in (0..70).step_by(7) {
         let (&byte, rest) = buf.split_first().ok_or(Forbid::ParseFailed)?;
         *buf = rest;
         let bits = (byte & 0x7f) as u64;
-        // 第 10 个字节只能放最高位，多出来的位会被其他解析器丢掉。
+        // 第 10 个字节只能放最高位,多出来的位会被其他解析器丢掉.
         if shift == 63 && bits > 1 {
             return Err(Forbid::ParseFailed);
         }
@@ -100,7 +100,7 @@ fn put_varint(out: &mut Vec<u8>, mut value: u64) {
     out.push(value as u8);
 }
 
-/// proto3 不写默认值，所以 0 不编码。
+/// proto3 不写默认值,所以 0 不编码.
 fn put_int(out: &mut Vec<u8>, number: u64, value: u64) {
     if value != 0 {
         put_varint(out, number << 3);
@@ -125,13 +125,13 @@ enum Value<'a> {
 struct Fields<'a>(Vec<(u64, Value<'a>)>);
 
 impl<'a> Fields<'a> {
-    /// 只接受 varint 和 length-delimited。TRON 的系统合约不用其他线格式。
+    /// 只接受 varint 和 length-delimited.TRON 的系统合约不用其他线格式.
     fn parse(mut bytes: &'a [u8]) -> Result<Self, Forbid> {
         let mut fields = Vec::new();
         while !bytes.is_empty() {
             let tag = read_varint(&mut bytes)?;
             let number = tag >> 3;
-            // 节点只读标签的低 32 位，更长的标签在节点上是另一个字段。
+            // 节点只读标签的低 32 位,更长的标签在节点上是另一个字段.
             if number == 0 || tag > u32::MAX as u64 {
                 return Err(Forbid::ParseFailed);
             }
@@ -153,7 +153,7 @@ impl<'a> Fields<'a> {
         Ok(Self(fields))
     }
 
-    /// 未知字段不接受。`repeated` 之外的字段不能重复，否则不同解析器可能取到不同的值。
+    /// 未知字段不接受.`repeated` 之外的字段不能重复,否则不同解析器可能取到不同的值.
     fn strict(bytes: &'a [u8], known: &[u64], repeated: &[u64]) -> Result<Self, Forbid> {
         let fields = Self::parse(bytes)?;
         for (i, (number, _)) in fields.0.iter().enumerate() {
@@ -169,7 +169,7 @@ impl<'a> Fields<'a> {
         self.0.iter().find(|(n, _)| *n == number).map(|(_, value)| *value)
     }
 
-    /// 协议里这些字段都是有符号的 int32 或 int64，负数不合法。
+    /// 协议里这些字段都是有符号的 int32 或 int64,负数不合法.
     fn int(&self, number: u64) -> Result<u64, Forbid> {
         match self.find(number) {
             None => Ok(0),
@@ -293,7 +293,7 @@ pub enum Call {
         witness: Option<Permission>,
         actives: Vec<Permission>,
     },
-    /// 其他系统合约。只确认发起方，参数原样保留。
+    /// 其他系统合约.只确认发起方,参数原样保留.
     Other {
         kind: u64,
         owner: [u8; 20],
@@ -312,7 +312,7 @@ impl Call {
                     amount: fields.int(3)?,
                 })
             }
-            // call_token_value 和 token_id 会随调用转走 TRC-10，这里不展示，所以当未知字段拒绝。
+            // call_token_value 和 token_id 会随调用转走 TRC-10,这里不展示,所以当未知字段拒绝.
             TRIGGER_CONTRACT => {
                 let fields = Fields::strict(value, &[1, 2, 3, 4], &[])?;
                 Ok(Self::Trigger {
@@ -427,8 +427,8 @@ pub struct RawData {
 }
 
 impl RawData {
-    /// `contract` 只有一个时才不重复，所以多个 contract 在这里就被拒绝。
-    /// memo、auths、scripts 和 Permission_id 都不展示，当未知字段拒绝。
+    /// `contract` 只有一个时才不重复,所以多个 contract 在这里就被拒绝.
+    /// memo,auths,scripts 和 Permission_id 都不展示,当未知字段拒绝.
     pub fn decode(payload: &[u8]) -> Result<Self, Forbid> {
         let fields = Fields::strict(payload, &[1, 4, 8, 11, 14, 18], &[])?;
         let contract = Fields::strict(fields.bytes(11)?, &[1, 2], &[])?;
@@ -478,7 +478,7 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
 }
 
-/// 毫秒时间戳转成 UTC 时间，算法见 Howard Hinnant 的 civil_from_days。
+/// 毫秒时间戳转成 UTC 时间,算法见 Howard Hinnant 的 civil_from_days.
 fn utc_time(ms: u64) -> String {
     let seconds = ms / 1000;
     let z = (seconds / 86_400) as i64 + 719_468;
@@ -510,7 +510,7 @@ fn permission_rows(label: &str, permission: &Permission) -> Vec<Row> {
     rows
 }
 
-/// A6d 页面。除了第一个地址，其他地址同样能动用资金，所以全部列出。
+/// A6d 页面.除了第一个地址,其他地址同样能动用资金,所以全部列出.
 fn permission_change(
     owner: &[u8; 20],
     new_owner: &Permission,
@@ -567,7 +567,7 @@ fn other_contract(kind: u64, name: &str, value: &[u8]) -> Result<abi::Classified
     })
 }
 
-/// `raw_data` 不是 ABI 编码，方法选择器和疑似地址这些提示不适用。
+/// `raw_data` 不是 ABI 编码,方法选择器和疑似地址这些提示不适用.
 fn plain_lines(bytes: &[u8]) -> Vec<RawLine> {
     let mut lines = raw_lines(bytes);
     lines.iter_mut().for_each(|line| line.note = None);
@@ -626,7 +626,7 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
         } => {
             let (classified, shared) = permission_change(owner, new_owner, witness.as_ref(), actives);
             if shared {
-                builder.alerts.push("新权限里还有其他地址，请逐个核对".to_string());
+                builder.alerts.push("新权限里还有其他地址,请逐个核对".to_string());
             }
             classified
         }
@@ -653,7 +653,7 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
         && *call_value != 0
     {
         builder.rows.push(Row::text("附带金额", trx(*call_value)));
-        // 顶部的金额是合约方法的参数，附带的 TRX 不在里面。
+        // 顶部的金额是合约方法的参数,附带的 TRX 不在里面.
         builder.alerts.push(format!("这笔调用附带 {}", trx(*call_value)));
     }
     builder.rows.push(Row::text("fee_limit", trx(tx.fee_limit)));
@@ -664,7 +664,6 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
     Ok(builder.finish(network.id()))
 }
 
-/// 这个请求的签名哈希。
 pub fn signing_hash(request: &SignRequest) -> Result<[u8; 32], Forbid> {
     if request.kind != KIND_TRANSACTION {
         return Err(Forbid::MessageSigning);
@@ -676,15 +675,15 @@ pub struct TransferParams<'a> {
     pub network: Network,
     pub from: &'a str,
     pub to: &'a str,
-    /// 最小单位的十进制字符串。
+    /// 最小单位的十进制字符串.
     pub amount: &'a str,
-    /// TRC-20 合约。留空是 TRX 转账。
+    /// TRC-20 合约.留空是 TRX 转账.
     pub contract: Option<&'a str>,
     pub ref_block_bytes: [u8; 2],
     pub ref_block_hash: [u8; 8],
     pub expiration_ms: u64,
     pub timestamp_ms: u64,
-    /// 只有 TRC-20 转账写入 `raw_data`。
+    /// 只有 TRC-20 转账写入 `raw_data`.
     pub fee_limit: u64,
 }
 
@@ -706,7 +705,7 @@ fn transfer_data(to: &[u8; 20], amount: &str) -> Result<Vec<u8>, Error> {
     Ok(data)
 }
 
-/// 构建转账，返回 `raw_data` 的字节。
+/// 构建转账,返回 `raw_data` 的字节.
 pub fn build_transfer(params: &TransferParams) -> Result<Vec<u8>, Error> {
     if params.network.chain() != Chain::Tron {
         return Err(Error::InvalidParams);
@@ -741,12 +740,12 @@ pub fn build_transfer(params: &TransferParams) -> Result<Vec<u8>, Error> {
         fee_limit,
     }
     .encode();
-    // 冷钱包不接受的交易这里就不构建。
+    // 冷钱包不接受的交易这里就不构建.
     RawData::decode(&raw).map_err(|_| Error::InvalidParams)?;
     Ok(raw)
 }
 
-/// `signer` 是付款账户的压缩公钥，必须和 `raw_data` 里的发起方一致。
+/// `signer` 是付款账户的压缩公钥,必须和 `raw_data` 里的发起方一致.
 pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> Result<Verified, Error> {
     let [signature] = response.signatures.as_slice() else {
         return Err(Error::BadSignature);
@@ -865,7 +864,7 @@ mod tests {
         let top = [transfer().encode(), int_field(99, 1)].concat();
         assert_eq!(RawData::decode(&top), Err(Forbid::ParseFailed));
 
-        // memo、auths、ref_block_num、scripts 都是协议字段，但冷钱包不展示，同样拒绝。
+        // memo,auths,ref_block_num,scripts 都是协议字段,但冷钱包不展示,同样拒绝.
         for number in [3, 9, 10, 12] {
             let tx = [transfer().encode(), field(number, b"x")].concat();
             assert_eq!(RawData::decode(&tx), Err(Forbid::ParseFailed), "{number}");
@@ -914,7 +913,7 @@ mod tests {
         bytes.extend_from_slice(&transfer().encode());
         assert_eq!(RawData::decode(&bytes), Err(Forbid::ParseFailed));
 
-        // 字段 3 写两次：有的解析器取第一个，有的取最后一个。
+        // 字段 3 写两次:有的解析器取第一个,有的取最后一个.
         let call = Call::Transfer {
             owner: OWNER,
             to: PEER,
@@ -934,7 +933,7 @@ mod tests {
             let fields = Fields::parse(&bytes).unwrap();
             fields.bytes(11).unwrap().to_vec()
         };
-        // 时间戳排到 contract 前面。
+        // 时间戳排到 contract 前面.
         let swapped = [
             field(1, &tx.ref_block_bytes),
             field(4, &tx.ref_block_hash),
@@ -945,7 +944,7 @@ mod tests {
         .concat();
         assert_eq!(RawData::decode(&swapped), Err(Forbid::ParseFailed));
 
-        // fee_limit 显式写 0，解析结果一样但字节不同。
+        // fee_limit 显式写 0,解析结果一样但字节不同.
         let explicit = [tx.encode(), vec![18 << 3, 0]].concat();
         assert_eq!(RawData::decode(&explicit), Err(Forbid::ParseFailed));
     }
@@ -1017,7 +1016,7 @@ mod tests {
 
     #[test]
     fn owner_field_depends_on_the_contract_type() {
-        // TransferAssetContract 的字段 1 是资产名，发起方在字段 2。
+        // TransferAssetContract 的字段 1 是资产名,发起方在字段 2.
         let value = [
             field(1, b"1002000"),
             field(2, &prefixed(&OWNER)),
@@ -1028,12 +1027,12 @@ mod tests {
         let tx = RawData::decode(&with_contract(&contract)).unwrap();
         assert_eq!(*tx.call.owner(), OWNER);
 
-        // 同名字段出现两次时不知道节点取哪一个。
+        // 同名字段出现两次时不知道节点取哪一个.
         let twice = [value.clone(), field(2, &prefixed(&PEER))].concat();
         let contract = contract_bytes(2, "TransferAssetContract", &twice);
         assert_eq!(RawData::decode(&with_contract(&contract)), Err(Forbid::ParseFailed));
 
-        // AccountCreateContract 的类型是 0，proto3 不写。
+        // AccountCreateContract 的类型是 0,proto3 不写.
         let contract = contract_bytes(0, "AccountCreateContract", &field(1, &prefixed(&OWNER)));
         let tx = RawData::decode(&with_contract(&contract)).unwrap();
         assert_eq!(tx.call.kind(), 0);
@@ -1041,7 +1040,7 @@ mod tests {
 
     #[test]
     fn oversized_tags_are_refused() {
-        // Java 的 protobuf 只读低 32 位，这个标签在节点上会变成字段 2，也就是第二个发起方。
+        // Java 的 protobuf 只读低 32 位,这个标签在节点上会变成字段 2,也就是第二个发起方.
         let value = [field(1, b"1002000"), field(2, &prefixed(&OWNER))].concat();
         let mut hidden = value.clone();
         put_varint(&mut hidden, 1 << 32 | 2 << 3 | 2);

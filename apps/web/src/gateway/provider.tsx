@@ -62,9 +62,7 @@ interface GatewayState {
     /** 要同步链上历史的地址. */
     feedStreams: HistoryStream[];
     syncing: boolean;
-    /** 这次同步失败的网络. */
     syncFailed: string[];
-    /** 往前翻一页交易记录. */
     loadOlder(streams: readonly HistoryStream[]): Promise<void>;
 }
 

@@ -1,13 +1,8 @@
-import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
-import { initCoreSync } from ".";
+import { USDT, initCore } from "../testing";
 import { lookupAsset, priceKey } from "./manifest";
 
-const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
-
-beforeAll(() => {
-    initCoreSync(readFileSync(new URL("./pkg/bitone_wasm_bg.wasm", import.meta.url)));
-});
+beforeAll(initCore);
 
 describe("priceKey", () => {
     it("主网资产用自己的键", () => {

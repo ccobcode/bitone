@@ -1,4 +1,4 @@
-//! 聚合指标。日志只有方法、状态码、次数和耗时，没有路径、IP、地址，也没有单次请求的时间点。
+//! 聚合指标.日志只有方法,状态码,次数和耗时,没有路径,IP,地址,也没有单次请求的时间点.
 
 use axum::http::Method;
 use std::collections::BTreeMap;
@@ -15,7 +15,7 @@ struct Stat {
 #[derive(Default)]
 pub struct Metrics(Mutex<BTreeMap<(&'static str, u16), Stat>>);
 
-/// 方法可以由客户端任意构造，归并后键的数量才有上限。
+/// 方法可以由客户端任意构造,归并后键的数量才有上限.
 fn method_label(method: &Method) -> &'static str {
     match *method {
         Method::GET => "GET",
@@ -50,7 +50,7 @@ impl Metrics {
             .collect()
     }
 
-    /// 打印上一周期的汇总并清零。
+    /// 打印上一周期的汇总并清零.
     pub fn flush(&self) {
         for line in self.take_lines() {
             eprintln!("{line}");

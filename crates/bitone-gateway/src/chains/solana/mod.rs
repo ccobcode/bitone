@@ -1,4 +1,4 @@
-//! Solana。标准 JSON-RPC 节点。
+//! Solana.标准 JSON-RPC 节点.
 
 mod adapter;
 mod watch;
@@ -18,9 +18,9 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::sync::Arc;
 
-/// 一个签名的长度。
+/// 一个签名的长度.
 const SIGNATURE: usize = 64;
-/// 签名的 base58 文本不超过 88 个字符。
+/// 签名的 base58 文本不超过 88 个字符.
 const MAX_SIGNATURE_LENGTH: usize = 88;
 
 pub struct Spec;
@@ -60,7 +60,7 @@ impl ChainSpec for Spec {
         hash.len() <= MAX_SIGNATURE_LENGTH && base58::decode(hash).is_ok_and(|signature| signature.len() == 64)
     }
 
-    /// 交易哈希是第一个签名。开头是紧凑编码的签名数量，这里只接受 127 个以内。
+    /// 交易哈希是第一个签名.开头是紧凑编码的签名数量,这里只接受 127 个以内.
     fn raw_hash(&self, bytes: &[u8]) -> Option<String> {
         let (&count, rest) = bytes.split_first()?;
         if count == 0 || count > 0x7f || rest.len() <= usize::from(count) * SIGNATURE {
@@ -126,7 +126,7 @@ mod tests {
         let raw = raw_tx(Network::Solana, &bytes.to_lower_hex_string()).unwrap();
         assert_eq!(raw.hash, bitcoin::base58::encode(&[7u8; SIGNATURE]));
         assert_eq!(raw.base64(), STANDARD.encode(&bytes));
-        // 没有签名，或者长度不够。
+        // 没有签名,或者长度不够.
         assert!(raw_tx(Network::Solana, "00").is_err());
         assert!(raw_tx(Network::Solana, &[1u8; SIGNATURE].to_lower_hex_string()).is_err());
     }

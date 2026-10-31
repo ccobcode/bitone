@@ -1,6 +1,6 @@
-//! 二维码协议，见 docs/03-system.md 第 6 节。
+//! 二维码协议,见 docs/03-system.md 第 6 节.
 //!
-//! 传输层是 BC-UR 喷泉码，载荷是 BitOne 自定义的 CBOR 结构。
+//! 传输层是 BC-UR 喷泉码,载荷是 BitOne 自定义的 CBOR 结构.
 
 use crate::path::{DerivationPath, all_account_specs, validate_for_network};
 use crate::{AccountKind, Chain, Error, Network};
@@ -22,7 +22,7 @@ pub const MAX_FRAMES: usize = 2000;
 pub const MAX_PART_CHARS: usize = 3000;
 pub const MAX_CBOR_DEPTH: usize = 8;
 
-/// 单帧的分片大小。真机测试后再调。
+/// 单帧的分片大小.真机测试后再调.
 pub const DEFAULT_FRAGMENT_BYTES: usize = 180;
 
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
@@ -46,7 +46,7 @@ pub struct ExportedAccount {
     pub kind: AccountKind,
     #[n(2)]
     pub path: String,
-    /// Bitcoin 是序列化的扩展公钥，其余是账户公钥。
+    /// Bitcoin 是序列化的扩展公钥,其余是账户公钥.
     #[n(3)]
     #[cbor(with = "minicbor::bytes")]
     pub key: Vec<u8>,
@@ -57,7 +57,7 @@ impl AccountsExport {
         minicbor::to_vec(self).expect("写入内存不会失败")
     }
 
-    /// 只有内容全部通过校验才返回。路径不在白名单或与主网、测试网声明冲突的数据不会进入浏览器。
+    /// 只有内容全部通过校验才返回.路径不在白名单或与主网,测试网声明冲突的数据不会进入浏览器.
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         check_limits(bytes)?;
         let export: Self = minicbor::decode(bytes).map_err(|_| Error::Decode)?;
@@ -94,7 +94,7 @@ impl AccountsExport {
     }
 }
 
-/// 让冷钱包核对一个收款地址。见 docs/04-security.md 第 4 节。
+/// 让冷钱包核对一个收款地址.见 docs/04-security.md 第 4 节.
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
 #[cbor(map)]
 pub struct AddressCheck {
@@ -138,19 +138,19 @@ impl AddressCheck {
         Ok(check)
     }
 
-    /// 单帧二维码。内容是不区分大小写的 bytewords，所以 Base58 地址不会被大写破坏。
+    /// 单帧二维码.内容是不区分大小写的 bytewords,所以 Base58 地址不会被大写破坏.
     pub fn frame(&self) -> Result<String, Error> {
         FrameEncoder::new(&self.encode(), UR_ADDRESS, MAX_PART_CHARS)?.next_part()
     }
 }
 
-/// 解析前的检查：大小和嵌套深度。解析器永远不会看到超限的数据。
+/// 解析前的检查:大小和嵌套深度.解析器永远不会看到超限的数据.
 pub fn check_limits(bytes: &[u8]) -> Result<(), Error> {
     if bytes.len() > MAX_MESSAGE_BYTES {
         return Err(Error::TooLarge);
     }
     let mut decoder = Decoder::new(bytes);
-    // 每一层还剩多少项。不定长容器记 `None`，遇到 break 时结束。
+    // 每一层还剩多少项.不定长容器记 `None`,遇到 break 时结束.
     let mut stack: Vec<Option<u64>> = Vec::new();
     while decoder.position() < bytes.len() {
         let opened = match decoder.datatype().map_err(|_| Error::Decode)? {
@@ -192,14 +192,14 @@ pub fn check_limits(bytes: &[u8]) -> Result<(), Error> {
     if stack.is_empty() { Ok(()) } else { Err(Error::Decode) }
 }
 
-/// 子容器读完后才关闭父容器，否则最后一项嵌套的数据不会累加深度。
+/// 子容器读完后才关闭父容器,否则最后一项嵌套的数据不会累加深度.
 fn close_finished(stack: &mut Vec<Option<u64>>) {
     while stack.last() == Some(&Some(0)) {
         stack.pop();
     }
 }
 
-/// 分帧编码。一条消息按固定大小分帧，循环取帧即可。
+/// 分帧编码.一条消息按固定大小分帧,循环取帧即可.
 pub struct FrameEncoder {
     inner: ur::Encoder<'static>,
 }
@@ -226,7 +226,7 @@ impl FrameEncoder {
     }
 }
 
-/// 接收端。帧的顺序不重要，收够就能解码。
+/// 接收端.帧的顺序不重要,收够就能解码.
 #[derive(Default)]
 pub struct FrameDecoder {
     inner: ur::Decoder,
@@ -257,12 +257,12 @@ impl FrameDecoder {
         self.inner.complete()
     }
 
-    /// 这条消息一共多少帧，收到第一帧之前是 0。
+    /// 这条消息一共多少帧,收到第一帧之前是 0.
     pub fn fragment_count(&self) -> usize {
         self.inner.fragment_count()
     }
 
-    /// 已解出的分片比例，0 到 1。
+    /// 已解出的分片比例,0 到 1.
     pub fn progress(&self) -> f32 {
         match self.inner.fragment_count() {
             0 => 0.0,
@@ -283,7 +283,7 @@ impl FrameDecoder {
     }
 }
 
-/// 校验 `ur:<类型>/<序号>-<总数>/<数据>` 或 `ur:<类型>/<数据>` 的头部，返回类型。
+/// 校验 `ur:<类型>/<序号>-<总数>/<数据>` 或 `ur:<类型>/<数据>` 的头部,返回类型.
 fn header(part: &str) -> Result<&str, Error> {
     let body = part.strip_prefix("ur:").ok_or(Error::InvalidFrame)?;
     let (ur_type, rest) = body.split_once('/').ok_or(Error::InvalidFrame)?;

@@ -10,7 +10,7 @@ test("分隔点和全角分号都算", () => {
     assert.deepEqual(scanText(`第一行\n说明${SEMICOLON}继续`)[0], { line: 2, column: 3, char: SEMICOLON });
 });
 
-test("代码里的半角分号不算，文档里的算", () => {
+test("代码里的半角分号不算,文档里的算", () => {
     assert.equal(scanText("const a = 1;").length, 0);
     assert.equal(scanText("说明; 继续", { prose: true }).length, 1);
 });
@@ -21,5 +21,5 @@ test("文档的代码块和行内代码不算", () => {
 });
 
 test("引用规则本身不算", () => {
-    assert.equal(scanText(`不用「${DOT}」分隔`).length, 0);
+    assert.equal(scanText(`不用"${DOT}"分隔`).length, 0);
 });

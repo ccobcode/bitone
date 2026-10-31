@@ -1,5 +1,5 @@
-//! 冷钱包保存的公钥。核对交易时不需要解锁，只有签名才要 PIN，所以公钥单独存一份。
-//! 里面没有任何私钥。
+//! 冷钱包保存的公钥.核对交易时不需要解锁,只有签名才要 PIN,所以公钥单独存一份.
+//! 里面没有任何私钥.
 
 use crate::path::DerivationPath;
 use crate::protocol::{AccountsExport, ExportedAccount};
@@ -8,7 +8,7 @@ use crate::{AccountKind, Chain, Error, Mode, Network, address};
 use bitcoin::bip32::{ChildNumber, Xpub};
 use bitcoin::secp256k1::Secp256k1;
 
-/// 首页显示的账户。Bitcoin 是第一个收款地址。
+/// 首页显示的账户.Bitcoin 是第一个收款地址.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountAddress {
     pub chain: Chain,
@@ -31,7 +31,7 @@ impl PublicKeys {
         }
     }
 
-    /// 序列化后写入本机，下次启动不用解锁也能核对。存的是只有一项的数组。
+    /// 序列化后写入本机,下次启动不用解锁也能核对.存的是只有一项的数组.
     pub fn encode(export: &AccountsExport) -> Vec<u8> {
         minicbor::to_vec([export]).expect("写入内存不会失败")
     }
@@ -43,7 +43,7 @@ impl PublicKeys {
         Ok(Self::new(export))
     }
 
-    /// 首页的账户和地址。测试币账户不列出来，用到时请求里有路径。
+    /// 首页的账户和地址.测试币账户不列出来,用到时请求里有路径.
     pub fn addresses(&self) -> Result<Vec<AccountAddress>, Error> {
         let bitcoin_network = Network::Bitcoin;
         let mut list = Vec::new();
@@ -67,7 +67,7 @@ impl PublicKeys {
         Ok(list)
     }
 
-    /// 账户的第 `index` 个收款地址。只有 Bitcoin 有多个，其他链的 `index` 必须是 0。
+    /// 账户的第 `index` 个收款地址.只有 Bitcoin 有多个,其他链的 `index` 必须是 0.
     pub fn receive_address(&self, account_path: &str, index: u32) -> Result<String, Error> {
         let account = self
             .accounts
@@ -98,7 +98,7 @@ impl PublicKeys {
         self.accounts.iter().find(|a| a.path == text)
     }
 
-    /// secp256k1 压缩公钥。Bitcoin 路径从账户扩展公钥继续派生。
+    /// secp256k1 压缩公钥.Bitcoin 路径从账户扩展公钥继续派生.
     pub fn secp256k1(&self, path: &DerivationPath) -> Result<[u8; 33], Forbid> {
         if let Some(account) = self.exact(path) {
             return account.key.as_slice().try_into().map_err(|_| Forbid::AddressMismatch);

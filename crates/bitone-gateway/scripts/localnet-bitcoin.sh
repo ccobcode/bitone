@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# 用真实的 bitcoind regtest 加 electrs（Esplora 接口）跑一遍网关的 Bitcoin 接口。
-# 全程只碰本机。结束时停止并删除容器和网络，退出码非 0 表示有检查没通过。
+# 用真实的 bitcoind regtest 加 electrs(Esplora 接口)跑一遍网关的 Bitcoin 接口.
+# 全程只碰本机.结束时停止并删除容器和网络,退出码非 0 表示有检查没通过.
 #
-# 网关的地址校验不接受 bcrt1 地址，而 legacy 地址和测试网共用版本字节，
-# 所以这里把网关配成 btc-testnet4，查询都用 legacy 地址。
+# 网关的地址校验不接受 bcrt1 地址,而 legacy 地址和测试网共用版本字节,
+# 所以这里把网关配成 btc-testnet4,查询都用 legacy 地址.
 #
-# 用法：crates/bitone-gateway/scripts/localnet-bitcoin.sh
-# 依赖：Docker、rustup、python3、curl。
+# 用法:crates/bitone-gateway/scripts/localnet-bitcoin.sh
+# 依赖:Docker,rustup,python3,curl.
 set -euo pipefail
 
 BITCOIND_IMAGE=bitcoin/bitcoin:latest
@@ -35,7 +35,7 @@ check() {
     echo "通过 $name"
     PASSED=$((PASSED + 1))
   else
-    echo "失败 ${name}：期望 ${expected}，实际 ${actual}"
+    echo "失败 ${name}:期望 ${expected},实际 ${actual}"
     FAILED=$((FAILED + 1))
   fi
 }
@@ -56,7 +56,7 @@ tx_field() { api_post /v1/$NETWORK/tx "{\"hashes\":[\"$1\"]}" | field "txs.0.$2"
 broadcast() { api_post /v1/$NETWORK/broadcast "{\"raw\":\"$1\"}"; }
 height() { curl -sS -m 5 "$ESPLORA/blocks/tip/height"; }
 
-# 出块并等 electrs 索引到新高度。
+# 出块并等 electrs 索引到新高度.
 mine() {
   cli generatetoaddress "$1" "$MINER" >/dev/null
   local target
@@ -69,7 +69,7 @@ mine() {
   exit 1
 }
 
-# 等 electrs 看到内存池里的交易。
+# 等 electrs 看到内存池里的交易.
 wait_seen() {
   for _ in $(seq 1 100); do
     [[ "$(curl -s -o /dev/null -w '%{http_code}' "$ESPLORA/tx/$1")" == 200 ]] && return
@@ -79,7 +79,7 @@ wait_seen() {
   exit 1
 }
 
-# 签一笔转账但不广播。
+# 签一笔转账但不广播.
 signed_payment() {
   local unsigned funded
   unsigned=$(cli createrawtransaction '[]' "{\"$1\":$2}")
@@ -196,7 +196,7 @@ echo "花已花费的输入 $REPLY"
 check "双花要报拒绝" "$(echo "$REPLY" | field error.code)" broadcast_rejected
 
 echo "== 交易花掉后再重复广播"
-# 把收款的 UTXO 也花掉，这时节点不再说交易已知，只说输入不存在。
+# 把收款的 UTXO 也花掉,这时节点不再说交易已知,只说输入不存在.
 SPEND=$(cli decoderawtransaction "$RAW" | python3 -c "
 import json, sys
 tx = json.load(sys.stdin)
@@ -208,7 +208,7 @@ check "花掉收款" "$(broadcast "$SECOND" | field status)" accepted
 mine 1
 REPLY=$(broadcast "$RAW")
 echo "输入已花费后重复广播 $REPLY"
-check "节点只说输入不存在时，链上查到就是成功" "$(echo "$REPLY" | field status)" accepted
+check "节点只说输入不存在时,链上查到就是成功" "$(echo "$REPLY" | field status)" accepted
 REPLY=$(broadcast "$CONFLICT")
 check "链上查不到的双花仍然是拒绝" "$(echo "$REPLY" | field error.code)" broadcast_rejected
 
@@ -224,5 +224,5 @@ import json, sys
 print([i['amount'] for i in json.load(sys.stdin)['items'] if i['from'] == '$PAYEE'][0])")" 49990000
 
 echo
-echo "通过 $PASSED 项，失败 $FAILED 项"
+echo "通过 $PASSED 项,失败 $FAILED 项"
 [[ "$FAILED" -eq 0 ]]
