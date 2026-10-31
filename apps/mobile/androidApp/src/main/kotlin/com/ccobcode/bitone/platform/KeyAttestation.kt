@@ -1,7 +1,7 @@
 package com.ccobcode.bitone.platform
 
 /**
- * 解析 Android 密钥证明扩展，取出 RootOfTrust 里的 deviceLocked。 结构见
+ * 解析 Android 密钥证明扩展，取出 RootOfTrust 里的 deviceLocked。结构见
  * https://source.android.com/docs/security/features/keystore/attestation 只读这一个字段，所以只写了够用的 DER 读取，不引入 ASN.1 库。
  */
 internal object KeyAttestation {

@@ -33,7 +33,7 @@
 
 - 界面完全是自定义设计，不需要贴合系统外观，共用一套界面正合适。
 - Android 的 Keystore、`FLAG_SECURE`、隐藏悬浮窗都是 Kotlin 直接调用，不用经过桥接。
-- iOS 版已经稳定。目标是界面和流程逻辑共用，只为每个平台实现第 3 节的接口。
+- 它的 iOS 目标是稳定版。界面和流程逻辑共用，每个平台只实现第 3 节的接口。
 - 只用 Foundation 层，不引入 Material 组件库。冷钱包依赖越少，审计面越小，也避免和令牌体系打架。导航用一个简单的状态栈，不引入导航库。
 
 ### 2.3 网页 UI 库用 Base UI
@@ -55,13 +55,13 @@
 
 ### 2.5 不选的方案
 
-| 方案                                  | 原因                                                                                                                  |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Flutter                               | 可以跨端，但引擎是预编译二进制，可复现构建更难。安全 API 都要走平台通道                                               |
-| React Native                          | 冷钱包里放 JS 运行时和庞大的 npm 依赖树，审计面不可接受                                                               |
-| Android 用 Compose，iOS 用 SwiftUI    | 约 20 个页面要写两遍，流程逻辑也要写两遍。核心库已经解决了安全逻辑，界面重写没有收益。如果 iOS 版体验不达标，这是退路 |
-| 网页端用 TS 库实现交易逻辑            | 协议和解析要写两份，两端容易不一致                                                                                    |
-| Gobley（UniFFI 的 Kotlin 多平台绑定） | 没查到 2026 年的发布，维护状态不明。用第 3 节的接口注入，不依赖它                                                     |
+| 方案                                  | 原因                                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------------------------ |
+| Flutter                               | 可以跨端，但引擎是预编译二进制，可复现构建更难。安全 API 都要走平台通道              |
+| React Native                          | 冷钱包里放 JS 运行时和庞大的 npm 依赖树，审计面不可接受                              |
+| Android 用 Compose，iOS 用 SwiftUI    | 约 20 个页面要写两遍，流程逻辑也要写两遍。核心库已经解决了安全逻辑，界面重写没有收益 |
+| 网页端用 TS 库实现交易逻辑            | 协议和解析要写两份，两端容易不一致                                                   |
+| Gobley（UniFFI 的 Kotlin 多平台绑定） | 没查到 2026 年的发布，维护状态不明。用第 3 节的接口注入，不依赖它                    |
 
 ## 3. iOS 扩展路径
 
@@ -73,14 +73,14 @@
 | 共享界面  | `apps/mobile/shared`，全部页面和流程 | 不用改                             |
 | 平台接口  | 见下表                               | 用 Swift 或 Kotlin/Native 各写一份 |
 
-| 接口          | Android                                                                     | iOS                                       |
-| ------------- | --------------------------------------------------------------------------- | ----------------------------------------- |
-| `WalletCore`  | UniFFI Kotlin                                                               | UniFFI Swift，启动时注入共享层            |
-| `HardwareKey` | Keystore AES，StrongBox 优先                                                | Secure Enclave 的 P-256 密钥做 ECIES 包裹 |
-| `SelfCheck`   | 系统 API                                                                    | 能力较弱，见下                            |
-| `ScreenGuard` | `FLAG_SECURE`、隐藏悬浮窗                                                   | 能力较弱，见下                            |
-| `QrScanner`   | CameraX + zxing-cpp。不用 Google Play 服务和 ML Kit，录像栈和 media3 已排除 | AVFoundation                              |
-| `Brightness`  | 窗口亮度                                                                    | `UIScreen`                                |
+| 接口          | Android                                                                     | iOS                            |
+| ------------- | --------------------------------------------------------------------------- | ------------------------------ |
+| `WalletCore`  | UniFFI Kotlin                                                               | UniFFI Swift，启动时注入共享层 |
+| `HardwareKey` | Keystore HMAC，StrongBox 优先                                               | Secure Enclave 的 P-256 密钥   |
+| `SelfCheck`   | 系统 API                                                                    | 能力较弱，见下                 |
+| `ScreenGuard` | `FLAG_SECURE`、隐藏悬浮窗                                                   | 能力较弱，见下                 |
+| `QrScanner`   | CameraX + zxing-cpp。不用 Google Play 服务和 ML Kit，录像栈和 media3 已排除 | AVFoundation                   |
+| `Brightness`  | 窗口亮度                                                                    | `UIScreen`                     |
 
 **iOS 上做不到的防护**，要在安全设计里单独评估：
 
@@ -116,10 +116,10 @@ design/
 
 - **锁定版本**：`Cargo.lock`、`pnpm-lock.yaml` 和 Gradle 版本目录都进仓库。
 - **审查**：Rust 用 `cargo audit` 和 `cargo deny`。新增依赖要写明理由。
-- **WASM**：`secp256k1` 要编译 C 代码，Apple clang 没有 wasm 目标，本机用 Homebrew 的 LLVM，发布用容器。
+- **WASM**：`secp256k1` 要编译 C 代码，Apple clang 没有 wasm 目标。本机用 Homebrew 的 LLVM，CI 用系统的 LLVM，容器用自带 wasm 目标的 clang。
 - **工具链**：Homebrew 的 cargo 会绕过 `rust-toolchain.toml`，所以构建都走 Makefile。`make test` 跑全部检查。
-- **Android 版本**：CMP 1.12 要求 compileSdk 至少 37。Gradle 9.8 超出 Kotlin 2.4 官方兼容表（到 9.7），实测通过，有问题就退回 9.7。
+- **Android 版本**：CMP 1.12 要求 compileSdk 至少 37。Gradle 9.8 超出 Kotlin 2.4 官方兼容表（到 9.7），实测通过。
 - **发布**：推送 `v1.2.3` 这样的 tag，版本号要和 `Cargo.toml` 一致。CI 全部通过后发布 GitHub Release，包含 Linux x86_64 和 arm64 的网关加网页端、未签名的 APK 和 `SHA256SUMS`。发布构建不用缓存。
-- **APK 签名**：签名私钥不进 CI。Release 发布后在离线机器上签名，再用 `gh release upload` 上传。
+- **APK 签名**：签名私钥不进 CI。Release 发布后在本地签名，再用 `gh release upload` 上传。
 - **代码裁剪**：发布版开 R8，只裁剪和优化，不混淆，堆栈和发布包审计都看得懂。JNA、UniFFI 和 zxing-cpp 靠反射或原生回调，规则在 `proguard-rules.pro`。
-- **可复现构建**：发布版在固定的容器里构建。Kotlin 钱包的常见失败点是 dex 和 baseline profile 不一致，所以关闭 baseline profile，把构建版本写死。Rust 用 `--remap-path-prefix` 去掉本机路径。本机验证过：关掉 Gradle 构建缓存，换目录从干净状态构建两次，开启 R8 的未签名 APK 哈希一致。跨机器和容器内构建还没验证。
+- **可复现构建**：Kotlin 钱包的常见失败点是 dex 和 baseline profile 不一致，所以关闭 baseline profile，把构建版本写死。Rust 用 `--remap-path-prefix` 去掉本机路径。验证范围见[验证状态](07-verification.md)。

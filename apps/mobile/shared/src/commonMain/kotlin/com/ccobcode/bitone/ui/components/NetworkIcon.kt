@@ -186,7 +186,7 @@ private fun nativeIcon(name: String): Network? =
         else -> null
     }
 
-/** 金额的图标。[icon] 是内置清单的图标名，为空说明核心库按网络加合约没查到，一律问号。 清单里有但应用没打包的图标退回 [network] 的图标。代币在非原生链上时右下角加网络角标。 */
+/** 金额的图标。[icon] 是内置清单的图标名，为空说明核心库按网络加合约没查到，一律问号。清单里有但应用没打包的图标退回 [network] 的图标。代币在非原生链上时右下角加网络角标。 */
 @Composable
 fun AssetIcon(icon: String?, network: Network?, size: Dp) {
     val token =

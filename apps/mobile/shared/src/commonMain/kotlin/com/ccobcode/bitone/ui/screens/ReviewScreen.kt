@@ -322,7 +322,7 @@ private fun Controllers(review: ReviewResult) {
     }
 }
 
-/** 全部动作。Bitcoin 的动作就是全部输出，多个动作也都留在第一屏，不能折叠起来。控制方已经在上面的卡片里，这里不重复。 只有一个动作时不用标题，返回它的字段，放进「详情」。 */
+/** 全部动作。Bitcoin 的动作就是全部输出，多个动作也都留在第一屏，不能折叠起来。控制方已经在上面的卡片里，这里不重复。只有一个动作时不用标题，返回它的字段，放进「详情」。 */
 @Composable
 private fun Actions(review: ReviewResult, style: ReviewStyle): List<ReviewRow> {
     val bitcoin = networkInfo(review.network)?.icon == Network.Bitcoin

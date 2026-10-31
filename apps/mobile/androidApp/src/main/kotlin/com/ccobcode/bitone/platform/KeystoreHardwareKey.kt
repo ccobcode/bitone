@@ -45,14 +45,11 @@ private const val AUTH_EVERY_USE = 0
 private val AAD = "bitone-vault-v1".encodeToByteArray()
 
 /**
- * Keystore 里不可导出的 HMAC-SHA256 密钥，优先 StrongBox，其次 TEE，都没有时拒绝创建。PIN 要经过它才能派生出解密密钥。
+ * Keystore 里不可导出的 HMAC-SHA256 密钥，优先 StrongBox，其次 TEE，都没有时拒绝创建。PIN 要经过它才能派生出解密密钥，规则见 docs/04 §2.3。
  *
- * 每次使用都要认证，由硬件强制。Root 伪造不了认证令牌，所以不知道屏幕锁就猜不了 PIN，错误计数被绕过也一样。 认证方式里有屏幕锁凭据，增删指纹时这把密钥不失效，指纹变更靠单独的探针发现。修改屏幕锁也不失效，应用发现不了。
+ * 认证方式里有屏幕锁凭据，增删指纹和修改屏幕锁时密钥不失效，指纹变更靠单独的探针发现。移除屏幕锁时永久失效，对应「需恢复」。
  *
- * 移除屏幕锁时密钥永久失效，这是文档写明的行为，正好对应「需恢复」。没有屏幕锁时生成会失败，也正好对应「拒绝创建钱包」。
- *
- * 不把 setUnlockedDeviceRequired 作为唯一依赖。Android 12 到 14 上这类密钥依赖屏幕锁凭据， 没有屏幕锁时不能生成和使用，移除屏幕锁时会被删除。Android 15 才修好，官方建议只在 15
- * 及以上使用。
+ * setUnlockedDeviceRequired 只在 Android 15 及以上设置。12 到 14 上这类密钥依赖屏幕锁凭据，移除屏幕锁时会被删除。
  */
 class KeystoreHardwareKey(
     private val context: Context,

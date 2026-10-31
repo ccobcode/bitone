@@ -23,7 +23,7 @@ interface SecureStore {
 
     fun readMeta(): WalletMeta?
 
-    /** 写入新钱包：密文、元数据和公钥。PIN 计数、最高找零索引和收款索引都归零，旧钱包的公钥不留下。 BIP39 密码钱包的 [publicKeys] 传 null，公钥不落盘。 */
+    /** 写入新钱包：密文、元数据和公钥。PIN 计数、最高找零索引和收款索引都归零，旧钱包的公钥不留下。BIP39 密码钱包的 [publicKeys] 传 null，公钥不落盘。 */
     fun saveWallet(vault: ByteArray, meta: WalletMeta, publicKeys: ByteArray?)
 
     /** 修改 PIN：只换密文，其余都不动。写入是原子的，中途断电时旧密文仍然完整。 */

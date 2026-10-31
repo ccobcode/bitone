@@ -51,11 +51,9 @@ private val QrChrome = TokenSize.hRow * 3 + Space.s8
 private val FullscreenChrome = TokenSize.hRow * 2
 
 /**
- * 动态二维码。任何主题下都是白底深色码点，所以固定用浅色令牌。
+ * 动态二维码，规格见 docs/06 §4.5。任何主题下都是白底深色码点，所以固定用浅色令牌。
  *
- * 外框铺满可用宽度，版本不同的码切换时页面不跳。码元取整数像素保证码点清晰，放不满的部分是白边。
- *
- * 换帧不做任何过渡，半透明的中间帧扫不出来，帧序号和进度也跟着硬切。[total] 不超过 1 时是静态码，不显示帧进度。
+ * [total] 不超过 1 时是静态码，不显示帧进度。
  */
 @Composable
 fun QrView(

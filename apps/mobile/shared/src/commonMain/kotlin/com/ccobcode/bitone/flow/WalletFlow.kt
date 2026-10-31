@@ -888,7 +888,7 @@ class WalletFlow(
 
     private fun reviewKeys(): ByteArray? = if (meta?.passphrase == true) sessionKeys else cachedKeys()
 
-    /** 旧版本写下的公钥解不开，当作没有缓存。下次解锁时重新生成，不让它一路报错。 */
+    /** 解不开的公钥缓存当作没有，下次解锁时重新生成。 */
     private fun cachedKeys(): ByteArray? =
         store.readPublicKeys()?.takeIf { keys ->
             try {
@@ -1438,7 +1438,7 @@ class WalletFlow(
         return keys
     }
 
-    /** 用刚解开的钱包算出的公钥重新核对，不用缓存：BIP39 密码这次可能输错，核对页用的公钥不一定对应这个钱包。 找零索引在返回之前落盘，屏幕上出现签名时本机已经记下。 */
+    /** 用刚解开的钱包算出的公钥重新核对，不用缓存：BIP39 密码这次可能输错，核对页用的公钥不一定对应这个钱包。找零索引在返回之前落盘，屏幕上出现签名时本机已经记下。 */
     private fun sign(wallet: UnlockedWallet, saved: WalletMeta, message: ByteArray): Unlocked {
         val keys = keysOf(wallet, saved)
         val highest = store.readHighestChange()
@@ -1540,7 +1540,7 @@ class WalletFlow(
         frameSpeed = (frameSpeed + 1) % Qr.intervals.size
     }
 
-    /** 循环取帧，间隔见 [Qr.intervals]。由 A4 的协程驱动，离开页面时取消。 取帧在后台线程，所以结束时由这里关闭，不能在主线程直接关掉正在用的对象。 */
+    /** 循环取帧，间隔见 [Qr.intervals]。由 A4 的协程驱动，离开页面时取消。取帧在后台线程，所以结束时由这里关闭，不能在主线程直接关掉正在用的对象。 */
     suspend fun playFrames() {
         val stream = frames ?: return
         val total = frameTotal

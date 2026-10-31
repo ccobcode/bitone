@@ -306,7 +306,7 @@ class FakeCore : WalletCore {
     /** 被核心库判定太简单的 PIN，默认没有。 */
     var weakPins = emptySet<String>()
 
-    /** 旧版本写下的公钥，核心库解不开。 */
+    /** 核心库解不开的公钥。 */
     var unreadableKeys: ByteArray? = null
     var lastQrText: String? = null
 

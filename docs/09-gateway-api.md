@@ -110,7 +110,7 @@ TRON。请求 `{"addresses": [...]}`。
 
 ## GET /v1/{network}/ref-block
 
-TRON。返回最新的区块确认区块。
+TRON。返回最新的已确认区块。
 
 ```json
 { "refBlockBytes": "ab12", "refBlockHash": "0011223344556677", "timestamp": 1790000000000 }
@@ -186,7 +186,7 @@ Bitcoin 单位是 sat/vB，EVM 是 wei，TRON 是 sun，Solana 是 micro-lamport
 ```
 
 - `status`：`unknown`、`pending`、`included`、`finalized`、`failed`。`unknown` 和 `pending` 时 `stage`、`block`、`fee` 为 null，`confirmations` 为 0。
-- `stage`：EVM 是 `latest`、`safe`、`finalized`，Solana 是 `processed`、`confirmed`、`finalized`，TRON 是 `included`、`solidified`，Bitcoin 为空，看 `confirmations`。
+- `stage`：EVM 是 `latest`、`safe`、`finalized`，Solana 是 `processed`、`confirmed`、`finalized`，TRON 是 `included`、`finalized`，Bitcoin 为空，看 `confirmations`。
 - `failed` 表示上链但执行失败，手续费已扣除。`failed` 优先于阶段。Polygon 部分节点不支持 `safe`，这个阶段会被跳过。
 - Solana 的 `block` 是 slot，`fee` 可能为 null。
 - 完成标准见[系统设计 §9](03-system.md#9-有效期与最终性)，由网关按链判断。

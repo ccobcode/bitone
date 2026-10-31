@@ -18,7 +18,7 @@ fun pinDelayMs(failures: Int): Long =
         else -> 300_000
     }
 
-/** 指纹变更后按 iOS 的规格：第 6 次错误起等 1、5、15、60 分钟，之后每次 60 分钟。 */
+/** 指纹变更后只限时：第 6 次错误起等 1、5、15、60 分钟，之后每次 60 分钟。 */
 fun changedLockDelayMs(failures: Int): Long =
     when {
         failures < 6 -> 0
@@ -28,7 +28,7 @@ fun changedLockDelayMs(failures: Int): Long =
         else -> 3_600_000
     }
 
-/** PIN 错误计数和延时。计数在派生密钥之前写盘，尝试途中杀进程或断电都会被计入。 计数防回滚还没有做，Root 后恢复旧文件可以重置，见 docs/04 §7。 */
+/** PIN 错误计数和延时。计数在派生密钥之前写盘，尝试途中杀进程或断电都会被计入。计数没有防回滚，Root 后恢复旧文件可以重置，见 docs/04 §7。 */
 class PinGuard(
     private val store: SecureStore,
     private val clock: BootClock,

@@ -96,7 +96,7 @@ class AndroidSelfCheck(private val context: Context) : SelfCheck {
             false
         }
 
-    /** 用硬件密钥证明读 deviceLocked，这是 TEE 报告的，比系统属性可信。 只验到这一层，没有校验证书链到 Google 根证书，Root 过的系统能伪造结果。 */
+    /** 用硬件密钥证明读 deviceLocked，这是 TEE 报告的，比系统属性可信。只验到这一层，没有校验证书链到 Google 根证书，Root 过的系统能伪造结果。 */
     private fun attestBootloader(): Boolean? =
         try {
             val spec =
@@ -186,7 +186,7 @@ class AndroidSelfCheck(private val context: Context) : SelfCheck {
             false
         }
 
-    /** 第三方应用查不到别人的悬浮窗授权（AppOps 需要系统权限），所以统计声明了这个权限的第三方应用。 比「已授权」更严，只影响警告，不锁定。 */
+    /** 第三方应用查不到别人的悬浮窗授权（AppOps 需要系统权限），所以统计声明了这个权限的第三方应用。比「已授权」更严，只影响警告，不锁定。 */
     private fun thirdPartyOverlayApps(): Int =
         context.packageManager
             .getInstalledPackages(PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()))

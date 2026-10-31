@@ -51,7 +51,7 @@ export type WalletView = Pick<ChainEntry, "from" | "to" | "amount">;
 /**
  * 按整个钱包归纳一笔 Bitcoin 交易。网关只看到一批地址，找零可能在另一批里，直接用它的结果会把
  * 找零算成付款。规则和网关相同：输入里有自己的地址算转出，金额是付给别人的部分，否则算转入。
- * 没有输入输出的链和老记录用保存的结果。
+ * 没有输入输出的记录用保存的结果。
  */
 export function walletView(row: WalletView & { flows?: Flows }, own: ReadonlySet<string>): WalletView {
     if (!row.flows) return row;

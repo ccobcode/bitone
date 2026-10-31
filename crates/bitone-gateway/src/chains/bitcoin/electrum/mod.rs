@@ -1,8 +1,5 @@
-//! Bitcoin 的 Electrum 协议上游。
-//!
-//! Esplora 的 HTTP 接口要逐个地址查询，公共节点按 IP 限流，一个钱包几十个地址很快用完额度。
-//! Electrum 在一个连接上批量查询，主流轻钱包都用它。公共服务器和自建的 electrs、Fulcrum
-//! 是同一个协议，换上游只改配置。查询结果转成 Esplora 的形状，解析和归纳规则只有一份。
+//! Bitcoin 的 Electrum 协议上游。一个连接批量查询，公共服务器和自建的 electrs、Fulcrum 是同一个协议。
+//! 查询结果转成 Esplora 的形状，解析和归纳规则只有一份。
 
 use super::shape::{
     FAST_TARGET, FINAL_CONFIRMATIONS, MEDIUM_TARGET, SLOW_TARGET, fee_rates, history_item, is_already_known, parse_tx,

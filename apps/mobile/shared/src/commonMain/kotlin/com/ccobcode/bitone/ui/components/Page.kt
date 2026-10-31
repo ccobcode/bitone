@@ -64,9 +64,9 @@ fun Modifier.contentColumn(): Modifier =
         .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
 
 /**
- * 页面骨架，自上而下：状态栏安全区、标题区、可滚动内容、吸底区、导航栏安全区。 安全区全部来自 WindowInsets，背景铺满到屏幕边缘。
+ * 页面骨架，自上而下：状态栏安全区、标题区、可滚动内容、吸底区、导航栏安全区。安全区全部来自 WindowInsets，背景铺满到屏幕边缘。
  *
- * 左右边线只在这里实现：标题区、内容和吸底区都缩进 [Size.gutter]，页面和组件不再各写边距。内容没有滚到底时，用底色渐隐过渡到吸底区，不画分隔线。
+ * 左右边线只在这里实现：标题区、内容和吸底区都缩进 [Size.gutter]，页面和组件不写边距。内容没有滚到底时，用底色渐隐过渡到吸底区，不画分隔线。
  *
  * [floatingSpace] 是悬浮在页面之上的底部导航占的高度，内容末尾留出这段，滚到底时不会被盖住。
  */

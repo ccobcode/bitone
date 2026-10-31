@@ -1,6 +1,6 @@
 package com.ccobcode.bitone.platform
 
-/** Rust 核心的平台无关接口。助记词和种子留在 Rust 对象里，共享层只持有句柄。 所有方法都可能很慢（Argon2id），调用方要放到后台线程。 */
+/** Rust 核心的平台无关接口。助记词和种子留在 Rust 对象里，共享层只持有句柄。所有方法都可能很慢（Argon2id），调用方要放到后台线程。 */
 interface WalletCore {
     fun generateDraft(wordCount: Int): WalletDraft
 

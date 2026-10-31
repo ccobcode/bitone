@@ -18,7 +18,7 @@ enum class ConfirmMode {
 
 class ReviewRow(val label: String, val value: String, val mono: Boolean)
 
-/** 金额。[asset] 是内置清单的条目，[icon] 是这一条的图标名，核心库按网络加合约查到才有。 查不到时 [symbol] 也为空，[text] 是原始整数。 */
+/** 金额。[asset] 是内置清单的条目，[icon] 是这一条的图标名，核心库按网络加合约查到才有。查不到时 [symbol] 也为空，[text] 是原始整数。 */
 class ReviewAmount(
     val text: String,
     val symbol: String?,
