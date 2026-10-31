@@ -13,3 +13,4 @@ apps/mobile/androidApp/src/main/jniLibs/
 apps/mobile/androidApp/src/main/java/uniffi/
 # 含 API key
 gateway.local.toml
+gateway.toml
