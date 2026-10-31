@@ -2,7 +2,7 @@
 # AGP 9.4 和 9.5 已发布，但不在这个范围内，所以停在 9.3.1。
 # 同一张表里 Gradle 只测到 9.7.0。wrapper 用 9.8.2，实测全部任务通过，如有异常退回 9.7.x。
 [versions]
-agp = "9.3.1"
+agp = "9.5.0"
 kotlin = "2.4.21"
 compose-multiplatform = "1.12.2"
 coroutines = "1.11.0"
