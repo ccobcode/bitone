@@ -1,0 +1,9 @@
+# 另外还会跳过 .gitignore 里的文件
+Cargo.lock
+pnpm-lock.yaml
+apps/web/pnpm-lock.yaml
+apps/web/src/core/__fixtures__/
+apps/mobile/*
+!apps/mobile/gradle/
+apps/mobile/gradle/*
+!apps/mobile/gradle/libs.versions.toml

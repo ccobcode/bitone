@@ -1,0 +1,21 @@
+[package]
+name = "bitone-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+bitone-core.workspace = true
+bitone-signer.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+uniffi = { version = "0.32", features = ["cli"] }

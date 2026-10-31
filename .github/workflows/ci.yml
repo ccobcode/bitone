@@ -1,0 +1,105 @@
+name: CI
+
+on:
+    push:
+        branches: [main]
+        paths-ignore:
+            - "**.md"
+            - "LICENSE"
+    pull_request:
+        paths-ignore:
+            - "**.md"
+            - "LICENSE"
+    workflow_call:
+    workflow_dispatch:
+
+concurrency:
+    group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+    cancel-in-progress: true
+
+permissions:
+    contents: read
+
+env:
+    LLVM: /usr/bin
+
+jobs:
+    quality:
+        name: Format & Copy
+        runs-on: ubuntu-24.04
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+              with:
+                  node-version: 22
+            - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+              with:
+                  distribution: microsoft
+                  java-version: 21
+            - run: npm install --global pnpm@12.4.2
+            - run: make test-punct check-punct test-copy check-copy format-check
+
+    rust:
+        name: Rust
+        runs-on: ubuntu-24.04
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+              with:
+                  node-version: 22
+            - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: |
+                      ~/.cargo/registry
+                      ~/.cargo/git
+                      ~/.cargo/bin
+                      ~/.cargo/.crates.toml
+                      ~/.cargo/.crates2.json
+                      target
+                  key: rust-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+                  restore-keys: rust-
+            - run: npm install --global pnpm@12.4.2
+            - run: cargo install cargo-audit cargo-deny --locked
+            - run: make test-rust lint audit
+
+    web:
+        name: Web
+        runs-on: ubuntu-24.04
+        timeout-minutes: 20
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: |
+                      ~/.cargo/registry
+                      ~/.cargo/git
+                      ~/.cargo/bin
+                      ~/.cargo/.crates.toml
+                      ~/.cargo/.crates2.json
+                      target
+                  key: web-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+                  restore-keys: web-
+            - uses: ./.github/actions/web-tools
+            - run: make test-web
+
+    android:
+        name: Android
+        runs-on: ubuntu-24.04
+        timeout-minutes: 45
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: |
+                      ~/.cargo/registry
+                      ~/.cargo/git
+                      ~/.cargo/bin
+                      ~/.cargo/.crates.toml
+                      ~/.cargo/.crates2.json
+                      target
+                  key: android-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+                  restore-keys: android-
+            - uses: ./.github/actions/android-tools
+            - run: make test-android

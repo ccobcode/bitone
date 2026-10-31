@@ -1,0 +1,17 @@
+target/
+node_modules/
+dist/
+build/
+.gradle/
+.kotlin/
+.idea/
+.vscode/
+.DS_Store
+local.properties
+*.iml
+apps/web/src/core/pkg/
+apps/mobile/androidApp/src/main/jniLibs/
+apps/mobile/androidApp/src/main/java/uniffi/
+# 含 API key
+gateway.local.toml
+gateway.toml

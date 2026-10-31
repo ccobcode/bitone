@@ -1,0 +1,666 @@
+/* 动效.时长和缓动都来自令牌. */
+:root {
+    --vt-in: var(--page-in);
+    --vt-out: calc(var(--page-out) * -1);
+}
+:root[data-nav="back"] {
+    --vt-in: calc(var(--page-in) * -1);
+    --vt-out: var(--page-out);
+}
+
+/* 页面切换.根节点不动,导航的选中态照常过渡,只有内容和标题走转场. */
+.page-body {
+    view-transition-name: page;
+}
+.page-title-slot {
+    view-transition-name: page-title;
+}
+::view-transition {
+    /* 动画进行中可以继续点击. */
+    pointer-events: none;
+}
+/* 转场时页面单独成层,盖在根快照上面.标签栏也要单独成层,否则切页时会被盖住闪一下. */
+.tabbar {
+    view-transition-name: tabbar;
+}
+::view-transition-group(tabbar) {
+    z-index: 1;
+    animation: none;
+}
+::view-transition-old(tabbar) {
+    display: none;
+}
+::view-transition-new(tabbar) {
+    animation: none;
+}
+::view-transition-old(root) {
+    display: none;
+}
+::view-transition-new(root) {
+    animation: none;
+}
+::view-transition-group(page),
+::view-transition-group(page-title) {
+    animation: none;
+    overflow: clip;
+}
+::view-transition-old(page),
+::view-transition-old(page-title) {
+    animation: vt-out var(--dur-normal) var(--ease-exit) both;
+}
+::view-transition-new(page),
+::view-transition-new(page-title) {
+    animation: vt-in var(--dur-normal) var(--ease-emphasized) both;
+}
+/* 欢迎页没有外壳,进出时整页淡入淡出. */
+:root[data-nav="swap"]::view-transition-old(root) {
+    display: block;
+    animation: fade-out var(--dur-normal) var(--ease-exit) both;
+}
+:root[data-nav="swap"]::view-transition-new(root) {
+    animation: fade-in var(--dur-normal) var(--ease-emphasized) both;
+}
+
+@keyframes vt-in {
+    from {
+        opacity: 0;
+        transform: translateX(var(--vt-in));
+    }
+}
+/* 旧页先淡完,新旧文字不会叠在一起. */
+@keyframes vt-out {
+    50% {
+        opacity: 0;
+    }
+    to {
+        opacity: 0;
+        transform: translateX(var(--vt-out));
+    }
+}
+@keyframes fade-in {
+    from {
+        opacity: 0;
+    }
+}
+@keyframes fade-out {
+    to {
+        opacity: 0;
+    }
+}
+@keyframes sheet-in {
+    from {
+        opacity: 0;
+        transform: translate(var(--sheet-x), var(--sheet-y)) translateY(var(--rise)) scale(var(--pop-scale));
+    }
+}
+@keyframes rise {
+    from {
+        opacity: 0;
+        transform: translateY(var(--rise));
+    }
+}
+@keyframes draw {
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+@keyframes shimmer {
+    to {
+        background-position: -200% 0;
+    }
+}
+@keyframes drop {
+    from {
+        opacity: 0;
+        transform: translateY(calc(var(--s1) * -1));
+    }
+    40%,
+    70% {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+        transform: translateY(var(--s1));
+    }
+}
+/* 光圈往外扩散,等待时循环,完成时只放一次. */
+@keyframes ring-out {
+    from {
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--ring, currentcolor) 50%, transparent);
+    }
+    to {
+        box-shadow: 0 0 0 var(--s2) transparent;
+    }
+}
+@keyframes breathe {
+    50% {
+        opacity: 0.5;
+    }
+}
+/* 取景框里的扫描线上下来回. */
+@keyframes sweep {
+    to {
+        top: calc(100% - var(--s6));
+    }
+}
+
+@layer components {
+    /* 按下缩放,松开回弹.悬停只让颜色渐变. */
+    .press {
+        transition:
+            transform var(--dur-normal) var(--ease-emphasized),
+            background-color var(--dur-fast) var(--ease-standard),
+            color var(--dur-fast) var(--ease-standard),
+            box-shadow var(--dur-normal) var(--ease-standard),
+            opacity var(--dur-fast) var(--ease-standard);
+    }
+    .press:active:not(:disabled) {
+        transform: scale(var(--press-scale));
+        transition-duration: var(--dur-fast);
+        transition-timing-function: var(--ease-standard);
+    }
+
+    /* 新值淡入,不做滚动计数,金额没有中间值. */
+    .fade-in {
+        animation: fade-in var(--dur-normal) var(--ease-standard) both;
+    }
+    .rise {
+        animation: rise var(--dur-normal) var(--ease-emphasized) both;
+    }
+
+    /* 列表逐项进入,错开 30,最多错开 8 项. */
+    .stagger > * {
+        animation: rise var(--dur-normal) var(--ease-emphasized) both;
+        animation-delay: calc(var(--dur-stagger) * var(--i, 0));
+    }
+    .stagger > :nth-child(2) {
+        --i: 1;
+    }
+    .stagger > :nth-child(3) {
+        --i: 2;
+    }
+    .stagger > :nth-child(4) {
+        --i: 3;
+    }
+    .stagger > :nth-child(5) {
+        --i: 4;
+    }
+    .stagger > :nth-child(6) {
+        --i: 5;
+    }
+    .stagger > :nth-child(7) {
+        --i: 6;
+    }
+    .stagger > :nth-child(8) {
+        --i: 7;
+    }
+    .stagger > :nth-child(n + 9) {
+        --i: 8;
+    }
+
+    /* 分段选择.各段等宽,选中块按序号平移,不用测量. */
+    .segmented {
+        --seg-pad: var(--s1);
+        position: relative;
+        display: inline-grid;
+        grid-auto-columns: minmax(0, 1fr);
+        grid-auto-flow: column;
+        border-radius: var(--r2);
+        background: var(--surface-2);
+        padding: var(--seg-pad);
+    }
+    .segmented-stretch {
+        display: grid;
+        width: 100%;
+    }
+    .segmented-thumb {
+        position: absolute;
+        inset-block: var(--seg-pad);
+        inset-inline-start: var(--seg-pad);
+        width: calc((100% - 2 * var(--seg-pad)) / var(--n));
+        border-radius: calc(var(--r2) - var(--seg-pad));
+        background: var(--thumb);
+        box-shadow: var(--elevation-1);
+        transform: translateX(calc(100% * var(--i)));
+        transition: transform var(--dur-normal) var(--ease-standard);
+    }
+    .segmented-item {
+        position: relative;
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        border-radius: calc(var(--r2) - var(--seg-pad));
+        color: var(--text-3);
+        transition: color var(--dur-normal) var(--ease-standard);
+    }
+    .segmented-item:hover {
+        color: var(--text-2);
+    }
+    .segmented-item[aria-pressed="true"] {
+        color: var(--text);
+    }
+
+    /* 顶部导航.下划线从中间展开. */
+    .top-link {
+        position: relative;
+        display: flex;
+        flex: none;
+        align-items: center;
+        align-self: stretch;
+        color: var(--text-2);
+        font-size: var(--t3);
+        font-weight: 500;
+        text-decoration: none;
+        transition: color var(--dur-fast) var(--ease-standard);
+    }
+    .top-link:hover {
+        color: var(--text);
+    }
+    .top-link::after {
+        position: absolute;
+        inset-inline: 0;
+        bottom: -1px;
+        height: 2px;
+        background: var(--accent-hover);
+        content: "";
+        transform: scaleX(0);
+        transition: transform var(--dur-normal) var(--ease-standard);
+    }
+    .top-link[data-on] {
+        color: var(--text);
+    }
+    .top-link[data-on]::after {
+        transform: scaleX(1);
+    }
+
+    /* 手机底部标签栏:悬浮胶囊,对齐页面边线.底色块包住图标和文字,按序号平移,和冷钱包的底部导航同一规格. */
+    .tabbar {
+        position: fixed;
+        inset-inline: var(--page-x);
+        bottom: calc(var(--safe-bottom) + var(--s2));
+        z-index: 10;
+        display: grid;
+        height: var(--tabbar);
+        grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+        border-radius: var(--rf);
+        background: var(--surface);
+        box-shadow: var(--elevation-2);
+        padding: var(--s1);
+    }
+    /* 内容从导航后面滚过时用底色渐隐,不和按钮叠在一起. */
+    .tabbar::before {
+        position: absolute;
+        z-index: -1;
+        inset: calc(var(--s6) * -1) calc(var(--page-x) * -1) calc((var(--safe-bottom) + var(--s2)) * -1);
+        background: linear-gradient(transparent, var(--bg) var(--s6));
+        content: "";
+        pointer-events: none;
+    }
+    .tabbar-mark {
+        position: absolute;
+        inset-block: var(--s1);
+        left: var(--s1);
+        width: calc((100% - 2 * var(--s1)) / var(--n));
+        border-radius: var(--rf);
+        background: var(--accent-soft);
+        pointer-events: none;
+        transform: translateX(calc(100% * var(--i)));
+        transition: transform var(--dur-normal) var(--ease-standard);
+    }
+    .tabbar-item {
+        position: relative;
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        color: var(--text-2);
+        font-size: var(--t1);
+        font-weight: 500;
+        line-height: var(--lh-t1);
+        /* 英文标签可能比列宽,邻列都短,居中外溢比折行好. */
+        white-space: nowrap;
+        text-decoration: none;
+        transition: color var(--dur-fast) var(--ease-standard);
+    }
+    .tabbar-item[data-on] {
+        color: var(--accent-text);
+    }
+
+    /* 竖向选择列表,行高固定,选中块按序号平移. */
+    .select-rail {
+        position: relative;
+    }
+    .select-thumb {
+        position: absolute;
+        inset-inline: 0;
+        inset-block-start: 0;
+        height: var(--h-row);
+        border-radius: var(--r2);
+        background: var(--accent-soft);
+        transform: translateY(calc(100% * var(--i)));
+        transition: transform var(--dur-normal) var(--ease-standard);
+    }
+
+    /* 开关:圆点滑动,轨道变色. */
+    .switch {
+        display: flex;
+        width: var(--switch-w);
+        height: var(--switch-h);
+        flex: none;
+        border-radius: var(--rf);
+        background: var(--line-strong);
+        padding: 2px;
+        transition: background-color var(--dur-normal) var(--ease-standard);
+    }
+    .switch-dot {
+        width: var(--switch-dot);
+        height: var(--switch-dot);
+        border-radius: var(--rf);
+        background: var(--on-camera);
+        box-shadow: var(--elevation-1);
+        transition: transform var(--dur-normal) var(--ease-standard);
+    }
+    [aria-checked="true"] > .switch {
+        background: var(--accent);
+    }
+    [aria-checked="true"] > .switch > .switch-dot {
+        transform: translateX(calc(var(--switch-w) - var(--switch-dot) - 4px));
+    }
+    /* 设置行里的开关,整行都能点. */
+    .setting .switch-button::after {
+        position: absolute;
+        inset: 0;
+        content: "";
+    }
+
+    /* 展开折叠:高度和透明度同时过渡.收起后不可聚焦. */
+    .fold {
+        display: grid;
+        grid-template-rows: 0fr;
+        opacity: 0;
+        visibility: hidden;
+        transition:
+            grid-template-rows var(--dur-normal) var(--ease-standard),
+            opacity var(--dur-normal) var(--ease-standard),
+            visibility 0s linear var(--dur-normal);
+    }
+    .fold[data-open] {
+        grid-template-rows: 1fr;
+        opacity: 1;
+        visibility: visible;
+        transition-delay: 0s;
+    }
+    /* 收起时不占卡片的间距. */
+    .card > .fold:not([data-open]) {
+        margin-top: calc(var(--s4) * -1);
+    }
+    /* 负边距留出焦点环的位置,overflow 不会把它裁掉. */
+    .fold > * {
+        overflow: hidden;
+        min-height: 0;
+        margin: calc(var(--s1) * -1);
+        padding: var(--s1);
+    }
+
+    /* 弹层:从 96% 放大并淡入. */
+    .popup {
+        border-radius: var(--r3);
+        background: var(--popup);
+        box-shadow: var(--elevation-3);
+        padding: var(--s2);
+        outline: none;
+        transform-origin: var(--transform-origin);
+        transition:
+            opacity var(--dur-normal) var(--ease-emphasized),
+            transform var(--dur-normal) var(--ease-emphasized);
+    }
+    .popup[data-starting-style],
+    .popup[data-ending-style] {
+        opacity: 0;
+        transform: scale(var(--pop-scale));
+    }
+    .popup[data-ending-style] {
+        transition-duration: var(--dur-fast);
+        transition-timing-function: var(--ease-exit);
+    }
+    .popup-item {
+        display: flex;
+        min-height: var(--s10);
+        align-items: center;
+        gap: var(--s3);
+        border-radius: var(--r2);
+        padding: var(--s2) var(--s3);
+        font-size: var(--t2);
+        outline: none;
+        transition: background-color var(--dur-fast) var(--ease-standard);
+    }
+    .popup-item[data-highlighted] {
+        background: var(--surface-3);
+    }
+    .popup-item[data-selected] {
+        background: var(--accent-soft);
+    }
+    @media (width < 60rem) {
+        .popup-item {
+            min-height: var(--s12);
+        }
+    }
+    /* 选择器在手机上是底部弹层,和冷钱包选账户相同.宽屏还是贴着触发它的元素展开. */
+    .picker-title {
+        display: none;
+    }
+    @media (width < 60rem) {
+        .picker-position {
+            /* 定位库写在行内样式上,只有这样能盖掉. */
+            /* biome-ignore lint/complexity/noImportantStyles: 见上 */
+            position: fixed !important;
+            /* biome-ignore lint/complexity/noImportantStyles: 见上 */
+            inset: auto 0 0 !important;
+            /* biome-ignore lint/complexity/noImportantStyles: 见上 */
+            transform: none !important;
+        }
+        .picker {
+            width: 100%;
+            max-height: calc(100dvh - var(--safe-top) - var(--s8));
+            border-radius: var(--r4) var(--r4) 0 0;
+            padding: var(--s2) var(--s1) calc(var(--s4) + var(--safe-bottom));
+            transform-origin: bottom;
+        }
+        .picker .popup-item {
+            min-height: var(--h-row);
+            padding-inline: var(--s3);
+            font-size: var(--t3);
+        }
+        .picker-title {
+            display: flex;
+            min-height: var(--h-row);
+            align-items: center;
+            padding-inline: var(--s3);
+            font-size: var(--t5);
+            font-weight: 600;
+            line-height: var(--lh-t5);
+        }
+    }
+    .popup-item[data-disabled] {
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+    /* 浮层由网址打开,挂载时已经是打开的,进场用关键帧. */
+    .sheet {
+        animation: sheet-in var(--dur-normal) var(--ease-emphasized) both;
+    }
+    .scrim {
+        animation: fade-in var(--dur-normal) var(--ease-standard) both;
+        background: color-mix(in srgb, var(--camera) var(--scrim), transparent);
+        transition: opacity var(--dur-normal) var(--ease-standard);
+    }
+    .scrim[data-starting-style],
+    .scrim[data-ending-style] {
+        opacity: 0;
+    }
+
+    /* 向下的箭头,打开时翻转. */
+    .flip {
+        transition:
+            transform var(--dur-normal) var(--ease-standard),
+            rotate var(--dur-normal) var(--ease-standard);
+    }
+    [data-popup-open] > .flip,
+    [aria-expanded="true"] > .flip {
+        transform: rotate(180deg);
+    }
+
+    @media (width >= 60rem) {
+        .qr-box {
+            max-width: var(--qr);
+        }
+    }
+
+    /* 取景框:四个角加一条扫描线,和冷钱包同一规格.取景区域比手机屏幕矮,边长按高度收. */
+    .scan-frame {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        height: min(var(--scan-frame), 72%);
+        aspect-ratio: 1;
+        transform: translate(-50%, -50%);
+    }
+    .scan-corner {
+        position: absolute;
+        width: var(--scan-arm);
+        height: var(--scan-arm);
+        border: 0 solid var(--on-camera);
+    }
+    .scan-corner:nth-child(1) {
+        top: 0;
+        left: 0;
+        border-width: var(--scan-stroke) 0 0 var(--scan-stroke);
+        border-top-left-radius: var(--r3);
+    }
+    .scan-corner:nth-child(2) {
+        top: 0;
+        right: 0;
+        border-width: var(--scan-stroke) var(--scan-stroke) 0 0;
+        border-top-right-radius: var(--r3);
+    }
+    .scan-corner:nth-child(3) {
+        bottom: 0;
+        left: 0;
+        border-width: 0 0 var(--scan-stroke) var(--scan-stroke);
+        border-bottom-left-radius: var(--r3);
+    }
+    .scan-corner:nth-child(4) {
+        right: 0;
+        bottom: 0;
+        border-width: 0 var(--scan-stroke) var(--scan-stroke) 0;
+        border-bottom-right-radius: var(--r3);
+    }
+    .scan-sweep {
+        position: absolute;
+        top: var(--s6);
+        inset-inline: var(--s6);
+        height: 2px;
+        background: var(--accent);
+        animation: sweep calc(var(--dur-slow) * 6) linear infinite alternate;
+    }
+
+    /* 骨架屏微光,不用转圈. */
+    .skeleton {
+        display: block;
+        border-radius: var(--r1);
+        background: linear-gradient(90deg, var(--surface-2) 30%, var(--surface-3) 50%, var(--surface-2) 70%);
+        background-size: 200% 100%;
+        animation: shimmer calc(var(--dur-slow) * 4) linear infinite;
+    }
+
+    /* 完成时对勾描线.路径带 pathLength=1. */
+    .draw {
+        stroke-dasharray: 1;
+        stroke-dashoffset: 1;
+        animation: draw var(--dur-slow) var(--ease-standard) forwards;
+    }
+
+    /* 转账步骤.切页时外壳不重新挂载,下一段是真的填上去的. */
+    .step-fill {
+        transform: scaleX(0);
+        transform-origin: left;
+        transition: transform var(--dur-slow) var(--ease-emphasized);
+    }
+    [data-reached] > .step-fill {
+        transform: scaleX(1);
+    }
+
+    /* 进度条:宽度过渡,不是金额,可以有中间值. */
+    .meter-fill {
+        transition: width var(--dur-slow) var(--ease-standard);
+    }
+    /* 下载中的箭头往下落,循环. */
+    .icon-drop {
+        animation: drop calc(var(--dur-slow) * 4) var(--ease-standard) infinite;
+    }
+    /* 进行中的那一段有光扫过,说明还在等链上. */
+    .meter-live {
+        background: linear-gradient(90deg, var(--surface-3) 30%, var(--accent) 50%, var(--surface-3) 70%);
+        background-size: 200% 100%;
+        animation: shimmer calc(var(--dur-slow) * 4) linear infinite;
+    }
+    .step-live {
+        --ring: var(--accent);
+        animation: ring-out calc(var(--dur-slow) * 4) var(--ease-standard) infinite;
+    }
+    .ring-once {
+        animation: ring-out calc(var(--dur-slow) * 2) var(--ease-standard) both;
+    }
+}
+
+/* 系统开启减少动态效果时,位移和缩放都去掉,只保留淡入淡出. */
+@media (prefers-reduced-motion: reduce) {
+    :root,
+    :root[data-nav="back"] {
+        --press-scale: 1;
+        --pop-scale: 1;
+        --rise: 0px;
+        --vt-in: 0px;
+        --vt-out: 0px;
+    }
+    .segmented-thumb,
+    .tabbar-mark,
+    .select-thumb,
+    .switch-dot,
+    .flip,
+    .step-fill {
+        transition: none;
+    }
+    .fold {
+        transition:
+            opacity var(--dur-normal) var(--ease-standard),
+            visibility 0s linear var(--dur-normal);
+    }
+    .meter-fill {
+        transition: none;
+    }
+    .meter-live {
+        background: var(--accent-soft);
+        animation: none;
+    }
+    .step-live,
+    .ring-once,
+    .scan-sweep {
+        animation: none;
+    }
+    .icon-drop {
+        animation: breathe calc(var(--dur-slow) * 4) var(--ease-standard) infinite;
+    }
+    .skeleton {
+        background: var(--surface-2);
+        animation: breathe calc(var(--dur-slow) * 4) var(--ease-standard) infinite;
+    }
+    .draw {
+        stroke-dashoffset: 0;
+        animation: fade-in var(--dur-slow) var(--ease-standard) both;
+    }
+}

@@ -1,0 +1,34 @@
+/* 字体全部本地打包,只留 woff2.Inter 和 JetBrains Mono 用可变字体的 latin 子集,Noto Sans SC 用简体子集. */
+@font-face {
+    font-family: "Inter Variable";
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url("@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2-variations");
+}
+@font-face {
+    font-family: "JetBrains Mono Variable";
+    font-style: normal;
+    font-weight: 100 800;
+    font-display: swap;
+    src: url("@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2")
+        format("woff2-variations");
+}
+@font-face {
+    font-family: "Noto Sans SC";
+    font-weight: 400;
+    font-display: swap;
+    src: url("@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Noto Sans SC";
+    font-weight: 500;
+    font-display: swap;
+    src: url("@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-500-normal.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Noto Sans SC";
+    font-weight: 600;
+    font-display: swap;
+    src: url("@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-600-normal.woff2") format("woff2");
+}

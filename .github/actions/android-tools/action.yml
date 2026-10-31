@@ -1,0 +1,17 @@
+name: Android tools
+description: JDK,NDK 和 cargo-ndk.
+
+runs:
+    using: composite
+    steps:
+        - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+          with:
+              distribution: microsoft
+              java-version: 21
+        # sdkmanager 结束后 yes 会收到断管错误,所以关掉 pipefail,退出码只看 sdkmanager.
+        - shell: bash
+          run: |
+              set +o pipefail
+              yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;29.0.14206865" > /dev/null
+        - shell: bash
+          run: cargo install cargo-ndk --locked

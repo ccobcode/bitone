@@ -1,0 +1,43 @@
+# 版本组合依据:Kotlin 官方兼容表里 Kotlin 2.4.20 到 2.4.21 对应 AGP 8.5.2 到 9.3.1.
+# AGP 用 9.5.0,超出这张表,为了去掉 Gradle 的弃用警告,实测全部任务通过,如有异常退回 9.3.1.
+# 同一张表里 Gradle 只测到 9.7.0.wrapper 用 9.8.2,实测全部任务通过,如有异常退回 9.7.x.
+[versions]
+agp = "9.5.0"
+kotlin = "2.4.21"
+compose-multiplatform = "1.12.2"
+coroutines = "1.11.0"
+activity = "1.13.0"
+jna = "5.19.1"
+camerax = "1.6.2"
+zxing-cpp = "3.1.1"
+spotless = "8.10.4"
+ktfmt = "0.64"
+kotlinpoet = "2.4.0"
+# Compose Multiplatform 1.12.2 对应 Jetpack Compose 1.12.1,它的 AAR 元数据要求 compileSdk 至少 37.
+android-compileSdk = "37"
+android-minSdk = "31"
+android-targetSdk = "36"
+
+[libraries]
+kotlinpoet = { module = "com.squareup:kotlinpoet", version.ref = "kotlinpoet" }
+compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
+compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }
+compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose-multiplatform" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
+zxing-cpp = { module = "io.github.zxing-cpp:android", version.ref = "zxing-cpp" }
+
+[plugins]
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-kmp-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

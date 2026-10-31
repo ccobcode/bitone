@@ -1,0 +1,316 @@
+{
+    "version": 1,
+    "assets": [
+        {
+            "network": "bitcoin",
+            "contract": "native",
+            "symbol": "BTC",
+            "name": "Bitcoin",
+            "decimals": 8,
+            "icon": "btc",
+            "standard": "原生币",
+            "minFraction": 8
+        },
+        {
+            "network": "btc-testnet4",
+            "contract": "native",
+            "symbol": "BTC",
+            "name": "Bitcoin",
+            "decimals": 8,
+            "icon": "btc",
+            "standard": "原生币",
+            "minFraction": 8
+        },
+        {
+            "network": "btc-signet",
+            "contract": "native",
+            "symbol": "BTC",
+            "name": "Bitcoin",
+            "decimals": 8,
+            "icon": "btc",
+            "standard": "原生币",
+            "minFraction": 8
+        },
+        {
+            "network": "btc-testnet3",
+            "contract": "native",
+            "symbol": "BTC",
+            "name": "Bitcoin",
+            "decimals": 8,
+            "icon": "btc",
+            "standard": "原生币",
+            "minFraction": 8
+        },
+        {
+            "network": "ethereum",
+            "contract": "native",
+            "symbol": "ETH",
+            "name": "Ether",
+            "decimals": 18,
+            "icon": "eth",
+            "standard": "原生币",
+            "minFraction": 4
+        },
+        {
+            "network": "sepolia",
+            "contract": "native",
+            "symbol": "ETH",
+            "name": "Ether",
+            "decimals": 18,
+            "icon": "eth",
+            "standard": "原生币",
+            "minFraction": 4
+        },
+        {
+            "network": "hoodi",
+            "contract": "native",
+            "symbol": "ETH",
+            "name": "Ether",
+            "decimals": 18,
+            "icon": "eth",
+            "standard": "原生币",
+            "minFraction": 4
+        },
+        {
+            "network": "bsc",
+            "contract": "native",
+            "symbol": "BNB",
+            "name": "BNB",
+            "decimals": 18,
+            "icon": "bnb",
+            "standard": "原生币",
+            "minFraction": 4
+        },
+        {
+            "network": "bsc-testnet",
+            "contract": "native",
+            "symbol": "BNB",
+            "name": "BNB",
+            "decimals": 18,
+            "icon": "bnb",
+            "standard": "原生币",
+            "minFraction": 4
+        },
+        {
+            "network": "polygon",
+            "contract": "native",
+            "symbol": "POL",
+            "name": "Polygon",
+            "decimals": 18,
+            "icon": "pol",
+            "standard": "原生币",
+            "minFraction": 4
+        },
+        {
+            "network": "amoy",
+            "contract": "native",
+            "symbol": "POL",
+            "name": "Polygon",
+            "decimals": 18,
+            "icon": "pol",
+            "standard": "原生币",
+            "minFraction": 4
+        },
+        {
+            "network": "tron",
+            "contract": "native",
+            "symbol": "TRX",
+            "name": "TRON",
+            "decimals": 6,
+            "icon": "trx",
+            "standard": "原生币",
+            "minFraction": 2
+        },
+        {
+            "network": "tron-nile",
+            "contract": "native",
+            "symbol": "TRX",
+            "name": "TRON",
+            "decimals": 6,
+            "icon": "trx",
+            "standard": "原生币",
+            "minFraction": 2
+        },
+        {
+            "network": "tron-shasta",
+            "contract": "native",
+            "symbol": "TRX",
+            "name": "TRON",
+            "decimals": 6,
+            "icon": "trx",
+            "standard": "原生币",
+            "minFraction": 2
+        },
+        {
+            "network": "solana",
+            "contract": "native",
+            "symbol": "SOL",
+            "name": "Solana",
+            "decimals": 9,
+            "icon": "sol",
+            "standard": "原生币",
+            "minFraction": 4
+        },
+        {
+            "network": "solana-devnet",
+            "contract": "native",
+            "symbol": "SOL",
+            "name": "Solana",
+            "decimals": 9,
+            "icon": "sol",
+            "standard": "原生币",
+            "minFraction": 4
+        },
+        {
+            "network": "solana-testnet",
+            "contract": "native",
+            "symbol": "SOL",
+            "name": "Solana",
+            "decimals": 9,
+            "icon": "sol",
+            "standard": "原生币",
+            "minFraction": 4
+        },
+        {
+            "network": "ethereum",
+            "contract": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+            "symbol": "USDT",
+            "name": "Tether USD",
+            "decimals": 6,
+            "icon": "usdt",
+            "standard": "ERC-20",
+            "minFraction": 2
+        },
+        {
+            "network": "ethereum",
+            "contract": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            "symbol": "USDC",
+            "name": "USD Coin",
+            "decimals": 6,
+            "icon": "usdc",
+            "standard": "ERC-20",
+            "minFraction": 2
+        },
+        {
+            "network": "bsc",
+            "contract": "0x55d398326f99059fF775485246999027B3197955",
+            "symbol": "USDT",
+            "name": "Tether USD",
+            "decimals": 18,
+            "icon": "usdt",
+            "standard": "BEP-20",
+            "minFraction": 2
+        },
+        {
+            "network": "bsc",
+            "contract": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+            "symbol": "USDC",
+            "name": "USD Coin",
+            "decimals": 18,
+            "icon": "usdc",
+            "standard": "BEP-20",
+            "minFraction": 2
+        },
+        {
+            "network": "polygon",
+            "contract": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+            "symbol": "USDT",
+            "name": "Tether USD",
+            "decimals": 6,
+            "icon": "usdt",
+            "standard": "ERC-20",
+            "minFraction": 2
+        },
+        {
+            "network": "polygon",
+            "contract": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+            "symbol": "USDC",
+            "name": "USD Coin",
+            "decimals": 6,
+            "icon": "usdc",
+            "standard": "ERC-20",
+            "minFraction": 2
+        },
+        {
+            "network": "tron",
+            "contract": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+            "symbol": "USDT",
+            "name": "Tether USD",
+            "decimals": 6,
+            "icon": "usdt",
+            "standard": "TRC-20",
+            "minFraction": 2
+        },
+        {
+            "network": "tron",
+            "contract": "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8",
+            "symbol": "USDC",
+            "name": "USD Coin",
+            "decimals": 6,
+            "icon": "usdc",
+            "standard": "TRC-20",
+            "minFraction": 2
+        },
+        {
+            "network": "solana",
+            "contract": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+            "symbol": "USDT",
+            "name": "Tether USD",
+            "decimals": 6,
+            "icon": "usdt",
+            "standard": "SPL",
+            "minFraction": 2
+        },
+        {
+            "network": "solana",
+            "contract": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "symbol": "USDC",
+            "name": "USD Coin",
+            "decimals": 6,
+            "icon": "usdc",
+            "standard": "SPL",
+            "minFraction": 2
+        },
+        {
+            "network": "sepolia",
+            "contract": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+            "symbol": "USDC",
+            "name": "USD Coin",
+            "decimals": 6,
+            "icon": "usdc",
+            "standard": "ERC-20",
+            "minFraction": 2
+        },
+        {
+            "network": "amoy",
+            "contract": "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582",
+            "symbol": "USDC",
+            "name": "USD Coin",
+            "decimals": 6,
+            "icon": "usdc",
+            "standard": "ERC-20",
+            "minFraction": 2
+        },
+        {
+            "network": "tron-nile",
+            "contract": "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+            "symbol": "USDT",
+            "name": "Tether USD",
+            "decimals": 6,
+            "icon": "usdt",
+            "standard": "TRC-20",
+            "minFraction": 2
+        },
+        {
+            "network": "solana-devnet",
+            "contract": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+            "symbol": "USDC",
+            "name": "USD Coin",
+            "decimals": 6,
+            "icon": "usdc",
+            "standard": "SPL",
+            "minFraction": 2
+        }
+    ],
+    "functions": []
+}

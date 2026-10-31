@@ -1,0 +1,25 @@
+[package]
+name = "bitone-signer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bitone-core.workspace = true
+bitcoin.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+aes-gcm = "0.11"
+argon2 = "0.6"
+bip39 = { version = "3", features = ["zeroize"] }
+ed25519-dalek = "3"
+getrandom = "0.4"
+hmac = "0.13"
+sha2 = "0.11"
+
+[dev-dependencies]
+hex-literal = "1"
+p256 = { version = "0.14", features = ["ecdsa", "pkcs8"] }
+serde_json = "1"

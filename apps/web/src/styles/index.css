@@ -1,0 +1,450 @@
+@import "tailwindcss";
+@import "./fonts.css";
+@import "./motion.css";
+
+/* 令牌映射成主题变量.默认调色板清空,页面只能用令牌. */
+@theme inline {
+    --color-*: initial;
+    --color-bg: var(--bg);
+    --color-surface: var(--surface);
+    --color-surface-2: var(--surface-2);
+    --color-surface-3: var(--surface-3);
+    --color-line: var(--line);
+    --color-line-strong: var(--line-strong);
+    --color-text: var(--text);
+    --color-text-2: var(--text-2);
+    --color-text-3: var(--text-3);
+    --color-accent: var(--accent);
+    --color-accent-hover: var(--accent-hover);
+    --color-accent-text: var(--accent-text);
+    --color-accent-soft: var(--accent-soft);
+    --color-on-accent: var(--on-accent);
+    --color-on-camera: var(--on-camera);
+    --color-ok: var(--ok);
+    --color-ok-soft: var(--ok-soft);
+    --color-warn: var(--warn);
+    --color-warn-soft: var(--warn-soft);
+    --color-danger: var(--danger);
+    --color-danger-soft: var(--danger-soft);
+    --color-testnet: var(--testnet);
+    --color-on-testnet: var(--on-testnet);
+    --color-camera: var(--camera);
+    --color-fill: var(--fill);
+    --color-fill-hover: var(--fill-hover);
+
+    --spacing-s1: var(--s1);
+    --spacing-s2: var(--s2);
+    --spacing-s3: var(--s3);
+    --spacing-s4: var(--s4);
+    --spacing-s5: var(--s5);
+    --spacing-s6: var(--s6);
+    --spacing-s8: var(--s8);
+    --spacing-s10: var(--s10);
+    --spacing-s12: var(--s12);
+    --spacing-s16: var(--s16);
+    --spacing-input: var(--h-input);
+    --spacing-row: var(--h-row);
+    --spacing-btn: var(--h-btn);
+
+    --radius-r1: var(--r1);
+    --radius-r2: var(--r2);
+    --radius-r3: var(--r3);
+    --radius-r4: var(--r4);
+    --radius-rf: var(--rf);
+
+    --text-t1: var(--t1);
+    --text-t2: var(--t2);
+    --text-t3: var(--t3);
+    --text-t4: var(--t4);
+    --text-t5: var(--t5);
+    --text-t6: var(--t6);
+    --text-t7: var(--t7);
+    --text-t8: var(--t8);
+
+    --font-sans: var(--font);
+    --font-mono: var(--mono);
+}
+
+/* 字号自带行高,24 及以上字距收紧 1%.窄屏时导航折到上方.栅格按内容宽度切换,不看窗口宽度. */
+@theme {
+    --text-t1--line-height: var(--lh-t1);
+    --text-t2--line-height: var(--lh-t2);
+    --text-t3--line-height: var(--lh-t3);
+    --text-t4--line-height: var(--lh-t4);
+    --text-t5--line-height: var(--lh-t5);
+    --text-t6--line-height: var(--lh-t6);
+    --text-t6--letter-spacing: -0.01em;
+    --text-t7--line-height: var(--lh-t7);
+    --text-t7--letter-spacing: -0.01em;
+    --text-t8--line-height: var(--lh-t8);
+    --text-t8--letter-spacing: -0.01em;
+
+    --breakpoint-nav: 60rem;
+    --container-split: 44rem;
+
+    --shadow-1: var(--elevation-1);
+    --shadow-2: var(--elevation-2);
+    --shadow-3: var(--elevation-3);
+
+    --default-transition-duration: var(--dur-fast);
+    --default-transition-timing-function: var(--ease-standard);
+}
+
+:root {
+    /* 填充色.色块里的输入框和次级按钮要换一层,靠这两个变量. */
+    --fill: var(--surface-3);
+    --fill-hover: var(--line-strong);
+    /* 弹层和选中块要比所在的卡片亮一级. */
+    --popup: light-dark(var(--surface), var(--surface-2));
+    --thumb: light-dark(var(--surface), var(--surface-3));
+    --rail: var(--surface-2);
+    /* 取景框和开关圆点在任何主题下都是白的. */
+    --on-camera: #ffffff;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-x: max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+    --page-x: max(var(--gutter), var(--safe-x));
+    --page-width: 1200px;
+    --topbar: 64px;
+    --tabbar: var(--h-row);
+    /* 手机上父级链接要 44 的触控区,所有页面都按这个高度留. */
+    --page-title: 44px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --focus: var(--accent-text);
+}
+
+@media (width >= 60rem) {
+    :root {
+        --page-x: max(var(--s6), var(--safe-x));
+        --page-title: var(--s8);
+        --h-btn: var(--h-btn-web);
+    }
+}
+
+@media (width < 60rem) {
+    :root {
+        --topbar: 56px;
+    }
+}
+
+@layer base {
+    /* 添加到主屏幕后没有浏览器外壳,页面要像应用:不回弹露底,不放大,点击没有灰块. */
+    html {
+        overscroll-behavior: none;
+        text-size-adjust: 100%;
+        -webkit-text-size-adjust: 100%;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+        font-variant-numeric: tabular-nums;
+        line-height: normal;
+    }
+    body {
+        min-height: 100dvh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: var(--t3);
+        font-weight: 400;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+    #root {
+        isolation: isolate;
+        min-height: 100dvh;
+    }
+    button:not(:disabled),
+    label,
+    select {
+        cursor: pointer;
+    }
+    ::selection {
+        background: var(--accent-soft);
+    }
+    :focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+    }
+    /* JetBrains Mono 的连字会把 0x 画成乘号,地址里不能出现. */
+    .font-mono {
+        font-variant-ligatures: none;
+    }
+}
+
+@layer components {
+    /* 外壳:顶栏横跨全宽,内容居中.页面底色和卡片的明度差就是边界. */
+    .app-frame {
+        display: flex;
+        min-height: 100dvh;
+        flex-direction: column;
+    }
+    .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        box-sizing: content-box;
+        height: var(--topbar);
+        flex: none;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+        /* 主屏幕模式下页面延伸到状态栏后面. */
+        padding-top: var(--safe-top);
+    }
+    .app-main {
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        flex-direction: column;
+        /* 悬浮标签栏占的高度,内容滚到底时不会被盖住. */
+        padding-bottom: calc(var(--tabbar) + var(--safe-bottom) + var(--s2) + var(--s6));
+    }
+    .page-frame {
+        box-sizing: content-box;
+        width: calc(100% - 2 * var(--page-x));
+        max-width: var(--page-width);
+        margin-inline: auto;
+        padding-inline: var(--page-x);
+    }
+    /* 页头在所有页面一样高,首个区块从同一条线开始,切换导航时内容不跳. */
+    .page-head {
+        display: flex;
+        align-items: center;
+        padding-block: var(--s2);
+    }
+    .page-title-slot {
+        display: flex;
+        min-height: var(--page-title);
+        align-items: center;
+        gap: var(--s3);
+    }
+    .page {
+        display: flex;
+        flex-direction: column;
+        gap: var(--s4);
+        container-type: inline-size;
+    }
+
+    @media (width >= 60rem) {
+        .page-head {
+            padding-block: var(--s5) var(--s4);
+        }
+        .app-main {
+            padding-bottom: var(--s12);
+        }
+        .page {
+            gap: var(--s5);
+        }
+    }
+
+    /* 卡片:一层,不嵌套,不画边框,边界来自和页面底色的明度差. */
+    .card {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: var(--s4);
+        border-radius: var(--r3);
+        background: var(--surface);
+        padding: var(--s4);
+    }
+    @container (width >= 44rem) {
+        .card {
+            padding: var(--s6);
+        }
+    }
+    .card .card {
+        border-radius: 0;
+        background: transparent;
+        padding: 0;
+    }
+
+    /* 设置行:左边标题和说明,右边值或操作,行间没有分隔线.两端都贴卡片内边距. */
+    .setting {
+        position: relative;
+        display: flex;
+        min-height: var(--h-row);
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--s2) var(--s6);
+        padding-block: var(--s3);
+    }
+    .setting-main {
+        display: flex;
+        min-width: 0;
+        flex: 1 1 8rem;
+        flex-direction: column;
+        gap: 2px;
+    }
+    .setting-side {
+        display: flex;
+        min-width: 0;
+        flex: 0 1 auto;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: var(--s2);
+        margin-left: auto;
+        text-align: right;
+    }
+    .setting:last-child {
+        padding-bottom: 0;
+    }
+    /* 输入框和成组的按钮在手机上独占一行,铺满卡片. */
+    @media (width < 60rem) {
+        .setting-wide {
+            flex: 1 1 100%;
+        }
+        .setting-wide > * {
+            flex: 1 1 auto;
+        }
+    }
+    /* 输入框:细边框.聚焦时边框变主色,外加一圈浅色环. */
+    .field {
+        width: 100%;
+        min-width: 0;
+        height: var(--h-input);
+        border: 1px solid var(--line-strong);
+        border-radius: var(--r2);
+        background: var(--surface);
+        padding-inline: var(--s4);
+        color: var(--text);
+        outline: 2px solid transparent;
+        outline-offset: 0;
+        transition:
+            background-color var(--dur-fast) var(--ease-standard),
+            outline-color var(--dur-fast) var(--ease-standard);
+    }
+    .field::placeholder {
+        color: var(--text-3);
+    }
+    .field:hover:not(:disabled, :focus) {
+        border-color: var(--text-3);
+    }
+    .field:focus {
+        border-color: var(--focus);
+        outline-color: var(--accent-soft);
+    }
+    /* iOS 上小于 16 的输入框聚焦时整页放大. */
+    @media (width < 60rem) {
+        .field {
+            font-size: 16px;
+        }
+    }
+    .field:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+    .field:read-only:not(select) {
+        color: var(--text-2);
+    }
+
+    /* 列表行没有横线.文字贴着卡片内边距,悬停底色向两侧各伸出 12.按下时显示底色并缩放. */
+    .row {
+        position: relative;
+        margin-inline: calc(var(--s3) * -1);
+        border-radius: var(--r2);
+        padding-inline: var(--s3);
+        transition:
+            background-color var(--dur-fast) var(--ease-standard),
+            transform var(--dur-normal) var(--ease-emphasized);
+    }
+    .row:has(> a:active) {
+        background: var(--surface-2);
+        transform: scale(var(--press-scale));
+        transition-duration: var(--dur-fast);
+        transition-timing-function: var(--ease-standard);
+    }
+    @media (hover: hover) {
+        .row:hover {
+            background: var(--surface-2);
+        }
+        .row-actions {
+            opacity: 0;
+            transition: opacity var(--dur-fast) var(--ease-standard);
+        }
+        .row:hover .row-actions,
+        .row:focus-within .row-actions {
+            opacity: 1;
+        }
+    }
+
+    /* 色块.里面的输入框和次级按钮换到上一层,分段选择的选中块也要跟着换. */
+    .tint {
+        --fill: var(--surface);
+        --fill-hover: var(--surface-3);
+    }
+
+    /* 浮层:宽屏居中,手机上从底部升起.内容自成容器,里面的栅格按浮层宽度切换. */
+    .sheet {
+        --sheet-x: 0;
+        --sheet-y: 0;
+        position: fixed;
+        z-index: 30;
+        inset-inline: 0;
+        bottom: var(--keyboard, 0px);
+        display: flex;
+        max-height: calc(100dvh - var(--safe-top) - var(--s8) - var(--keyboard, 0px));
+        flex-direction: column;
+        gap: var(--s4);
+        overflow-y: auto;
+        border-radius: var(--r4) var(--r4) 0 0;
+        background: var(--popup);
+        box-shadow: var(--elevation-3);
+        /* 底部的内边距在操作区里,内容不会从操作区下面漏出来. */
+        padding: var(--s4) var(--page-x) 0;
+        container-type: inline-size;
+        outline: none;
+    }
+    .sheet .card {
+        border-radius: 0;
+        background: transparent;
+        padding: 0;
+    }
+    @media (width >= 60rem) {
+        .sheet {
+            --sheet-x: -50%;
+            --sheet-y: -50%;
+            inset: 50% auto auto 50%;
+            width: min(var(--sheet-width), calc(100vw - 2 * var(--s8)));
+            max-height: calc(100dvh - 2 * var(--s8));
+            border-radius: var(--r4);
+            padding: var(--s6) var(--s6) 0;
+            transform: translate(var(--sheet-x), var(--sheet-y));
+        }
+    }
+    .sheet-actions {
+        position: sticky;
+        bottom: 0;
+        z-index: 1;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: var(--s2);
+        background: var(--popup);
+        padding-block: var(--s2) calc(var(--s4) + var(--safe-bottom));
+    }
+    /* 手机上按钮等分,放弃在左,确认在右,和冷钱包的弹层相同. */
+    @media (width < 60rem) {
+        .sheet-actions > * {
+            flex: 1 1 0;
+        }
+    }
+    @media (width >= 60rem) {
+        .sheet-actions {
+            padding-bottom: var(--s6);
+        }
+    }
+
+    /* 文字链接没有内边距,右边缘能贴着边线.下划线是渐变出来的. */
+    .link {
+        color: var(--accent-text);
+        font-size: var(--t2);
+        line-height: var(--text-t2--line-height);
+        text-decoration: underline transparent;
+        text-underline-offset: var(--s1);
+        transition: text-decoration-color var(--dur-fast) var(--ease-standard);
+    }
+    .link:hover {
+        text-decoration-color: currentcolor;
+    }
+}

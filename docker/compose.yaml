@@ -1,0 +1,37 @@
+# 私有网关:网关加 Caddy,Caddy 自动申请证书.浏览器只在 HTTPS 下开放摄像头.
+# 用法:VERSION=0.1.0 DOMAIN=bitone.example.com docker compose up -d
+
+services:
+    bitone:
+        image: ghcr.io/ccobcode/bitone:${VERSION:?}
+        restart: unless-stopped
+        # 限流要看到真实的客户端 IP,所以信任 Caddy.trusted_proxies 只接受单个 IP,这里固定它的地址.
+        command: ["--trusted-proxy", "172.30.0.2"]
+        networks:
+            default:
+                ipv4_address: 172.30.0.3
+        # 要填 API key 时取消注释.
+        # volumes:
+        #     - ./gateway.toml:/etc/bitone/gateway.toml:ro
+
+    caddy:
+        image: caddy:2-alpine@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5
+        restart: unless-stopped
+        command: ["caddy", "reverse-proxy", "--from", "${DOMAIN:?}", "--to", "172.30.0.3:8787"]
+        ports:
+            - "80:80"
+            - "443:443"
+        networks:
+            default:
+                ipv4_address: 172.30.0.2
+        volumes:
+            - caddy-data:/data
+
+networks:
+    default:
+        ipam:
+            config:
+                - subnet: 172.30.0.0/24
+
+volumes:
+    caddy-data:

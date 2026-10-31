@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+node scripts/copy-check.mjs --commit-msg "$1"
+node scripts/fullwidth.mjs --commit-msg "$1"
