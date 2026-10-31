@@ -782,7 +782,7 @@ class WalletFlow(
         if (!pinDone) pinInput = pinInput.dropLast(1)
     }
 
-    /** 建钱包的最后一步：Rust 封 PIN 层，硬件密钥再包一层，落盘后才进首页。 */
+    /** 建钱包的最后一步：硬件算出这个 PIN 的结果，Rust 用两者一起加密，落盘后才进首页。 */
     fun finishSetup() {
         if (!pinDone || !mayFinishSetup()) return
         val current = draft ?: return
@@ -793,15 +793,15 @@ class WalletFlow(
             try {
                 val saved =
                     withContext(work) {
-                        val sealed = current.seal(pin)
                         // 恢复时旧密钥可能已失效，新钱包用新密钥。
                         hardwareKey.delete()
-                        val vault = hardwareKey.wrap(sealed)
+                        val tag = hardwareKey.enroll(pin)
+                        val vault = current.seal(pin, tag)
                         // 启用 BIP39 密码时不算指纹和公钥：这里算出的不是用户真正的钱包，也不把密码派生的结果写盘。
                         var fingerprint: String? = null
                         var keys: ByteArray? = null
                         if (!passphrase) {
-                            val wallet = core.open(sealed, pin, "")
+                            val wallet = core.open(vault, pin, tag, "")
                             try {
                                 fingerprint = wallet.fingerprint()
                                 keys = wallet.publicKeys(current.imported)
@@ -1447,7 +1447,13 @@ class WalletFlow(
 
     /** 不删硬件密钥：新密文落盘之前，旧密文必须一直能解开。 */
     private suspend fun changePin(wallet: UnlockedWallet, newPin: String) {
-        store.replaceVault(hardwareKey.wrap(wallet.seal(newPin)))
+        store.replaceVault(wallet.seal(newPin, hardwareKey.bind(newPin)))
+    }
+
+    /** 旧格式在输对 PIN 时换成当前格式。新密文落盘后才删旧密钥，中途断电时旧密文还能解开。 */
+    private suspend fun migrate(wallet: UnlockedWallet, pin: String) {
+        store.replaceVault(wallet.seal(pin, hardwareKey.enroll(pin)))
+        hardwareKey.dropLegacy()
     }
 
     private suspend fun attemptUnlock(
@@ -1460,11 +1466,16 @@ class WalletFlow(
         val vault = store.readVault() ?: return Attempt.Lost
         val current = store.readMeta() ?: return Attempt.Lost
         // 硬件层失败不是 PIN 错误，不计数，也绝不能因此抹除。
-        val sealed =
+        val (sealed, tag) =
             try {
-                // 输错过就要先确认手机屏幕锁，时间窗内也不跳过。杀进程重来也算，计数已经落盘。
-                if (guard.failures > 0) hardwareKey.confirmDeviceLock()
-                hardwareKey.unwrap(vault)
+                if (core.isBoundVault(vault)) {
+                    // 每猜一次 PIN 都要过一次系统屏幕锁，硬件算出结果才能试。
+                    vault to hardwareKey.bind(pin)
+                } else {
+                    // 旧格式只在输错过时才确认手机屏幕锁。杀进程重来也算，计数已经落盘。
+                    if (guard.failures > 0) hardwareKey.confirmDeviceLock()
+                    hardwareKey.unwrap(vault) to null
+                }
             } catch (_: HardwareKeyException.AuthCancelled) {
                 return Attempt.Cancelled
             } catch (_: HardwareKeyException) {
@@ -1473,7 +1484,11 @@ class WalletFlow(
         val failures = guard.beginAttempt()
         val wallet: UnlockedWallet =
             try {
-                core.open(sealed, pin, passphrase)
+                if (tag != null) {
+                    core.open(sealed, pin, tag, passphrase)
+                } else {
+                    core.openLegacy(sealed, pin, passphrase)
+                }
             } catch (_: WalletCoreException.WrongPin) {
                 if (failures < MAX_PIN_FAILURES) return Attempt.Wrong
                 eraseData()
@@ -1484,6 +1499,7 @@ class WalletFlow(
         try {
             guard.clear()
             if (hardwareKey.lockChanged()) hardwareKey.acceptLock()
+            if (tag == null) migrate(wallet, pin)
             // 结果里只有公钥、帧和助记词文字，这一步之后种子不留在内存。
             return Attempt.Opened(use(wallet, current))
         } catch (_: HardwareKeyException.AuthCancelled) {

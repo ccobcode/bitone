@@ -19,6 +19,7 @@ import java.security.ProviderException
 import java.security.UnrecoverableKeyException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
+import javax.crypto.Mac
 import javax.crypto.SecretKey
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
@@ -29,31 +30,29 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
 private const val ANDROID_KEYSTORE = "AndroidKeyStore"
-private const val ALIAS = "bitone.seal"
+private const val PIN_ALIAS = "bitone.pin"
+private const val HMAC = "HmacSHA256"
+/** 旧格式外层加密的密钥，迁移后删除。 */
+private const val LEGACY_ALIAS = "bitone.seal"
 private const val PROBE_ALIAS = "bitone.enrollment"
 private const val TRANSFORMATION = "AES/GCM/NoPadding"
 private const val IV_BYTES = 12
 private const val TAG_BITS = 128
 
-/** 认证时间窗。解锁手机后这么久内不用再确认，超过时弹系统屏幕锁。 */
-private const val AUTH_WINDOW_SECONDS = 300
+/** 0 表示每次使用都要认证，没有时间窗。 */
+private const val AUTH_EVERY_USE = 0
 
 private val AAD = "bitone-vault-v1".encodeToByteArray()
 
 /**
- * 第二层加密：Keystore 里不可导出的 AES-256-GCM 密钥，优先 StrongBox，其次 TEE，都没有时拒绝创建。
+ * Keystore 里不可导出的 HMAC-SHA256 密钥，优先 StrongBox，其次 TEE，都没有时拒绝创建。PIN 要经过它才能派生出解密密钥。
  *
- * 绑定设备解锁状态的做法（docs/03 §11 留的问题）：
+ * 每次使用都要认证，由硬件强制。Root 伪造不了认证令牌，所以不知道屏幕锁就猜不了 PIN，错误计数被绕过也一样。 认证方式里有屏幕锁凭据，增删指纹时这把密钥不失效，指纹变更靠单独的探针发现。修改屏幕锁也不失效，应用发现不了。
+ *
+ * 移除屏幕锁时密钥永久失效，这是文档写明的行为，正好对应「需恢复」。没有屏幕锁时生成会失败，也正好对应「拒绝创建钱包」。
  *
  * 不把 setUnlockedDeviceRequired 作为唯一依赖。Android 12 到 14 上这类密钥依赖屏幕锁凭据， 没有屏幕锁时不能生成和使用，移除屏幕锁时会被删除。Android 15 才修好，官方建议只在 15
  * 及以上使用。
- *
- * 所以分两层：
- * 1. 所有版本都用 setUserAuthenticationRequired 加时间窗。这是硬件强制的，超过时间窗必须重新认证。 移除屏幕锁时密钥永久失效，这是文档写明的行为，正好对应「需恢复」。
- *    没有屏幕锁时生成会失败，也正好对应「拒绝创建钱包」。
- * 2. Android 15 及以上再加 setUnlockedDeviceRequired，手机一锁屏密钥立刻不可用。
- *
- * 残余差异：Android 12 到 14 上，时间窗内手机被锁屏时密钥仍然可用，此时种子还有 PIN 这一层保护。
  */
 class KeystoreHardwareKey(
     private val context: Context,
@@ -62,26 +61,39 @@ class KeystoreHardwareKey(
 
     private fun keyStore(): KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
 
-    private fun existingKey(): SecretKey? =
+    private fun existingKey(alias: String): SecretKey? =
         try {
-            keyStore().getKey(ALIAS, null) as? SecretKey
+            keyStore().getKey(alias, null) as? SecretKey
         } catch (_: UnrecoverableKeyException) {
             null
         }
 
-    override suspend fun wrap(plain: ByteArray): ByteArray {
-        val key = existingKey() ?: createKey()
-        return authorized(HardwareKeyException.Unavailable("硬件密钥不可用")) {
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.ENCRYPT_MODE, key)
-            cipher.updateAAD(AAD)
-            val body = cipher.doFinal(plain)
-            cipher.iv + body
-        }
+    override suspend fun bind(pin: String): ByteArray {
+        val key = existingKey(PIN_ALIAS) ?: throw HardwareKeyException.Lost("硬件密钥已不存在")
+        return authenticatedMac(key, pin, HardwareKeyException.Lost("硬件密钥已失效"))
     }
 
+    override suspend fun enroll(pin: String): ByteArray {
+        val key = existingKey(PIN_ALIAS) ?: createKey()
+        return authenticatedMac(key, pin, HardwareKeyException.Unavailable("硬件密钥不可用"))
+    }
+
+    /** 这次认证只对这一个 Mac 对象有效，所以一次确认只能算一个 PIN。 */
+    private suspend fun authenticatedMac(key: SecretKey, pin: String, failure: HardwareKeyException): ByteArray =
+        rethrowing(failure) {
+            val mac = Mac.getInstance(HMAC)
+            mac.init(key)
+            confirmCredential(BiometricPrompt.CryptoObject(mac))
+            val bytes = pin.encodeToByteArray()
+            try {
+                mac.doFinal(bytes)
+            } finally {
+                bytes.fill(0)
+            }
+        }
+
     override suspend fun unwrap(wrapped: ByteArray): ByteArray {
-        val key = existingKey() ?: throw HardwareKeyException.Lost("硬件密钥已不存在")
+        val key = existingKey(LEGACY_ALIAS) ?: throw HardwareKeyException.Lost("硬件密钥已不存在")
         if (wrapped.size <= IV_BYTES) throw HardwareKeyException.Lost("密文损坏")
         return authorized(HardwareKeyException.Lost("硬件密钥已失效")) {
             val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -93,14 +105,17 @@ class KeystoreHardwareKey(
 
     override fun isLost(): Boolean =
         try {
-            val key = existingKey()
-            if (key == null) {
-                true
-            } else {
-                Cipher.getInstance(TRANSFORMATION)
-                    .init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, ByteArray(IV_BYTES)))
-                false
+            val current = existingKey(PIN_ALIAS)
+            val legacy = existingKey(LEGACY_ALIAS)
+            when {
+                // 初始化会占用一个硬件操作，StrongBox 能同时跑的操作很少，探测完就释放。
+                current != null -> Mac.getInstance(HMAC).apply { init(current) }.reset()
+                legacy != null ->
+                    Cipher.getInstance(TRANSFORMATION)
+                        .init(Cipher.DECRYPT_MODE, legacy, GCMParameterSpec(TAG_BITS, ByteArray(IV_BYTES)))
+                else -> return true
             }
+            false
         } catch (_: UserNotAuthenticatedException) {
             false
         } catch (_: GeneralSecurityException) {
@@ -111,8 +126,13 @@ class KeystoreHardwareKey(
         }
 
     override fun delete() {
-        keyStore().deleteEntry(ALIAS)
+        keyStore().deleteEntry(PIN_ALIAS)
+        keyStore().deleteEntry(LEGACY_ALIAS)
         keyStore().deleteEntry(PROBE_ALIAS)
+    }
+
+    override fun dropLegacy() {
+        keyStore().deleteEntry(LEGACY_ALIAS)
     }
 
     override suspend fun confirmDeviceLock() = confirmCredential()
@@ -179,33 +199,37 @@ class KeystoreHardwareKey(
 
     private fun generate(strongBox: Boolean): SecretKey {
         val spec =
-            KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            KeyGenParameterSpec.Builder(PIN_ALIAS, KeyProperties.PURPOSE_SIGN)
                 .setKeySize(256)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setUserAuthenticationRequired(true)
                 .setUserAuthenticationParameters(
-                    AUTH_WINDOW_SECONDS,
+                    AUTH_EVERY_USE,
                     KeyProperties.AUTH_DEVICE_CREDENTIAL or KeyProperties.AUTH_BIOMETRIC_STRONG,
                 )
                 .setIsStrongBoxBacked(strongBox)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
             spec.setUnlockedDeviceRequired(true)
         }
-        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_HMAC_SHA256, ANDROID_KEYSTORE)
             .apply { init(spec.build()) }
             .generateKey()
     }
 
-    /** 时间窗过期时弹一次系统屏幕锁再重试。密钥失效统一换成 [failure]。 */
+    /** 旧格式的时间窗过期时弹一次系统屏幕锁再重试。 */
     private suspend fun <T> authorized(failure: HardwareKeyException, block: () -> T): T =
-        try {
+        rethrowing(failure) {
             try {
                 block()
             } catch (_: UserNotAuthenticatedException) {
                 confirmCredential()
                 block()
             }
+        }
+
+    /** 密钥失效统一换成 [failure]。 */
+    private suspend fun <T> rethrowing(failure: HardwareKeyException, block: suspend () -> T): T =
+        try {
+            block()
         } catch (e: HardwareKeyException) {
             throw e
         } catch (_: KeyPermanentlyInvalidatedException) {
@@ -216,7 +240,7 @@ class KeystoreHardwareKey(
             throw failure
         }
 
-    private suspend fun confirmCredential() =
+    private suspend fun confirmCredential(crypto: BiometricPrompt.CryptoObject? = null) =
         withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { continuation ->
                 val signal = CancellationSignal()
@@ -231,11 +255,16 @@ class KeystoreHardwareKey(
                             continuation.resumeWithException(HardwareKeyException.AuthCancelled())
                         }
                     }
-                BiometricPrompt.Builder(activityContext() ?: context)
-                    .setTitle(translate("确认屏幕锁"))
-                    .setAllowedAuthenticators(Authenticators.DEVICE_CREDENTIAL or Authenticators.BIOMETRIC_STRONG)
-                    .build()
-                    .authenticate(signal, context.mainExecutor, callback)
+                val prompt =
+                    BiometricPrompt.Builder(activityContext() ?: context)
+                        .setTitle(translate("确认屏幕锁"))
+                        .setAllowedAuthenticators(Authenticators.DEVICE_CREDENTIAL or Authenticators.BIOMETRIC_STRONG)
+                        .build()
+                if (crypto == null) {
+                    prompt.authenticate(signal, context.mainExecutor, callback)
+                } else {
+                    prompt.authenticate(crypto, signal, context.mainExecutor, callback)
+                }
             }
         }
 

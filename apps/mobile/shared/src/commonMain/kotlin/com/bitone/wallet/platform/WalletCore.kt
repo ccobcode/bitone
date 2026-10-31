@@ -6,7 +6,14 @@ interface WalletCore {
 
     fun importDraft(words: List<String>): WalletDraft
 
-    fun open(sealed: ByteArray, pin: String, passphrase: String): UnlockedWallet
+    /** [tag] 是 [HardwareKey.bind] 的结果。 */
+    fun open(sealed: ByteArray, pin: String, tag: ByteArray, passphrase: String): UnlockedWallet
+
+    /** 解开旧格式，只用于迁移。[sealed] 是去掉硬件那层之后的内容。 */
+    fun openLegacy(sealed: ByteArray, pin: String, passphrase: String): UnlockedWallet
+
+    /** 本机密文是不是当前格式。不是时要先走迁移。 */
+    fun isBoundVault(vault: ByteArray): Boolean
 
     fun qrMatrix(part: String): QrMatrix
 
@@ -59,8 +66,8 @@ interface WalletDraft {
 
     fun checkWord(index: Int, word: String): Boolean
 
-    /** 返回 PIN 这一层的密文，平台层再用硬件密钥包一层。 */
-    fun seal(pin: String): ByteArray
+    /** [tag] 是 [HardwareKey.enroll] 的结果。 */
+    fun seal(pin: String, tag: ByteArray): ByteArray
 
     fun close()
 }
@@ -75,7 +82,7 @@ interface UnlockedWallet {
     fun words(): List<String>
 
     /** 用新 PIN 重新封一层，种子不离开 Rust。返回的密文平台层再用硬件密钥包一层。 */
-    fun seal(pin: String): ByteArray
+    fun seal(pin: String, tag: ByteArray): ByteArray
 
     /** 全部账户的公钥，核对交易用。 */
     fun publicKeys(imported: Boolean): ByteArray

@@ -2,15 +2,14 @@
 //! 见 docs/04-security.md 第 2.8、2.9 节。
 
 use crate::Error;
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use p256::ecdsa::signature::Verifier;
+use p256::ecdsa::{DerSignature, VerifyingKey};
+use p256::pkcs8::DecodePublicKey;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
-/// 厂商公钥。这是开发用的密钥，发布前必须换成离线保管的正式密钥。
-pub const VENDOR_KEY: [u8; 32] = [
-    0xd7, 0x5a, 0x98, 0x01, 0x82, 0xb1, 0x0a, 0xb7, 0xd5, 0x4b, 0xfe, 0xd3, 0xc9, 0x64, 0x07, 0x3a, 0x0e, 0xe1, 0x72,
-    0xf3, 0xda, 0xa6, 0x23, 0x25, 0xaf, 0x02, 0x1a, 0x68, 0xf7, 0x07, 0x51, 0x1a,
-];
+/// 厂商公钥，P-256 的 SPKI DER。和 APK 签名证书是同一把密钥，换公钥就是替换这个文件。
+pub const VENDOR_KEY: [u8; 91] = *include_bytes!("../assets/manifest-key.der");
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,14 +81,13 @@ impl Manifest {
         })
     }
 
-    /// 校验清单包。版本只增不减，签名不对或版本回退都拒绝。
-    pub fn from_package(package: &[u8], key: &[u8; 32], current: u32) -> Result<Self, Error> {
-        if package.len() <= 64 {
-            return Err(Error::Decode);
-        }
-        let (signature, body) = package.split_at(64);
-        let signature = Signature::from_slice(signature).map_err(|_| Error::Decode)?;
-        let key = VerifyingKey::from_bytes(key).map_err(|_| Error::InvalidKey)?;
+    /// 校验清单包。版本只增不减，签名不对或版本回退都拒绝。通过后整体覆盖内置清单。
+    /// 包的格式是 DER 编码的 ECDSA 签名加 JSON 原文，签名的长度写在它的第二个字节。
+    pub fn from_package(package: &[u8], key: &[u8], current: u32) -> Result<Self, Error> {
+        let length = usize::from(*package.get(1).ok_or(Error::Decode)?) + 2;
+        let (signature, body) = package.split_at_checked(length).ok_or(Error::Decode)?;
+        let signature = DerSignature::try_from(signature).map_err(|_| Error::Decode)?;
+        let key = VerifyingKey::from_public_key_der(key).map_err(|_| Error::InvalidKey)?;
         key.verify(body, &signature).map_err(|_| Error::BadSignature)?;
         let manifest: Self = serde_json::from_slice(body).map_err(|_| Error::Decode)?;
         if manifest.version <= current {

@@ -53,7 +53,7 @@ class SignFlowTest {
     private fun TestScope.ready(passphrase: Boolean = false, cached: Boolean = true, setup: (Rig) -> Unit = {}): Rig {
         val rig = rig {
             it.store.meta = WalletMeta(false, passphrase, if (passphrase) null else MAIN_FINGERPRINT)
-            it.store.vault = "hw:sealed:$PIN".encodeToByteArray()
+            it.store.vault = boundVault(PIN)
             if (!passphrase && cached) it.store.publicKeys = keysFor(MAIN_FINGERPRINT)
             setup(it)
         }
@@ -785,7 +785,7 @@ class SignFlowTest {
         submit(flow, PIN)
         assertEquals(Screen.Settings, flow.screen)
         assertFalse(flow.changingPin)
-        assertContentEquals("hw:sealed:$NEW_PIN".encodeToByteArray(), rig.store.vault)
+        assertContentEquals(boundVault(NEW_PIN), rig.store.vault)
         assertTrue(rig.core.lastWallet!!.closed)
         // 助记词不经过 JVM。
         assertEquals(0, rig.core.wordsRead)
@@ -807,7 +807,7 @@ class SignFlowTest {
         submit(flow, BAD_PIN)
         assertEquals(Screen.Unlock, flow.screen)
         assertEquals(1, rig.store.pin.failures)
-        assertContentEquals("hw:sealed:$PIN".encodeToByteArray(), rig.store.vault)
+        assertContentEquals(boundVault(PIN), rig.store.vault)
     }
 
     @Test
@@ -817,14 +817,14 @@ class SignFlowTest {
         flow.openSettings()
         enterNewPin(flow)
         submitWithCancelledWrap(rig)
-        assertContentEquals("hw:sealed:$PIN".encodeToByteArray(), rig.store.vault)
+        assertContentEquals(boundVault(PIN), rig.store.vault)
         assertEquals(Screen.Unlock, flow.screen)
         assertNotNull(flow.unlockError)
         assertTrue(rig.core.lastWallet!!.closed)
     }
 
     private fun TestScope.submitWithCancelledWrap(rig: Rig) {
-        rig.key.cancelWrap = true
+        rig.key.cancelFor = NEW_PIN
         submit(rig.flow, PIN)
     }
 
@@ -835,7 +835,7 @@ class SignFlowTest {
         enterNewPin(rig.flow)
         assertFalse(rig.flow.unlockNeedsPassphrase)
         submit(rig.flow, PIN)
-        assertContentEquals("hw:sealed:$NEW_PIN".encodeToByteArray(), rig.store.vault)
+        assertContentEquals(boundVault(NEW_PIN), rig.store.vault)
     }
 
     @Test

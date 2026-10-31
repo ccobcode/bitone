@@ -1,6 +1,7 @@
-//! PIN 这一层加密，见 docs/04-security.md 第 2.3 节。
+//! 种子加密，见 docs/04-security.md 第 2.3 节。
 //!
-//! 种子先用 PIN 派生的密钥加密，再由平台层用硬件密钥包一层。这里只管第一层。
+//! 解密密钥由 PIN 和硬件的 HMAC 结果一起派生。每猜一次 PIN 都要手机硬件算一次，
+//! 所以密文拿走之后没法离线试 PIN。
 
 use crate::Error;
 use aes_gcm::aead::{Aead, KeyInit, Payload};
@@ -8,10 +9,15 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use argon2::{Algorithm, Argon2, Params, Version};
 use zeroize::{Zeroize, Zeroizing};
 
-const FORMAT: u8 = 1;
+/// 旧格式的第一个字节。解密密钥只来自 PIN，平台层外面再包一层硬件加密。
+const LEGACY_FORMAT: u8 = 1;
+/// 当前格式的开头。旧格式的文件以随机 IV 开头，要靠这 8 个字节区分。
+const MAGIC: [u8; 8] = *b"BITONE02";
+const PARAMS_LEN: usize = 12;
 const SALT_LEN: usize = 16;
 const NONCE_LEN: usize = 12;
-const HEADER_LEN: usize = 1 + 12 + SALT_LEN + NONCE_LEN;
+/// 硬件 HMAC-SHA256 的结果。
+const TAG_LEN: usize = 32;
 
 /// Argon2id 参数。写进密文头，日后调整不影响已有钱包。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,12 +68,12 @@ pub fn is_weak_pin(pin: &str) -> bool {
     seen.len() <= 2 || step(1) || step(-1)
 }
 
-fn derive_key(pin: &str, salt: &[u8], params: KdfParams) -> Result<Zeroizing<[u8; 32]>, Error> {
+fn derive_key(password: &[u8], salt: &[u8], params: KdfParams) -> Result<Zeroizing<[u8; 32]>, Error> {
     let argon_params = Params::new(params.memory_kib, params.iterations, params.parallelism, Some(32))
         .map_err(|_| Error::UnsupportedVault)?;
     let mut key = Zeroizing::new([0u8; 32]);
     Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params)
-        .hash_password_into(pin.as_bytes(), salt, key.as_mut())
+        .hash_password_into(password, salt, key.as_mut())
         .map_err(|_| Error::UnsupportedVault)?;
     Ok(key)
 }
@@ -76,23 +82,21 @@ fn cipher(key: &[u8; 32]) -> Aes256Gcm {
     Aes256Gcm::new_from_slice(key).expect("密钥长度固定为 32 字节")
 }
 
-/// 用 PIN 加密熵。头部不加密，但参与认证，改动头部会解密失败。
-pub fn seal(entropy: &[u8], pin: &str, params: KdfParams) -> Result<Vec<u8>, Error> {
-    check_pin(pin)?;
+/// 头部不加密，但参与认证，改动头部会解密失败。
+fn seal_with(prefix: &[u8], entropy: &[u8], password: &[u8], params: KdfParams) -> Result<Vec<u8>, Error> {
     let mut salt = [0u8; SALT_LEN];
     let mut nonce = [0u8; NONCE_LEN];
     getrandom::fill(&mut salt).map_err(|_| Error::Random)?;
     getrandom::fill(&mut nonce).map_err(|_| Error::Random)?;
 
-    let mut sealed = Vec::with_capacity(HEADER_LEN + entropy.len() + 16);
-    sealed.push(FORMAT);
+    let mut sealed = prefix.to_vec();
     sealed.extend_from_slice(&params.memory_kib.to_le_bytes());
     sealed.extend_from_slice(&params.iterations.to_le_bytes());
     sealed.extend_from_slice(&params.parallelism.to_le_bytes());
     sealed.extend_from_slice(&salt);
     sealed.extend_from_slice(&nonce);
 
-    let key = derive_key(pin, &salt, params)?;
+    let key = derive_key(password, &salt, params)?;
     let ciphertext = cipher(&key)
         .encrypt(
             &Nonce::from(nonce),
@@ -106,25 +110,26 @@ pub fn seal(entropy: &[u8], pin: &str, params: KdfParams) -> Result<Vec<u8>, Err
     Ok(sealed)
 }
 
-/// 用 PIN 解开。PIN 错误和数据损坏无法区分，都返回 `WrongPin`。
-pub fn open(sealed: &[u8], pin: &str) -> Result<Zeroizing<Vec<u8>>, Error> {
-    check_pin(pin)?;
-    if sealed.len() <= HEADER_LEN || sealed[0] != FORMAT {
+/// `prefix` 是头部里参数之前的长度。密码错误和数据损坏无法区分，都返回 `WrongPin`。
+fn open_with(prefix: usize, sealed: &[u8], password: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error> {
+    let salt_at = prefix + PARAMS_LEN;
+    let nonce_at = salt_at + SALT_LEN;
+    let header_len = nonce_at + NONCE_LEN;
+    if sealed.len() <= header_len {
         return Err(Error::UnsupportedVault);
     }
     let field = |at: usize| u32::from_le_bytes(sealed[at..at + 4].try_into().expect("4 字节"));
     let params = KdfParams {
-        memory_kib: field(1),
-        iterations: field(5),
-        parallelism: field(9),
+        memory_kib: field(prefix),
+        iterations: field(prefix + 4),
+        parallelism: field(prefix + 8),
     };
     if !params.is_acceptable() {
         return Err(Error::UnsupportedVault);
     }
-    let (header, ciphertext) = sealed.split_at(HEADER_LEN);
-    let salt = &header[13..13 + SALT_LEN];
-    let nonce: [u8; NONCE_LEN] = header[13 + SALT_LEN..].try_into().expect("12 字节");
-    let key = derive_key(pin, salt, params)?;
+    let (header, ciphertext) = sealed.split_at(header_len);
+    let nonce: [u8; NONCE_LEN] = header[nonce_at..].try_into().expect("12 字节");
+    let key = derive_key(password, &header[salt_at..nonce_at], params)?;
     let mut plain = cipher(&key)
         .decrypt(
             &Nonce::from(nonce),
@@ -139,6 +144,45 @@ pub fn open(sealed: &[u8], pin: &str) -> Result<Zeroizing<Vec<u8>>, Error> {
     Ok(entropy)
 }
 
+/// PIN 和硬件结果拼在一起作为 Argon2id 的密码。结果长度不对时拒绝，不能退化成只靠 PIN。
+fn bound_password(pin: &str, tag: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error> {
+    check_pin(pin)?;
+    if tag.len() != TAG_LEN {
+        return Err(Error::UnsupportedVault);
+    }
+    let mut password = Zeroizing::new(Vec::with_capacity(pin.len() + TAG_LEN));
+    password.extend_from_slice(pin.as_bytes());
+    password.extend_from_slice(tag);
+    Ok(password)
+}
+
+/// 密文是不是当前格式。不是时要走 [`open_legacy`]。
+pub fn is_bound(sealed: &[u8]) -> bool {
+    sealed.starts_with(&MAGIC)
+}
+
+/// 用 PIN 和硬件结果加密熵。
+pub fn seal(entropy: &[u8], pin: &str, tag: &[u8], params: KdfParams) -> Result<Vec<u8>, Error> {
+    seal_with(&MAGIC, entropy, &bound_password(pin, tag)?, params)
+}
+
+pub fn open(sealed: &[u8], pin: &str, tag: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error> {
+    let password = bound_password(pin, tag)?;
+    if !is_bound(sealed) {
+        return Err(Error::UnsupportedVault);
+    }
+    open_with(MAGIC.len(), sealed, &password)
+}
+
+/// 解开旧格式，只用于迁移。这里拿到的是平台层已经去掉硬件那层的内容。
+pub fn open_legacy(sealed: &[u8], pin: &str) -> Result<Zeroizing<Vec<u8>>, Error> {
+    check_pin(pin)?;
+    if sealed.first() != Some(&LEGACY_FORMAT) {
+        return Err(Error::UnsupportedVault);
+    }
+    open_with(1, sealed, pin.as_bytes())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,6 +192,7 @@ mod tests {
         iterations: 1,
         parallelism: 1,
     };
+    const TAG: [u8; TAG_LEN] = [5; TAG_LEN];
 
     #[test]
     fn easy_pins_are_weak() {
@@ -163,53 +208,85 @@ mod tests {
 
     #[test]
     fn seal_and_open() {
-        let sealed = seal(&[7u8; 32], "123456", FAST).unwrap();
-        assert_eq!(*open(&sealed, "123456").unwrap(), vec![7u8; 32]);
+        let sealed = seal(&[7u8; 32], "123456", &TAG, FAST).unwrap();
+        assert!(is_bound(&sealed));
+        assert_eq!(*open(&sealed, "123456", &TAG).unwrap(), vec![7u8; 32]);
     }
 
     #[test]
     fn wrong_pin_fails() {
-        let sealed = seal(&[7u8; 32], "123456", FAST).unwrap();
-        assert_eq!(open(&sealed, "654321").unwrap_err(), Error::WrongPin);
+        let sealed = seal(&[7u8; 32], "123456", &TAG, FAST).unwrap();
+        assert_eq!(open(&sealed, "654321", &TAG).unwrap_err(), Error::WrongPin);
+    }
+
+    /// 只有 PIN 解不开。这是硬件绑定的全部意义：离线试 PIN 拿不到硬件结果。
+    #[test]
+    fn the_right_pin_needs_the_hardware_result() {
+        let sealed = seal(&[7u8; 32], "123456", &TAG, FAST).unwrap();
+        assert_eq!(open(&sealed, "123456", &[6; TAG_LEN]).unwrap_err(), Error::WrongPin);
+        assert_eq!(open_legacy(&sealed, "123456").unwrap_err(), Error::UnsupportedVault);
+    }
+
+    #[test]
+    fn a_short_hardware_result_is_refused() {
+        for tag in [&[][..], &[5; 31][..], &[5; 33][..]] {
+            assert_eq!(
+                seal(&[1u8; 16], "123456", tag, FAST).unwrap_err(),
+                Error::UnsupportedVault
+            );
+        }
+        let sealed = seal(&[7u8; 32], "123456", &TAG, FAST).unwrap();
+        assert_eq!(open(&sealed, "123456", &[]).unwrap_err(), Error::UnsupportedVault);
+    }
+
+    #[test]
+    fn legacy_vaults_still_open() {
+        let sealed = seal_with(&[LEGACY_FORMAT], &[7u8; 32], b"123456", FAST).unwrap();
+        assert!(!is_bound(&sealed));
+        assert_eq!(*open_legacy(&sealed, "123456").unwrap(), vec![7u8; 32]);
+        assert_eq!(open_legacy(&sealed, "654321").unwrap_err(), Error::WrongPin);
+        assert_eq!(open(&sealed, "123456", &TAG).unwrap_err(), Error::UnsupportedVault);
     }
 
     #[test]
     fn ciphertext_does_not_contain_the_entropy() {
-        let sealed = seal(&[0xABu8; 32], "123456", FAST).unwrap();
+        let sealed = seal(&[0xABu8; 32], "123456", &TAG, FAST).unwrap();
         assert!(!sealed.windows(8).any(|w| w == [0xAB; 8]));
     }
 
     #[test]
     fn same_input_produces_different_ciphertext() {
         assert_ne!(
-            seal(&[1u8; 16], "123456", FAST).unwrap(),
-            seal(&[1u8; 16], "123456", FAST).unwrap()
+            seal(&[1u8; 16], "123456", &TAG, FAST).unwrap(),
+            seal(&[1u8; 16], "123456", &TAG, FAST).unwrap()
         );
     }
 
     #[test]
     fn tampering_is_detected() {
-        let sealed = seal(&[7u8; 32], "123456", FAST).unwrap();
-        for at in [13, HEADER_LEN - 1, HEADER_LEN, sealed.len() - 1] {
+        let header = MAGIC.len() + PARAMS_LEN + SALT_LEN + NONCE_LEN;
+        let sealed = seal(&[7u8; 32], "123456", &TAG, FAST).unwrap();
+        for at in [MAGIC.len() + PARAMS_LEN, header - 1, header, sealed.len() - 1] {
             let mut bad = sealed.clone();
             bad[at] ^= 1;
-            assert_eq!(open(&bad, "123456").unwrap_err(), Error::WrongPin, "offset {at}");
+            assert_eq!(open(&bad, "123456", &TAG).unwrap_err(), Error::WrongPin, "offset {at}");
         }
     }
 
     #[test]
     fn weakened_kdf_header_is_rejected() {
-        let mut sealed = seal(&[7u8; 32], "123456", FAST).unwrap();
-        sealed[1..5].copy_from_slice(&1024u32.to_le_bytes());
-        assert_eq!(open(&sealed, "123456").unwrap_err(), Error::UnsupportedVault);
+        let mut sealed = seal(&[7u8; 32], "123456", &TAG, FAST).unwrap();
+        sealed[MAGIC.len()..MAGIC.len() + 4].copy_from_slice(&1024u32.to_le_bytes());
+        assert_eq!(open(&sealed, "123456", &TAG).unwrap_err(), Error::UnsupportedVault);
     }
 
     #[test]
     fn rejects_bad_pin_formats_and_vaults() {
         for pin in ["12345", "1234567", "12345a", ""] {
-            assert_eq!(seal(&[1u8; 16], pin, FAST).unwrap_err(), Error::InvalidPin);
+            assert_eq!(seal(&[1u8; 16], pin, &TAG, FAST).unwrap_err(), Error::InvalidPin);
         }
-        assert_eq!(open(&[9u8; 80], "123456").unwrap_err(), Error::UnsupportedVault);
-        assert_eq!(open(&[1u8; 4], "123456").unwrap_err(), Error::UnsupportedVault);
+        assert_eq!(open(&[9u8; 80], "123456", &TAG).unwrap_err(), Error::UnsupportedVault);
+        assert_eq!(open(&MAGIC, "123456", &TAG).unwrap_err(), Error::UnsupportedVault);
+        assert_eq!(open_legacy(&[1u8; 4], "123456").unwrap_err(), Error::UnsupportedVault);
     }
 }

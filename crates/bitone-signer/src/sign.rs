@@ -395,8 +395,8 @@ mod tests {
         );
     }
 
-    fn typed(s: &Setup, primary: &str, chain_id: serde_json::Value) -> SignRequest {
-        let data = serde_json::json!({
+    fn typed_data(primary: &str, chain_id: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
             "types": {
                 "EIP712Domain": [
                     {"name": "name", "type": "string"},
@@ -406,16 +406,31 @@ mod tests {
                 primary: [
                     {"name": "owner", "type": "address"},
                     {"name": "spender", "type": "address"},
-                    {"name": "value", "type": "uint256"}
+                    {"name": "value", "type": "uint256"},
+                    {"name": "nonce", "type": "uint256"},
+                    {"name": "deadline", "type": "uint256"}
                 ]
             },
             "primaryType": primary,
             "domain": {"name": "Tether", "chainId": chain_id, "verifyingContract": USDT},
-            "message": {"owner": PEER, "spender": PEER, "value": "115792089237316195423570985008687907853269984665640564039457584007913129639935"}
-        });
-        let mut req = request(s, "ethereum", serde_json::to_vec(&data).unwrap());
+            "message": {
+                "owner": PEER,
+                "spender": PEER,
+                "value": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+                "nonce": 0,
+                "deadline": 1
+            }
+        })
+    }
+
+    fn typed_request(s: &Setup, data: &serde_json::Value) -> SignRequest {
+        let mut req = request(s, "ethereum", serde_json::to_vec(data).unwrap());
         req.kind = KIND_TYPED_DATA;
         req
+    }
+
+    fn typed(s: &Setup, primary: &str, chain_id: serde_json::Value) -> SignRequest {
+        typed_request(s, &typed_data(primary, chain_id))
     }
 
     #[test]
@@ -440,6 +455,99 @@ mod tests {
         let s = setup();
         assert_eq!(
             forbidden(review(&s, &typed(&s, "Order", 1.into()))),
+            Some(Forbid::MessageSigning)
+        );
+    }
+
+    #[test]
+    fn permit2_is_an_approval() {
+        let s = setup();
+        let data = serde_json::json!({
+            "types": {
+                "EIP712Domain": [
+                    {"name": "name", "type": "string"},
+                    {"name": "chainId", "type": "uint256"},
+                    {"name": "verifyingContract", "type": "address"}
+                ],
+                "PermitSingle": [
+                    {"name": "details", "type": "PermitDetails"},
+                    {"name": "spender", "type": "address"},
+                    {"name": "sigDeadline", "type": "uint256"}
+                ],
+                "PermitDetails": [
+                    {"name": "token", "type": "address"},
+                    {"name": "amount", "type": "uint160"},
+                    {"name": "expiration", "type": "uint48"},
+                    {"name": "nonce", "type": "uint48"}
+                ]
+            },
+            "primaryType": "PermitSingle",
+            "domain": {"name": "Permit2", "chainId": 1, "verifyingContract": USDT},
+            "message": {
+                "details": {"token": USDT, "amount": "1000000", "expiration": 1, "nonce": 0},
+                "spender": PEER,
+                "sigDeadline": 1
+            }
+        });
+        let review = review(&s, &typed_request(&s, &data));
+        assert_eq!((review.risk, review.confirm), (Risk::Approval, Confirm::Hold));
+        assert_eq!(review.amount.unwrap().text, "1");
+    }
+
+    /// DAI 的 Permit 同名不同字段，`allowed` 才是实际授权，`value` 不进哈希。曾经显示额度 1，实际签下无限授权。
+    #[test]
+    fn dai_style_permit_is_refused() {
+        let s = setup();
+        let mut data = typed_data("Permit", 1.into());
+        data["types"]["Permit"] = serde_json::json!([
+            {"name": "holder", "type": "address"},
+            {"name": "spender", "type": "address"},
+            {"name": "nonce", "type": "uint256"},
+            {"name": "expiry", "type": "uint256"},
+            {"name": "allowed", "type": "bool"}
+        ]);
+        data["message"] = serde_json::json!({
+            "holder": PEER, "spender": PEER, "nonce": 0, "expiry": 0, "allowed": true, "value": "1"
+        });
+        assert_eq!(
+            forbidden(review(&s, &typed_request(&s, &data))),
+            Some(Forbid::MessageSigning)
+        );
+    }
+
+    #[test]
+    fn fields_outside_the_hash_are_refused() {
+        let s = setup();
+        let mut extra_message = typed_data("Permit", 1.into());
+        extra_message["message"]["memo"] = "hidden".into();
+        let mut extra_domain = typed_data("Permit", 1.into());
+        extra_domain["domain"]["salt"] = "hidden".into();
+        for data in [extra_message, extra_domain] {
+            assert_eq!(
+                forbidden(review(&s, &typed_request(&s, &data))),
+                Some(Forbid::ParseFailed)
+            );
+        }
+    }
+
+    /// chainId 不在域的类型里时不进哈希，校验 JSON 里的值没有意义，签名在所有链上都有效。
+    #[test]
+    fn domain_must_commit_to_the_chain_and_the_contract() {
+        let s = setup();
+        let without = |field: &str| {
+            let mut data = typed_data("Permit", 1.into());
+            data["types"]["EIP712Domain"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|f| f["name"] != field);
+            data
+        };
+        assert_eq!(
+            forbidden(review(&s, &typed_request(&s, &without("chainId")))),
+            Some(Forbid::ChainIdMismatch)
+        );
+        assert_eq!(
+            forbidden(review(&s, &typed_request(&s, &without("verifyingContract")))),
             Some(Forbid::MessageSigning)
         );
     }

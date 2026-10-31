@@ -320,7 +320,7 @@ class WalletFlowTest {
     @Test
     fun finishSetupStoresDoubleWrappedVault() = runTest {
         val rig = ready()
-        assertContentEquals("hw:sealed:$PIN".encodeToByteArray(), rig.store.vault)
+        assertContentEquals(boundVault(PIN), rig.store.vault)
         assertEquals(false, rig.store.meta?.imported)
         assertEquals("73C5DA0A", rig.flow.fingerprint)
         assertTrue(rig.core.lastDraft!!.closed)
@@ -588,16 +588,70 @@ class WalletFlowTest {
         val rig =
             rig({
                 it.store.meta = WalletMeta(false, false, "73C5DA0A")
-                it.store.vault = "hw:sealed:$PIN".encodeToByteArray()
+                it.store.vault = boundVault(PIN)
                 it.store.pin = PinRecord(MAX_PIN_FAILURES, 1, 0)
             })
         assertEquals(Screen.Wiped, boot(rig).screen)
         assertNull(rig.store.vault)
     }
 
+    /** 硬件结果按次认证，所以每猜一次 PIN 都要过一次系统屏幕锁。 */
     @Test
-    fun retryAfterWrongPinConfirmsTheDeviceLockFirst() = runTest {
+    fun everyAttemptConfirmsTheDeviceLock() = runTest {
         val rig = ready()
+        val flow = rig.flow
+        val before = rig.key.binds
+        openUnlock(flow)
+        tryPin(flow, BAD_PIN)
+        assertEquals(before + 1, rig.key.binds)
+        tryPin(flow, BAD_PIN)
+        assertEquals(before + 2, rig.key.binds)
+
+        // 不过手机锁就不算一次尝试。
+        rig.key.cancelAuth = true
+        tryPin(flow, BAD_PIN)
+        assertEquals(2, rig.store.pin.failures)
+        assertNotNull(flow.unlockError)
+    }
+
+    @Test
+    fun legacyVaultMigratesOnTheRightPin() = runTest {
+        val rig = ready()
+        rig.store.vault = legacyVault(PIN)
+        val flow = rig.flow
+        openUnlock(flow)
+        tryPin(flow, BAD_PIN)
+        assertContentEquals(legacyVault(PIN), rig.store.vault)
+        assertEquals(0, rig.key.legacyDropped)
+        tryPin(flow, PIN)
+        assertContentEquals(boundVault(PIN), rig.store.vault)
+        assertEquals(1, rig.key.legacyDropped)
+    }
+
+    /** 迁移没走完时旧密文和旧密钥都在，下次还能解开。 */
+    @Test
+    fun cancelledMigrationKeepsTheLegacyVault() = runTest {
+        val rig = ready()
+        rig.store.vault = legacyVault(PIN)
+        val flow = rig.flow
+        openUnlock(flow)
+        rig.key.cancelFor = PIN
+        tryPin(flow, PIN)
+        assertEquals(Screen.Unlock, flow.screen)
+        assertContentEquals(legacyVault(PIN), rig.store.vault)
+        assertEquals(0, rig.key.legacyDropped)
+        assertEquals(0, rig.store.pin.failures)
+
+        rig.key.cancelFor = null
+        tryPin(flow, PIN)
+        assertContentEquals(boundVault(PIN), rig.store.vault)
+        assertEquals(1, rig.key.legacyDropped)
+    }
+
+    @Test
+    fun legacyRetryConfirmsTheDeviceLockFirst() = runTest {
+        val rig = ready()
+        rig.store.vault = legacyVault(PIN)
         val flow = rig.flow
         openUnlock(flow)
         tryPin(flow, BAD_PIN)
@@ -605,7 +659,6 @@ class WalletFlowTest {
         tryPin(flow, BAD_PIN)
         assertEquals(1, rig.key.confirmations)
 
-        // 不过手机锁就不算一次尝试。
         rig.key.cancelConfirm = true
         tryPin(flow, BAD_PIN)
         assertEquals(2, rig.store.pin.failures)
@@ -650,7 +703,7 @@ class WalletFlowTest {
         val rig =
             rig({
                 it.store.meta = WalletMeta(false, false, "73C5DA0A")
-                it.store.vault = "hw:sealed:$PIN".encodeToByteArray()
+                it.store.vault = boundVault(PIN)
                 it.store.pin = PinRecord(MAX_PIN_FAILURES, 1, 0)
                 it.key.changed = true
             })
@@ -711,7 +764,7 @@ class WalletFlowTest {
         val rig =
             rig({
                 it.store.meta = WalletMeta(imported = true, passphrase = false, fingerprint = "73C5DA0A")
-                it.store.vault = "hw:sealed:$PIN".encodeToByteArray()
+                it.store.vault = boundVault(PIN)
             })
         val flow = boot(rig)
         openUnlock(flow)
@@ -823,7 +876,7 @@ class WalletFlowTest {
         val rig =
             rig({
                 it.store.meta = WalletMeta(imported = false, passphrase = true, fingerprint = null)
-                it.store.vault = "hw:sealed:$PIN".encodeToByteArray()
+                it.store.vault = boundVault(PIN)
             })
         val flow = boot(rig)
         openUnlock(flow)

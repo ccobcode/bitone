@@ -108,6 +108,14 @@ fun reviewOf(
         requestFingerprint = requestFingerprint,
     )
 
+fun tagFor(pin: String) = "tag:$pin".encodeToByteArray()
+
+/** 当前格式的密文：解开要 PIN 和硬件对这个 PIN 的结果。 */
+fun boundVault(pin: String) = "sealed:$pin:tag:$pin".encodeToByteArray()
+
+/** 旧格式的文件：外面包着硬件加密，里面只靠 PIN。 */
+fun legacyVault(pin: String) = "hw:sealed:$pin".encodeToByteArray()
+
 val Words12 = List(12) { "word$it" }
 val Words24 = List(24) { "word$it" }
 
@@ -125,7 +133,7 @@ class FakeDraft(private val list: List<String>, override val imported: Boolean) 
 
     override fun checkWord(index: Int, word: String) = list[index] == word
 
-    override fun seal(pin: String) = "sealed:$pin".encodeToByteArray()
+    override fun seal(pin: String, tag: ByteArray) = "sealed:$pin:${tag.decodeToString()}".encodeToByteArray()
 
     override fun close() {
         closed = true
@@ -181,7 +189,7 @@ class FakeWallet(private val passphrase: String, private val core: FakeCore) : U
         return core.walletWords
     }
 
-    override fun seal(pin: String) = "sealed:$pin".encodeToByteArray()
+    override fun seal(pin: String, tag: ByteArray) = "sealed:$pin:${tag.decodeToString()}".encodeToByteArray()
 
     override fun publicKeys(imported: Boolean) = keysFor(fingerprint())
 
@@ -314,12 +322,20 @@ class FakeCore : WalletCore {
         return FakeDraft(words, imported = true).also { lastDraft = it }
     }
 
-    override fun open(sealed: ByteArray, pin: String, passphrase: String): UnlockedWallet {
+    override fun open(sealed: ByteArray, pin: String, tag: ByteArray, passphrase: String): UnlockedWallet {
         opens++
         if (killDuringOpen) error("进程被杀")
+        if (sealed.decodeToString() != "sealed:$pin:${tag.decodeToString()}") throw WalletCoreException.WrongPin()
+        return FakeWallet(passphrase, this).also { lastWallet = it }
+    }
+
+    override fun openLegacy(sealed: ByteArray, pin: String, passphrase: String): UnlockedWallet {
+        opens++
         if (sealed.decodeToString() != "sealed:$pin") throw WalletCoreException.WrongPin()
         return FakeWallet(passphrase, this).also { lastWallet = it }
     }
+
+    override fun isBoundVault(vault: ByteArray) = vault.decodeToString().startsWith("sealed:")
 
     override fun qrMatrix(part: String) = QrMatrix(2, BooleanArray(4))
 
@@ -398,18 +414,30 @@ class FakeCore : WalletCore {
 class FakeHardwareKey : HardwareKey {
     var lost = false
     var cancelAuth = false
-    var cancelWrap = false
+
+    /** 只取消这个 PIN 的确认，比如修改 PIN 时的新 PIN。 */
+    var cancelFor: String? = null
     var unavailable = false
     var deleted = 0
+    var legacyDropped = 0
+    var binds = 0
     var confirmations = 0
     var cancelConfirm = false
     var changed = false
 
-    override suspend fun wrap(plain: ByteArray): ByteArray {
+    override suspend fun bind(pin: String): ByteArray {
+        if (lost) throw HardwareKeyException.Lost("失效")
+        if (cancelAuth || cancelFor == pin) throw HardwareKeyException.AuthCancelled()
+        binds++
+        return tagFor(pin)
+    }
+
+    override suspend fun enroll(pin: String): ByteArray {
         if (unavailable) throw HardwareKeyException.Unavailable("无")
-        if (cancelAuth || cancelWrap) throw HardwareKeyException.AuthCancelled()
+        if (cancelAuth || cancelFor == pin) throw HardwareKeyException.AuthCancelled()
         lost = false
-        return "hw:".encodeToByteArray() + plain
+        binds++
+        return tagFor(pin)
     }
 
     override suspend fun unwrap(wrapped: ByteArray): ByteArray {
@@ -422,6 +450,10 @@ class FakeHardwareKey : HardwareKey {
 
     override fun delete() {
         deleted++
+    }
+
+    override fun dropLegacy() {
+        legacyDropped++
     }
 
     override suspend fun confirmDeviceLock() {

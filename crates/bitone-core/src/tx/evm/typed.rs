@@ -12,6 +12,35 @@ use bitcoin::hex::FromHex;
 use serde_json::Value;
 use std::collections::BTreeSet;
 
+/// 接受的消息和它们的规范类型串，逐字比对。名字相同但字段不同的是另一种消息，
+/// 比如 DAI 的 Permit 用 `allowed` 代替 `value`，这里显示的额度就和实际授权无关。
+const ACCEPTED: [(&str, &str); 5] = [
+    (
+        "Permit",
+        "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)",
+    ),
+    (
+        "PermitSingle",
+        "PermitSingle(PermitDetails details,address spender,uint256 sigDeadline)\
+         PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)",
+    ),
+    (
+        "PermitBatch",
+        "PermitBatch(PermitDetails[] details,address spender,uint256 sigDeadline)\
+         PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)",
+    ),
+    (
+        "PermitTransferFrom",
+        "PermitTransferFrom(TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline)\
+         TokenPermissions(address token,uint256 amount)",
+    ),
+    (
+        "PermitBatchTransferFrom",
+        "PermitBatchTransferFrom(TokenPermissions[] permitted,address spender,uint256 nonce,uint256 deadline)\
+         TokenPermissions(address token,uint256 amount)",
+    ),
+];
+
 fn field_list<'a>(types: &'a Value, name: &str) -> Result<Vec<(&'a str, &'a str)>, Forbid> {
     types[name]
         .as_array()
@@ -132,8 +161,13 @@ fn encode_value(types: &Value, kind: &str, value: &Value) -> Result<[u8; 32], Fo
 }
 
 fn hash_struct(types: &Value, name: &str, value: &Value) -> Result<[u8; 32], Forbid> {
+    let fields = field_list(types, name)?;
+    // 不进哈希的键不能留下，否则屏幕上的内容可以和签名无关。
+    if value.as_object().map(|object| object.len()) != Some(fields.len()) {
+        return Err(Forbid::ParseFailed);
+    }
     let mut encoded = keccak(encode_type(types, name)?.as_bytes()).to_vec();
-    for (field, kind) in field_list(types, name)? {
+    for (field, kind) in fields {
         let item = value.get(field).ok_or(Forbid::ParseFailed)?;
         encoded.extend_from_slice(&encode_value(types, kind, item)?);
     }
@@ -148,6 +182,27 @@ pub fn typed_data_hash(data: &Value) -> Result<[u8; 32], Forbid> {
     preimage.extend_from_slice(&hash_struct(types, "EIP712Domain", &data["domain"])?);
     preimage.extend_from_slice(&hash_struct(types, primary, &data["message"])?);
     Ok(keccak(&preimage))
+}
+
+/// 类型来自请求，不可信。核对读的字段都要确实进了哈希，域里的网络和合约也要真的被签名承诺。
+fn check_schema(data: &Value) -> Result<(), Forbid> {
+    let types = &data["types"];
+    let primary = data["primaryType"].as_str().ok_or(Forbid::MessageSigning)?;
+    let (_, canonical) = ACCEPTED
+        .iter()
+        .find(|(name, _)| *name == primary)
+        .ok_or(Forbid::MessageSigning)?;
+    if encode_type(types, primary)? != *canonical {
+        return Err(Forbid::MessageSigning);
+    }
+    let domain = field_list(types, "EIP712Domain")?;
+    if !domain.contains(&("chainId", "uint256")) {
+        return Err(Forbid::ChainIdMismatch);
+    }
+    if !domain.contains(&("verifyingContract", "address")) {
+        return Err(Forbid::MessageSigning);
+    }
+    Ok(())
 }
 
 fn text_field<'a>(value: &'a Value, name: &str) -> Result<&'a str, Forbid> {
@@ -198,6 +253,7 @@ pub fn review(
     path: &DerivationPath,
 ) -> Result<Review, Forbid> {
     let data: Value = serde_json::from_slice(&request.payload).map_err(|_| Forbid::ParseFailed)?;
+    check_schema(&data)?;
     let (spender, grants) = permit_grants(&data)?;
     let expected = network.evm_chain_id().ok_or(Forbid::UnknownNetwork)?;
     let chain_id = uint_word(data["domain"].get("chainId").ok_or(Forbid::ChainIdMismatch)?)
@@ -263,6 +319,21 @@ mod tests {
     use super::*;
     use bitcoin::hex::DisplayHex;
     use serde_json::json;
+
+    /// 期望值是 EIP-2612 和 Permit2 合约里的常量，防止类型串抄错。
+    #[test]
+    fn accepted_types_match_the_contracts() {
+        let hashes = [
+            "6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9",
+            "f3841cd1ff0085026a6327b620b67997ce40f282c88a8e905a7a5626e310f3d0",
+            "af1b0d30d2cab0380e68f0689007e3254993c596f2fdd0aaa7f4d04f79440863",
+            "939c21a48a8dbe3a9a2404a1d46691e4d39f6583d6ec6b35714604c986d80106",
+            "fcf35f5ac6a2c28868dc44c302166470266239195f02b0ee408334829333b766",
+        ];
+        for ((name, canonical), hash) in ACCEPTED.iter().zip(hashes) {
+            assert_eq!(keccak(canonical.as_bytes()).to_lower_hex_string(), hash, "{name}");
+        }
+    }
 
     /// EIP-712 规范里的 Mail 示例。
     #[test]

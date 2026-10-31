@@ -1,42 +1,63 @@
-//! 清单包的验签。密钥是 RFC 8032 第一组测试向量，也是开发用的厂商密钥。
+//! 清单包的验签。这里的私钥写在代码里，只用来测试规则。
 
 use bitone_core::Error;
 use bitone_core::manifest::{Manifest, VENDOR_KEY};
-use ed25519_dalek::{Signer, SigningKey};
+use p256::ecdsa::signature::Signer;
+use p256::ecdsa::{DerSignature, SigningKey};
+use p256::pkcs8::EncodePublicKey;
 
-const SECRET: [u8; 32] = [
-    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4, 0x44, 0x49, 0xc5,
-    0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
-];
+const SECRET: [u8; 32] = [3; 32];
 
-fn package(version: u32, secret: &[u8; 32]) -> Vec<u8> {
-    let mut manifest = Manifest::builtin().clone();
-    manifest.version = version;
-    let body = serde_json::to_vec(&manifest).unwrap();
-    let mut out = SigningKey::from_bytes(secret).sign(&body).to_bytes().to_vec();
+fn key(secret: &[u8; 32]) -> SigningKey {
+    SigningKey::from_slice(secret).unwrap()
+}
+
+fn public() -> Vec<u8> {
+    key(&SECRET).verifying_key().to_public_key_der().unwrap().into_vec()
+}
+
+fn signed(manifest: &Manifest, secret: &[u8; 32]) -> Vec<u8> {
+    let body = serde_json::to_vec(manifest).unwrap();
+    let signature: DerSignature = key(secret).sign(&body);
+    let mut out = signature.as_bytes().to_vec();
     out.extend_from_slice(&body);
     out
 }
 
+fn manifest(version: u32) -> Manifest {
+    let mut manifest = Manifest::builtin().clone();
+    manifest.version = version;
+    manifest
+}
+
+fn package(version: u32, secret: &[u8; 32]) -> Vec<u8> {
+    signed(&manifest(version), secret)
+}
+
+/// 私钥公开的密钥不能当厂商密钥，否则任何人都能发清单。走到验签这一步也说明厂商公钥能解析。
 #[test]
-fn dev_vendor_key_matches_the_test_secret() {
-    assert_eq!(SigningKey::from_bytes(&SECRET).verifying_key().to_bytes(), VENDOR_KEY);
+fn vendor_key_is_not_the_test_key() {
+    assert_ne!(public(), VENDOR_KEY);
+    assert_eq!(
+        Manifest::from_package(&package(5, &SECRET), &VENDOR_KEY, 0),
+        Err(Error::BadSignature)
+    );
 }
 
 #[test]
 fn valid_package_is_accepted() {
-    let manifest = Manifest::from_package(&package(5, &SECRET), &VENDOR_KEY, 4).unwrap();
+    let manifest = Manifest::from_package(&package(5, &SECRET), &public(), 4).unwrap();
     assert_eq!(manifest.version, 5);
 }
 
 #[test]
 fn version_cannot_go_backwards() {
     assert_eq!(
-        Manifest::from_package(&package(5, &SECRET), &VENDOR_KEY, 5),
+        Manifest::from_package(&package(5, &SECRET), &public(), 5),
         Err(Error::StaleManifest)
     );
     assert_eq!(
-        Manifest::from_package(&package(4, &SECRET), &VENDOR_KEY, 5),
+        Manifest::from_package(&package(4, &SECRET), &public(), 5),
         Err(Error::StaleManifest)
     );
 }
@@ -44,7 +65,7 @@ fn version_cannot_go_backwards() {
 #[test]
 fn package_signed_by_someone_else_is_rejected() {
     assert_eq!(
-        Manifest::from_package(&package(5, &[7; 32]), &VENDOR_KEY, 0),
+        Manifest::from_package(&package(5, &[7; 32]), &public(), 0),
         Err(Error::BadSignature)
     );
 }
@@ -55,8 +76,40 @@ fn tampering_is_rejected() {
     let last = tampered.len() - 2;
     tampered[last] ^= 1;
     assert_eq!(
-        Manifest::from_package(&tampered, &VENDOR_KEY, 0),
+        Manifest::from_package(&tampered, &public(), 0),
         Err(Error::BadSignature)
     );
-    assert_eq!(Manifest::from_package(&[0; 64], &VENDOR_KEY, 0), Err(Error::Decode));
+    assert_eq!(Manifest::from_package(&[0; 64], &public(), 0), Err(Error::Decode));
+}
+
+/// 签名长度来自包本身，长度和实际内容对不上时不能越界。
+#[test]
+fn truncated_packages_are_rejected() {
+    let whole = package(5, &SECRET);
+    for length in [0, 1, 2, 16, usize::from(whole[1]) + 1] {
+        assert_eq!(
+            Manifest::from_package(&whole[..length], &public(), 0),
+            Err(Error::Decode),
+            "{length}"
+        );
+    }
+}
+
+/// 签名通过就整体覆盖，内置资产和原生币也一样。
+#[test]
+fn a_signed_package_overrides_the_builtin_manifest() {
+    let mut changed = manifest(5);
+    let native = changed
+        .assets
+        .iter_mut()
+        .find(|a| a.network == "ethereum" && a.contract == "native")
+        .unwrap();
+    native.symbol = "NEW".into();
+    native.decimals = 9;
+    changed.assets.retain(|a| a.network != "polygon");
+
+    let accepted = Manifest::from_package(&signed(&changed, &SECRET), &public(), 0).unwrap();
+    let native = accepted.native("ethereum").unwrap();
+    assert_eq!((native.symbol.as_str(), native.decimals), ("NEW", 9));
+    assert!(accepted.native("polygon").is_none());
 }

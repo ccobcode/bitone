@@ -1,5 +1,5 @@
 import { must } from "../testing";
-import { createPrivateKey, sign } from "node:crypto";
+import { generateKeyPairSync, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { FrameReceiver } from "./pkg/bitone_wasm";
@@ -166,24 +166,15 @@ describe("内置清单", () => {
 });
 
 describe("清单包", () => {
-    // 开发用的厂商公钥是 RFC 8032 第一组测试向量，这里用对应的私钥签名。
-    const SECRET = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
-    const PKCS8 = "302e020100300506032b657004220420";
-
+    // 临时生成的密钥。厂商私钥不进仓库，这里只能测拒绝，接受的路径由 Rust 的测试覆盖。
     function pack(version: number): Uint8Array {
-        const key = createPrivateKey({ key: Buffer.from(PKCS8 + SECRET, "hex"), format: "der", type: "pkcs8" });
+        const { privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
         const body = Buffer.from(JSON.stringify({ version, assets: [] }));
-        return Uint8Array.from(Buffer.concat([sign(null, body, key), body]));
+        return Uint8Array.from(Buffer.concat([sign("sha256", body, privateKey), body]));
     }
 
-    it("校验通过时返回版本号", () => {
-        expect(manifestPackageVersion(pack(7))).toBe(7);
-    });
-
-    it("内容被改过时拒绝", () => {
-        const bytes = pack(7);
-        bytes[bytes.length - 2] = (bytes[bytes.length - 2] ?? 0) ^ 1;
-        expect(() => manifestPackageVersion(bytes)).toThrow("签名无效");
+    it("不是厂商密钥签的包被拒绝", () => {
+        expect(() => manifestPackageVersion(pack(7))).toThrow("签名无效");
     });
 
     it("太短或不是清单包时拒绝", () => {

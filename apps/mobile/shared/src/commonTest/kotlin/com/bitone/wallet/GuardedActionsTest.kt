@@ -42,7 +42,7 @@ class GuardedActionsTest {
         val scope = CoroutineScope(dispatcher + SupervisorJob() + CoroutineExceptionHandler { _, _ -> })
         val rig = Rig(scope, dispatcher)
         rig.store.meta = WalletMeta(false, passphrase, if (passphrase) null else MAIN_FINGERPRINT)
-        rig.store.vault = "hw:sealed:$PIN".encodeToByteArray()
+        rig.store.vault = boundVault(PIN)
         if (!passphrase) rig.store.publicKeys = keysFor(MAIN_FINGERPRINT)
         setup(rig)
         rig.flow.onResume()

@@ -9,7 +9,7 @@ const DOT = String.fromCodePoint(0x00b7);
 const SEMICOLON = String.fromCodePoint(0xff1b);
 
 const BINARY =
-    /\.(png|jpe?g|gif|webp|ico|bmp|tiff?|woff2?|ttf|otf|eot|pdf|zip|gz|tgz|bz2|xz|7z|rar|mp4|webm|mp3|wav|wasm|so|a|db|sqlite3?|bin|jar)$/i;
+    /\.(png|jpe?g|gif|webp|ico|bmp|tiff?|woff2?|ttf|otf|eot|pdf|zip|gz|tgz|bz2|xz|7z|rar|mp4|webm|mp3|wav|wasm|so|a|db|sqlite3?|bin|der|jar)$/i;
 
 // 引用规则本身时可以出现。
 const QUOTED_DOT = String.fromCodePoint(0x300c) + DOT + String.fromCodePoint(0x300d);
