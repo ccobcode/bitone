@@ -41,14 +41,14 @@ import com.ccobcode.bitone.ui.theme.Space
 
 private const val LABEL = "已签名交易二维码"
 
-/** A8 已签名。帧里只有签名，种子已经清除。 */
+/** A8 已签名.帧里只有签名,种子已经清除. */
 @Composable
 fun SignedScreen(flow: WalletFlow, brightness: Brightness) {
-    val review = rememberLatest(flow.review) ?: return
+    val review = rememberLatest(flow.scan.review) ?: return
     val c = BitOneTheme.colors
     var fullscreen by remember { mutableStateOf(false) }
     ShowingQr(flow, brightness)
-    LaunchedEffect(Unit) { flow.playFrames() }
+    LaunchedEffect(Unit) { flow.player.play() }
     Page(
         header = {
             TitleBar(
@@ -60,7 +60,7 @@ fun SignedScreen(flow: WalletFlow, brightness: Brightness) {
         },
         contentAlignment = Alignment.CenterHorizontally,
         contentGap = Space.s4,
-        bottom = { ActionArea { PrimaryButton("完成", onClick = flow::finishSigned) } },
+        bottom = { ActionArea { PrimaryButton("完成", onClick = flow.scan::finishSigned) } },
         overlay = {
             Toast(flow)
             QrFullscreen(flow, LABEL, fullscreen) { fullscreen = it }
@@ -79,16 +79,16 @@ fun SignedScreen(flow: WalletFlow, brightness: Brightness) {
     }
 }
 
-/** A9 核对地址。 */
+/** A9 核对地址. */
 @Composable
 fun AddressScreen(flow: WalletFlow) {
-    val result = rememberLatest(flow.addressReview) ?: return
+    val result = rememberLatest(flow.scan.addressReview) ?: return
     val c = BitOneTheme.colors
     val info = networkInfo(result.network)
     val tone = if (result.belongs) c.ok else c.danger
     Page(
         header = { TitleBar("核对地址", onBack = { flow.back() }, backIcon = Icons.Close) },
-        bottom = { ActionArea { PrimaryButton("完成", onClick = flow::exitRequest) } },
+        bottom = { ActionArea { PrimaryButton("完成", onClick = flow.scan::exitRequest) } },
     ) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
             if (result.belongs) {
@@ -100,7 +100,7 @@ fun AddressScreen(flow: WalletFlow) {
             }
             Column(verticalArrangement = Arrangement.spacedBy(Space.s1)) {
                 Txt(if (result.belongs) "属于本钱包" else "不属于本钱包", size = FontSize.t6, weight = SemiBold, color = tone)
-                Txt(if (result.belongs) "与网页端逐段对比后再收款。" else "不要用这个地址收款。", size = FontSize.t2, color = c.text2)
+                Txt(if (result.belongs) "与网页端逐段对比后再收款." else "不要用这个地址收款.", size = FontSize.t2, color = c.text2)
             }
         }
         AddressCard(

@@ -29,7 +29,7 @@ private class Layer(val path: String, val brush: Brush, val evenOdd: Boolean = f
 
 private class ParsedLayer(val path: Path, val brush: Brush)
 
-/** 路径和颜色来自 design/icons/networks，带底色，裁成圆形。 */
+/** 路径和颜色来自 design/icons/networks,带底色,裁成圆形. */
 private fun layers(network: Network): List<Layer> =
     when (network) {
         Network.Bitcoin ->
@@ -112,7 +112,7 @@ private fun layers(network: Network): List<Layer> =
             )
     }
 
-/** 路径来自 design/icons/assets。这里只有两个非原生币，原生币用网络图标。 */
+/** 路径来自 design/icons/assets.这里只有两个非原生币,原生币用网络图标. */
 private val UsdtLayers =
     listOf(
         Layer("M24 0H0v24h24z", SolidColor(Color(0xFF009393))),
@@ -155,7 +155,7 @@ fun NetworkIcon(network: Network, size: Dp, modifier: Modifier = Modifier) {
     LayeredIcon(parsed, size, modifier)
 }
 
-/** 不在内置清单的代币，虚线问号，见 docs/06-ui.md 第 6 节。 */
+/** 不在内置清单的代币,虚线问号,见 docs/06-ui.md 第 6 节. */
 @Composable
 fun UnlistedIcon(size: Dp) {
     val c = BitOneTheme.colors
@@ -174,7 +174,7 @@ fun UnlistedIcon(size: Dp) {
     }
 }
 
-/** 内置清单里的原生币图标名。 */
+/** 内置清单里的原生币图标名. */
 private fun nativeIcon(name: String): Network? =
     when (name) {
         "btc" -> Network.Bitcoin
@@ -186,7 +186,7 @@ private fun nativeIcon(name: String): Network? =
         else -> null
     }
 
-/** 金额的图标。[icon] 是内置清单的图标名，为空说明核心库按网络加合约没查到，一律问号。清单里有但应用没打包的图标退回 [network] 的图标。代币在非原生链上时右下角加网络角标。 */
+/** 金额的图标.[icon] 是内置清单的图标名,为空说明核心库按网络加合约没查到,一律问号.清单里有但应用没打包的图标退回 [network] 的图标.代币在非原生链上时右下角加网络角标. */
 @Composable
 fun AssetIcon(icon: String?, network: Network?, size: Dp) {
     val token =

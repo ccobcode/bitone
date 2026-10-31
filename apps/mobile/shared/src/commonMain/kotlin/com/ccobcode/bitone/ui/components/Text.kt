@@ -19,13 +19,13 @@ import com.ccobcode.bitone.ui.theme.BitOneTheme
 import com.ccobcode.bitone.ui.theme.FontSize
 import com.ccobcode.bitone.ui.theme.LineHeight
 
-// 字重只用 400、500、600。标题 600，正文和标签 400，强调 500。
+// 字重只用 400,500,600.标题 600,正文和标签 400,强调 500.
 val Medium = FontWeight.W500
 val SemiBold = FontWeight.W600
 
 private val TightFrom = FontSize.t6
 
-/** 字号自带行高，两端来自同一组令牌。 */
+/** 字号自带行高,两端来自同一组令牌. */
 internal fun lineHeightOf(size: TextUnit): TextUnit =
     when (size) {
         FontSize.t1 -> LineHeight.t1
@@ -38,7 +38,7 @@ internal fun lineHeightOf(size: TextUnit): TextUnit =
         else -> LineHeight.t8
     }
 
-/** 24 及以上字距收紧 1%。文字在行内垂直居中。 */
+/** 24 及以上字距收紧 1%.文字在行内垂直居中. */
 internal fun textStyle(
     size: TextUnit,
     weight: FontWeight,
@@ -60,7 +60,7 @@ internal fun textStyle(
     )
 }
 
-/** 等宽字体只用在地址、哈希、路径上，金额和普通数字都用 Inter，字体文件里的数字已经是等宽的。 */
+/** 等宽字体只用在地址,哈希,路径上,金额和普通数字都用 Inter,字体文件里的数字已经是等宽的. */
 @Composable
 fun Txt(
     text: String,
@@ -80,7 +80,7 @@ fun Txt(
     )
 }
 
-/** 助记词不能被截断，放不下时缩小字号。 */
+/** 助记词不能被截断,放不下时缩小字号. */
 @Composable
 fun WordText(word: String, color: Color, modifier: Modifier = Modifier) {
     BasicText(

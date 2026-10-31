@@ -31,33 +31,33 @@ import com.ccobcode.bitone.ui.theme.BitOneTheme
 import com.ccobcode.bitone.ui.theme.FontSize
 import com.ccobcode.bitone.ui.theme.Space
 
-/** 版本号本身是只增不减的整数，防回滚和验签都用它，这里只管显示。 */
+/** 版本号本身是只增不减的整数,防回滚和验签都用它,这里只管显示. */
 internal fun manifestLabel(version: UInt) = "v$version.0.0"
 
-/** A12 内置清单。「更新清单」才打开相机，扫到新包后回到这页，确认时要自检和 PIN。 */
+/** A12 内置清单."更新清单"才打开相机,扫到新包后回到这页,确认时要自检和 PIN. */
 @Composable
 fun ManifestScreen(flow: WalletFlow) {
     val c = BitOneTheme.colors
-    val pending = (flow.scanResult as? ScanResult.Manifest)?.version
-    LaunchedEffect(Unit) { flow.loadManifest() }
+    val pending = (flow.scan.result as? ScanResult.Manifest)?.version
+    LaunchedEffect(Unit) { flow.manifest.load() }
     Page(
         header = { TitleBar("内置清单", onBack = { flow.back() }) },
         bottom = {
             ActionArea {
                 if (pending != null) {
-                    PrimaryButton("确认更新", enabled = !flow.busy, onClick = flow::applyManifest)
+                    PrimaryButton("确认更新", enabled = !flow.busy, onClick = flow.scan::applyManifest)
                 } else {
-                    PrimaryButton("更新清单", enabled = !flow.busy, onClick = flow::openScan)
+                    PrimaryButton("更新清单", enabled = !flow.busy, onClick = flow.scan::open)
                 }
             }
         },
         overlay = { Toast(flow) },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
-            flow.manifestVersion?.let { Txt(manifestLabel(it), size = FontSize.t6, weight = SemiBold) }
+            flow.manifest.version?.let { Txt(manifestLabel(it), size = FontSize.t6, weight = SemiBold) }
             if (pending != null) Chip("新版本 ${manifestLabel(pending)}", c.accentSoft, c.accentText)
         }
-        flow.manifestEntries
+        flow.manifest.entries
             .groupBy { it.networkLabel }
             .forEach { (label, entries) ->
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s2)) {

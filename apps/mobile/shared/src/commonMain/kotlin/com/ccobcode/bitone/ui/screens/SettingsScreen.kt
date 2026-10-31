@@ -36,11 +36,11 @@ import com.ccobcode.bitone.ui.theme.FontSize
 import com.ccobcode.bitone.ui.theme.LineHeight
 import com.ccobcode.bitone.ui.theme.Space
 
-/** A10 设置。分组列表，组内没有分隔线。语言选择和抹除确认在 [MainTabs]，它们要盖住底部导航。 */
+/** A10 设置.分组列表,组内没有分隔线.语言选择和抹除确认在 [MainTabs],它们要盖住底部导航. */
 @Composable
 fun SettingsScreen(flow: WalletFlow, onLanguage: () -> Unit, onWipe: () -> Unit) {
     val c = BitOneTheme.colors
-    LaunchedEffect(Unit) { flow.loadManifestVersion() }
+    LaunchedEffect(Unit) { flow.manifest.loadVersion() }
     Page(
         header = { LargeTitle("设置") },
         contentGap = Space.s4,
@@ -48,37 +48,43 @@ fun SettingsScreen(flow: WalletFlow, onLanguage: () -> Unit, onWipe: () -> Unit)
         overlay = { Toast(flow) },
     ) {
         Card(Modifier.staggerIn(0).fillMaxWidth()) {
-            NavRow("修改 PIN", flow::startChangePin)
-            NavRow("查看助记词", flow::startViewWords)
-            NavRow("内置清单", flow::openManifest) {
-                flow.manifestVersion?.let { Txt(manifestLabel(it), size = FontSize.t2, color = c.text2) }
+            NavRow("修改 PIN", flow.settings::startChangePin)
+            NavRow("查看助记词", flow.settings::startViewWords)
+            NavRow("内置清单", flow.manifest::open) {
+                flow.manifest.version?.let { Txt(manifestLabel(it), size = FontSize.t2, color = c.text2) }
             }
         }
         Card(Modifier.staggerIn(1).fillMaxWidth()) {
-            SwitchRow(flow.autoBrightness, flow::toggleAutoBrightness) {
+            SwitchRow(flow.settings.autoBrightness, flow.settings::toggleAutoBrightness) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Txt("自动亮度")
                     Txt("展示二维码时调到最亮", size = FontSize.t2, color = c.text3)
                 }
             }
             NavRow("语言", onLanguage) {
-                Txt(languageLabel(flow.languageChoice), size = FontSize.t2, color = c.text2)
+                Txt(languageLabel(flow.settings.languageChoice), size = FontSize.t2, color = c.text2)
             }
         }
         Card(Modifier.staggerIn(2).fillMaxWidth()) {
             ListRow {
                 Txt("应用版本", Modifier.weight(1f))
-                Txt(flow.appVersion, size = FontSize.t2, color = c.text2)
+                Txt(flow.settings.appVersion, size = FontSize.t2, color = c.text2)
             }
             Column(
                 Modifier.padding(start = Space.s4, end = Space.s4, top = Space.s1, bottom = Space.s4),
                 verticalArrangement = Arrangement.spacedBy(Space.s2),
             ) {
                 Txt("签名证书指纹")
-                Txt(flow.certificate, size = FontSize.t1, color = c.text2, mono = true, lineHeight = LineHeight.t2)
+                Txt(
+                    flow.settings.certificate,
+                    size = FontSize.t1,
+                    color = c.text2,
+                    mono = true,
+                    lineHeight = LineHeight.t2,
+                )
             }
         }
-        if (flow.canWipe) {
+        if (flow.session.canWipe) {
             Card(Modifier.staggerIn(3).fillMaxWidth()) {
                 ListRow(onClick = onWipe) { Txt("抹除钱包", Modifier.weight(1f), color = c.danger) }
             }
@@ -97,17 +103,17 @@ private fun NavRow(label: String, onClick: () -> Unit, trailing: @Composable () 
 
 private fun languageLabel(choice: Lang?) = choice?.label ?: "自动"
 
-/** 语言选择，立即生效。 */
+/** 语言选择,立即生效. */
 @Composable
 internal fun BoxScope.LanguageSheet(visible: Boolean, flow: WalletFlow, onClose: () -> Unit) {
     Sheet(flow, visible, "语言", onClose, list = true) {
         Column {
             (listOf(null) + Lang.entries).forEach { choice ->
                 ListRow(
-                    selected = choice == flow.languageChoice,
+                    selected = choice == flow.settings.languageChoice,
                     inset = Space.s1,
                     onClick = {
-                        flow.chooseLanguage(choice)
+                        flow.settings.chooseLanguage(choice)
                         onClose()
                     },
                 ) {
@@ -118,26 +124,26 @@ internal fun BoxScope.LanguageSheet(visible: Boolean, flow: WalletFlow, onClose:
     }
 }
 
-/** A10 查看助记词。解锁后才有内容，离开页面或退到后台立刻清掉。 */
+/** A10 查看助记词.解锁后才有内容,离开页面或退到后台立刻清掉. */
 @Composable
 fun ViewWordsScreen(flow: WalletFlow) {
-    val rowHeight = if (flow.viewWords.size <= 12) 40.dp else 32.dp
+    val rowHeight = if (flow.settings.viewWords.size <= 12) 40.dp else 32.dp
     Page(
         header = { TitleBar("查看助记词", onBack = { flow.back() }) },
         contentGap = Space.s4,
-        bottom = { ActionArea { PrimaryButton("完成", onClick = flow::leaveViewWords) } },
+        bottom = { ActionArea { PrimaryButton("完成", onClick = flow.settings::leaveViewWords) } },
     ) {
         Notice("只抄在纸上", NoticeTone.Warn)
-        WordGrid(flow.viewWords, rowHeight)
+        WordGrid(flow.settings.viewWords, rowHeight)
     }
 }
 
-/** 抹除的二次确认，和网页端的确认浮层同一写法：放弃在左，确认在右。 */
+/** 抹除的二次确认,和网页端的确认浮层同一写法:放弃在左,确认在右. */
 @Composable
 internal fun BoxScope.WipeSheet(flow: WalletFlow, visible: Boolean, onCancel: () -> Unit, onConfirm: () -> Unit) {
     val c = BitOneTheme.colors
     Sheet(flow, visible, "抹除钱包", onCancel) {
-        Txt("抹除后只能用助记词恢复。", color = c.text2)
+        Txt("抹除后只能用助记词恢复.", color = c.text2)
         Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
             SecondaryButton("取消", Modifier.weight(1f), enabled = !flow.busy, fill = c.surface3, onClick = onCancel)
             DangerButton("确认抹除", Modifier.weight(1f), enabled = !flow.busy, onClick = onConfirm)

@@ -64,10 +64,10 @@ private const val DOT_POP_DAMPING = 0.4f
 private const val DOT_POP_STIFFNESS = 1000f
 private const val SHAKE_OFFSET = 8f
 
-/** 超过这个长度的等宽值标签和值分两行，右对齐的长地址折行后不好核对。 */
+/** 超过这个长度的等宽值标签和值分两行,右对齐的长地址折行后不好核对. */
 private const val STACK_LENGTH = 26
 
-/** 展示二维码和扫码的页面保持常亮。[maximize] 只管亮度，关掉自动亮度后屏幕照样不灭。 */
+/** 展示二维码和扫码的页面保持常亮.[maximize] 只管亮度,关掉自动亮度后屏幕照样不灭. */
 @Composable
 internal fun KeepScreenOn(brightness: Brightness, maximize: Boolean) {
     DisposableEffect(maximize) {
@@ -76,11 +76,12 @@ internal fun KeepScreenOn(brightness: Brightness, maximize: Boolean) {
     }
 }
 
-/** 二维码页面用：常亮，并按设置调到最高亮度。 */
+/** 二维码页面用:常亮,并按设置调到最高亮度. */
 @Composable
-internal fun ShowingQr(flow: WalletFlow, brightness: Brightness) = KeepScreenOn(brightness, flow.autoBrightness)
+internal fun ShowingQr(flow: WalletFlow, brightness: Brightness) =
+    KeepScreenOn(brightness, flow.settings.autoBrightness)
 
-/** PIN 圆点。填入时弹一下，[errors] 增加时左右抖动并短促震动。 */
+/** PIN 圆点.填入时弹一下,[errors] 增加时左右抖动并短促震动. */
 @Composable
 internal fun PinDots(length: Int, errors: Int = 0) {
     val haptic = LocalHapticFeedback.current
@@ -143,7 +144,7 @@ private fun PinDot(filled: Boolean, error: Boolean) {
     )
 }
 
-/** 助记词格子。整组放在一张卡片上，格子本身没有边框，A1b 用 [highlight] 标出当前位。 */
+/** 助记词格子.整组放在一张卡片上,格子本身没有边框,A1b 用 [highlight] 标出当前位. */
 @Composable
 internal fun WordCell(
     number: Int,
@@ -172,7 +173,7 @@ internal fun WordCell(
     }
 }
 
-/** 助记词网格，三列，无边框。 */
+/** 助记词网格,三列,无边框. */
 @Composable
 internal fun WordGrid(words: List<String>, rowHeight: Dp, loading: Boolean = false) {
     Card {
@@ -184,7 +185,7 @@ internal fun WordGrid(words: List<String>, rowHeight: Dp, loading: Boolean = fal
     }
 }
 
-/** A2 和 A1b 共用的 BIP39 密码开关。 */
+/** A2 和 A1b 共用的 BIP39 密码开关. */
 @Composable
 internal fun PassphraseSwitch(on: Boolean, onToggle: () -> Unit) {
     val c = BitOneTheme.colors
@@ -200,12 +201,12 @@ internal fun PassphraseSwitch(on: Boolean, onToggle: () -> Unit) {
             enter = fadeIn(stateSpec()) + expandVertically(stateSpec()),
             exit = fadeOut(exitSpec()) + shrinkVertically(exitSpec()),
         ) {
-            Txt("密码不写入设备，导出和签名时都要输入。", Modifier.padding(top = Space.s2), size = FontSize.t2, color = c.text3)
+            Txt("密码不写入设备,导出和签名时都要输入.", Modifier.padding(top = Space.s2), size = FontSize.t2, color = c.text3)
         }
     }
 }
 
-/** 三列排布。 */
+/** 三列排布. */
 @Composable
 internal fun <T> ThreeColumns(items: List<T>, cell: @Composable (Int, T, Modifier) -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
@@ -217,7 +218,7 @@ internal fun <T> ThreeColumns(items: List<T>, cell: @Composable (Int, T, Modifie
     }
 }
 
-/** 详情的一行。标签 text-3，值 text，都比主内容小一号，存在感低但一项不少。长的地址和哈希换到下一行，4 个字符一组。 */
+/** 详情的一行.标签 text-3,值 text,都比主内容小一号,存在感低但一项不少.长的地址和哈希换到下一行,4 个字符一组. */
 @Composable
 internal fun DetailRow(label: String, value: String, mono: Boolean = false) {
     val c = BitOneTheme.colors

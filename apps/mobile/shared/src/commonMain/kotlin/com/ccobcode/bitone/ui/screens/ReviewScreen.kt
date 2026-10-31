@@ -64,25 +64,25 @@ import com.ccobcode.bitone.ui.theme.LineHeight
 import com.ccobcode.bitone.ui.theme.Radius
 import com.ccobcode.bitone.ui.theme.Space
 
-private const val FROM_WEB = "BitOne 网页端不会发起这类交易。"
+private const val FROM_WEB = "BitOne 网页端不会发起这类交易."
 
-/** 每个输入固定这几行，A6e 要把它们从详情里分出来。 */
+/** 每个输入固定这几行,A6e 要把它们从详情里分出来. */
 private val INPUT_LABELS = setOf("付款账户", "派生路径", "输入金额")
 private val PARTY_LABELS = setOf("收款地址", "目标合约", "被授权方")
 
-/** 第一屏直接显示的字段，其余进「详情」。这只是展示分组。 */
+/** 第一屏直接显示的字段,其余进"详情".这只是展示分组. */
 private val FIRST_SCREEN_LABELS = setOf("网络", "手续费上限", "手续费", "基础费", "fee_limit")
 private const val CURRENT_CONTROLLER = "当前控制方"
 private const val NEW_CONTROLLER = "新控制方"
 
 /**
- * A6 到 A6e。分类全部来自核心库，这里按 [reviewStyle] 选样式，字段原样画出来。
+ * A6 到 A6e.分类全部来自核心库,这里按 [reviewStyle] 选样式,字段原样画出来.
  *
- * 第一屏只放金额、对方地址、风险、网络和手续费，进入时不做错开，只随页面一起出现。其余字段放在「详情」里，一项都不省略，普通交易默认折叠，高风险样式默认展开。分组只看标签，风险判断全在核心库。
+ * 第一屏只放金额,对方地址,风险,网络和手续费,进入时不做错开,只随页面一起出现.其余字段放在"详情"里,一项都不省略,普通交易默认折叠,高风险样式默认展开.分组只看标签,风险判断全在核心库.
  */
 @Composable
 fun ReviewScreen(flow: WalletFlow) {
-    val review = rememberLatest(flow.review) ?: return
+    val review = rememberLatest(flow.scan.review) ?: return
     val c = BitOneTheme.colors
     val style = reviewStyle(review)
     val network = networkInfo(review.network)
@@ -106,7 +106,7 @@ fun ReviewScreen(flow: WalletFlow) {
                 Counterparty(review, leading = { UnlistedIcon(24.dp) }) { Chip("未知合约", c.warnSoft, c.warn) }
             }
             ReviewStyle.Permission -> {
-                // 权限变更可以和转账打包在一笔交易里，金额不能藏起来。
+                // 权限变更可以和转账打包在一笔交易里,金额不能藏起来.
                 if (review.amount != null) InlineAmount(review, network?.icon)
                 PackedParties(review)
                 Controllers(review)
@@ -124,7 +124,7 @@ fun ReviewScreen(flow: WalletFlow) {
     }
 }
 
-/** 普通转账才是绿色。 */
+/** 普通转账才是绿色. */
 @Composable
 private fun StyleChip(review: ReviewResult, style: ReviewStyle) {
     val c = BitOneTheme.colors
@@ -148,7 +148,7 @@ private fun kindLabel(review: ReviewResult): String? =
         else -> null
     }
 
-/** 风险横幅。A6 没有。告警不为空时都列出来，一条也不省略。 */
+/** 风险横幅.A6 没有.告警不为空时都列出来,一条也不省略. */
 @Composable
 private fun Banner(review: ReviewResult, style: ReviewStyle) {
     val c = BitOneTheme.colors
@@ -162,9 +162,9 @@ private fun Banner(review: ReviewResult, style: ReviewStyle) {
                 lines =
                     listOf(
                         when {
-                            unlimited && symbol != null -> "对方可随时转走你全部的 $symbol。"
-                            unlimited -> "对方可随时转走你全部的这种资产。"
-                            else -> "对方可以动用授权额度内的资产。"
+                            unlimited && symbol != null -> "对方可随时转走你全部的 $symbol."
+                            unlimited -> "对方可随时转走你全部的这种资产."
+                            else -> "对方可以动用授权额度内的资产."
                         },
                         FROM_WEB,
                     ) + review.alerts,
@@ -174,12 +174,12 @@ private fun Banner(review: ReviewResult, style: ReviewStyle) {
             RiskBanner(
                 warn = true,
                 title = "本机无法解析这笔交易",
-                lines = listOf("只在确认来源可信时签名。", FROM_WEB) + review.alerts,
+                lines = listOf("只在确认来源可信时签名.", FROM_WEB) + review.alerts,
             )
         ReviewStyle.Permission ->
             RiskBanner(
                 title = "账户控制权将被改变",
-                lines = listOf("签名后，新控制方可以动用这个账户的全部资产。", FROM_WEB) + review.alerts,
+                lines = listOf("签名后,新控制方可以动用这个账户的全部资产.", FROM_WEB) + review.alerts,
             )
         ReviewStyle.HighRisk ->
             RiskBanner(
@@ -207,7 +207,7 @@ private fun RiskBanner(title: String, lines: List<String>, warn: Boolean = false
     }
 }
 
-/** 金额区，靠边线左对齐。 */
+/** 金额区,靠边线左对齐. */
 @Composable
 private fun AmountBlock(
     review: ReviewResult,
@@ -236,7 +236,7 @@ private fun AmountBlock(
     }
 }
 
-/** 高风险页要放下横幅和几张地址卡片，金额和图标排成一行。主角仍然是金额，只是不占两行。 */
+/** 高风险页要放下横幅和几张地址卡片,金额和图标排成一行.主角仍然是金额,只是不占两行. */
 @Composable
 private fun InlineAmount(review: ReviewResult, network: Network?) {
     val c = BitOneTheme.colors
@@ -248,7 +248,7 @@ private fun InlineAmount(review: ReviewResult, network: Network?) {
     }
 }
 
-/** 位数很多的原始整数不能截断，字号跟着长度缩小，放不下时换行。 */
+/** 位数很多的原始整数不能截断,字号跟着长度缩小,放不下时换行. */
 @Composable
 private fun AmountText(amount: ReviewAmount, emphasis: TextUnit, danger: Boolean) {
     val c = BitOneTheme.colors
@@ -298,14 +298,14 @@ private fun Counterparty(
     AddressCard(review.counterpartyLabel.orEmpty(), address, leading = leading, badge = badge)
 }
 
-/** 权限变更打包了转账或调用时，对方要放在第一屏。「长按签名」一直在屏幕上，不能让用户滚动后才看到收款方。 */
+/** 权限变更打包了转账或调用时,对方要放在第一屏."长按签名"一直在屏幕上,不能让用户滚动后才看到收款方. */
 @Composable
 private fun PackedParties(review: ReviewResult) {
     val parties = review.actions.flatMap { it.rows }.filter { it.label in PARTY_LABELS }
     parties.forEach { AddressCard(it.label, it.value) }
 }
 
-/** A6d。当前控制方在动作的行里，没有时就是付款账户。 */
+/** A6d.当前控制方在动作的行里,没有时就是付款账户. */
 @Composable
 private fun Controllers(review: ReviewResult) {
     val c = BitOneTheme.colors
@@ -322,7 +322,7 @@ private fun Controllers(review: ReviewResult) {
     }
 }
 
-/** 全部动作。Bitcoin 的动作就是全部输出，多个动作也都留在第一屏，不能折叠起来。控制方已经在上面的卡片里，这里不重复。只有一个动作时不用标题，返回它的字段，放进「详情」。 */
+/** 全部动作.Bitcoin 的动作就是全部输出,多个动作也都留在第一屏,不能折叠起来.控制方已经在上面的卡片里,这里不重复.只有一个动作时不用标题,返回它的字段,放进"详情". */
 @Composable
 private fun Actions(review: ReviewResult, style: ReviewStyle): List<ReviewRow> {
     val bitcoin = networkInfo(review.network)?.icon == Network.Bitcoin
@@ -345,7 +345,7 @@ private fun Actions(review: ReviewResult, style: ReviewStyle): List<ReviewRow> {
     return shown.flatten()
 }
 
-/** 分组标题在外，内容是一块列表组，组内靠行距分开，没有分隔线。 */
+/** 分组标题在外,内容是一块列表组,组内靠行距分开,没有分隔线. */
 @Composable
 private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
@@ -372,7 +372,7 @@ private fun ActionBlock(title: String, risk: Risk, rows: List<ReviewRow>) {
     }
 }
 
-/** 普通交易默认折叠，无法识别、授权、权限变更和 A6e 默认展开。A6e 的 Bitcoin 输入单独分组。 */
+/** 普通交易默认折叠,无法识别,授权,权限变更和 A6e 默认展开.A6e 的 Bitcoin 输入单独分组. */
 @Composable
 private fun Details(rows: List<ReviewRow>, style: ReviewStyle, bitcoin: Boolean) {
     if (rows.isEmpty()) return
@@ -388,7 +388,7 @@ private fun Details(rows: List<ReviewRow>, style: ReviewStyle, bitcoin: Boolean)
     }
 }
 
-/** 标签和值分行，比上面的金额和地址都轻。 */
+/** 标签和值分行,比上面的金额和地址都轻. */
 @Composable
 private fun Rows(rows: List<ReviewRow>) {
     if (rows.isEmpty()) return
@@ -397,7 +397,7 @@ private fun Rows(rows: List<ReviewRow>) {
     }
 }
 
-/** 可展开的一块，高度和透明度同时过渡。 */
+/** 可展开的一块,高度和透明度同时过渡. */
 @Composable
 private fun Disclosure(title: String, initiallyOpen: Boolean, content: @Composable ColumnScope.() -> Unit) {
     val c = BitOneTheme.colors
@@ -422,7 +422,7 @@ private fun Disclosure(title: String, initiallyOpen: Boolean, content: @Composab
     }
 }
 
-/** 原始数据。A6c 默认展开，其他折叠。 */
+/** 原始数据.A6c 默认展开,其他折叠. */
 @Composable
 private fun RawData(lines: List<RawLine>, initiallyOpen: Boolean) {
     val c = BitOneTheme.colors
@@ -443,27 +443,27 @@ private fun RawData(lines: List<RawLine>, initiallyOpen: Boolean) {
     }
 }
 
-/** 普通交易的主按钮是确认，拒绝是文字按钮。高风险时拒绝是主按钮，长按放在下面。 */
+/** 普通交易的主按钮是确认,拒绝是文字按钮.高风险时拒绝是主按钮,长按放在下面. */
 @Composable
 private fun ReviewActions(flow: WalletFlow, review: ReviewResult) {
     ActionArea {
         if (review.confirm == ConfirmMode.Tap) {
-            PrimaryButton("确认并签名", enabled = !flow.busy, onClick = flow::confirmTap)
-            TextButton("拒绝", onClick = flow::exitRequest)
+            PrimaryButton("确认并签名", enabled = !flow.busy, onClick = flow.scan::confirmTap)
+            TextButton("拒绝", onClick = flow.scan::exitRequest)
         } else {
-            PrimaryButton("拒绝", onClick = flow::exitRequest)
+            PrimaryButton("拒绝", onClick = flow.scan::exitRequest)
             HoldButton(
                 "长按签名",
-                flow.holdProgress,
+                flow.scan.holdProgress,
                 enabled = !flow.busy,
-                onPress = flow::holdStart,
-                onRelease = flow::holdCancel,
+                onPress = flow.scan::holdStart,
+                onRelease = flow.scan::holdCancel,
             )
         }
     }
 }
 
-/** A7 顶部的交易摘要，一行列表组，宽度对齐边线。 */
+/** A7 顶部的交易摘要,一行列表组,宽度对齐边线. */
 @Composable
 internal fun SignSummary(review: ReviewResult) {
     val c = BitOneTheme.colors
@@ -484,7 +484,7 @@ internal fun SignSummary(review: ReviewResult) {
     }
 }
 
-/** 无限额度用文字说明。 */
+/** 无限额度用文字说明. */
 internal fun amountLine(review: ReviewResult): String {
     val amount = review.amount ?: return ""
     val text = if (amount.unlimited) "无限" else amount.text

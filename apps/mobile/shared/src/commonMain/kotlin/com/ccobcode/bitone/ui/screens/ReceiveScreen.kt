@@ -38,10 +38,10 @@ import com.ccobcode.bitone.ui.theme.BitOneTheme
 import com.ccobcode.bitone.ui.theme.FontSize
 import com.ccobcode.bitone.ui.theme.Space
 
-/** 最长的地址占三行，短地址也留出同样的高度，换账户时下面的内容不跳。 */
+/** 最长的地址占三行,短地址也留出同样的高度,换账户时下面的内容不跳. */
 private const val ADDRESS_LINES = 3
 
-/** A11 收款。地址从本机公钥算出，不经过网页端，也不显示派生路径。冷钱包不用剪贴板，所以没有复制按钮。版式和网页端的收款相同。 */
+/** A11 收款.地址从本机公钥算出,不经过网页端,也不显示派生路径.冷钱包不用剪贴板,所以没有复制按钮.版式和网页端的收款相同. */
 @Composable
 fun ReceiveScreen(flow: WalletFlow, brightness: Brightness, onPickAccount: () -> Unit) {
     val c = BitOneTheme.colors
@@ -53,8 +53,8 @@ fun ReceiveScreen(flow: WalletFlow, brightness: Brightness, onPickAccount: () ->
         contentAlignment = Alignment.CenterHorizontally,
         overlay = { Toast(flow) },
     ) {
-        AccountSelect(flow.receiveAccount, onPickAccount)
-        QrView(flow.receiveQr, frame = 0, total = 0, label = "收款二维码")
+        AccountSelect(flow.receive.account, onPickAccount)
+        QrView(flow.receive.qr, frame = 0, total = 0, label = "收款二维码")
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 44.dp),
@@ -62,26 +62,26 @@ fun ReceiveScreen(flow: WalletFlow, brightness: Brightness, onPickAccount: () ->
                 horizontalArrangement = Arrangement.spacedBy(Space.s3),
             ) {
                 Txt("地址", size = FontSize.t2, color = c.text3)
-                if (flow.receiveHasNext) {
+                if (flow.receive.hasNext) {
                     Txt(
                         "地址列表",
-                        Modifier.tap(onClick = flow::openReceiveAddresses),
+                        Modifier.tap(onClick = flow.receive::openAddresses),
                         size = FontSize.t2,
                         color = c.accentText,
                     )
                 }
             }
-            AddressChunks(flow.receiveAddress.orEmpty(), size = FontSize.t3, minLines = ADDRESS_LINES)
+            AddressChunks(flow.receive.address.orEmpty(), size = FontSize.t3, minLines = ADDRESS_LINES)
         }
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-            flow.receiveAccount?.let { DetailRow("网络", networkName(it.network)) }
-            // 启用 BIP39 密码时只有这里能核对是否输错，输错不会报错。
-            if (flow.passphraseRequired) DetailRow("主密钥指纹", flow.fingerprint.orEmpty(), mono = true)
+            flow.receive.account?.let { DetailRow("网络", networkName(it.network)) }
+            // 启用 BIP39 密码时只有这里能核对是否输错,输错不会报错.
+            if (flow.session.passphraseRequired) DetailRow("主密钥指纹", flow.session.fingerprint.orEmpty(), mono = true)
         }
     }
 }
 
-/** 顶部的账户选择，点开底部弹层。弹层放在 [MainTabs]，要盖住导航。 */
+/** 顶部的账户选择,点开底部弹层.弹层放在 [MainTabs],要盖住导航. */
 @Composable
 private fun AccountSelect(account: AccountRow?, onClick: () -> Unit) {
     val c = BitOneTheme.colors
@@ -96,17 +96,17 @@ private fun AccountSelect(account: AccountRow?, onClick: () -> Unit) {
     }
 }
 
-/** 账户列表。选中后回到收款页。 */
+/** 账户列表.选中后回到收款页. */
 @Composable
 internal fun BoxScope.AccountSheet(visible: Boolean, flow: WalletFlow, onClose: () -> Unit) {
     Sheet(flow, visible, "账户", onClose, list = true) {
         Column {
-            flow.accounts.forEach { account ->
+            flow.session.accounts.forEach { account ->
                 ListRow(
-                    selected = account == flow.receiveAccount,
+                    selected = account == flow.receive.account,
                     inset = Space.s1,
                     onClick = {
-                        flow.selectReceive(account)
+                        flow.receive.select(account)
                         onClose()
                     },
                 ) {
@@ -118,7 +118,7 @@ internal fun BoxScope.AccountSheet(visible: Boolean, flow: WalletFlow, onClose: 
     }
 }
 
-/** A11b 发放过的地址。点一行回到收款页显示它的二维码，序号不变。「使用新地址」在这里，发完回到收款页。 */
+/** A11b 发放过的地址.点一行回到收款页显示它的二维码,序号不变."使用新地址"在这里,发完回到收款页. */
 @Composable
 fun ReceiveAddressesScreen(flow: WalletFlow) {
     val c = BitOneTheme.colors
@@ -129,20 +129,20 @@ fun ReceiveAddressesScreen(flow: WalletFlow) {
             ActionArea {
                 PrimaryButton(
                     "使用新地址",
-                    enabled = !flow.busy && flow.receiveAddress != null,
-                    onClick = flow::nextReceiveAddress,
+                    enabled = !flow.busy && flow.receive.address != null,
+                    onClick = flow.receive::nextAddress,
                 )
             }
         },
     ) {
         Card {
-            flow.receiveHistory.forEachIndexed { index, address ->
-                ListRow(selected = address == flow.receiveAddress, onClick = { flow.showReceive(address) }) {
+            flow.receive.history.forEachIndexed { index, address ->
+                ListRow(selected = address == flow.receive.address, onClick = { flow.receive.show(address) }) {
                     Txt(shortAddress(address), Modifier.weight(1f), mono = true)
                     if (index == 0) Chip("最新", c.accentSoft, c.accentText)
                 }
             }
         }
-        Notice("使用新地址后，旧地址仍然可以收款。")
+        Notice("使用新地址后,旧地址仍然可以收款.")
     }
 }

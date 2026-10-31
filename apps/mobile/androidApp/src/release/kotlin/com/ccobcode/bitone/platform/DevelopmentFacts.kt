@@ -2,7 +2,7 @@ package com.ccobcode.bitone.platform
 
 import android.content.Context
 
-// release 构建不跳过任何检查，也不接受软件密钥库。
+// release 构建不跳过任何检查,也不接受软件密钥库.
 
 @Suppress("UNUSED_PARAMETER") internal fun softwareKeystoreAllowed(context: Context): Boolean = false
 

@@ -18,7 +18,7 @@ class SelfCheckReport(val items: List<CheckItem>) {
     val warned: Int
         get() = items.count { it.state == CheckState.Warn }
 
-    /** 有未通过项时，创建、解锁、显示助记词都不允许。 */
+    /** 有未通过项时,创建,解锁,显示助记词都不允许. */
     val blocked: Boolean
         get() = failed > 0
 
@@ -31,7 +31,7 @@ class SelfCheckReport(val items: List<CheckItem>) {
             }
 }
 
-/** 判定规则，和 docs/04 §2.2 的表逐行对应。 */
+/** 判定规则,和 docs/04 §2.2 的表逐行对应. */
 fun evaluate(f: DeviceFacts): SelfCheckReport =
     SelfCheckReport(
         listOf(
@@ -80,7 +80,7 @@ private fun rootAndBoot(f: DeviceFacts): CheckItem {
     return CheckItem(
         "Root 和 Bootloader",
         if (problem == null) CheckState.Pass else CheckState.Fail,
-        problem ?: "未 Root，已锁定",
+        problem ?: "未 Root,已锁定",
     )
 }
 

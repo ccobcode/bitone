@@ -43,25 +43,25 @@ import com.ccobcode.bitone.ui.theme.Motion
 import com.ccobcode.bitone.ui.theme.Radius
 import com.ccobcode.bitone.ui.theme.Space
 
-// 内置键盘。助记词、PIN、BIP39 密码都不走系统输入法，全应用没有文本输入框。
+// 内置键盘.助记词,PIN,BIP39 密码都不走系统输入法,全应用没有文本输入框.
 
 private val KeySize = 72.dp
 private val ShortKeySize = 64.dp
 private val KeyGapX = Space.s6
 private val KeyGapY = Space.s4
 
-/** 屏幕矮于这个高度时按键缩小，间距按比例缩小，见界面规范 §4.7。 */
+/** 屏幕矮于这个高度时按键缩小,间距按比例缩小,见界面规范 §4.7. */
 private val ShortWindow = 700.dp
 private val LetterHeight = 44.dp
 
-/** 半个按键的缩进，第二、三行字母键和标准键盘一样错开。 */
+/** 半个按键的缩进,第二,三行字母键和标准键盘一样错开. */
 private const val HALF_KEY = 0.5f
 private const val WIDE_KEY = 1.5f
 
 /**
- * PIN 键盘，A2c、A7、修改 PIN、解锁共用。
+ * PIN 键盘,A2c,A7,修改 PIN,解锁共用.
  *
- * 整块水平居中，不贴屏幕两边，距底部安全区 64，矮屏 32，拇指不用压到屏幕下沿。[action] 不为空时显示在左下角的空位，输入过程中布局不跳动。
+ * 整块水平居中,不贴屏幕两边,距底部安全区 64,矮屏 32,拇指不用压到屏幕下沿.[action] 不为空时显示在左下角的空位,输入过程中布局不跳动.
  */
 @Composable
 fun PinPad(
@@ -180,7 +180,7 @@ private fun KeyRow(content: @Composable RowScope.() -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.s1), content = content)
 }
 
-/** 助记词键盘，只有小写字母。左右贴着边线。 */
+/** 助记词键盘,只有小写字母.左右贴着边线. */
 @Composable
 fun WordKeyboard(onLetter: (Char) -> Unit, onDelete: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
@@ -200,7 +200,7 @@ fun WordKeyboard(onLetter: (Char) -> Unit, onDelete: () -> Unit) {
 
 private val SymbolRows = listOf("1234567890", "!@#$%^&*()", "-_=+[]{}:\"", ",.?/\\|~`'<>")
 
-/** BIP39 密码键盘。密码可以含大小写、数字和符号，只有小写的键盘不够用。只支持 ASCII。 */
+/** BIP39 密码键盘.密码可以含大小写,数字和符号,只有小写的键盘不够用.只支持 ASCII. */
 @Composable
 fun PassphraseKeyboard(onChar: (Char) -> Unit, onDelete: () -> Unit, onDone: () -> Unit) {
     var upper by remember { mutableStateOf(false) }

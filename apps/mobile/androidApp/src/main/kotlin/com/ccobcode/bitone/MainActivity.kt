@@ -15,7 +15,7 @@ class MainActivity : ComponentActivity() {
         get() = application as BitOneApplication
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 要在任何内容上屏之前，所以排在 super.onCreate 和 setContent 前面。
+        // 要在任何内容上屏之前,所以排在 super.onCreate 和 setContent 前面.
         app.current.activity = this
         app.platform.screenGuard.protect()
         val bars = SystemBarStyle.dark(Color.TRANSPARENT)
@@ -48,7 +48,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    /** 被其他窗口遮挡时丢弃触摸。在这里过滤覆盖全部按钮，比逐个标记敏感按钮可靠。filterTouchesWhenObscured 只看 FLAG_WINDOW_IS_OBSCURED，这里连部分遮挡一起挡。 */
+    /** 被其他窗口遮挡时丢弃触摸.在这里过滤覆盖全部按钮,比逐个标记敏感按钮可靠.filterTouchesWhenObscured 只看 FLAG_WINDOW_IS_OBSCURED,这里连部分遮挡一起挡. */
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         val obscured = MotionEvent.FLAG_WINDOW_IS_OBSCURED or MotionEvent.FLAG_WINDOW_IS_PARTIALLY_OBSCURED
         if (event.flags and obscured != 0) return false

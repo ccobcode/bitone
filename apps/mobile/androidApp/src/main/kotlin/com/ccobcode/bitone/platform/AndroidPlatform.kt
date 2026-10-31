@@ -8,7 +8,7 @@ import android.provider.Settings
 import android.view.WindowManager
 import java.security.MessageDigest
 
-/** 开机次数加开机后的单调时钟。 */
+/** 开机次数加开机后的单调时钟. */
 class AndroidBootClock(private val context: Context) : BootClock {
     override fun now() =
         ClockReading(
@@ -17,7 +17,7 @@ class AndroidBootClock(private val context: Context) : BootClock {
         )
 }
 
-/** 当前 APK 签名证书的 SHA-256，每 4 个十六进制字符一组，和发布页的写法一致。 */
+/** 当前 APK 签名证书的 SHA-256,每 4 个十六进制字符一组,和发布页的写法一致. */
 fun signingCertificate(context: Context): String {
     val info = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
     val signer = info.signingInfo?.apkContentsSigners?.firstOrNull() ?: return ""
@@ -25,12 +25,12 @@ fun signingCertificate(context: Context): String {
     return digest.joinToString("") { "%02X".format(it) }.chunked(4).joinToString(" ")
 }
 
-/** 当前 Activity，窗口相关的实现都从这里取。 */
+/** 当前 Activity,窗口相关的实现都从这里取. */
 class CurrentActivity {
     var activity: Activity? = null
 }
 
-/** FLAG_SECURE 和隐藏悬浮窗。全应用只有一个窗口，弹层都画在同一窗口里，所以不用 Dialog。 */
+/** FLAG_SECURE 和隐藏悬浮窗.全应用只有一个窗口,弹层都画在同一窗口里,所以不用 Dialog. */
 class AndroidScreenGuard(private val current: CurrentActivity) : ScreenGuard {
     override fun protect() {
         val window = current.activity?.window ?: return

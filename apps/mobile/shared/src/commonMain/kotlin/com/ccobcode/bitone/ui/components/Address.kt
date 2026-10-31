@@ -22,7 +22,7 @@ import com.ccobcode.bitone.ui.theme.BitOneTheme
 import com.ccobcode.bitone.ui.theme.FontSize
 import com.ccobcode.bitone.ui.theme.Space
 
-/** 完整地址，4 个字符一组。奇数组用 text，偶数组用 text-2，不加底色块。同一个文本节点，读屏时不会被拆开。 */
+/** 完整地址,4 个字符一组.奇数组用 text,偶数组用 text-2,不加底色块.同一个文本节点,读屏时不会被拆开. */
 @Composable
 fun AddressChunks(
     address: String,
@@ -56,7 +56,7 @@ fun AddressChunks(
     )
 }
 
-/** 地址卡片。[tint] 用来突出新控制方这类地址，不用边框。 */
+/** 地址卡片.[tint] 用来突出新控制方这类地址,不用边框. */
 @Composable
 fun AddressCard(
     label: String,

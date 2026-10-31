@@ -32,7 +32,7 @@ import com.ccobcode.bitone.ui.theme.BitOneTheme
 import com.ccobcode.bitone.ui.theme.FontSize
 import com.ccobcode.bitone.ui.theme.Space
 
-/** A1 欢迎与自检。 */
+/** A1 欢迎与自检. */
 @Composable
 fun WelcomeScreen(flow: WalletFlow) {
     val c = BitOneTheme.colors
@@ -40,8 +40,8 @@ fun WelcomeScreen(flow: WalletFlow) {
     Page(
         bottom = {
             ActionArea {
-                PrimaryButton("创建新钱包", enabled = ready, onClick = flow::startCreate)
-                SecondaryButton("导入助记词", enabled = ready, onClick = flow::startImport)
+                PrimaryButton("创建新钱包", enabled = ready, onClick = flow.setup::startCreate)
+                SecondaryButton("导入助记词", enabled = ready, onClick = flow.setup::startImport)
             }
         }
     ) {
@@ -51,10 +51,10 @@ fun WelcomeScreen(flow: WalletFlow) {
                 Txt("BitOne", size = FontSize.t7, weight = SemiBold)
                 Txt("多链冷钱包", color = c.text3)
             }
-            Notice("BitOne 只在专用手机上运行：恢复出厂，不登录账号，只装本应用。")
+            Notice("BitOne 只在专用手机上运行:恢复出厂,不登录账号,只装本应用.")
         }
         flow.report?.let { SelfCheckList(it) }
-        Notice("移除屏幕锁后，钱包只能用助记词恢复。", NoticeTone.Warn)
+        Notice("移除屏幕锁后,钱包只能用助记词恢复.", NoticeTone.Warn)
     }
 }
 

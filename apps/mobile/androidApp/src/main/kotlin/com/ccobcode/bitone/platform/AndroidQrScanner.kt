@@ -38,10 +38,10 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import zxingcpp.BarcodeReader
 
-/** 动态二维码的码点很密，分析分辨率不能太低。 */
+/** 动态二维码的码点很密,分析分辨率不能太低. */
 private val ANALYSIS_SIZE = Size(1920, 1080)
 
-/** CameraX 取帧，zxing-cpp 解码。全程在本机，不用 Google Play 服务。 */
+/** CameraX 取帧,zxing-cpp 解码.全程在本机,不用 Google Play 服务. */
 class AndroidQrScanner(private val context: Context, private val current: CurrentActivity) : QrScanner {
 
     override fun hasPermission(): Boolean =
@@ -77,7 +77,7 @@ class AndroidQrScanner(private val context: Context, private val current: Curren
         val latestCode by rememberUpdatedState(onCode)
         val latestFailure by rememberUpdatedState(onFailure)
         val owner = current.activity as? LifecycleOwner
-        // TextureView 画在窗口内容里，受 FLAG_SECURE 保护。SurfaceView 是独立的层。
+        // TextureView 画在窗口内容里,受 FLAG_SECURE 保护.SurfaceView 是独立的层.
         val viewContext = LocalContext.current
         val preview = remember {
             PreviewView(viewContext).apply {
@@ -130,7 +130,7 @@ class AndroidQrScanner(private val context: Context, private val current: Curren
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                // 没有后置摄像头、被别的应用占用、CameraX 初始化失败都走这里。
+                // 没有后置摄像头,被别的应用占用,CameraX 初始化失败都走这里.
                 latestFailure()
             }
         }

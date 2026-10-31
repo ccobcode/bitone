@@ -32,24 +32,24 @@ import kotlinx.coroutines.withContext
 private const val ANDROID_KEYSTORE = "AndroidKeyStore"
 private const val PIN_ALIAS = "bitone.pin"
 private const val HMAC = "HmacSHA256"
-/** 旧格式外层加密的密钥，迁移后删除。 */
+/** 旧格式外层加密的密钥,迁移后删除. */
 private const val LEGACY_ALIAS = "bitone.seal"
 private const val PROBE_ALIAS = "bitone.enrollment"
 private const val TRANSFORMATION = "AES/GCM/NoPadding"
 private const val IV_BYTES = 12
 private const val TAG_BITS = 128
 
-/** 0 表示每次使用都要认证，没有时间窗。 */
+/** 0 表示每次使用都要认证,没有时间窗. */
 private const val AUTH_EVERY_USE = 0
 
 private val AAD = "bitone-vault-v1".encodeToByteArray()
 
 /**
- * Keystore 里不可导出的 HMAC-SHA256 密钥，优先 StrongBox，其次 TEE，都没有时拒绝创建。PIN 要经过它才能派生出解密密钥，规则见 docs/04 §2.3。
+ * Keystore 里不可导出的 HMAC-SHA256 密钥,优先 StrongBox,其次 TEE,都没有时拒绝创建.PIN 要经过它才能派生出解密密钥,规则见 docs/04 §2.3.
  *
- * 认证方式里有屏幕锁凭据，增删指纹和修改屏幕锁时密钥不失效，指纹变更靠单独的探针发现。移除屏幕锁时永久失效，对应「需恢复」。
+ * 认证方式里有屏幕锁凭据,增删指纹和修改屏幕锁时密钥不失效,指纹变更靠单独的探针发现.移除屏幕锁时永久失效,对应"需恢复".
  *
- * setUnlockedDeviceRequired 只在 Android 15 及以上设置。12 到 14 上这类密钥依赖屏幕锁凭据，移除屏幕锁时会被删除。
+ * setUnlockedDeviceRequired 只在 Android 15 及以上设置.12 到 14 上这类密钥依赖屏幕锁凭据,移除屏幕锁时会被删除.
  */
 class KeystoreHardwareKey(
     private val context: Context,
@@ -75,7 +75,7 @@ class KeystoreHardwareKey(
         return authenticatedMac(key, pin, HardwareKeyException.Unavailable("硬件密钥不可用"))
     }
 
-    /** 这次认证只对这一个 Mac 对象有效，所以一次确认只能算一个 PIN。 */
+    /** 这次认证只对这一个 Mac 对象有效,所以一次确认只能算一个 PIN. */
     private suspend fun authenticatedMac(key: SecretKey, pin: String, failure: HardwareKeyException): ByteArray =
         rethrowing(failure) {
             val mac = Mac.getInstance(HMAC)
@@ -105,7 +105,7 @@ class KeystoreHardwareKey(
             val current = existingKey(PIN_ALIAS)
             val legacy = existingKey(LEGACY_ALIAS)
             when {
-                // 初始化会占用一个硬件操作，StrongBox 能同时跑的操作很少，探测完就释放。
+                // 初始化会占用一个硬件操作,StrongBox 能同时跑的操作很少,探测完就释放.
                 current != null -> Mac.getInstance(HMAC).apply { init(current) }.reset()
                 legacy != null ->
                     Cipher.getInstance(TRANSFORMATION)
@@ -116,7 +116,7 @@ class KeystoreHardwareKey(
         } catch (_: UserNotAuthenticatedException) {
             false
         } catch (_: GeneralSecurityException) {
-            // 含 KeyPermanentlyInvalidatedException。其他错误也按失效处理，不删任何数据，下次检测恢复后自动回首页。
+            // 含 KeyPermanentlyInvalidatedException.其他错误也按失效处理,不删任何数据,下次检测恢复后自动回首页.
             true
         } catch (_: ProviderException) {
             true
@@ -135,9 +135,9 @@ class KeystoreHardwareKey(
     override suspend fun confirmDeviceLock() = confirmCredential()
 
     /**
-     * 硬件密钥带时间窗，指纹变更不会让它失效，所以另放一把只用来探测的密钥。它绑定当前录入的指纹，新增或删光指纹时系统让它永久失效。
+     * 硬件密钥带时间窗,指纹变更不会让它失效,所以另放一把只用来探测的密钥.它绑定当前录入的指纹,新增或删光指纹时系统让它永久失效.
      *
-     * 只有系统明确报失效才算变更，其他错误不算。ponytail: 从没录过指纹的手机第一次录入时才建探针，这一次变更看不出来。
+     * 只有系统明确报失效才算变更,其他错误不算.ponytail: 从没录过指纹的手机第一次录入时才建探针,这一次变更看不出来.
      */
     override fun lockChanged(): Boolean =
         try {
@@ -178,7 +178,7 @@ class KeystoreHardwareKey(
                 try {
                     generate(strongBox = preferStrongBox)
                 } catch (e: ProviderException) {
-                    // StrongBoxUnavailableException 是 ProviderException 的子类。
+                    // StrongBoxUnavailableException 是 ProviderException 的子类.
                     if (preferStrongBox) generate(strongBox = false) else throw e
                 }
             } catch (e: GeneralSecurityException) {
@@ -186,7 +186,7 @@ class KeystoreHardwareKey(
             } catch (e: ProviderException) {
                 throw HardwareKeyException.Unavailable(e.javaClass.simpleName)
             }
-        // 没有安全硬件时 Keystore 会悄悄退回软件实现，必须事后确认。
+        // 没有安全硬件时 Keystore 会悄悄退回软件实现,必须事后确认.
         if (keyLevel(key) == HardwareLevel.None && !softwareKeystoreAllowed(context)) {
             delete()
             throw HardwareKeyException.Unavailable("只有软件密钥库")
@@ -212,7 +212,7 @@ class KeystoreHardwareKey(
             .generateKey()
     }
 
-    /** 旧格式的时间窗过期时弹一次系统屏幕锁再重试。 */
+    /** 旧格式的时间窗过期时弹一次系统屏幕锁再重试. */
     private suspend fun <T> authorized(failure: HardwareKeyException, block: () -> T): T =
         rethrowing(failure) {
             try {
@@ -223,7 +223,7 @@ class KeystoreHardwareKey(
             }
         }
 
-    /** 密钥失效统一换成 [failure]。 */
+    /** 密钥失效统一换成 [failure]. */
     private suspend fun <T> rethrowing(failure: HardwareKeyException, block: suspend () -> T): T =
         try {
             block()
@@ -266,7 +266,7 @@ class KeystoreHardwareKey(
         }
 
     companion object {
-        /** 只看密钥实际落在哪，不信功能声明。 */
+        /** 只看密钥实际落在哪,不信功能声明. */
         fun keyLevel(key: SecretKey): HardwareLevel {
             val info =
                 SecretKeyFactory.getInstance(key.algorithm, ANDROID_KEYSTORE).getKeySpec(key, KeyInfo::class.java)

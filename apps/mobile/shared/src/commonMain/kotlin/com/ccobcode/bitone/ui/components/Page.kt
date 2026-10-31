@@ -56,7 +56,7 @@ import com.ccobcode.bitone.ui.theme.Size
 import com.ccobcode.bitone.ui.theme.Space
 import com.ccobcode.bitone.ui.theme.elevation
 
-/** 页面的内容列：限宽、避开左右挖孔。底部导航这类页面之外的元素也用它，才能和页面对齐。 */
+/** 页面的内容列:限宽,避开左右挖孔.底部导航这类页面之外的元素也用它,才能和页面对齐. */
 @Composable
 fun Modifier.contentColumn(): Modifier =
     widthIn(max = Size.contentMax)
@@ -64,11 +64,11 @@ fun Modifier.contentColumn(): Modifier =
         .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
 
 /**
- * 页面骨架，自上而下：状态栏安全区、标题区、可滚动内容、吸底区、导航栏安全区。安全区全部来自 WindowInsets，背景铺满到屏幕边缘。
+ * 页面骨架,自上而下:状态栏安全区,标题区,可滚动内容,吸底区,导航栏安全区.安全区全部来自 WindowInsets,背景铺满到屏幕边缘.
  *
- * 左右边线只在这里实现：标题区、内容和吸底区都缩进 [Size.gutter]，页面和组件不写边距。内容没有滚到底时，用底色渐隐过渡到吸底区，不画分隔线。
+ * 左右边线只在这里实现:标题区,内容和吸底区都缩进 [Size.gutter],页面和组件不写边距.内容没有滚到底时,用底色渐隐过渡到吸底区,不画分隔线.
  *
- * [floatingSpace] 是悬浮在页面之上的底部导航占的高度，内容末尾留出这段，滚到底时不会被盖住。
+ * [floatingSpace] 是悬浮在页面之上的底部导航占的高度,内容末尾留出这段,滚到底时不会被盖住.
  */
 @Composable
 fun Page(
@@ -134,7 +134,7 @@ private fun BottomFade(scroll: ScrollState, modifier: Modifier) {
     )
 }
 
-/** 标题栏，高 56。返回图标的左边缘在边线上，右侧内容的右边缘也在边线上。流程的终点页把 [backIcon] 换成关闭。 */
+/** 标题栏,高 56.返回图标的左边缘在边线上,右侧内容的右边缘也在边线上.流程的终点页把 [backIcon] 换成关闭. */
 @Composable
 fun TitleBar(
     title: String,
@@ -154,7 +154,7 @@ fun TitleBar(
     }
 }
 
-/** 一级页面的大标题。 */
+/** 一级页面的大标题. */
 @Composable
 fun LargeTitle(title: String) {
     Row(Modifier.fillMaxWidth().height(Size.hRow), verticalAlignment = Alignment.CenterVertically) {
@@ -162,7 +162,7 @@ fun LargeTitle(title: String) {
     }
 }
 
-/** 提示和倒计时变化时新值淡入，不做滚动。 */
+/** 提示和倒计时变化时新值淡入,不做滚动. */
 @Composable
 fun FadeText(text: String, color: Color) {
     AnimatedContent(
@@ -174,7 +174,7 @@ fun FadeText(text: String, color: Color) {
     }
 }
 
-/** 提示，和网页端手机上的同一规格：贴着屏幕上方，从上方淡入上移。画在同一窗口里，不用系统 Toast。 */
+/** 提示,和网页端手机上的同一规格:贴着屏幕上方,从上方淡入上移.画在同一窗口里,不用系统 Toast. */
 @Composable
 fun BoxScope.Toast(flow: WalletFlow) {
     val c = BitOneTheme.colors

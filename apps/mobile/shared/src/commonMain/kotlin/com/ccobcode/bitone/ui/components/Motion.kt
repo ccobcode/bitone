@@ -38,28 +38,28 @@ import com.ccobcode.bitone.ui.theme.BitOneTheme
 import com.ccobcode.bitone.ui.theme.Motion
 import com.ccobcode.bitone.ui.theme.Radius
 
-// 动效只用 docs/06 §5 的令牌。系统关闭动画时 Compose 直接跳到终点，这里的一切都不等动画结束，流程不受影响。
-// 金额和地址不走这里的任何数值动画，用户看到的始终是真实值。
+// 动效只用 docs/06 §5 的令牌.系统关闭动画时 Compose 直接跳到终点,这里的一切都不等动画结束,流程不受影响.
+// 金额和地址不走这里的任何数值动画,用户看到的始终是真实值.
 
 private const val SHIMMER_FROM = 0.3f
 private const val SHIMMER_PEAK = 0.5f
 private const val SHIMMER_TO = 0.7f
 
-/** 进入。 */
+/** 进入. */
 fun <T> enterSpec(duration: Int = Motion.normal, delay: Int = 0): FiniteAnimationSpec<T> =
     tween(duration, delay, Motion.emphasizedEasing)
 
-/** 状态变化。 */
+/** 状态变化. */
 fun <T> stateSpec(duration: Int = Motion.normal): FiniteAnimationSpec<T> =
     tween(duration, easing = Motion.standardEasing)
 
-/** 离开。 */
+/** 离开. */
 fun <T> exitSpec(duration: Int = Motion.normal): FiniteAnimationSpec<T> = tween(duration, easing = Motion.exitEasing)
 
 /**
- * 前进时新页从右侧 24 滑入，旧页淡出并左移 8。返回时方向相反。总时长 `normal`。
+ * 前进时新页从右侧 24 滑入,旧页淡出并左移 8.返回时方向相反.总时长 `normal`.
  *
- * 旧页先淡出，新页稍后淡入，两页的文字不会叠在一起。
+ * 旧页先淡出,新页稍后淡入,两页的文字不会叠在一起.
  */
 fun pageTransition(back: Boolean, density: Density): ContentTransform {
     val near = with(density) { Motion.pageIn.roundToPx() }
@@ -72,7 +72,7 @@ fun pageTransition(back: Boolean, density: Density): ContentTransform {
     return enter togetherWith exit
 }
 
-/** 动画中的旧页还在树上，但流程已经离开它。页面的回调都默认当前页就是自己，所以旧页不再接收触摸。 */
+/** 动画中的旧页还在树上,但流程已经离开它.页面的回调都默认当前页就是自己,所以旧页不再接收触摸. */
 fun Modifier.ignoreTouches(ignore: Boolean): Modifier =
     pointerInput(ignore) {
         if (!ignore) return@pointerInput
@@ -83,7 +83,7 @@ fun Modifier.ignoreTouches(ignore: Boolean): Modifier =
         }
     }
 
-/** 流程清掉数据后，退场中的页面继续显示离开时的内容，不闪空白。 */
+/** 流程清掉数据后,退场中的页面继续显示离开时的内容,不闪空白. */
 @Composable
 fun <T : Any> rememberLatest(value: T?): T? {
     var latest by remember { mutableStateOf(value) }
@@ -91,7 +91,7 @@ fun <T : Any> rememberLatest(value: T?): T? {
     return latest
 }
 
-/** 按下缩到 0.97，松开回到原位，和网页端的曲线相同。 */
+/** 按下缩到 0.97,松开回到原位,和网页端的曲线相同. */
 fun Modifier.pressScale(pressed: Boolean): Modifier = composed {
     val scale by
         animateFloatAsState(
@@ -105,7 +105,7 @@ fun Modifier.pressScale(pressed: Boolean): Modifier = composed {
     }
 }
 
-/** 列表逐项淡入上移 8，错开 30，最多错开 8 项。 */
+/** 列表逐项淡入上移 8,错开 30,最多错开 8 项. */
 fun Modifier.staggerIn(index: Int): Modifier = composed {
     val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
@@ -118,7 +118,7 @@ fun Modifier.staggerIn(index: Int): Modifier = composed {
     }
 }
 
-/** 骨架屏微光，一条光带匀速扫过，周期和网页端相同。不用转圈。 */
+/** 骨架屏微光,一条光带匀速扫过,周期和网页端相同.不用转圈. */
 @Composable
 fun Skeleton(modifier: Modifier = Modifier) {
     val c = BitOneTheme.colors

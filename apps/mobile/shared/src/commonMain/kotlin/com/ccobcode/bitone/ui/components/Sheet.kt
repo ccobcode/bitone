@@ -39,7 +39,7 @@ import com.ccobcode.bitone.ui.theme.Size
 import com.ccobcode.bitone.ui.theme.Space
 import com.ccobcode.bitone.ui.theme.elevation
 
-/** 打开时登记到流程里，返回键先关掉它，再离开页面。 */
+/** 打开时登记到流程里,返回键先关掉它,再离开页面. */
 @Composable
 fun CloseOnBack(flow: WalletFlow, open: Boolean, onClose: () -> Unit) {
     val close by rememberUpdatedState(onClose)
@@ -52,9 +52,9 @@ fun CloseOnBack(flow: WalletFlow, open: Boolean, onClose: () -> Unit) {
 }
 
 /**
- * 底部弹层，和网页端手机上的浮层同一规格：从底部升起，上方圆角 24，标题加关闭按钮，遮罩点一下也能关。
+ * 底部弹层,和网页端手机上的浮层同一规格:从底部升起,上方圆角 24,标题加关闭按钮,遮罩点一下也能关.
  *
- * [list] 时内容贴着弹层两边，列表行自己留边距，文字和标题对齐。画在同一窗口里，不用 Dialog：新窗口不继承 FLAG_SECURE。
+ * [list] 时内容贴着弹层两边,列表行自己留边距,文字和标题对齐.画在同一窗口里,不用 Dialog:新窗口不继承 FLAG_SECURE.
  */
 @Composable
 internal fun BoxScope.Sheet(

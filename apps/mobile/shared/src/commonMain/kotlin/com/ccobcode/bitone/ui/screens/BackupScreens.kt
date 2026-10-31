@@ -41,11 +41,11 @@ import com.ccobcode.bitone.ui.theme.Space
 
 internal val WordCountOptions = listOf(12 to "12 词", 24 to "24 词")
 
-/** A2 备份助记词。 */
+/** A2 备份助记词. */
 @Composable
 fun BackupScreen(flow: WalletFlow) {
-    val rowHeight = if (flow.wordCount == 12) 40.dp else 32.dp
-    val loading = flow.backupWords.isEmpty()
+    val rowHeight = if (flow.setup.wordCount == 12) 40.dp else 32.dp
+    val loading = flow.setup.backupWords.isEmpty()
     Page(
         header = { TitleBar("备份助记词", onBack = { flow.back() }) { Steps(1) } },
         contentGap = Space.s4,
@@ -53,20 +53,20 @@ fun BackupScreen(flow: WalletFlow) {
             ActionArea {
                 PrimaryButton(
                     "开始验证",
-                    enabled = !flow.busy && flow.backupWords.isNotEmpty(),
-                    onClick = flow::startVerify,
+                    enabled = !flow.busy && flow.setup.backupWords.isNotEmpty(),
+                    onClick = flow.setup::startVerify,
                 )
             }
         },
     ) {
-        Segmented(WordCountOptions, flow.wordCount, flow::setBackupWordCount)
+        Segmented(WordCountOptions, flow.setup.wordCount, flow.setup::setBackupWordCount)
         Notice("只抄在纸上", NoticeTone.Warn)
-        WordGrid(if (loading) List(flow.wordCount) { "" } else flow.backupWords, rowHeight, loading)
-        PassphraseSwitch(flow.passphraseEnabled, flow::togglePassphrase)
+        WordGrid(if (loading) List(flow.setup.wordCount) { "" } else flow.setup.backupWords, rowHeight, loading)
+        PassphraseSwitch(flow.setup.passphraseEnabled, flow.setup::togglePassphrase)
     }
 }
 
-/** A2b 验证助记词。全部答完才判定，判错后只能回 A2。 */
+/** A2b 验证助记词.全部答完才判定,判错后只能回 A2. */
 @Composable
 fun VerifyScreen(flow: WalletFlow) {
     Page(
@@ -74,28 +74,30 @@ fun VerifyScreen(flow: WalletFlow) {
         contentGap = Space.s4,
         bottom = {
             ActionArea {
-                when (flow.verifyState) {
-                    VerifyState.Passed -> PrimaryButton("继续", onClick = flow::continueAfterVerify)
-                    VerifyState.Failed -> PrimaryButton("重新抄写", onClick = flow::backToBackup)
+                when (flow.setup.verifyState) {
+                    VerifyState.Passed -> PrimaryButton("继续", onClick = flow.setup::continueAfterVerify)
+                    VerifyState.Failed -> PrimaryButton("重新抄写", onClick = flow.setup::backToBackup)
                     VerifyState.Pending -> PrimaryButton("继续", enabled = false) {}
                 }
             }
         },
     ) {
-        Notice("对照纸上的备份，选出对应序号的词")
-        flow.quiz.forEach { item ->
-            QuizCard(item, flow.picks[item.index], flow.verifyState != VerifyState.Failed) { flow.pick(item.index, it) }
+        Notice("对照纸上的备份,选出对应序号的词")
+        flow.setup.quiz.forEach { item ->
+            QuizCard(item, flow.setup.picks[item.index], flow.setup.verifyState != VerifyState.Failed) {
+                flow.setup.pick(item.index, it)
+            }
         }
         AnimatedVisibility(
-            flow.verifyState == VerifyState.Failed,
+            flow.setup.verifyState == VerifyState.Failed,
             enter = fadeIn(stateSpec()) + expandVertically(stateSpec()),
         ) {
-            Notice("有词选错了，回到上一步重新核对备份。", NoticeTone.Danger)
+            Notice("有词选错了,回到上一步重新核对备份.", NoticeTone.Danger)
         }
     }
 }
 
-/** Rust 的 quiz 每题给 4 个选项，原型画的是 3 个，这里排成两行两列。 */
+/** Rust 的 quiz 每题给 4 个选项,原型画的是 3 个,这里排成两行两列. */
 @Composable
 private fun QuizCard(item: QuizItem, picked: String?, enabled: Boolean, onPick: (String) -> Unit) {
     Card {

@@ -1,4 +1,4 @@
-// 由 design/generate.mjs 生成，不要手改。
+// 由 design/generate.mjs 生成,不要手改.
 package com.ccobcode.bitone.ui.theme
 
 import androidx.compose.animation.core.CubicBezierEasing
@@ -85,7 +85,7 @@ val DarkColors = ColorTokens(
     camera = Color(0xFF050607),
 )
 
-/** 一层阴影，对应 CSS box-shadow 的纵向偏移、模糊半径和颜色。 */
+/** 一层阴影,对应 CSS box-shadow 的纵向偏移,模糊半径和颜色. */
 data class ShadowLayer(val y: Dp, val blur: Dp, val color: Color)
 
 data class ElevationTokens(
@@ -157,7 +157,7 @@ object Size {
     val scanStroke = 4.dp
 }
 
-/** 动效令牌。时长单位是毫秒。 */
+/** 动效令牌.时长单位是毫秒. */
 object Motion {
     const val fast = 120
     const val normal = 220
@@ -176,7 +176,7 @@ object Motion {
     val rise = 8.dp
 }
 
-/** 二维码的静区、分段上限和轮播间隔，两端相同。间隔单位是毫秒，第一项是默认速度。 */
+/** 二维码的静区,分段上限和轮播间隔,两端相同.间隔单位是毫秒,第一项是默认速度. */
 object Qr {
     const val quiet = 2
     const val maxSegments = 40

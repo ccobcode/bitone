@@ -8,8 +8,8 @@ import java.io.File
 import java.io.FileNotFoundException
 
 /**
- * 应用私有目录。密文、PIN 计数、公钥和清单放 noBackupFilesDir，AtomicFile 在返回前 fsync， 断电时不会留下写了一半的文件。元数据和设置不是秘密，放 SharedPreferences，用
- * commit 同步写。
+ * 应用私有目录.密文,PIN 计数,公钥和清单放 noBackupFilesDir,AtomicFile 在返回前 fsync, 断电时不会留下写了一半的文件.元数据和设置不是秘密,放 SharedPreferences,用
+ * commit 同步写.
  */
 class FileSecureStore(context: Context) : SecureStore {
     private val vault = AtomicFile(File(context.noBackupFilesDir, "vault.bin"))
@@ -36,7 +36,7 @@ class FileSecureStore(context: Context) : SecureStore {
         )
     }
 
-    /** 旧公钥最先删，中途断电时最多少一份缓存，不会留下别的钱包的公钥。 */
+    /** 旧公钥最先删,中途断电时最多少一份缓存,不会留下别的钱包的公钥. */
     override fun saveWallet(vault: ByteArray, meta: WalletMeta, publicKeys: ByteArray?) {
         this.publicKeys.delete()
         write(this.vault) { it.write(vault) }

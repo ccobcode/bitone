@@ -60,16 +60,16 @@ import com.ccobcode.bitone.ui.theme.Space
 private val SweepInset = 24.dp
 private const val HINT_ALPHA = 0.78f
 
-/** A5 扫描。全屏相机，永远是深色。只有关闭按钮、取景框和一句提示，收齐后短促震动并直接进入下一页。扫码时对着屏幕，常亮，不调亮度。 */
+/** A5 扫描.全屏相机,永远是深色.只有关闭按钮,取景框和一句提示,收齐后短促震动并直接进入下一页.扫码时对着屏幕,常亮,不调亮度. */
 @Composable
 fun ScanScreen(flow: WalletFlow, brightness: Brightness) {
     KeepScreenOn(brightness, maximize = false)
     val c = BitOneTheme.colors
     val haptic = LocalHapticFeedback.current
-    val done = flow.scanProgress >= 1f
+    val done = flow.scan.progress >= 1f
     LaunchedEffect(done) { if (done) haptic.performHapticFeedback(HapticFeedbackType.Confirm) }
     Box(Modifier.fillMaxSize().background(c.camera)) {
-        flow.scanner.Viewfinder(Modifier.fillMaxSize(), flow::onScanned, flow::cameraFailed)
+        flow.scan.scanner.Viewfinder(Modifier.fillMaxSize(), flow.scan::onScanned, flow.scan::cameraFailed)
         Column(
             Modifier.fillMaxSize()
                 .windowInsetsPadding(
@@ -90,7 +90,7 @@ fun ScanScreen(flow: WalletFlow, brightness: Brightness) {
                 verticalArrangement = Arrangement.spacedBy(Space.s6, Alignment.CenterVertically),
             ) {
                 ScanFrame(done)
-                ScanStatus(flow.scanFrames, flow.scanProgress)
+                ScanStatus(flow.scan.frames, flow.scan.progress)
             }
         }
     }
@@ -113,7 +113,7 @@ private fun ScanFrame(done: Boolean) {
         val arm = TokenSize.scanArm.toPx()
         val radius = CornerRadius(Radius.r3.toPx())
         val end = size.width - arm
-        // 四个角：画一个圆角方形，用裁剪只留下角。
+        // 四个角:画一个圆角方形,用裁剪只留下角.
         listOf(Offset.Zero, Offset(end, 0f), Offset(0f, end), Offset(end, end)).forEach { corner ->
             clipRect(corner.x, corner.y, corner.x + arm, corner.y + arm) {
                 val inset = stroke / 2
@@ -134,7 +134,7 @@ private fun ScanFrame(done: Boolean) {
     }
 }
 
-/** 框下一句提示，多帧时换成细进度条和帧序号。 */
+/** 框下一句提示,多帧时换成细进度条和帧序号. */
 @Composable
 private fun ScanStatus(total: Int, progress: Float) {
     val c = BitOneTheme.colors

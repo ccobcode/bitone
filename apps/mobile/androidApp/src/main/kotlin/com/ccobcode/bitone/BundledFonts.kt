@@ -5,7 +5,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import com.ccobcode.bitone.ui.theme.BitOneFonts
 
-/** 字体打包进应用，不依赖各厂商的系统字体。文件由 tools/fonts/build_fonts.py 生成。 */
+/** 字体打包进应用,不依赖各厂商的系统字体.文件由 tools/fonts/build_fonts.py 生成. */
 val BundledFonts =
     BitOneFonts(
         sans =

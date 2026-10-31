@@ -23,9 +23,9 @@ class KeyAttestationTest {
 
     private fun bool(value: Boolean) = tlv(intArrayOf(0x01), byteArrayOf(if (value) 0xFF.toByte() else 0))
 
-    /** [locked] 为 null 时不放 RootOfTrust。 */
+    /** [locked] 为 null 时不放 RootOfTrust. */
     private fun extension(level: Int, locked: Boolean?): ByteArray {
-        // purpose [1] 放在前面，确认解析会跳过其他字段。
+        // purpose [1] 放在前面,确认解析会跳过其他字段.
         val other = tlv(intArrayOf(0xA1), tlv(intArrayOf(0x31), int(2)))
         val hardware =
             if (locked == null) {

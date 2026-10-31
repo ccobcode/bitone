@@ -15,7 +15,7 @@ import uniffi.bitone_ffi.reviewRequest as ffiReviewRequest
 import uniffi.bitone_ffi.verifyManifest as ffiVerifyManifest
 import uniffi.bitone_ffi.wordSuggestions as ffiWordSuggestions
 
-/** 包住生成的 UniFFI 绑定，把 Rust 的错误换成共享层的异常。 */
+/** 包住生成的 UniFFI 绑定,把 Rust 的错误换成共享层的异常. */
 class UniffiWalletCore : WalletCore {
     override fun generateDraft(wordCount: Int): WalletDraft = mapped {
         Draft(uniffi.bitone_ffi.WalletDraft.generate(wordCount.toUInt()))
@@ -208,7 +208,7 @@ private inline fun <T> mapped(block: () -> T): T =
             is WalletException.InvalidMnemonic -> WalletCoreException.InvalidMnemonic()
             is WalletException.InvalidPin -> WalletCoreException.InvalidPin()
             is WalletException.WrongPin -> WalletCoreException.WrongPin()
-            // 这里用 reason，生成的 message 带字段名前缀，不能直接显示给用户。
+            // 这里用 reason,生成的 message 带字段名前缀,不能直接显示给用户.
             is WalletException.Other -> WalletCoreException.Other(e.reason)
         }
     }

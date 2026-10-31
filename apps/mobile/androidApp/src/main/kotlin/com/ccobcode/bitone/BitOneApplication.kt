@@ -18,7 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
-/** 流程状态放在进程级，Activity 重建时助记词草稿不丢，也不用进 Bundle。 */
+/** 流程状态放在进程级,Activity 重建时助记词草稿不丢,也不用进 Bundle. */
 class BitOneApplication : Application() {
     val current = CurrentActivity()
 

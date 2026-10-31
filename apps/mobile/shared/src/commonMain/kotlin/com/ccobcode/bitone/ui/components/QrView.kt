@@ -44,16 +44,16 @@ import com.ccobcode.bitone.ui.theme.Radius
 import com.ccobcode.bitone.ui.theme.Size as TokenSize
 import com.ccobcode.bitone.ui.theme.Space
 
-/** 屏幕高度里留给标题、帧进度和吸底按钮的部分。横屏时二维码按剩下的高度收窄，一屏看得全。 */
+/** 屏幕高度里留给标题,帧进度和吸底按钮的部分.横屏时二维码按剩下的高度收窄,一屏看得全. */
 private val QrChrome = TokenSize.hRow * 3 + Space.s8
 
-/** 全屏时只有帧进度和播放控制。 */
+/** 全屏时只有帧进度和播放控制. */
 private val FullscreenChrome = TokenSize.hRow * 2
 
 /**
- * 动态二维码，规格见 docs/06 §4.5。任何主题下都是白底深色码点，所以固定用浅色令牌。
+ * 动态二维码,规格见 docs/06 §4.5.任何主题下都是白底深色码点,所以固定用浅色令牌.
  *
- * [total] 不超过 1 时是静态码，不显示帧进度。
+ * [total] 不超过 1 时是静态码,不显示帧进度.
  */
 @Composable
 fun QrView(
@@ -108,7 +108,7 @@ fun QrView(
     }
 }
 
-/** 帧数不多时每帧一段，当前帧是主色。太多了画不下，换成一条连续的进度条。 */
+/** 帧数不多时每帧一段,当前帧是主色.太多了画不下,换成一条连续的进度条. */
 @Composable
 private fun FrameBar(frame: Int, total: Int, modifier: Modifier) {
     val c = BitOneTheme.colors
@@ -130,34 +130,34 @@ private fun FrameBar(frame: Int, total: Int, modifier: Modifier) {
     }
 }
 
-/** 动态二维码加播放控制，可暂停、调速、全屏，和网页端的 AnimatedQr 同一套。只有一帧时暂停和调速没有意义。 */
+/** 动态二维码加播放控制,可暂停,调速,全屏,和网页端的 AnimatedQr 同一套.只有一帧时暂停和调速没有意义. */
 @Composable
 fun QrPlayer(flow: WalletFlow, label: String, fullscreen: Boolean, onFullscreen: (Boolean) -> Unit) {
-    val single = flow.frameTotal <= 1
+    val single = flow.player.total <= 1
     Column(
         Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Space.s4),
     ) {
         QrView(
-            flow.frame,
-            flow.frameIndex,
-            flow.frameTotal,
+            flow.player.frame,
+            flow.player.index,
+            flow.player.total,
             label,
             chrome = if (fullscreen) FullscreenChrome else QrChrome,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-            SmallButton(if (flow.framesPaused) "播放" else "暂停", enabled = !single, onClick = flow::togglePaused)
-            SmallButton("速度 ${SPEEDS[flow.frameSpeed]}", enabled = !single, onClick = flow::nextSpeed)
+            SmallButton(if (flow.player.paused) "播放" else "暂停", enabled = !single, onClick = flow.player::togglePaused)
+            SmallButton("速度 ${SPEEDS[flow.player.speed]}", enabled = !single, onClick = flow.player::nextSpeed)
             SmallIconButton(if (fullscreen) "退出全屏" else "全屏显示二维码", Icons.Expand) { onFullscreen(!fullscreen) }
         }
     }
 }
 
-/** 顺序和令牌里的间隔一一对应。 */
+/** 顺序和令牌里的间隔一一对应. */
 private val SPEEDS = listOf("标准", "慢", "快")
 
-/** 全屏显示二维码，盖住页面上其他内容，返回键先退出全屏。 */
+/** 全屏显示二维码,盖住页面上其他内容,返回键先退出全屏. */
 @Composable
 fun BoxScope.QrFullscreen(flow: WalletFlow, label: String, open: Boolean, onFullscreen: (Boolean) -> Unit) {
     CloseOnBack(flow, open) { onFullscreen(false) }

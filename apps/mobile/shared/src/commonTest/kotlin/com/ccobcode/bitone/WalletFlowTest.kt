@@ -39,7 +39,7 @@ private const val BAD_PIN = "000000"
 @OptIn(ExperimentalCoroutinesApi::class)
 class WalletFlowTest {
 
-    /** backgroundScope 的任务不算在 advanceUntilIdle 里，所以单独建作用域。 */
+    /** backgroundScope 的任务不算在 advanceUntilIdle 里,所以单独建作用域. */
     private fun TestScope.rig(vararg setup: (Rig) -> Unit): Rig {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val scope = CoroutineScope(dispatcher + SupervisorJob() + CoroutineExceptionHandler { _, _ -> })
@@ -54,20 +54,20 @@ class WalletFlowTest {
         return rig.flow
     }
 
-    private fun WalletFlow.typeSetPin(pin: String) = pin.forEach(::setPinDigit)
+    private fun WalletFlow.typeSetPin(digits: String) = digits.forEach(pin::digit)
 
     private fun TestScope.answerAll(flow: WalletFlow, correct: Boolean) {
-        flow.quiz.forEachIndexed { i, item ->
-            flow.pick(item.index, if (correct || i > 0) item.options[0] else item.options[1])
+        flow.setup.quiz.forEachIndexed { i, item ->
+            flow.setup.pick(item.index, if (correct || i > 0) item.options[0] else item.options[1])
             advanceUntilIdle()
         }
     }
 
     private fun TestScope.toVerify(flow: WalletFlow) {
-        flow.startCreate()
+        flow.setup.startCreate()
         advanceUntilIdle()
         assertEquals(Screen.Backup, flow.screen)
-        flow.startVerify()
+        flow.setup.startVerify()
         advanceUntilIdle()
         assertEquals(Screen.Verify, flow.screen)
     }
@@ -75,10 +75,10 @@ class WalletFlowTest {
     private fun TestScope.createWallet(flow: WalletFlow) {
         toVerify(flow)
         answerAll(flow, correct = true)
-        flow.continueAfterVerify()
+        flow.setup.continueAfterVerify()
         flow.typeSetPin(PIN)
         flow.typeSetPin(PIN)
-        flow.finishSetup()
+        flow.setup.finishSetup()
         advanceUntilIdle()
         assertEquals(Screen.Home, flow.screen)
     }
@@ -90,21 +90,21 @@ class WalletFlowTest {
     }
 
     private fun TestScope.openUnlock(flow: WalletFlow) {
-        flow.openExport()
+        flow.export.open()
         advanceUntilIdle()
         assertEquals(Screen.Unlock, flow.screen)
     }
 
     private fun TestScope.tryPin(flow: WalletFlow, pin: String) {
-        pin.forEach(flow::unlockDigit)
-        flow.submitUnlock()
+        pin.forEach(flow.unlock::digit)
+        flow.unlock.submit()
         advanceUntilIdle()
     }
 
-    /** 等够延时再错一次。 */
+    /** 等够延时再错一次. */
     private fun TestScope.failOnce(rig: Rig) {
         rig.clock.elapsed += pinDelayMs(rig.store.pin.failures)
-        rig.flow.refreshPinStatus()
+        rig.flow.unlock.refreshStatus()
         tryPin(rig.flow, BAD_PIN)
     }
 
@@ -136,7 +136,7 @@ class WalletFlowTest {
         val rig = rig()
         val flow = boot(rig)
         rig.check.facts = facts(adbEnabled = true)
-        flow.startCreate()
+        flow.setup.startCreate()
         advanceUntilIdle()
         assertEquals(Screen.SelfCheckFailed, flow.screen)
         assertNull(rig.core.lastDraft)
@@ -198,17 +198,17 @@ class WalletFlowTest {
                 it.key.lost = true
             })
         val flow = boot(rig)
-        flow.startImport()
+        flow.setup.startImport()
         advanceUntilIdle()
         assertEquals(Screen.ImportWords, flow.screen)
         Words12.forEach {
-            flow.importPick(it)
+            flow.setup.importPick(it)
             advanceUntilIdle()
         }
-        flow.continueAfterImport()
+        flow.setup.continueAfterImport()
         flow.typeSetPin(PIN)
         flow.typeSetPin(PIN)
-        flow.finishSetup()
+        flow.setup.finishSetup()
         advanceUntilIdle()
         assertEquals(Screen.Home, flow.screen)
         assertEquals(0, rig.store.pin.failures)
@@ -224,12 +224,12 @@ class WalletFlowTest {
         toVerify(flow)
         val draft = rig.core.lastDraft
         answerAll(flow, correct = false)
-        assertEquals(VerifyState.Failed, flow.verifyState)
+        assertEquals(VerifyState.Failed, flow.setup.verifyState)
 
-        flow.backToBackup()
+        flow.setup.backToBackup()
         advanceUntilIdle()
         assertEquals(Screen.Backup, flow.screen)
-        assertEquals(Words12, flow.backupWords)
+        assertEquals(Words12, flow.setup.backupWords)
         assertEquals(draft, rig.core.lastDraft)
         assertFalse(draft!!.closed)
     }
@@ -239,12 +239,12 @@ class WalletFlowTest {
         val rig = rig()
         val flow = boot(rig)
         toVerify(flow)
-        val first = flow.quiz.first()
+        val first = flow.setup.quiz.first()
         answerAll(flow, correct = false)
-        flow.pick(first.index, first.options[0])
+        flow.setup.pick(first.index, first.options[0])
         advanceUntilIdle()
-        assertEquals(VerifyState.Failed, flow.verifyState)
-        flow.continueAfterVerify()
+        assertEquals(VerifyState.Failed, flow.setup.verifyState)
+        flow.setup.continueAfterVerify()
         assertEquals(Screen.Verify, flow.screen)
     }
 
@@ -252,20 +252,20 @@ class WalletFlowTest {
     fun cannotSkipVerification() = runTest {
         val rig = rig()
         val flow = boot(rig)
-        flow.startCreate()
+        flow.setup.startCreate()
         advanceUntilIdle()
 
-        // 没答题就继续。
-        flow.startVerify()
+        // 没答题就继续.
+        flow.setup.startVerify()
         advanceUntilIdle()
-        flow.continueAfterVerify()
+        flow.setup.continueAfterVerify()
         assertEquals(Screen.Verify, flow.screen)
 
-        // 绕过页面直接调用后面的步骤。
+        // 绕过页面直接调用后面的步骤.
         flow.typeSetPin(PIN)
         flow.typeSetPin(PIN)
-        assertTrue(flow.pinDone)
-        flow.finishSetup()
+        assertTrue(flow.pin.done)
+        flow.setup.finishSetup()
         advanceUntilIdle()
         flow.openHome()
         flow.openSettings()
@@ -281,10 +281,10 @@ class WalletFlowTest {
         val flow = boot(rig)
         toVerify(flow)
         answerAll(flow, correct = false)
-        flow.continueAfterVerify()
+        flow.setup.continueAfterVerify()
         flow.typeSetPin(PIN)
         flow.typeSetPin(PIN)
-        flow.finishSetup()
+        flow.setup.finishSetup()
         advanceUntilIdle()
         assertNull(rig.store.vault)
     }
@@ -299,11 +299,11 @@ class WalletFlowTest {
         advanceUntilIdle()
         assertEquals(Screen.Backup, flow.screen)
         val old = rig.core.lastDraft!!
-        flow.setBackupWordCount(24)
+        flow.setup.setBackupWordCount(24)
         advanceUntilIdle()
         assertTrue(old.closed)
-        assertEquals(24, flow.backupWords.size)
-        flow.finishSetup()
+        assertEquals(24, flow.setup.backupWords.size)
+        flow.setup.finishSetup()
         advanceUntilIdle()
         assertNull(rig.store.vault)
     }
@@ -312,7 +312,7 @@ class WalletFlowTest {
     fun backupWordsLeaveStateDuringVerify() = runTest {
         val flow = boot(rig())
         toVerify(flow)
-        assertTrue(flow.backupWords.isEmpty())
+        assertTrue(flow.setup.backupWords.isEmpty())
     }
 
     // 建钱包
@@ -322,7 +322,7 @@ class WalletFlowTest {
         val rig = ready()
         assertContentEquals(boundVault(PIN), rig.store.vault)
         assertEquals(false, rig.store.meta?.imported)
-        assertEquals("73C5DA0A", rig.flow.fingerprint)
+        assertEquals("73C5DA0A", rig.flow.session.fingerprint)
         assertTrue(rig.core.lastDraft!!.closed)
         assertTrue(rig.core.lastWallet!!.closed)
     }
@@ -332,13 +332,13 @@ class WalletFlowTest {
         val flow = boot(rig())
         toVerify(flow)
         answerAll(flow, correct = true)
-        flow.continueAfterVerify()
+        flow.setup.continueAfterVerify()
         flow.typeSetPin(PIN)
-        assertTrue(flow.pinConfirming)
+        assertTrue(flow.pin.confirming)
         flow.typeSetPin(BAD_PIN)
-        assertTrue(flow.pinMismatch)
-        assertFalse(flow.pinConfirming)
-        assertEquals("", flow.pinInput)
+        assertTrue(flow.pin.mismatch)
+        assertFalse(flow.pin.confirming)
+        assertEquals("", flow.pin.input)
     }
 
     @Test
@@ -347,14 +347,14 @@ class WalletFlowTest {
         val flow = boot(rig)
         toVerify(flow)
         answerAll(flow, correct = true)
-        flow.continueAfterVerify()
+        flow.setup.continueAfterVerify()
         flow.typeSetPin(PIN)
         flow.typeSetPin(PIN)
         rig.key.cancelAuth = true
-        flow.finishSetup()
+        flow.setup.finishSetup()
         advanceUntilIdle()
         assertEquals(Screen.SetPin, flow.screen)
-        assertNotNull(flow.setupError)
+        assertNotNull(flow.pin.error)
         assertFalse(rig.core.lastDraft!!.closed)
         assertNull(rig.store.vault)
     }
@@ -363,19 +363,19 @@ class WalletFlowTest {
     fun importSkipsVerification() = runTest {
         val rig = rig()
         val flow = boot(rig)
-        flow.startImport()
+        flow.setup.startImport()
         advanceUntilIdle()
         Words12.forEach {
-            flow.importPick(it)
+            flow.setup.importPick(it)
             advanceUntilIdle()
         }
-        assertEquals(ChecksumState.Valid, flow.checksum)
-        flow.continueAfterImport()
+        assertEquals(ChecksumState.Valid, flow.setup.checksum)
+        flow.setup.continueAfterImport()
         assertEquals(Screen.SetPin, flow.screen)
-        assertTrue(flow.isImportFlow)
+        assertTrue(flow.setup.isImportFlow)
         flow.typeSetPin(PIN)
         flow.typeSetPin(PIN)
-        flow.finishSetup()
+        flow.setup.finishSetup()
         advanceUntilIdle()
         assertEquals(Screen.Home, flow.screen)
         assertEquals(true, rig.store.meta?.imported)
@@ -384,91 +384,91 @@ class WalletFlowTest {
     @Test
     fun badChecksumBlocksImport() = runTest {
         val flow = boot(rig())
-        flow.startImport()
+        flow.setup.startImport()
         advanceUntilIdle()
         (Words12.dropLast(1) + "badword").forEach {
-            flow.importPick(it)
+            flow.setup.importPick(it)
             advanceUntilIdle()
         }
-        assertEquals(ChecksumState.Invalid, flow.checksum)
-        flow.continueAfterImport()
+        assertEquals(ChecksumState.Invalid, flow.setup.checksum)
+        flow.setup.continueAfterImport()
         assertEquals(Screen.ImportWords, flow.screen)
 
-        flow.importDelete()
+        flow.setup.importDelete()
         advanceUntilIdle()
-        assertEquals(ChecksumState.Incomplete, flow.checksum)
+        assertEquals(ChecksumState.Incomplete, flow.setup.checksum)
     }
 
     @Test
     fun wrongWordCanBeFixedWithoutRetypingTheRest() = runTest {
         val flow = boot(rig())
-        flow.startImport()
+        flow.setup.startImport()
         advanceUntilIdle()
         (listOf("badword") + Words12.drop(1)).forEach {
-            flow.importPick(it)
+            flow.setup.importPick(it)
             advanceUntilIdle()
         }
-        assertEquals(ChecksumState.Invalid, flow.checksum)
+        assertEquals(ChecksumState.Invalid, flow.setup.checksum)
 
-        flow.importEdit(0)
-        assertEquals(0, flow.importCurrent)
-        assertEquals("badword", flow.importBuffer)
-        assertEquals(ChecksumState.Incomplete, flow.checksum)
-        flow.continueAfterImport()
+        flow.setup.importEdit(0)
+        assertEquals(0, flow.setup.importCurrent)
+        assertEquals("badword", flow.setup.importBuffer)
+        assertEquals(ChecksumState.Incomplete, flow.setup.checksum)
+        flow.setup.continueAfterImport()
         assertEquals(Screen.ImportWords, flow.screen)
 
-        flow.importPick(Words12.first())
+        flow.setup.importPick(Words12.first())
         advanceUntilIdle()
-        assertEquals(Words12, flow.importedWords)
-        assertEquals(ChecksumState.Valid, flow.checksum)
-        assertNull(flow.importEditing)
+        assertEquals(Words12, flow.setup.importedWords)
+        assertEquals(ChecksumState.Valid, flow.setup.checksum)
+        assertNull(flow.setup.importEditing)
     }
 
     @Test
     fun deletingAnEditedWordEmptyCancelsTheEdit() = runTest {
         val flow = boot(rig())
-        flow.startImport()
+        flow.setup.startImport()
         advanceUntilIdle()
         Words12.forEach {
-            flow.importPick(it)
+            flow.setup.importPick(it)
             advanceUntilIdle()
         }
-        flow.importEdit(11)
-        repeat(flow.importBuffer.length) { flow.importDelete() }
-        assertEquals("", flow.importBuffer)
-        assertEquals(11, flow.importEditing)
+        flow.setup.importEdit(11)
+        repeat(flow.setup.importBuffer.length) { flow.setup.importDelete() }
+        assertEquals("", flow.setup.importBuffer)
+        assertEquals(11, flow.setup.importEditing)
 
-        flow.importDelete()
+        flow.setup.importDelete()
         advanceUntilIdle()
-        assertNull(flow.importEditing)
-        assertEquals(Words12, flow.importedWords)
-        assertEquals(ChecksumState.Valid, flow.checksum)
+        assertNull(flow.setup.importEditing)
+        assertEquals(Words12, flow.setup.importedWords)
+        assertEquals(ChecksumState.Valid, flow.setup.checksum)
     }
 
     @Test
     fun unknownWordIsFlagged() = runTest {
         val flow = boot(rig())
-        flow.startImport()
+        flow.setup.startImport()
         advanceUntilIdle()
-        "zz".forEach(flow::importLetter)
-        assertTrue(flow.bufferInvalid)
-        flow.importPick("notaword")
-        assertTrue(flow.importedWords.isEmpty())
+        "zz".forEach(flow.setup::importLetter)
+        assertTrue(flow.setup.bufferInvalid)
+        flow.setup.importPick("notaword")
+        assertTrue(flow.setup.importedWords.isEmpty())
     }
 
     @Test
     fun wordCountSwitchKeepsEnteredWords() = runTest {
         val flow = boot(rig())
-        flow.startImport()
+        flow.setup.startImport()
         advanceUntilIdle()
         Words12.forEach {
-            flow.importPick(it)
+            flow.setup.importPick(it)
             advanceUntilIdle()
         }
-        flow.setImportWordCount(24)
+        flow.setup.setImportWordCount(24)
         advanceUntilIdle()
-        assertEquals(12, flow.importedWords.size)
-        assertEquals(ChecksumState.Incomplete, flow.checksum)
+        assertEquals(12, flow.setup.importedWords.size)
+        assertEquals(ChecksumState.Incomplete, flow.setup.checksum)
     }
 
     // PIN
@@ -487,13 +487,13 @@ class WalletFlowTest {
         val flow = rig.flow
         openUnlock(flow)
         repeat(4) { tryPin(flow, BAD_PIN) }
-        assertEquals(4, flow.pinFailures)
-        assertEquals(0, flow.waitMs)
+        assertEquals(4, flow.unlock.failures)
+        assertEquals(0, flow.unlock.waitMs)
         assertEquals(Screen.Unlock, flow.screen)
 
         tryPin(flow, BAD_PIN)
-        assertEquals(5, flow.pinFailures)
-        assertEquals(30_000, flow.waitMs)
+        assertEquals(5, flow.unlock.failures)
+        assertEquals(30_000, flow.unlock.waitMs)
     }
 
     @Test
@@ -504,16 +504,16 @@ class WalletFlowTest {
         repeat(5) { tryPin(flow, BAD_PIN) }
         val opens = rig.core.opens
         tryPin(flow, BAD_PIN)
-        assertEquals("", flow.unlockPin)
+        assertEquals("", flow.unlock.pin)
         assertEquals(5, rig.store.pin.failures)
         assertEquals(opens, rig.core.opens)
 
         rig.clock.elapsed += 29_000
-        flow.refreshPinStatus()
-        assertEquals(1_000, flow.waitMs)
+        flow.unlock.refreshStatus()
+        assertEquals(1_000, flow.unlock.waitMs)
         rig.clock.elapsed += 1_000
-        flow.refreshPinStatus()
-        assertEquals(0, flow.waitMs)
+        flow.unlock.refreshStatus()
+        assertEquals(0, flow.unlock.waitMs)
         tryPin(flow, PIN)
         assertEquals(Screen.Export, flow.screen)
     }
@@ -525,14 +525,14 @@ class WalletFlowTest {
         openUnlock(flow)
         repeat(5) { tryPin(flow, BAD_PIN) }
         rig.clock.elapsed += 25_000
-        flow.refreshPinStatus()
-        assertEquals(5_000, flow.waitMs)
+        flow.unlock.refreshStatus()
+        assertEquals(5_000, flow.unlock.waitMs)
 
-        // 重启后单调时钟归零，即使读数更大也按新开机算。
+        // 重启后单调时钟归零,即使读数更大也按新开机算.
         rig.clock.boot = 2
         rig.clock.elapsed = 500_000
-        flow.refreshPinStatus()
-        assertEquals(30_000, flow.waitMs)
+        flow.unlock.refreshStatus()
+        assertEquals(30_000, flow.unlock.waitMs)
     }
 
     @Test
@@ -541,8 +541,8 @@ class WalletFlowTest {
         val flow = rig.flow
         openUnlock(flow)
         rig.core.killDuringOpen = true
-        PIN.forEach(flow::unlockDigit)
-        flow.submitUnlock()
+        PIN.forEach(flow.unlock::digit)
+        flow.unlock.submit()
         runCatching { advanceUntilIdle() }
         assertEquals(1, rig.store.pin.failures)
     }
@@ -556,7 +556,7 @@ class WalletFlowTest {
         tryPin(flow, PIN)
         assertEquals(Screen.Export, flow.screen)
         assertEquals(0, rig.store.pin.failures)
-        assertEquals(0, flow.pinFailures)
+        assertEquals(0, flow.unlock.failures)
     }
 
     @Test
@@ -574,7 +574,7 @@ class WalletFlowTest {
         assertEquals(Screen.Wiped, flow.screen)
         assertNull(rig.store.vault)
         assertNull(rig.store.meta)
-        assertNull(flow.meta)
+        assertNull(flow.session.meta)
         assertEquals(0, rig.store.pin.failures)
         assertEquals(2, rig.key.deleted)
 
@@ -595,7 +595,7 @@ class WalletFlowTest {
         assertNull(rig.store.vault)
     }
 
-    /** 硬件结果按次认证，所以每猜一次 PIN 都要过一次系统屏幕锁。 */
+    /** 硬件结果按次认证,所以每猜一次 PIN 都要过一次系统屏幕锁. */
     @Test
     fun everyAttemptConfirmsTheDeviceLock() = runTest {
         val rig = ready()
@@ -607,11 +607,11 @@ class WalletFlowTest {
         tryPin(flow, BAD_PIN)
         assertEquals(before + 2, rig.key.binds)
 
-        // 不过手机锁就不算一次尝试。
+        // 不过手机锁就不算一次尝试.
         rig.key.cancelAuth = true
         tryPin(flow, BAD_PIN)
         assertEquals(2, rig.store.pin.failures)
-        assertNotNull(flow.unlockError)
+        assertNotNull(flow.unlock.error)
     }
 
     @Test
@@ -628,7 +628,7 @@ class WalletFlowTest {
         assertEquals(1, rig.key.legacyDropped)
     }
 
-    /** 迁移没走完时旧密文和旧密钥都在，下次还能解开。 */
+    /** 迁移没走完时旧密文和旧密钥都在,下次还能解开. */
     @Test
     fun cancelledMigrationKeepsTheLegacyVault() = runTest {
         val rig = ready()
@@ -662,7 +662,7 @@ class WalletFlowTest {
         rig.key.cancelConfirm = true
         tryPin(flow, BAD_PIN)
         assertEquals(2, rig.store.pin.failures)
-        assertNotNull(flow.unlockError)
+        assertNotNull(flow.unlock.error)
     }
 
     @Test
@@ -680,21 +680,21 @@ class WalletFlowTest {
         rig.key.changed = true
         repeat(MAX_PIN_FAILURES + 3) {
             rig.clock.elapsed += changedLockDelayMs(rig.store.pin.failures)
-            flow.refreshPinStatus()
+            flow.unlock.refreshStatus()
             tryPin(flow, BAD_PIN)
         }
         assertEquals(Screen.Unlock, flow.screen)
         assertNotNull(rig.store.vault)
         assertEquals(MAX_PIN_FAILURES - 1, rig.store.pin.failures)
-        assertEquals(3_600_000, flow.waitMs)
-        assertEquals(false, flow.canWipe)
+        assertEquals(3_600_000, flow.unlock.waitMs)
+        assertEquals(false, flow.session.canWipe)
 
-        // 输对 PIN 后恢复。
+        // 输对 PIN 后恢复.
         rig.clock.elapsed += 3_600_000
-        flow.refreshPinStatus()
+        flow.unlock.refreshStatus()
         tryPin(flow, PIN)
         assertEquals(false, rig.key.changed)
-        assertEquals(true, flow.canWipe)
+        assertEquals(true, flow.session.canWipe)
         assertEquals(0, rig.store.pin.failures)
     }
 
@@ -732,7 +732,7 @@ class WalletFlowTest {
         tryPin(flow, BAD_PIN)
         assertEquals(Screen.Unlock, flow.screen)
         assertEquals(0, rig.store.pin.failures)
-        assertNotNull(flow.unlockError)
+        assertNotNull(flow.unlock.error)
     }
 
     @Test
@@ -740,9 +740,9 @@ class WalletFlowTest {
         val rig = ready()
         val flow = rig.flow
         openUnlock(flow)
-        PIN.forEach(flow::unlockDigit)
+        PIN.forEach(flow.unlock::digit)
         flow.onBackground()
-        assertEquals("", flow.unlockPin)
+        assertEquals("", flow.unlock.pin)
     }
 
     // 导出
@@ -756,7 +756,7 @@ class WalletFlowTest {
         assertEquals(Screen.Export, flow.screen)
         assertTrue(rig.core.lastWallet!!.closed)
         assertEquals(false, rig.core.exportedImported)
-        assertEquals(3, flow.frameTotal)
+        assertEquals(3, flow.player.total)
     }
 
     @Test
@@ -779,26 +779,26 @@ class WalletFlowTest {
         openUnlock(flow)
         tryPin(flow, PIN)
         val stream = rig.core.lastStream!!
-        val player = launch { flow.playFrames() }
+        val player = launch { flow.player.play() }
         advanceTimeBy(600)
 
-        flow.togglePaused()
+        flow.player.togglePaused()
         Snapshot.sendApplyNotifications()
         advanceTimeBy(100)
         val paused = stream.sent
         advanceTimeBy(5_000)
         assertEquals(paused, stream.sent)
 
-        flow.togglePaused()
+        flow.player.togglePaused()
         Snapshot.sendApplyNotifications()
-        repeat(2) { flow.nextSpeed() }
-        assertEquals(Qr.intervals.last(), Qr.intervals[flow.frameSpeed])
+        repeat(2) { flow.player.nextSpeed() }
+        assertEquals(Qr.intervals.last(), Qr.intervals[flow.player.speed])
         runCurrent()
         val resumed = stream.sent
         advanceTimeBy(1_000)
         assertTrue(stream.sent - resumed in 3..5, "最快的速度一秒发了 ${stream.sent - resumed} 帧")
 
-        flow.finishExport()
+        flow.export.finish()
         advanceTimeBy(1_000)
         player.join()
     }
@@ -810,13 +810,13 @@ class WalletFlowTest {
         openUnlock(flow)
         tryPin(flow, PIN)
         val stream = rig.core.lastStream!!
-        val player = launch { flow.playFrames() }
+        val player = launch { flow.player.play() }
         advanceTimeBy(1_000)
         assertTrue(stream.sent in 2..3, "一秒发了 ${stream.sent} 帧")
-        assertEquals((stream.sent - 1) % 3 + 1, flow.frameIndex)
+        assertEquals((stream.sent - 1) % 3 + 1, flow.player.index)
         assertFalse(stream.closed)
 
-        flow.finishExport()
+        flow.export.finish()
         assertEquals(Screen.Home, flow.screen)
         advanceTimeBy(1_000)
         player.join()
@@ -828,7 +828,7 @@ class WalletFlowTest {
         val rig = ready()
         val flow = rig.flow
         rig.check.facts = facts(wifiOn = true)
-        flow.openExport()
+        flow.export.open()
         advanceUntilIdle()
         assertEquals(Screen.SelfCheckFailed, flow.screen)
 
@@ -846,29 +846,29 @@ class WalletFlowTest {
         val flow = boot(rig)
         toVerify(flow)
         answerAll(flow, correct = true)
-        flow.continueAfterVerify()
+        flow.setup.continueAfterVerify()
         flow.typeSetPin(PIN)
         flow.typeSetPin(PIN)
-        flow.finishSetup()
+        flow.setup.finishSetup()
         advanceUntilIdle()
         assertEquals("73C5DA0A", rig.store.meta?.fingerprint)
 
         val second = rig()
         val secondFlow = boot(second)
-        secondFlow.startCreate()
+        secondFlow.setup.startCreate()
         advanceUntilIdle()
-        secondFlow.togglePassphrase()
-        secondFlow.startVerify()
+        secondFlow.setup.togglePassphrase()
+        secondFlow.setup.startVerify()
         advanceUntilIdle()
         answerAll(secondFlow, correct = true)
-        secondFlow.continueAfterVerify()
+        secondFlow.setup.continueAfterVerify()
         secondFlow.typeSetPin(PIN)
         secondFlow.typeSetPin(PIN)
-        secondFlow.finishSetup()
+        secondFlow.setup.finishSetup()
         advanceUntilIdle()
         assertNull(second.store.meta?.fingerprint)
         assertEquals(true, second.store.meta?.passphrase)
-        assertNull(secondFlow.fingerprint)
+        assertNull(secondFlow.session.fingerprint)
     }
 
     @Test
@@ -880,17 +880,17 @@ class WalletFlowTest {
             })
         val flow = boot(rig)
         openUnlock(flow)
-        assertTrue(flow.passphraseRequired)
-        PIN.forEach(flow::unlockDigit)
-        assertFalse(flow.canSubmitUnlock)
+        assertTrue(flow.session.passphraseRequired)
+        PIN.forEach(flow.unlock::digit)
+        assertFalse(flow.unlock.canSubmit)
 
-        "Pass 1!".forEach(flow::passphraseInput)
-        assertTrue(flow.canSubmitUnlock)
-        flow.submitUnlock()
+        "Pass 1!".forEach(flow.unlock::passphraseInput)
+        assertTrue(flow.unlock.canSubmit)
+        flow.unlock.submit()
         advanceUntilIdle()
         assertEquals(Screen.Export, flow.screen)
-        assertEquals("9E21B4C7", flow.fingerprint)
-        assertEquals("", flow.unlockPassphrase)
+        assertEquals("9E21B4C7", flow.session.fingerprint)
+        assertEquals("", flow.unlock.passphrase)
         assertNull(rig.store.meta?.fingerprint)
     }
 
@@ -900,7 +900,7 @@ class WalletFlowTest {
     fun backClosesOpenLayersBeforeLeavingThePage() = runTest {
         val rig = rig()
         val flow = boot(rig)
-        flow.startImport()
+        flow.setup.startImport()
         advanceUntilIdle()
         var closed = 0
         val sheet = { closed += 1 }

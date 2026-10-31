@@ -31,10 +31,10 @@ enum class NavItem(val label: String, val icon: String) {
     Settings("设置", Icons.Settings),
 }
 
-/** 悬浮胶囊，高度等于列表行高。 */
+/** 悬浮胶囊,高度等于列表行高. */
 val AppNavHeight = Size.hRow
 
-/** 底色块包住图标和文字，在项目之间滑动，图标在上文字在下，和网页端的底部标签栏同一规格。 */
+/** 底色块包住图标和文字,在项目之间滑动,图标在上文字在下,和网页端的底部标签栏同一规格. */
 @Composable
 fun AppNav(active: NavItem, onSelect: (NavItem) -> Unit) {
     val c = BitOneTheme.colors

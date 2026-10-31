@@ -37,15 +37,15 @@ import com.ccobcode.bitone.ui.theme.FontSize
 import com.ccobcode.bitone.ui.theme.Radius
 import com.ccobcode.bitone.ui.theme.Space
 
-/** 词格可以点回去改，高度按触控区算。 */
+/** 词格可以点回去改,高度按触控区算. */
 private val CellHeight = 44.dp
 
-/** A1b 导入助记词。输入全部经过内置键盘。 */
+/** A1b 导入助记词.输入全部经过内置键盘. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ImportScreen(flow: WalletFlow) {
     val c = BitOneTheme.colors
-    val current = flow.importCurrent
+    val current = flow.setup.importCurrent
     val requester = remember { BringIntoViewRequester() }
     LaunchedEffect(current) { requester.bringIntoView() }
     Page(
@@ -53,19 +53,19 @@ fun ImportScreen(flow: WalletFlow) {
         contentGap = Space.s4,
         bottom = { ImportPanel(flow) },
     ) {
-        Segmented(WordCountOptions, flow.wordCount, flow::setImportWordCount)
+        Segmented(WordCountOptions, flow.setup.wordCount, flow.setup::setImportWordCount)
         Card {
             Column(Modifier.padding(Space.s3)) {
-                ThreeColumns(List(flow.wordCount) { it }) { index, _, modifier ->
+                ThreeColumns(List(flow.setup.wordCount) { it }) { index, _, modifier ->
                     val active = index == current
-                    val invalid = active && flow.bufferInvalid
-                    val filled = index < flow.importedWords.size
+                    val invalid = active && flow.setup.bufferInvalid
+                    val filled = index < flow.setup.importedWords.size
                     WordCell(
                         number = index + 1,
                         word =
                             when {
-                                active -> flow.importBuffer
-                                filled -> flow.importedWords[index]
+                                active -> flow.setup.importBuffer
+                                filled -> flow.setup.importedWords[index]
                                 else -> ""
                             },
                         height = CellHeight,
@@ -77,12 +77,12 @@ fun ImportScreen(flow: WalletFlow) {
                                 else -> Color.Transparent
                             },
                         wordColor = if (invalid) c.danger else c.text,
-                        onClick = if (filled) ({ flow.importEdit(index) }) else null,
+                        onClick = if (filled) ({ flow.setup.importEdit(index) }) else null,
                     )
                 }
             }
         }
-        PassphraseSwitch(flow.passphraseEnabled, flow::togglePassphrase)
+        PassphraseSwitch(flow.setup.passphraseEnabled, flow.setup::togglePassphrase)
     }
 }
 
@@ -91,12 +91,12 @@ private fun ImportPanel(flow: WalletFlow) {
     val c = BitOneTheme.colors
     val (status, color) =
         when {
-            flow.bufferInvalid -> "不在词表中" to c.danger
-            flow.importEditing != null -> "第 ${flow.importCurrent + 1} 个词" to c.text3
-            flow.importComplete && flow.checksum == ChecksumState.Valid -> "校验和正确" to c.ok
-            flow.importComplete && flow.checksum == ChecksumState.Invalid -> "校验和错误，点词可以修改" to c.danger
-            flow.importComplete -> "校验中" to c.text3
-            else -> "第 ${flow.importCurrent + 1} 个词" to c.text3
+            flow.setup.bufferInvalid -> "不在词表中" to c.danger
+            flow.setup.importEditing != null -> "第 ${flow.setup.importCurrent + 1} 个词" to c.text3
+            flow.setup.importComplete && flow.setup.checksum == ChecksumState.Valid -> "校验和正确" to c.ok
+            flow.setup.importComplete && flow.setup.checksum == ChecksumState.Invalid -> "校验和错误,点词可以修改" to c.danger
+            flow.setup.importComplete -> "校验中" to c.text3
+            else -> "第 ${flow.setup.importCurrent + 1} 个词" to c.text3
         }
     Column(Modifier.fillMaxWidth().padding(bottom = Space.s3), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
         Row(
@@ -105,9 +105,9 @@ private fun ImportPanel(flow: WalletFlow) {
             horizontalArrangement = Arrangement.spacedBy(Space.s2),
         ) {
             Txt(status, Modifier.weight(1f), size = FontSize.t2, color = color)
-            flow.suggestions.forEach { word ->
+            flow.setup.suggestions.forEach { word ->
                 Box(
-                    Modifier.tap { flow.importPick(word) }
+                    Modifier.tap { flow.setup.importPick(word) }
                         .height(36.dp)
                         .background(c.accentSoft, RoundedCornerShape(Radius.rf))
                         .padding(horizontal = Space.s3),
@@ -117,12 +117,12 @@ private fun ImportPanel(flow: WalletFlow) {
                 }
             }
         }
-        WordKeyboard(flow::importLetter, flow::importDelete)
+        WordKeyboard(flow.setup::importLetter, flow.setup::importDelete)
         Box(Modifier.padding(top = Space.s1)) {
             PrimaryButton(
                 "继续",
-                enabled = flow.checksum == ChecksumState.Valid && !flow.busy,
-                onClick = flow::continueAfterImport,
+                enabled = flow.setup.checksum == ChecksumState.Valid && !flow.busy,
+                onClick = flow.setup::continueAfterImport,
             )
         }
     }

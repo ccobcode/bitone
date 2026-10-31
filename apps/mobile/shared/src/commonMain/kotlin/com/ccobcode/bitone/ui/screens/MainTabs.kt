@@ -36,15 +36,15 @@ import com.ccobcode.bitone.ui.theme.Space
 
 private val FadeHeight = Space.s6
 
-/** 悬浮导航上下留的距离，页面内容要让开这一段。 */
+/** 悬浮导航上下留的距离,页面内容要让开这一段. */
 internal val NavSpace = AppNavHeight + FadeHeight
 
 private val Tabs = listOf(Screen.Home, Screen.Receive, Screen.Settings)
 
 /**
- * A3、A11 和 A10 是底部导航的三个标签页，共用一个外层，导航不随页面滑动，选中块才能在项目之间连续滑动。
+ * A3,A11 和 A10 是底部导航的三个标签页,共用一个外层,导航不随页面滑动,选中块才能在项目之间连续滑动.
  *
- * 抹除确认、语言选择和收款的账户选择也放在这一层，要盖住导航。
+ * 抹除确认,语言选择和收款的账户选择也放在这一层,要盖住导航.
  */
 @Composable
 fun MainTabs(flow: WalletFlow, brightness: Brightness) {
@@ -81,13 +81,13 @@ fun MainTabs(flow: WalletFlow, brightness: Brightness) {
             onCancel = { confirming = false },
             onConfirm = {
                 confirming = false
-                flow.startWipe()
+                flow.settings.startWipe()
             },
         )
     }
 }
 
-/** 底色从透明过渡到 `bg`，内容从导航后面滚过时不会和按钮叠在一起。 */
+/** 底色从透明过渡到 `bg`,内容从导航后面滚过时不会和按钮叠在一起. */
 @Composable
 private fun MainNav(flow: WalletFlow, active: NavItem) {
     val bg = BitOneTheme.colors.bg
@@ -104,7 +104,7 @@ private fun MainNav(flow: WalletFlow, active: NavItem) {
                 { item ->
                     when (item) {
                         NavItem.Wallet -> flow.openHome()
-                        NavItem.Receive -> flow.openReceive()
+                        NavItem.Receive -> flow.receive.open()
                         NavItem.Settings -> flow.openSettings()
                     }
                 },

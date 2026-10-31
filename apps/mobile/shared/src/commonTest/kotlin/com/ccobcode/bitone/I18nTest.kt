@@ -32,7 +32,7 @@ class I18nTest {
         I18n.lang = Lang.En
         assertEquals("Transfer", translate("普通转账"))
         assertEquals("3 wrong attempts", translate("已错 3 次"))
-        // 模板里的动态内容原样保留，内容本身是文案时也要翻译。
+        // 模板里的动态内容原样保留,内容本身是文案时也要翻译.
         assertEquals("Retry in 5 min 30 s", translate("5 分 30 秒 后可重试"))
     }
 
@@ -65,16 +65,16 @@ class I18nTest {
         assertEquals(Lang.Zh, I18n.lang)
 
         val flow = rig("zh", store).flow
-        assertEquals(null, flow.languageChoice)
-        flow.chooseLanguage(Lang.En)
+        assertEquals(null, flow.settings.languageChoice)
+        flow.settings.chooseLanguage(Lang.En)
         assertEquals(Lang.En, I18n.lang)
         assertEquals("en", store.language)
 
         val chosen = rig("zh", store).flow
         assertEquals(Lang.En, I18n.lang)
-        assertEquals(Lang.En, chosen.languageChoice)
+        assertEquals(Lang.En, chosen.settings.languageChoice)
 
-        chosen.chooseLanguage(null)
+        chosen.settings.chooseLanguage(null)
         assertEquals(Lang.Zh, I18n.lang)
         assertEquals(null, store.language)
     }
@@ -89,11 +89,11 @@ class I18nTest {
     fun autoBrightnessIsOnByDefaultAndRemembered() = runTest {
         val store = FakeStore()
         val flow = rig("zh", store).flow
-        assertTrue(flow.autoBrightness)
-        flow.toggleAutoBrightness()
-        assertFalse(flow.autoBrightness)
+        assertTrue(flow.settings.autoBrightness)
+        flow.settings.toggleAutoBrightness()
+        assertFalse(flow.settings.autoBrightness)
         assertFalse(store.autoBrightness)
-        assertFalse(rig("zh", store).flow.autoBrightness)
+        assertFalse(rig("zh", store).flow.settings.autoBrightness)
         assertEquals(Screen.Booting, flow.screen)
     }
 }

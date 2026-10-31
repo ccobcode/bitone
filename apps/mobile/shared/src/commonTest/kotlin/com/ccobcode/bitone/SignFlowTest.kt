@@ -49,7 +49,7 @@ class SignFlowTest {
         return Rig(scope, dispatcher).also(setup)
     }
 
-    /** 已有钱包的状态，不走一遍创建流程。 */
+    /** 已有钱包的状态,不走一遍创建流程. */
     private fun TestScope.ready(passphrase: Boolean = false, cached: Boolean = true, setup: (Rig) -> Unit = {}): Rig {
         val rig = rig {
             it.store.meta = WalletMeta(false, passphrase, if (passphrase) null else MAIN_FINGERPRINT)
@@ -69,11 +69,11 @@ class SignFlowTest {
         openScan(rig.flow)
         val parts = frames(REQUEST)
         feed(rig.flow, parts.take(1))
-        val progress = rig.flow.scanProgress
+        val progress = rig.flow.scan.progress
 
         feed(rig.flow, listOf("https://example.com", "ur:bitone-pairing/abc"))
         assertEquals(Screen.Scan, rig.flow.screen)
-        assertEquals(progress, rig.flow.scanProgress)
+        assertEquals(progress, rig.flow.scan.progress)
 
         feed(rig.flow, parts.drop(1))
         assertEquals(Screen.Review, rig.flow.screen)
@@ -88,12 +88,12 @@ class SignFlowTest {
     }
 
     private fun TestScope.openScan(flow: WalletFlow) {
-        flow.openScan()
+        flow.scan.open()
         advanceUntilIdle()
     }
 
     private fun TestScope.feed(flow: WalletFlow, parts: List<String>) = parts.forEach {
-        flow.onScanned(it)
+        flow.scan.onScanned(it)
         advanceUntilIdle()
     }
 
@@ -103,7 +103,7 @@ class SignFlowTest {
         feed(rig.flow, frames(REQUEST))
     }
 
-    /** 收齐后直接进 A6，中间没有摘要。 */
+    /** 收齐后直接进 A6,中间没有摘要. */
     private fun TestScope.toReview(rig: Rig) {
         scanRequest(rig)
         assertEquals(Screen.Review, rig.flow.screen)
@@ -112,16 +112,16 @@ class SignFlowTest {
 
     private fun TestScope.toPin(rig: Rig) {
         toReview(rig)
-        rig.flow.confirmTap()
+        rig.flow.scan.confirmTap()
         advanceUntilIdle()
         assertEquals(Screen.Unlock, rig.flow.screen)
-        assertEquals(UnlockPurpose.Sign, rig.flow.unlockPurpose)
+        assertEquals(UnlockPurpose.Sign, rig.flow.unlock.purpose)
     }
 
     private fun TestScope.submit(flow: WalletFlow, pin: String, passphrase: String = "") {
-        pin.forEach(flow::unlockDigit)
-        passphrase.forEach(flow::passphraseInput)
-        flow.submitUnlock()
+        pin.forEach(flow.unlock::digit)
+        passphrase.forEach(flow.unlock::passphraseInput)
+        flow.unlock.submit()
         advanceUntilIdle()
     }
 
@@ -136,7 +136,7 @@ class SignFlowTest {
         assertEquals(ReviewStyle.Permission, reviewStyle(reviewOf(Risk.PermissionChange, ConfirmMode.Hold)))
         assertEquals(ReviewStyle.HighRisk, reviewStyle(reviewOf(Risk.Transfer, ConfirmMode.Hold, listOf("手续费明显偏高"))))
         assertEquals(ReviewStyle.HighRisk, reviewStyle(reviewOf(Risk.Recognized, ConfirmMode.Hold, listOf("手续费明显偏高"))))
-        // 类别高于告警，授权带告警仍然是 A6b。
+        // 类别高于告警,授权带告警仍然是 A6b.
         assertEquals(ReviewStyle.Approval, reviewStyle(reviewOf(Risk.Approval, ConfirmMode.Hold, listOf("参数异常"))))
     }
 
@@ -153,7 +153,7 @@ class SignFlowTest {
             .forEach { review ->
                 val rig = ready { it.core.review = review }
                 toReview(rig)
-                assertEquals(review, rig.flow.review)
+                assertEquals(review, rig.flow.scan.review)
             }
     }
 
@@ -163,12 +163,12 @@ class SignFlowTest {
     fun tapGoesToPinAndHoldDoesNothing() = runTest {
         val rig = ready()
         toReview(rig)
-        rig.flow.holdStart()
+        rig.flow.scan.holdStart()
         advanceTimeBy(3_100)
         runCurrent()
         assertEquals(Screen.Review, rig.flow.screen)
 
-        rig.flow.confirmTap()
+        rig.flow.scan.confirmTap()
         advanceUntilIdle()
         assertEquals(Screen.Unlock, rig.flow.screen)
     }
@@ -179,33 +179,33 @@ class SignFlowTest {
         toReview(rig)
         val flow = rig.flow
 
-        flow.confirmTap()
+        flow.scan.confirmTap()
         advanceUntilIdle()
         assertEquals(Screen.Review, flow.screen)
 
-        flow.holdStart()
+        flow.scan.holdStart()
         advanceTimeBy(2_900)
         runCurrent()
-        assertTrue(flow.holdProgress > 0.9f)
-        flow.holdCancel()
-        assertEquals(0f, flow.holdProgress)
+        assertTrue(flow.scan.holdProgress > 0.9f)
+        flow.scan.holdCancel()
+        assertEquals(0f, flow.scan.holdProgress)
         advanceTimeBy(5_000)
         runCurrent()
         assertEquals(Screen.Review, flow.screen)
 
-        flow.holdStart()
+        flow.scan.holdStart()
         advanceTimeBy(3_000)
         runCurrent()
         advanceUntilIdle()
         assertEquals(Screen.Unlock, flow.screen)
-        assertEquals(UnlockPurpose.Sign, flow.unlockPurpose)
+        assertEquals(UnlockPurpose.Sign, flow.unlock.purpose)
     }
 
     @Test
     fun goingToBackgroundCancelsHold() = runTest {
         val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.Hold) }
         toReview(rig)
-        rig.flow.holdStart()
+        rig.flow.scan.holdStart()
         advanceTimeBy(1_000)
         rig.flow.onBackground()
         advanceTimeBy(5_000)
@@ -219,22 +219,22 @@ class SignFlowTest {
         scanRequest(rig)
         val flow = rig.flow
         assertEquals(Screen.Forbidden, flow.screen)
-        assertEquals("没有 Chain ID", flow.refusal)
-        assertNull(flow.review)
+        assertEquals("没有 Chain ID", flow.scan.refusal)
+        assertNull(flow.scan.review)
 
-        // 绕过页面直接调用后面的步骤。
-        flow.confirmTap()
-        flow.holdStart()
+        // 绕过页面直接调用后面的步骤.
+        flow.scan.confirmTap()
+        flow.scan.holdStart()
         advanceTimeBy(4_000)
         runCurrent()
-        PIN.forEach(flow::unlockDigit)
-        flow.submitUnlock()
+        PIN.forEach(flow.unlock::digit)
+        flow.unlock.submit()
         advanceUntilIdle()
         assertEquals(Screen.Forbidden, flow.screen)
         assertEquals(0, rig.core.opens)
         assertTrue(rig.core.signCalls.isEmpty())
 
-        flow.exitRequest()
+        flow.scan.exitRequest()
         assertEquals(Screen.Home, flow.screen)
     }
 
@@ -249,9 +249,9 @@ class SignFlowTest {
     fun rejectDropsTheRequest() = runTest {
         val rig = ready()
         toReview(rig)
-        rig.flow.exitRequest()
+        rig.flow.scan.exitRequest()
         assertEquals(Screen.Home, rig.flow.screen)
-        assertNull(rig.flow.review)
+        assertNull(rig.flow.scan.review)
         assertEquals(0, rig.core.opens)
     }
 
@@ -264,16 +264,16 @@ class SignFlowTest {
         openScan(flow)
         val parts = frames(REQUEST, 4).reversed()
         feed(flow, parts.take(1))
-        assertEquals(4, flow.scanFrames)
-        assertEquals(0.25f, flow.scanProgress)
-        assertNull(flow.scanResult)
+        assertEquals(4, flow.scan.frames)
+        assertEquals(0.25f, flow.scan.progress)
+        assertNull(flow.scan.result)
 
-        // 相机连续交来同一帧时不重复处理。
+        // 相机连续交来同一帧时不重复处理.
         feed(flow, parts.take(1) + parts.take(1))
-        assertEquals(0.25f, flow.scanProgress)
+        assertEquals(0.25f, flow.scan.progress)
 
         feed(flow, parts.drop(1))
-        assertIs<ScanResult.Request>(flow.scanResult)
+        assertIs<ScanResult.Request>(flow.scan.result)
         assertTrue(rig.core.lastReceiver!!.closed)
     }
 
@@ -295,11 +295,11 @@ class SignFlowTest {
         val flow = rig.flow
         openScan(flow)
         assertEquals(Screen.CameraDenied, flow.screen)
-        assertFalse(flow.cameraBroken)
-        flow.openCameraSettings()
+        assertFalse(flow.scan.cameraBroken)
+        flow.scan.openCameraSettings()
         assertEquals(1, rig.scanner.settingsOpened)
 
-        // 从系统设置授权回来，直接进扫码。
+        // 从系统设置授权回来,直接进扫码.
         rig.scanner.granted = true
         flow.onResume()
         advanceUntilIdle()
@@ -310,9 +310,9 @@ class SignFlowTest {
     fun cameraFailureIsNotAPermissionProblem() = runTest {
         val rig = ready()
         openScan(rig.flow)
-        rig.flow.cameraFailed()
+        rig.flow.scan.cameraFailed()
         assertEquals(Screen.CameraDenied, rig.flow.screen)
-        assertTrue(rig.flow.cameraBroken)
+        assertTrue(rig.flow.scan.cameraBroken)
     }
 
     @Test
@@ -321,9 +321,9 @@ class SignFlowTest {
         openScan(rig.flow)
         feed(rig.flow, listOf("bc1qnotaframe"))
         assertEquals(Screen.ParseFailed, rig.flow.screen)
-        assertEquals("二维码帧无效", rig.flow.scanFailure)
+        assertEquals("二维码帧无效", rig.flow.scan.failure)
 
-        rig.flow.rescan()
+        rig.flow.scan.rescan()
         advanceUntilIdle()
         assertEquals(Screen.Scan, rig.flow.screen)
         assertEquals(listOf(Screen.Home, Screen.Scan), rig.flow.stack)
@@ -344,37 +344,37 @@ class SignFlowTest {
         val rig = ready { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
         scanRequest(rig)
         assertEquals(Screen.FingerprintMismatch, rig.flow.screen)
-        assertFalse(rig.flow.passphraseRequired)
-        assertEquals(PASSPHRASE_FINGERPRINT, rig.flow.mismatchFingerprint)
+        assertFalse(rig.flow.session.passphraseRequired)
+        assertEquals(PASSPHRASE_FINGERPRINT, rig.flow.scan.mismatchFingerprint)
         assertEquals(0, rig.core.opens)
 
-        rig.flow.exitRequest()
-        assertNull(rig.flow.mismatchFingerprint)
+        rig.flow.scan.exitRequest()
+        assertNull(rig.flow.scan.mismatchFingerprint)
     }
 
     @Test
     fun passphraseCanBeRetriedAndReviewAgain() = runTest {
         val rig = ready(passphrase = true) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
         val flow = rig.flow
-        // 内存里没有公钥，先输密码读公钥。
+        // 内存里没有公钥,先输密码读公钥.
         scanRequest(rig)
         assertEquals(Screen.Unlock, flow.screen)
-        assertEquals(UnlockPurpose.LoadKeys, flow.unlockPurpose)
-        assertTrue(flow.unlockNeedsPassphrase)
+        assertEquals(UnlockPurpose.LoadKeys, flow.unlock.purpose)
+        assertTrue(flow.unlock.needsPassphrase)
 
-        // 第一次输错，算出的指纹和请求对不上。
+        // 第一次输错,算出的指纹和请求对不上.
         rig.core.requestFingerprint = "00000000"
         submit(flow, PIN, "wrong")
         assertEquals(Screen.FingerprintMismatch, flow.screen)
 
         rig.core.requestFingerprint = PASSPHRASE_FINGERPRINT
-        flow.retryPassphrase()
+        flow.scan.retryPassphrase()
         advanceUntilIdle()
         assertEquals(Screen.Unlock, flow.screen)
         submit(flow, PIN, "right")
         assertEquals(Screen.Review, flow.screen)
-        assertIs<ScanResult.Request>(flow.scanResult)
-        assertEquals(PASSPHRASE_FINGERPRINT, flow.fingerprint)
+        assertIs<ScanResult.Request>(flow.scan.result)
+        assertEquals(PASSPHRASE_FINGERPRINT, flow.session.fingerprint)
     }
 
     @Test
@@ -386,9 +386,9 @@ class SignFlowTest {
         assertNull(rig.store.publicKeys)
         assertNull(rig.store.meta?.fingerprint)
 
-        rig.flow.confirmTap()
+        rig.flow.scan.confirmTap()
         advanceUntilIdle()
-        assertTrue(rig.flow.unlockNeedsPassphrase)
+        assertTrue(rig.flow.unlock.needsPassphrase)
         submit(rig.flow, PIN, "pass")
         assertEquals(Screen.Signed, rig.flow.screen)
         assertNull(rig.store.publicKeys)
@@ -399,14 +399,14 @@ class SignFlowTest {
         val rig = ready(passphrase = true) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
         scanRequest(rig)
         submit(rig.flow, PIN, "pass")
-        rig.flow.confirmTap()
+        rig.flow.scan.confirmTap()
         advanceUntilIdle()
 
-        // 这次解开的钱包和核对时不是同一个。
+        // 这次解开的钱包和核对时不是同一个.
         rig.core.requestFingerprint = "00000000"
         submit(rig.flow, PIN, "typo")
         assertEquals(Screen.FingerprintMismatch, rig.flow.screen)
-        assertEquals("00000000", rig.flow.mismatchFingerprint)
+        assertEquals("00000000", rig.flow.scan.mismatchFingerprint)
         assertTrue(rig.core.signCalls.isEmpty())
         assertTrue(rig.core.lastWallet!!.closed)
     }
@@ -418,7 +418,7 @@ class SignFlowTest {
         assertEquals(Screen.Unlock, rig.flow.screen)
         rig.flow.back()
         assertEquals(Screen.Home, rig.flow.screen)
-        assertNull(rig.flow.scanResult)
+        assertNull(rig.flow.scan.result)
     }
 
     @Test
@@ -426,7 +426,7 @@ class SignFlowTest {
         val rig = ready(cached = false)
         scanRequest(rig)
         assertEquals(Screen.Unlock, rig.flow.screen)
-        assertEquals(UnlockPurpose.LoadKeys, rig.flow.unlockPurpose)
+        assertEquals(UnlockPurpose.LoadKeys, rig.flow.unlock.purpose)
         submit(rig.flow, PIN)
         assertEquals(Screen.Review, rig.flow.screen)
         assertContentEquals(keysFor(MAIN_FINGERPRINT), rig.store.publicKeys)
@@ -445,18 +445,18 @@ class SignFlowTest {
         assertTrue(rig.core.lastWallet!!.closed)
         assertEquals("request", rig.core.signCalls.single().message)
         assertEquals(keysFor(MAIN_FINGERPRINT).decodeToString(), rig.core.signCalls.single().keys)
-        assertEquals(2, flow.frameTotal)
+        assertEquals(2, flow.player.total)
 
         val stream = rig.core.lastStream!!
-        val player = launch { flow.playFrames() }
+        val player = launch { flow.player.play() }
         advanceTimeBy(300)
         assertTrue(stream.sent > 0)
-        flow.finishSigned()
+        flow.scan.finishSigned()
         advanceTimeBy(1_000)
         player.join()
         assertTrue(stream.closed)
         assertEquals(Screen.Home, flow.screen)
-        assertNull(flow.review)
+        assertNull(flow.scan.review)
     }
 
     @Test
@@ -469,12 +469,12 @@ class SignFlowTest {
         assertEquals(Screen.SelfCheckFailed, flow.screen)
         assertEquals(0, rig.core.opens)
 
-        // 处理好之后回到 A7，请求还在。
+        // 处理好之后回到 A7,请求还在.
         rig.check.facts = GoodFacts
         flow.retryCheck()
         advanceUntilIdle()
         assertEquals(Screen.Unlock, flow.screen)
-        assertNotNull(flow.review)
+        assertNotNull(flow.scan.review)
         submit(flow, PIN)
         assertEquals(Screen.Signed, flow.screen)
     }
@@ -484,7 +484,7 @@ class SignFlowTest {
         val rig = ready()
         toReview(rig)
         rig.check.facts = facts(wifiOn = true)
-        rig.flow.confirmTap()
+        rig.flow.scan.confirmTap()
         advanceUntilIdle()
         assertEquals(Screen.SelfCheckFailed, rig.flow.screen)
     }
@@ -496,14 +496,14 @@ class SignFlowTest {
         val flow = rig.flow
         submit(flow, BAD_PIN)
         assertEquals(Screen.Unlock, flow.screen)
-        assertEquals(1, flow.pinFailures)
-        assertNotNull(flow.review)
+        assertEquals(1, flow.unlock.failures)
+        assertNotNull(flow.scan.review)
         assertTrue(rig.core.signCalls.isEmpty())
 
-        // 回 A6 再来也一样。
+        // 回 A6 再来也一样.
         flow.back()
         assertEquals(Screen.Review, flow.screen)
-        flow.confirmTap()
+        flow.scan.confirmTap()
         advanceUntilIdle()
         submit(flow, PIN)
         assertEquals(Screen.Signed, flow.screen)
@@ -517,11 +517,11 @@ class SignFlowTest {
         val flow = rig.flow
         repeat(10) {
             rig.clock.elapsed += pinDelayMs(rig.store.pin.failures)
-            flow.refreshPinStatus()
+            flow.unlock.refreshStatus()
             submit(flow, BAD_PIN)
         }
         assertEquals(Screen.Wiped, flow.screen)
-        assertNull(flow.review)
+        assertNull(flow.scan.review)
         assertNull(rig.store.publicKeys)
     }
 
@@ -532,9 +532,9 @@ class SignFlowTest {
         rig.core.signFails = true
         submit(rig.flow, PIN)
         assertEquals(Screen.Unlock, rig.flow.screen)
-        assertNotNull(rig.flow.unlockError)
+        assertNotNull(rig.flow.unlock.error)
         assertTrue(rig.core.lastWallet!!.closed)
-        assertNotNull(rig.flow.review)
+        assertNotNull(rig.flow.scan.review)
     }
 
     @Test
@@ -555,7 +555,7 @@ class SignFlowTest {
         rig.key.lost = true
         submit(rig.flow, PIN)
         assertEquals(Screen.NeedsRecovery, rig.flow.screen)
-        assertNull(rig.flow.review)
+        assertNull(rig.flow.scan.review)
     }
 
     // 最高找零索引
@@ -569,9 +569,9 @@ class SignFlowTest {
         toPin(rig)
         submit(flow, PIN)
         assertEquals(7u, rig.store.highestChange)
-        flow.finishSigned()
+        flow.scan.finishSigned()
 
-        // 下一笔核对和签名都带上 7。
+        // 下一笔核对和签名都带上 7.
         rig.core.nextChangeIndex = 3u
         toPin(rig)
         assertEquals(7u, rig.core.reviewedHighestChange.last())
@@ -579,7 +579,7 @@ class SignFlowTest {
         assertEquals(7u, rig.core.signCalls.last().highestChange)
         assertEquals(7u, rig.store.highestChange)
         assertEquals(1, rig.store.highestChangeWrites)
-        flow.finishSigned()
+        flow.scan.finishSigned()
 
         rig.core.nextChangeIndex = 9u
         toPin(rig)
@@ -628,14 +628,14 @@ class SignFlowTest {
         val rig = ready()
         openScan(rig.flow)
         feed(rig.flow, frames(ADDRESS, 1))
-        assertIs<ScanResult.Address>(rig.flow.scanResult)
+        assertIs<ScanResult.Address>(rig.flow.scan.result)
         assertEquals(Screen.CheckAddress, rig.flow.screen)
-        assertEquals(true, rig.flow.addressReview?.belongs)
+        assertEquals(true, rig.flow.scan.addressReview?.belongs)
         assertEquals(0, rig.core.opens)
 
-        rig.flow.exitRequest()
+        rig.flow.scan.exitRequest()
         assertEquals(Screen.Home, rig.flow.screen)
-        assertNull(rig.flow.addressReview)
+        assertNull(rig.flow.scan.addressReview)
     }
 
     @Test
@@ -643,8 +643,8 @@ class SignFlowTest {
         val rig = ready { it.core.address = addressOf(belongs = false, address = "bc1qother") }
         openScan(rig.flow)
         feed(rig.flow, frames(ADDRESS, 1))
-        assertEquals(false, rig.flow.addressReview?.belongs)
-        assertEquals("bc1qmine", rig.flow.addressReview?.derived)
+        assertEquals(false, rig.flow.scan.addressReview?.belongs)
+        assertEquals("bc1qmine", rig.flow.scan.addressReview?.derived)
     }
 
     @Test
@@ -653,7 +653,7 @@ class SignFlowTest {
         openScan(rig.flow)
         feed(rig.flow, frames(ADDRESS, 1))
         assertEquals(Screen.FingerprintMismatch, rig.flow.screen)
-        assertNull(rig.flow.mismatchFingerprint)
+        assertNull(rig.flow.scan.mismatchFingerprint)
     }
 
     @Test
@@ -662,7 +662,7 @@ class SignFlowTest {
         openScan(rig.flow)
         feed(rig.flow, frames(ADDRESS, 1))
         assertEquals(Screen.ParseFailed, rig.flow.screen)
-        assertEquals("路径不在白名单", rig.flow.scanFailure)
+        assertEquals("路径不在白名单", rig.flow.scan.failure)
     }
 
     // A3
@@ -670,21 +670,21 @@ class SignFlowTest {
     @Test
     fun homeShowsAddressesFromTheCache() = runTest {
         val rig = ready()
-        rig.flow.loadAddresses()
+        rig.flow.session.loadAddresses()
         advanceUntilIdle()
         val row = Accounts.first()
-        assertEquals("m/84'/0'/0':keys:$MAIN_FINGERPRINT", rig.flow.addresses[row.path])
-        // 三条 EVM 账户的路径相同，地址也相同。
-        assertTrue(Accounts.all { it.path in rig.flow.addresses })
-        assertEquals(Accounts, rig.flow.accounts)
+        assertEquals("m/84'/0'/0':keys:$MAIN_FINGERPRINT", rig.flow.session.addresses[row.path])
+        // 三条 EVM 账户的路径相同,地址也相同.
+        assertTrue(Accounts.all { it.path in rig.flow.session.addresses })
+        assertEquals(Accounts, rig.flow.session.accounts)
     }
 
     @Test
     fun walletWithoutKeysShowsNoAddresses() = runTest {
         val rig = ready(passphrase = true)
-        rig.flow.loadAddresses()
+        rig.flow.session.loadAddresses()
         advanceUntilIdle()
-        assertTrue(rig.flow.addresses.isEmpty())
+        assertTrue(rig.flow.session.addresses.isEmpty())
     }
 
     @Test
@@ -703,25 +703,25 @@ class SignFlowTest {
         val rig = ready { it.core.manifestVersions["pack"] = 2u }
         val flow = rig.flow
         flow.openSettings()
-        flow.openManifest()
-        flow.loadManifest()
+        flow.manifest.open()
+        flow.manifest.load()
         advanceUntilIdle()
-        assertEquals(1u, flow.manifestVersion)
+        assertEquals(1u, flow.manifest.version)
 
         openScan(flow)
         feed(flow, frames(MANIFEST, 2, "pack"))
         assertEquals(listOf(Screen.Settings, Screen.Manifest), flow.stack)
-        assertEquals(2u, assertIs<ScanResult.Manifest>(flow.scanResult).version)
+        assertEquals(2u, assertIs<ScanResult.Manifest>(flow.scan.result).version)
         assertNull(rig.store.manifest)
 
-        flow.applyManifest()
+        flow.scan.applyManifest()
         advanceUntilIdle()
-        assertEquals(UnlockPurpose.ApplyManifest, flow.unlockPurpose)
+        assertEquals(UnlockPurpose.ApplyManifest, flow.unlock.purpose)
         submit(flow, PIN)
         assertEquals(Screen.Manifest, flow.screen)
         assertContentEquals("pack".encodeToByteArray(), rig.store.manifest)
-        assertEquals(2u, flow.manifestVersion)
-        assertNull(flow.scanResult)
+        assertEquals(2u, flow.manifest.version)
+        assertNull(flow.scan.result)
 
         flow.openHome()
         toPin(rig)
@@ -740,7 +740,7 @@ class SignFlowTest {
         openScan(rig.flow)
         feed(rig.flow, frames(MANIFEST, 1, "old"))
         assertEquals(Screen.ParseFailed, rig.flow.screen)
-        assertEquals("清单版本过旧", rig.flow.scanFailure)
+        assertEquals("清单版本过旧", rig.flow.scan.failure)
         assertContentEquals("newer".encodeToByteArray(), rig.store.manifest)
     }
 
@@ -750,7 +750,7 @@ class SignFlowTest {
         openScan(rig.flow)
         feed(rig.flow, frames(MANIFEST, 1, "forged"))
         assertEquals(Screen.ParseFailed, rig.flow.screen)
-        assertEquals("签名无效", rig.flow.scanFailure)
+        assertEquals("签名无效", rig.flow.scan.failure)
         assertNull(rig.store.manifest)
     }
 
@@ -764,16 +764,16 @@ class SignFlowTest {
     // 修改 PIN
 
     private fun TestScope.enterNewPin(flow: WalletFlow) {
-        flow.startChangePin()
+        flow.settings.startChangePin()
         advanceUntilIdle()
         assertEquals(Screen.SetPin, flow.screen)
-        assertTrue(flow.changingPin)
-        NEW_PIN.forEach(flow::setPinDigit)
-        NEW_PIN.forEach(flow::setPinDigit)
-        assertTrue(flow.pinDone)
-        flow.continueChangePin()
+        assertTrue(flow.settings.changingPin)
+        NEW_PIN.forEach(flow.pin::digit)
+        NEW_PIN.forEach(flow.pin::digit)
+        assertTrue(flow.pin.done)
+        flow.settings.continueChangePin()
         assertEquals(Screen.Unlock, flow.screen)
-        assertEquals(UnlockPurpose.ChangePin, flow.unlockPurpose)
+        assertEquals(UnlockPurpose.ChangePin, flow.unlock.purpose)
     }
 
     @Test
@@ -784,13 +784,13 @@ class SignFlowTest {
         enterNewPin(flow)
         submit(flow, PIN)
         assertEquals(Screen.Settings, flow.screen)
-        assertFalse(flow.changingPin)
+        assertFalse(flow.settings.changingPin)
         assertContentEquals(boundVault(NEW_PIN), rig.store.vault)
         assertTrue(rig.core.lastWallet!!.closed)
-        // 助记词不经过 JVM。
+        // 助记词不经过 JVM.
         assertEquals(0, rig.core.wordsRead)
         assertNull(rig.core.lastDraft)
-        // 钱包的其余状态都不动，硬件密钥也不能删。
+        // 钱包的其余状态都不动,硬件密钥也不能删.
         assertEquals(0, rig.key.deleted)
         assertEquals(12u, rig.store.highestChange)
         assertContentEquals(keysFor(MAIN_FINGERPRINT), rig.store.publicKeys)
@@ -819,7 +819,7 @@ class SignFlowTest {
         submitWithCancelledWrap(rig)
         assertContentEquals(boundVault(PIN), rig.store.vault)
         assertEquals(Screen.Unlock, flow.screen)
-        assertNotNull(flow.unlockError)
+        assertNotNull(flow.unlock.error)
         assertTrue(rig.core.lastWallet!!.closed)
     }
 
@@ -833,7 +833,7 @@ class SignFlowTest {
         val rig = ready(passphrase = true)
         rig.flow.openSettings()
         enterNewPin(rig.flow)
-        assertFalse(rig.flow.unlockNeedsPassphrase)
+        assertFalse(rig.flow.unlock.needsPassphrase)
         submit(rig.flow, PIN)
         assertContentEquals(boundVault(NEW_PIN), rig.store.vault)
     }
@@ -846,8 +846,8 @@ class SignFlowTest {
         enterNewPin(flow)
         flow.onBackground()
         assertEquals(Screen.Settings, flow.screen)
-        assertFalse(flow.changingPin)
-        assertEquals("", flow.pinFirst)
+        assertFalse(flow.settings.changingPin)
+        assertEquals("", flow.pin.first)
     }
 
     @Test
@@ -855,7 +855,7 @@ class SignFlowTest {
         val rig = ready()
         rig.flow.openSettings()
         rig.check.facts = facts(thirdPartyAccessibility = 1)
-        rig.flow.startChangePin()
+        rig.flow.settings.startChangePin()
         advanceUntilIdle()
         assertEquals(Screen.SelfCheckFailed, rig.flow.screen)
     }
@@ -867,22 +867,22 @@ class SignFlowTest {
         val rig = ready()
         val flow = rig.flow
         flow.openSettings()
-        flow.startViewWords()
+        flow.settings.startViewWords()
         advanceUntilIdle()
         assertEquals(Screen.Unlock, flow.screen)
-        assertTrue(flow.viewWords.isEmpty())
+        assertTrue(flow.settings.viewWords.isEmpty())
 
         submit(flow, BAD_PIN)
-        assertTrue(flow.viewWords.isEmpty())
+        assertTrue(flow.settings.viewWords.isEmpty())
 
         submit(flow, PIN)
         assertEquals(Screen.ViewWords, flow.screen)
-        assertEquals(Words12, flow.viewWords)
+        assertEquals(Words12, flow.settings.viewWords)
         assertTrue(rig.core.lastWallet!!.closed)
 
         flow.back()
         assertEquals(Screen.Settings, flow.screen)
-        assertTrue(flow.viewWords.isEmpty())
+        assertTrue(flow.settings.viewWords.isEmpty())
     }
 
     @Test
@@ -890,12 +890,12 @@ class SignFlowTest {
         val rig = ready()
         val flow = rig.flow
         flow.openSettings()
-        flow.startViewWords()
+        flow.settings.startViewWords()
         advanceUntilIdle()
         submit(flow, PIN)
         flow.onBackground()
         assertEquals(Screen.Settings, flow.screen)
-        assertTrue(flow.viewWords.isEmpty())
+        assertTrue(flow.settings.viewWords.isEmpty())
     }
 
     @Test
@@ -903,17 +903,17 @@ class SignFlowTest {
         val rig = ready()
         val flow = rig.flow
         flow.openSettings()
-        flow.startViewWords()
+        flow.settings.startViewWords()
         advanceUntilIdle()
         submit(flow, PIN)
         assertEquals(Screen.ViewWords, flow.screen)
 
-        // 没有经过后台，比如下拉通知栏时开了 Wi-Fi。
+        // 没有经过后台,比如下拉通知栏时开了 Wi-Fi.
         rig.check.facts = facts(wifiOn = true)
         flow.onResume()
         advanceUntilIdle()
         assertEquals(Screen.SelfCheckFailed, flow.screen)
-        assertTrue(flow.viewWords.isEmpty())
+        assertTrue(flow.settings.viewWords.isEmpty())
 
         rig.check.facts = GoodFacts
         flow.retryCheck()
@@ -926,7 +926,7 @@ class SignFlowTest {
         val rig = ready()
         rig.flow.openSettings()
         rig.check.facts = facts(thirdPartyAccessibility = 1)
-        rig.flow.startViewWords()
+        rig.flow.settings.startViewWords()
         advanceUntilIdle()
         assertEquals(Screen.SelfCheckFailed, rig.flow.screen)
         assertEquals(0, rig.core.opens)
@@ -936,9 +936,9 @@ class SignFlowTest {
     fun viewingWordsNeedsNoPassphrase() = runTest {
         val rig = ready(passphrase = true)
         rig.flow.openSettings()
-        rig.flow.startViewWords()
+        rig.flow.settings.startViewWords()
         advanceUntilIdle()
-        assertFalse(rig.flow.unlockNeedsPassphrase)
+        assertFalse(rig.flow.unlock.needsPassphrase)
         submit(rig.flow, PIN)
         assertEquals(Screen.ViewWords, rig.flow.screen)
     }
@@ -950,16 +950,16 @@ class SignFlowTest {
         val rig = rig()
         rig.flow.onResume()
         advanceUntilIdle()
-        rig.flow.startImport()
+        rig.flow.setup.startImport()
         advanceUntilIdle()
         Words12.forEach {
-            rig.flow.importPick(it)
+            rig.flow.setup.importPick(it)
             advanceUntilIdle()
         }
-        rig.flow.continueAfterImport()
-        PIN.forEach(rig.flow::setPinDigit)
-        PIN.forEach(rig.flow::setPinDigit)
-        rig.flow.finishSetup()
+        rig.flow.setup.continueAfterImport()
+        PIN.forEach(rig.flow.pin::digit)
+        PIN.forEach(rig.flow.pin::digit)
+        rig.flow.setup.finishSetup()
         advanceUntilIdle()
         assertContentEquals(keysFor(MAIN_FINGERPRINT), rig.store.publicKeys)
         assertTrue(rig.core.lastWallet!!.closed)
@@ -970,17 +970,17 @@ class SignFlowTest {
         val rig = rig()
         rig.flow.onResume()
         advanceUntilIdle()
-        rig.flow.startImport()
+        rig.flow.setup.startImport()
         advanceUntilIdle()
         Words12.forEach {
-            rig.flow.importPick(it)
+            rig.flow.setup.importPick(it)
             advanceUntilIdle()
         }
-        rig.flow.togglePassphrase()
-        rig.flow.continueAfterImport()
-        PIN.forEach(rig.flow::setPinDigit)
-        PIN.forEach(rig.flow::setPinDigit)
-        rig.flow.finishSetup()
+        rig.flow.setup.togglePassphrase()
+        rig.flow.setup.continueAfterImport()
+        PIN.forEach(rig.flow.pin::digit)
+        PIN.forEach(rig.flow.pin::digit)
+        rig.flow.setup.finishSetup()
         advanceUntilIdle()
         assertEquals(Screen.Home, rig.flow.screen)
         assertNull(rig.store.publicKeys)
@@ -991,16 +991,16 @@ class SignFlowTest {
         val rig = ready(passphrase = true) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
         scanRequest(rig)
         submit(rig.flow, PIN, "pass")
-        rig.flow.exitRequest()
+        rig.flow.scan.exitRequest()
         rig.flow.openSettings()
-        rig.flow.startWipe()
+        rig.flow.settings.startWipe()
         advanceUntilIdle()
         submit(rig.flow, PIN)
         assertEquals(Screen.Welcome, rig.flow.screen)
-        assertNull(rig.flow.fingerprint)
-        rig.flow.loadAddresses()
+        assertNull(rig.flow.session.fingerprint)
+        rig.flow.session.loadAddresses()
         advanceUntilIdle()
-        assertTrue(rig.flow.addresses.isEmpty())
+        assertTrue(rig.flow.session.addresses.isEmpty())
     }
 
     // 导出
@@ -1008,7 +1008,7 @@ class SignFlowTest {
     @Test
     fun exportFillsTheKeyCache() = runTest {
         val rig = ready(cached = false)
-        rig.flow.openExport()
+        rig.flow.export.open()
         advanceUntilIdle()
         submit(rig.flow, PIN)
         assertEquals(Screen.Export, rig.flow.screen)

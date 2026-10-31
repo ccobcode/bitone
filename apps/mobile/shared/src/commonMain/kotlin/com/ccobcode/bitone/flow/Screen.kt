@@ -1,8 +1,8 @@
 package com.ccobcode.bitone.flow
 
-/** 页面编号与原型一致。 */
+/** 页面编号与原型一致. */
 enum class Screen {
-    /** 启动时等待第一次自检。 */
+    /** 启动时等待第一次自检. */
     Booting,
     /** A1 */
     Welcome,
@@ -16,19 +16,19 @@ enum class Screen {
     SetPin,
     /** A3 */
     Home,
-    /** A7，按 [UnlockPurpose] 用于签名、导出、读公钥、查看助记词和修改 PIN。 */
+    /** A7,按 [UnlockPurpose] 用于签名,导出,读公钥,查看助记词和修改 PIN. */
     Unlock,
     /** A4 */
     Export,
     /** A5 */
     Scan,
-    /** A6 到 A6e，按 [reviewStyle] 切换样式。 */
+    /** A6 到 A6e,按 [reviewStyle] 切换样式. */
     Review,
     /** A8 */
     Signed,
     /** A9 */
     CheckAddress,
-    /** A10 的查看助记词。 */
+    /** A10 的查看助记词. */
     ViewWords,
     /** A10 */
     Settings,

@@ -28,7 +28,7 @@ import com.ccobcode.bitone.ui.theme.Space
 private const val ICON_RATIO = 0.58f
 private const val RING_ALPHA = 0.5f
 
-/** 完成时的对勾，描线画出来，时长 `slow`，外扩一圈 [ring] 色的光，和网页端的 `ring-once` 相同。圆底 [background]，线色 [color]。 */
+/** 完成时的对勾,描线画出来,时长 `slow`,外扩一圈 [ring] 色的光,和网页端的 `ring-once` 相同.圆底 [background],线色 [color]. */
 @Composable
 fun DrawnCheck(
     size: Dp,

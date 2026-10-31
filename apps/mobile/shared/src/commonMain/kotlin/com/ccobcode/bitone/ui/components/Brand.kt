@@ -19,7 +19,7 @@ import com.ccobcode.bitone.ui.theme.DarkColors
 private const val FULL =
     "M56 46H48A10 10 0 0 0 38 56V104A10 10 0 0 0 48 114H56M104 46H112A10 10 0 0 1 122 56V104A10 10 0 0 1 112 114H104"
 
-/** 品牌标志的深色主版，160 网格。图标不随主题变化。 */
+/** 品牌标志的深色主版,160 网格.图标不随主题变化. */
 @Composable
 fun BrandMark(size: Dp) {
     val brackets = remember { PathParser().parsePathString(FULL).toPath() }

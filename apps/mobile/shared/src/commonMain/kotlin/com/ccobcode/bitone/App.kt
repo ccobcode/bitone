@@ -39,15 +39,15 @@ import com.ccobcode.bitone.ui.screens.WipedScreen
 import com.ccobcode.bitone.ui.theme.BitOneFonts
 import com.ccobcode.bitone.ui.theme.BitOneTheme
 
-/** 新栈是旧栈的前缀才算返回。签名完成时栈也会变短，但那是前进。 */
+/** 新栈是旧栈的前缀才算返回.签名完成时栈也会变短,但那是前进. */
 private fun isBack(from: List<Screen>, to: List<Screen>): Boolean =
     to.size < from.size && from.subList(0, to.size) == to
 
-/** 底部导航的三个标签页共用一个外层，它们之间的切换在 [MainTabs] 里。 */
+/** 底部导航的三个标签页共用一个外层,它们之间的切换在 [MainTabs] 里. */
 private fun pageKey(screen: Screen): Screen =
     if (screen == Screen.Settings || screen == Screen.Receive) Screen.Home else screen
 
-/** 共享界面的入口，各平台注入实现后调用。 */
+/** 共享界面的入口,各平台注入实现后调用. */
 @Composable
 fun App(flow: WalletFlow, brightness: Brightness, fonts: BitOneFonts = BitOneFonts()) {
     BitOneTheme(fonts) {

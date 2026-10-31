@@ -39,7 +39,7 @@ import com.ccobcode.bitone.ui.theme.FontSize
 import com.ccobcode.bitone.ui.theme.Space
 import kotlinx.coroutines.delay
 
-/** 标题、圆点、提示成一组贴近键盘，上面的留白由弹性间距吸收。A2c、A7、修改 PIN、解锁都用这一个版式。 */
+/** 标题,圆点,提示成一组贴近键盘,上面的留白由弹性间距吸收.A2c,A7,修改 PIN,解锁都用这一个版式. */
 @Composable
 private fun PinPage(
     prompt: String,
@@ -65,51 +65,51 @@ private fun PinPage(
     }
 }
 
-/** A2c 设置 PIN，输入两次。 */
+/** A2c 设置 PIN,输入两次. */
 @Composable
 fun SetPinScreen(flow: WalletFlow) {
     val c = BitOneTheme.colors
-    val done = flow.pinDone
+    val done = flow.pin.done
     val (note, noteColor) =
         when {
-            flow.setupError != null -> flow.setupError.orEmpty() to c.danger
-            flow.pinWeak -> "PIN 太简单，请换一个" to c.danger
-            flow.pinMismatch -> "两次不一致，请重新设置" to c.danger
+            flow.pin.error != null -> flow.pin.error.orEmpty() to c.danger
+            flow.pin.weak -> "PIN 太简单,请换一个" to c.danger
+            flow.pin.mismatch -> "两次不一致,请重新设置" to c.danger
             flow.busy -> "正在加密" to c.text3
-            done && flow.changingPin -> "下一步输入当前 PIN" to c.text3
+            done && flow.settings.changingPin -> "下一步输入当前 PIN" to c.text3
             done -> "PIN 已设置" to c.ok
             else -> "" to c.text3
         }
     val prompt =
         when {
-            flow.pinConfirming -> "再输一次"
-            flow.changingPin -> "输入新 PIN"
+            flow.pin.confirming -> "再输一次"
+            flow.settings.changingPin -> "输入新 PIN"
             else -> "输入 6 位 PIN"
         }
     PinPage(
         prompt = prompt,
-        length = flow.pinInput.length,
-        errors = if (flow.pinMismatch || flow.pinWeak) 1 else 0,
+        length = flow.pin.input.length,
+        errors = if (flow.pin.mismatch || flow.pin.weak) 1 else 0,
         hint = note,
         hintColor = noteColor,
         header = {
-            TitleBar(if (flow.changingPin) "修改 PIN" else "设置 PIN", onBack = { flow.back() }) {
-                if (!flow.isImportFlow && !flow.changingPin) Steps(3)
+            TitleBar(if (flow.settings.changingPin) "修改 PIN" else "设置 PIN", onBack = { flow.back() }) {
+                if (!flow.setup.isImportFlow && !flow.settings.changingPin) Steps(3)
             }
         },
         keyboard = {
             PinPad(
                 enabled = !flow.busy,
-                onDigit = flow::setPinDigit,
-                onDelete = flow::setPinDelete,
+                onDigit = flow.pin::digit,
+                onDelete = flow.pin::delete,
                 action =
                     when {
                         !done -> null
-                        flow.changingPin -> "下一步"
+                        flow.settings.changingPin -> "下一步"
                         else -> "完成"
                     },
                 actionEnabled = !flow.busy,
-                onAction = if (flow.changingPin) flow::continueChangePin else flow::finishSetup,
+                onAction = if (flow.settings.changingPin) flow.settings::continueChangePin else flow.setup::finishSetup,
             )
         },
     )
@@ -126,35 +126,35 @@ private fun unlockCopy(purpose: UnlockPurpose) =
         else -> UnlockCopy("解锁钱包", "输入 PIN", "解锁", "正在解锁")
     }
 
-/** A7。每次签名都输 PIN，导出、读公钥、查看助记词、修改 PIN、抹除和更新清单也走这页。 */
+/** A7.每次签名都输 PIN,导出,读公钥,查看助记词,修改 PIN,抹除和更新清单也走这页. */
 @Composable
 fun UnlockScreen(flow: WalletFlow) {
     val c = BitOneTheme.colors
     var editing by remember { mutableStateOf(false) }
-    val waiting = flow.waitMs > 0
-    val copy = unlockCopy(flow.unlockPurpose)
-    // 只有签名时显示交易摘要。退场动画期间流程可能已经清掉请求，这时继续显示离开时的内容。
-    val review = rememberLatest(flow.review).takeIf { flow.unlockPurpose == UnlockPurpose.Sign }
+    val waiting = flow.unlock.waitMs > 0
+    val copy = unlockCopy(flow.unlock.purpose)
+    // 只有签名时显示交易摘要.退场动画期间流程可能已经清掉请求,这时继续显示离开时的内容.
+    val review = rememberLatest(flow.scan.review).takeIf { flow.unlock.purpose == UnlockPurpose.Sign }
 
-    // 倒计时每秒重读单调时钟，界面只负责显示。
+    // 倒计时每秒重读单调时钟,界面只负责显示.
     LaunchedEffect(waiting) {
-        while (flow.waitMs > 0) {
+        while (flow.unlock.waitMs > 0) {
             delay(1_000)
-            flow.refreshPinStatus()
+            flow.unlock.refreshStatus()
         }
     }
 
     val (hint, hintColor) =
         when {
             flow.busy -> copy.working to c.text3
-            flow.unlockError != null -> flow.unlockError.orEmpty() to c.danger
-            waiting -> "${waitText(flow.waitMs)} 后可重试" to c.text2
-            else -> failureHint(flow.pinFailures, flow.canWipe)
+            flow.unlock.error != null -> flow.unlock.error.orEmpty() to c.danger
+            waiting -> "${waitText(flow.unlock.waitMs)} 后可重试" to c.text2
+            else -> failureHint(flow.unlock.failures, flow.session.canWipe)
         }
     PinPage(
         prompt = copy.prompt,
-        length = flow.unlockPin.length,
-        errors = flow.pinFailures,
+        length = flow.unlock.pin.length,
+        errors = flow.unlock.failures,
         hint = hint,
         hintColor = hintColor,
         header = {
@@ -162,24 +162,24 @@ fun UnlockScreen(flow: WalletFlow) {
             if (review != null) SignSummary(review)
         },
         above =
-            if (flow.unlockNeedsPassphrase) {
-                { PassphraseField(flow.unlockPassphrase, editing) { editing = !editing } }
+            if (flow.unlock.needsPassphrase) {
+                { PassphraseField(flow.unlock.passphrase, editing) { editing = !editing } }
             } else {
                 null
             },
         keyboard = {
             if (editing) {
                 Box(Modifier.fillMaxWidth().padding(top = Space.s3, bottom = Space.s4)) {
-                    PassphraseKeyboard(flow::passphraseInput, flow::passphraseDelete) { editing = false }
+                    PassphraseKeyboard(flow.unlock::passphraseInput, flow.unlock::passphraseDelete) { editing = false }
                 }
             } else {
                 PinPad(
                     enabled = !waiting && !flow.busy,
-                    onDigit = flow::unlockDigit,
-                    onDelete = flow::unlockDelete,
-                    action = copy.action.takeIf { flow.unlockPin.length == PIN_LENGTH },
-                    actionEnabled = flow.canSubmitUnlock,
-                    onAction = flow::submitUnlock,
+                    onDigit = flow.unlock::digit,
+                    onDelete = flow.unlock::delete,
+                    action = copy.action.takeIf { flow.unlock.pin.length == PIN_LENGTH },
+                    actionEnabled = flow.unlock.canSubmit,
+                    onAction = flow.unlock::submit,
                 )
             }
         },
@@ -194,11 +194,11 @@ private fun failureHint(failures: Int, canWipe: Boolean): Pair<String, Color> {
         !canWipe -> (if (failures == 0) "" else "已错 $failures 次") to c.warn
         failures == 0 -> "错误 10 次将抹除钱包" to c.text3
         remain == 1 -> "再错 1 次将抹除钱包" to c.danger
-        else -> "已错 $failures 次，再错 $remain 次将抹除钱包" to c.warn
+        else -> "已错 $failures 次,再错 $remain 次将抹除钱包" to c.warn
     }
 }
 
-/** 向上取整，还剩 1 毫秒时也显示 1 秒。 */
+/** 向上取整,还剩 1 毫秒时也显示 1 秒. */
 private fun waitText(ms: Long): String {
     val total = (ms + 999) / 1000
     val minutes = total / 60
@@ -206,7 +206,7 @@ private fun waitText(ms: Long): String {
     return if (minutes > 0) "$minutes 分 $seconds 秒" else "$seconds 秒"
 }
 
-/** BIP39 密码输入行。键盘打开时明文显示，输错不会报错，只会得到另一个钱包，所以要让人看见。 */
+/** BIP39 密码输入行.键盘打开时明文显示,输错不会报错,只会得到另一个钱包,所以要让人看见. */
 @Composable
 private fun PassphraseField(value: String, editing: Boolean, onToggle: () -> Unit) {
     val c = BitOneTheme.colors

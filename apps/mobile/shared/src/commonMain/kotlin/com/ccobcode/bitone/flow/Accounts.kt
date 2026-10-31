@@ -11,12 +11,12 @@ enum class Network {
     Solana,
 }
 
-/** 首页和收款页显示的账户。地址由核心库从公钥算出，按路径对应。 */
+/** 首页和收款页显示的账户.地址由核心库从公钥算出,按路径对应. */
 data class AccountRow(val network: Network, val name: String, val path: String)
 
 private const val EVM_PATH = "m/44'/60'/0'/0/0"
 
-/** 主账户的显示名。EVM 三条网络共用一个账户，分开列出来，用户才知道地址能收哪条链。 */
+/** 主账户的显示名.EVM 三条网络共用一个账户,分开列出来,用户才知道地址能收哪条链. */
 val Accounts =
     listOf(
         AccountRow(Network.Bitcoin, "Bitcoin SegWit", "m/84'/0'/0'"),
@@ -28,13 +28,13 @@ val Accounts =
         AccountRow(Network.Solana, "Solana", "m/44'/501'/0'/0'"),
     )
 
-/** 只列核心库给的账户。导入钱包多出的 Bitcoin 账户没有固定名字，用核心库给的地址类型。 */
+/** 只列核心库给的账户.导入钱包多出的 Bitcoin 账户没有固定名字,用核心库给的地址类型. */
 fun accountsFor(rows: List<AccountAddress>): List<AccountRow> = rows.flatMap { row ->
     Accounts.filter { it.path == row.path }
         .ifEmpty { listOf(AccountRow(Network.Bitcoin, "Bitcoin ${row.kind}", row.path)) }
 }
 
-/** 网络的展示信息。[id] 是协议里的网络标识，只用来取名字和图标，不参与任何判断。 */
+/** 网络的展示信息.[id] 是协议里的网络标识,只用来取名字和图标,不参与任何判断. */
 class NetworkInfo(val id: String, val name: String, val icon: Network)
 
 private val Networks =
@@ -60,16 +60,16 @@ private val Networks =
 
 fun networkInfo(id: String): NetworkInfo? = Networks.firstOrNull { it.id == id }
 
-/** 主网的名字。 */
+/** 主网的名字. */
 fun networkName(network: Network): String = Networks.first { it.icon == network }.name
 
-/** 列表里的短地址，如 0x7a3F…9C21。 */
+/** 列表里的短地址,如 0x7a3F…9C21. */
 fun shortAddress(address: String): String {
     val head = if (address.startsWith("0x") || address.startsWith("bc1") || address.startsWith("tb1")) 6 else 4
     return if (address.length <= head + 5) address else address.take(head) + "…" + address.takeLast(4)
 }
 
-/** 需要核对的地方显示完整地址，4 个字符一组。 */
+/** 需要核对的地方显示完整地址,4 个字符一组. */
 fun addressChunks(address: String): List<String> {
     val head = if (address.startsWith("0x")) 6 else 4
     return listOf(address.take(head)) + address.drop(head).chunked(4)

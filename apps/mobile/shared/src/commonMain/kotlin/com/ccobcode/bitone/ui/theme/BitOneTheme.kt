@@ -14,20 +14,20 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 
-/** 字体由平台注入，共享层不依赖资源库。 */
+/** 字体由平台注入,共享层不依赖资源库. */
 @Immutable
 class BitOneFonts(
     val sans: FontFamily = FontFamily.Default,
     val mono: FontFamily = FontFamily.Monospace,
 )
 
-/** 系统字号再大也按这个倍数算，再往上按钮和底部导航放不下。 */
+/** 系统字号再大也按这个倍数算,再往上按钮和底部导航放不下. */
 private const val MAX_FONT_SCALE = 1.3f
 
 private val LocalFonts = staticCompositionLocalOf { BitOneFonts() }
 
 object BitOneTheme {
-    /** 只有深色。二维码固定用浅色令牌，见 [com.ccobcode.bitone.ui.components.QrView]。 */
+    /** 只有深色.二维码固定用浅色令牌,见 [com.ccobcode.bitone.ui.components.QrView]. */
     val colors = DarkColors
 
     val elevation = DarkElevation
@@ -36,7 +36,7 @@ object BitOneTheme {
         @Composable get() = LocalFonts.current
 }
 
-/** 按令牌逐层画阴影，和网页端的 box-shadow 一致。深色模式的 elevation-1 是空的，卡片靠明度分层。 */
+/** 按令牌逐层画阴影,和网页端的 box-shadow 一致.深色模式的 elevation-1 是空的,卡片靠明度分层. */
 fun Modifier.elevation(layers: List<ShadowLayer>, shape: Shape): Modifier =
     layers.fold(this) { modifier, layer ->
         modifier.dropShadow(shape, Shadow(radius = layer.blur, color = layer.color, offset = DpOffset(0.dp, layer.y)))

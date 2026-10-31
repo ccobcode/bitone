@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""生成 androidApp/src/main/res/font 下的字体文件。
+"""生成 androidApp/src/main/res/font 下的字体文件.
 
-界面规范 §2.2 要求字体打包进应用。Compose 的 FontFamily 不能按字符回退到第二个字体，
-所以把 Inter 的拉丁字符和 Noto Sans SC 的中文合并成一个文件。
+界面规范 §2.2 要求字体打包进应用.Compose 的 FontFamily 不能按字符回退到第二个字体,
+所以把 Inter 的拉丁字符和 Noto Sans SC 的中文合并成一个文件.
 
-中文收录 GB2312 一级字和源码里用到的全部非 ASCII 字符，改文案一般不用重新生成。
-数字直接写成 Inter 的等宽数字，合并后不带 GSUB，运行时的 tnum 特性不起作用。
-行高度量统一，拉丁字母和中文在按钮、列表行里都垂直居中。
-许可证随 APK 分发，放在 androidApp/src/main/assets/licenses。
+中文收录 GB2312 一级字和源码里用到的全部非 ASCII 字符,改文案一般不用重新生成.
+数字直接写成 Inter 的等宽数字,合并后不带 GSUB,运行时的 tnum 特性不起作用.
+行高度量统一,拉丁字母和中文在按钮,列表行里都垂直居中.
+许可证随 APK 分发,放在 androidApp/src/main/assets/licenses.
 
-依赖：pip install fonttools brotli
-输入目录要有 google/fonts 仓库 ofl/ 下的这些文件：
+依赖:pip install fonttools brotli
+输入目录要有 google/fonts 仓库 ofl/ 下的这些文件:
   Inter[opsz,wght].ttf  NotoSansSC[wght].ttf  JetBrainsMono[wght].ttf
-用法：python3 build_fonts.py <输入目录>
+用法:python3 build_fonts.py <输入目录>
 """
 import sys
 from pathlib import Path
@@ -28,7 +28,7 @@ OUT = MOBILE / "androidApp/src/main/res/font"
 WEIGHTS = {"regular": 400, "medium": 500, "semibold": 600}
 ASCII = {chr(c) for c in range(0x20, 0x7F)}
 DIGITS = "0123456789"
-# Noto Sans SC 的单位。中文的字面中心约 0.38，Inter 大写字母的中心约 0.36，这组度量让两者都居中。
+# Noto Sans SC 的单位.中文的字面中心约 0.38,Inter 大写字母的中心约 0.36,这组度量让两者都居中.
 UPEM = 1000
 ASCENT, DESCENT = 1000, -250
 
@@ -64,7 +64,7 @@ def subsetted(font: TTFont, chars: set[str], features: tuple[str, ...] = ()) -> 
 
 
 def tabular_digits(font: TTFont) -> None:
-    """把 tnum 里数字的替换写进 cmap。tnum 还会改句号和逗号，那些保持比例宽度。"""
+    """把 tnum 里数字的替换写进 cmap.tnum 还会改句号和逗号,那些保持比例宽度."""
     gsub = font["GSUB"].table
     lookups = {i for r in gsub.FeatureList.FeatureRecord if r.FeatureTag == "tnum" for i in r.Feature.LookupListIndex}
     tabular = {}
@@ -105,7 +105,7 @@ def build_sans(src: Path) -> None:
         noto = instancer.instantiateVariableFont(TTFont(src / "NotoSansSC[wght].ttf"), {"wght": weight})
         tabular_digits(inter)
         scale_upem(inter, UPEM)
-        latin = subsetted(inter, ASCII | set("“”‘’…—–"), ("kern",))
+        latin = subsetted(inter, ASCII | set("\u201c\u201d\u2018\u2019…—–"), ("kern",))
         hans = subsetted(noto, cjk)
         latin_path, hans_path = OUT / f".latin_{name}.ttf", OUT / f".hans_{name}.ttf"
         latin.save(latin_path)

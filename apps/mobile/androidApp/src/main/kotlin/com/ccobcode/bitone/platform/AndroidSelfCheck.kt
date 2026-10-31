@@ -46,10 +46,10 @@ private val SU_DIRECTORIES =
         "/data/local/xbin",
     )
 
-/** 用系统 API 采集 docs/04 §2.2 的 7 项状态。判定规则在共享层。 */
+/** 用系统 API 采集 docs/04 §2.2 的 7 项状态.判定规则在共享层. */
 class AndroidSelfCheck(private val context: Context) : SelfCheck {
 
-    // 这两项探测要生成密钥，比较慢，而且一次开机内不会变。
+    // 这两项探测要生成密钥,比较慢,而且一次开机内不会变.
     private val keystoreLevel: HardwareLevel by lazy { probeKeystore() }
     private val bootloaderLocked: Boolean? by lazy { attestBootloader() }
 
@@ -76,11 +76,11 @@ class AndroidSelfCheck(private val context: Context) : SelfCheck {
 
     private fun wifiOn(): Boolean = context.getSystemService(WifiManager::class.java)?.isWifiEnabled == true
 
-    /** Android 12 起 isEnabled 不需要蓝牙权限。 */
+    /** Android 12 起 isEnabled 不需要蓝牙权限. */
     private fun bluetoothOn(): Boolean =
         context.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled == true
 
-    /** Root 可以被隐藏，这里只能发现常见痕迹，见 docs/04 §7。 */
+    /** Root 可以被隐藏,这里只能发现常见痕迹,见 docs/04 §7. */
     private fun rooted(): Boolean {
         if (Build.TAGS?.contains("test-keys") == true) return true
         val path = System.getenv("PATH").orEmpty().split(':').filter { it.isNotBlank() }
@@ -96,7 +96,7 @@ class AndroidSelfCheck(private val context: Context) : SelfCheck {
             false
         }
 
-    /** 用硬件密钥证明读 deviceLocked，这是 TEE 报告的，比系统属性可信。只验到这一层，没有校验证书链到 Google 根证书，Root 过的系统能伪造结果。 */
+    /** 用硬件密钥证明读 deviceLocked,这是 TEE 报告的,比系统属性可信.只验到这一层,没有校验证书链到 Google 根证书,Root 过的系统能伪造结果. */
     private fun attestBootloader(): Boolean? =
         try {
             val spec =
@@ -127,13 +127,13 @@ class AndroidSelfCheck(private val context: Context) : SelfCheck {
             return state.getBooleanExtra("connected", false) &&
                 USB_DATA_FUNCTIONS.any { state.getBooleanExtra(it, false) }
         }
-        // 没有粘性广播时退到电池状态，插 USB 就按连接数据处理。
+        // 没有粘性广播时退到电池状态,插 USB 就按连接数据处理.
         val battery: Intent? =
             context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED), Context.RECEIVER_NOT_EXPORTED)
         return battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) == BatteryManager.BATTERY_PLUGGED_USB
     }
 
-    /** StrongBox 优先。只认 KeyInfo 报告的实际级别，功能声明可能不准。 */
+    /** StrongBox 优先.只认 KeyInfo 报告的实际级别,功能声明可能不准. */
     private fun probeKeystore(): HardwareLevel {
         val store = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         val hasStrongBox = context.packageManager.hasSystemFeature(PackageManager.FEATURE_STRONGBOX_KEYSTORE)
@@ -167,7 +167,7 @@ class AndroidSelfCheck(private val context: Context) : SelfCheck {
             .generateKey()
     }
 
-    /** 读系统设置而不是 AccessibilityManager，后者的结果受包可见性过滤，可能漏掉服务。 */
+    /** 读系统设置而不是 AccessibilityManager,后者的结果受包可见性过滤,可能漏掉服务. */
     private fun thirdPartyAccessibilityServices(): Int {
         val resolver = context.contentResolver
         if (Settings.Secure.getInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 0) return 0
@@ -186,7 +186,7 @@ class AndroidSelfCheck(private val context: Context) : SelfCheck {
             false
         }
 
-    /** 第三方应用查不到别人的悬浮窗授权（AppOps 需要系统权限），所以统计声明了这个权限的第三方应用。比「已授权」更严，只影响警告，不锁定。 */
+    /** 第三方应用查不到别人的悬浮窗授权(AppOps 需要系统权限),所以统计声明了这个权限的第三方应用.比"已授权"更严,只影响警告,不锁定. */
     private fun thirdPartyOverlayApps(): Int =
         context.packageManager
             .getInstalledPackages(PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()))

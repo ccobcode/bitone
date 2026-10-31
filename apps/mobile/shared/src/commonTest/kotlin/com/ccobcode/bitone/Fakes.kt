@@ -110,10 +110,10 @@ fun reviewOf(
 
 fun tagFor(pin: String) = "tag:$pin".encodeToByteArray()
 
-/** 当前格式的密文：解开要 PIN 和硬件对这个 PIN 的结果。 */
+/** 当前格式的密文:解开要 PIN 和硬件对这个 PIN 的结果. */
 fun boundVault(pin: String) = "sealed:$pin:tag:$pin".encodeToByteArray()
 
-/** 旧格式的文件：外面包着硬件加密，里面只靠 PIN。 */
+/** 旧格式的文件:外面包着硬件加密,里面只靠 PIN. */
 fun legacyVault(pin: String) = "hw:sealed:$pin".encodeToByteArray()
 
 val Words12 = List(12) { "word$it" }
@@ -124,7 +124,7 @@ class FakeDraft(private val list: List<String>, override val imported: Boolean) 
 
     override fun words() = list
 
-    /** 第 1、5、9 题，正确答案放在第 0 项。 */
+    /** 第 1,5,9 题,正确答案放在第 0 项. */
     override fun quiz(rounds: Int) =
         (0 until rounds).map { i ->
             val index = i * 4
@@ -216,7 +216,7 @@ class FakeWallet(private val passphrase: String, private val core: FakeCore) : U
     }
 }
 
-/** 帧格式和真实的一样：`ur:<类型>/<序号>-<总数>/<数据>`。 */
+/** 帧格式和真实的一样:`ur:<类型>/<序号>-<总数>/<数据>`. */
 class FakeReceiver : FrameReceiver {
     private val seen = mutableSetOf<String>()
     private var total = 0
@@ -285,13 +285,13 @@ class FakeCore : WalletCore {
     var walletWords = Words12
     var wordsRead = 0
 
-    /** 模拟 Argon2 途中被杀进程。 */
+    /** 模拟 Argon2 途中被杀进程. */
     var killDuringOpen = false
 
-    /** 下一次核对的结果。 */
+    /** 下一次核对的结果. */
     var review = reviewOf()
 
-    /** 请求里的指纹，用来模拟核心库的核对。 */
+    /** 请求里的指纹,用来模拟核心库的核对. */
     var requestFingerprint = MAIN_FINGERPRINT
     var reviewedHighestChange = mutableListOf<UInt>()
     var reviewedManifests = mutableListOf<String?>()
@@ -303,14 +303,14 @@ class FakeCore : WalletCore {
     var address = addressOf()
     var addressError: String? = null
 
-    /** 被核心库判定太简单的 PIN，默认没有。 */
+    /** 被核心库判定太简单的 PIN,默认没有. */
     var weakPins = emptySet<String>()
 
-    /** 核心库解不开的公钥。 */
+    /** 核心库解不开的公钥. */
     var unreadableKeys: ByteArray? = null
     var lastQrText: String? = null
 
-    /** 内置清单的版本。 */
+    /** 内置清单的版本. */
     var builtinManifest = 1u
     val manifestVersions = mutableMapOf<String, UInt>()
 
@@ -415,7 +415,7 @@ class FakeHardwareKey : HardwareKey {
     var lost = false
     var cancelAuth = false
 
-    /** 只取消这个 PIN 的确认，比如修改 PIN 时的新 PIN。 */
+    /** 只取消这个 PIN 的确认,比如修改 PIN 时的新 PIN. */
     var cancelFor: String? = null
     var unavailable = false
     var deleted = 0

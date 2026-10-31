@@ -1,4 +1,4 @@
-// 由 design/generate.mjs 生成，不要手改。
+// 由 design/generate.mjs 生成,不要手改.
 package com.ccobcode.bitone.ui.components
 
 object Icons {

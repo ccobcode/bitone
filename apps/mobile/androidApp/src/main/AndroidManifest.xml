@@ -2,21 +2,21 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- 气隙的前提：应用不能联网。tools:node="remove" 防止依赖合并进来，CheckManifestPermissions 再查一遍。 -->
+    <!-- 气隙的前提:应用不能联网.tools:node="remove" 防止依赖合并进来,CheckManifestPermissions 再查一遍. -->
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
 
-    <!-- 扫码是冷钱包唯一的输入方式。 -->
+    <!-- 扫码是冷钱包唯一的输入方式. -->
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- 隐藏其他应用的悬浮窗。 -->
+    <!-- 隐藏其他应用的悬浮窗. -->
     <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
-    <!-- 自检读 Wi-Fi 开关，只读。 -->
+    <!-- 自检读 Wi-Fi 开关,只读. -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <!-- 自检要列出声明了悬浮窗权限的第三方应用，Android 11 起看不到别的包。 -->
+    <!-- 自检要列出声明了悬浮窗权限的第三方应用,Android 11 起看不到别的包. -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
-    <!-- 硬件密钥的认证时间窗过期时，弹系统屏幕锁确认。 -->
+    <!-- 硬件密钥的认证时间窗过期时,弹系统屏幕锁确认. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
     <application
@@ -32,7 +32,7 @@
         android:theme="@style/Theme.BitOne"
         tools:ignore="UnusedAttribute">
 
-        <!-- 配置变化不重建 Activity，秘密输入不经过 saved instance state。 -->
+        <!-- 配置变化不重建 Activity,秘密输入不经过 saved instance state. -->
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
@@ -45,7 +45,7 @@
             </intent-filter>
         </activity>
 
-        <!-- EmojiCompat 启动时会去找可下载字体的提供方，离线设备不需要这次跨进程调用。 -->
+        <!-- EmojiCompat 启动时会去找可下载字体的提供方,离线设备不需要这次跨进程调用. -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"

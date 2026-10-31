@@ -70,9 +70,9 @@ import com.ccobcode.bitone.ui.theme.Space
 import com.ccobcode.bitone.ui.theme.elevation
 
 /**
- * 可点击区域，无水波，按下时整体缩放。放在修饰链的最前面，缩放才能带上后面的底色和圆角。
+ * 可点击区域,无水波,按下时整体缩放.放在修饰链的最前面,缩放才能带上后面的底色和圆角.
  *
- * 全部按钮和可点的行都走这里，按压反馈全局一致。
+ * 全部按钮和可点的行都走这里,按压反馈全局一致.
  */
 fun Modifier.tap(
     enabled: Boolean = true,
@@ -116,7 +116,7 @@ private fun ActionButton(
                 !enabled -> c.surface3
                 tone == Tone.Primary -> if (pressed) c.accentHover else c.accent
                 tone == Tone.Danger -> c.dangerSoft
-                // 次级按钮比所在的底色亮一层。放在 bg 上时是 surface，弹层里换成 surface-3。
+                // 次级按钮比所在的底色亮一层.放在 bg 上时是 surface,弹层里换成 surface-3.
                 else -> if (pressed) c.surface2 else fill
             },
             stateSpec(Motion.fast),
@@ -163,7 +163,7 @@ fun DangerButton(
 
 private val SmallHeight = 44.dp
 
-/** 小按钮，高 44，和网页端手机上的 sm 尺寸相同。 */
+/** 小按钮,高 44,和网页端手机上的 sm 尺寸相同. */
 @Composable
 fun SmallButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     val c = BitOneTheme.colors
@@ -178,7 +178,7 @@ fun SmallButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     }
 }
 
-/** 只有图标的小按钮，边长 44。 */
+/** 只有图标的小按钮,边长 44. */
 @Composable
 fun SmallIconButton(label: String, icon: String, onClick: () -> Unit) {
     val c = BitOneTheme.colors
@@ -193,7 +193,7 @@ fun SmallIconButton(label: String, icon: String, onClick: () -> Unit) {
     }
 }
 
-/** 次要操作用文字按钮，和主按钮同宽，触控区 44。 */
+/** 次要操作用文字按钮,和主按钮同宽,触控区 44. */
 @Composable
 fun TextButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     val c = BitOneTheme.colors
@@ -203,9 +203,9 @@ fun TextButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
 }
 
 /**
- * 长按确认。按下时调用 [onPress]，松手或滑出按钮时调用 [onRelease]，计时在流程层，[progress] 是流程给的真实进度。
+ * 长按确认.按下时调用 [onPress],松手或滑出按钮时调用 [onRelease],计时在流程层,[progress] 是流程给的真实进度.
  *
- * 底色从左向右填满，松手回退。这里只把流程的每一拍补平，不自己计时，系统关闭动画时直接跟着进度走。
+ * 底色从左向右填满,松手回退.这里只把流程的每一拍补平,不自己计时,系统关闭动画时直接跟着进度走.
  */
 @Composable
 fun HoldButton(
@@ -227,7 +227,7 @@ fun HoldButton(
                 running = true
                 fill.animateTo(progress, tween(Motion.fast, easing = LinearEasing))
             }
-            // 进度归零而手还按着，说明流程走完了。松手的路径会先把 pressed 清掉。
+            // 进度归零而手还按着,说明流程走完了.松手的路径会先把 pressed 清掉.
             pressed && running -> {
                 running = false
                 haptic.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -260,7 +260,7 @@ fun HoldButton(
         contentAlignment = Alignment.Center,
     ) {
         Txt(text, weight = Medium, color = c.danger)
-        // 填色层盖在上面，只露出进度以内的部分，文字反色的分界线跟着走。
+        // 填色层盖在上面,只露出进度以内的部分,文字反色的分界线跟着走.
         Box(
             Modifier.matchParentSize()
                 .clearAndSetSemantics {}
@@ -273,7 +273,7 @@ fun HoldButton(
     }
 }
 
-/** 吸底操作区。边线在 Page，这里只管上下间距。 */
+/** 吸底操作区.边线在 Page,这里只管上下间距. */
 @Composable
 fun ActionArea(content: @Composable ColumnScope.() -> Unit) {
     Column(
@@ -289,7 +289,7 @@ enum class NoticeTone {
     Danger,
 }
 
-/** 告示：用户要停下来看的事，和网页端的 Notice 同一规格。警告和错误读屏会立刻念出来。 */
+/** 告示:用户要停下来看的事,和网页端的 Notice 同一规格.警告和错误读屏会立刻念出来. */
 @Composable
 fun Notice(text: String, tone: NoticeTone = NoticeTone.Info) {
     val c = BitOneTheme.colors
@@ -313,7 +313,7 @@ fun Notice(text: String, tone: NoticeTone = NoticeTone.Info) {
     }
 }
 
-/** 高 24 的徽章。 */
+/** 高 24 的徽章. */
 @Composable
 fun Chip(text: String, background: Color, foreground: Color, icon: String? = null) {
     Row(
@@ -329,7 +329,7 @@ fun Chip(text: String, background: Color, foreground: Color, icon: String? = nul
     }
 }
 
-/** 卡片和列表组，无边框，靠明度分层。列表组内部没有分隔线。 */
+/** 卡片和列表组,无边框,靠明度分层.列表组内部没有分隔线. */
 @Composable
 fun Card(
     modifier: Modifier = Modifier.fillMaxWidth(),
@@ -343,7 +343,7 @@ fun Card(
     )
 }
 
-/** 列表行，行高 56。可点时按下显示底色，选中时是 `accent-soft`。[inset] 让底色和弹层边缘留出距离，文字不动。 */
+/** 列表行,行高 56.可点时按下显示底色,选中时是 `accent-soft`.[inset] 让底色和弹层边缘留出距离,文字不动. */
 @Composable
 fun ListRow(
     modifier: Modifier = Modifier,
@@ -381,7 +381,7 @@ fun ListRow(
 
 private val SwitchPad = 2.dp
 
-/** 开关，圆点滑动，轨道变色。 */
+/** 开关,圆点滑动,轨道变色. */
 @Composable
 fun SwitchTrack(on: Boolean) {
     val c = BitOneTheme.colors
@@ -402,7 +402,7 @@ fun SwitchTrack(on: Boolean) {
     }
 }
 
-/** 整行可点的开关。 */
+/** 整行可点的开关. */
 @Composable
 fun SwitchRow(
     on: Boolean,
@@ -423,7 +423,7 @@ fun SwitchRow(
     }
 }
 
-/** 底色块在等宽的项目之间滑动，不是原地变色。底部导航和分段选择共用。 */
+/** 底色块在等宽的项目之间滑动,不是原地变色.底部导航和分段选择共用. */
 @Composable
 internal fun SlidingTrack(
     count: Int,
@@ -440,12 +440,12 @@ internal fun SlidingTrack(
     }
 }
 
-/** 助记词长度切换。 */
+/** 助记词长度切换. */
 @Composable
 fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
     val c = BitOneTheme.colors
     val inner = RoundedCornerShape(Radius.r1)
-    // 选中块要比轨道亮。浅色里是 surface，深色里 surface 比轨道暗，换成 surface-3。
+    // 选中块要比轨道亮.浅色里是 surface,深色里 surface 比轨道暗,换成 surface-3.
     val raised = if (c.surface.luminance() > c.surface2.luminance()) c.surface else c.surface3
     SlidingTrack(
         count = options.size,
@@ -475,13 +475,13 @@ fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> 
 private val BackTouch = 44.dp
 private val BackIcon = 24.dp
 
-/** 图标在 24 网格里的可见左右边缘，含一半线宽。 */
+/** 图标在 24 网格里的可见左右边缘,含一半线宽. */
 private fun glyphEdges(icon: String): Pair<Dp, Dp> = if (icon == Icons.Close) 5.1.dp to 18.9.dp else 8.1.dp to 15.9.dp
 
 /**
- * 返回或关闭按钮。触控区 44，图标的可见左边缘落在边线上，占位只算图标本身，标题紧随其后。
+ * 返回或关闭按钮.触控区 44,图标的可见左边缘落在边线上,占位只算图标本身,标题紧随其后.
  *
- * 相机取景上用 [tint] 换成白色。
+ * 相机取景上用 [tint] 换成白色.
  */
 @Composable
 fun BackButton(onClick: () -> Unit, icon: String = Icons.Back, tint: Color = BitOneTheme.colors.text) {
@@ -505,7 +505,7 @@ fun BackButton(onClick: () -> Unit, icon: String = Icons.Back, tint: Color = Bit
     }
 }
 
-/** 弹层标题右边的关闭按钮。触控区 44，图标的可见右边缘落在边线上。 */
+/** 弹层标题右边的关闭按钮.触控区 44,图标的可见右边缘落在边线上. */
 @Composable
 fun CloseButton(onClick: () -> Unit) {
     val (_, right) = glyphEdges(Icons.Close)
@@ -527,15 +527,15 @@ private val StepDot = Space.s5
 private const val STEP_COUNT = 3
 
 /**
- * 流程步骤：数字圆点加短连线，走过的换成对勾，和网页端的转账步骤同一规格。放在标题栏右侧，步骤名就是页面标题。
+ * 流程步骤:数字圆点加短连线,走过的换成对勾,和网页端的转账步骤同一规格.放在标题栏右侧,步骤名就是页面标题.
  *
- * 进入这一步时，通向它的连线填上去。
+ * 进入这一步时,通向它的连线填上去.
  */
 @Composable
 fun Steps(current: Int) {
     val c = BitOneTheme.colors
     Row(
-        Modifier.semantics { contentDescription = translate("第 $current 步，共 $STEP_COUNT 步") },
+        Modifier.semantics { contentDescription = translate("第 $current 步,共 $STEP_COUNT 步") },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s2),
     ) {
