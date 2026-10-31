@@ -1,10 +1,10 @@
-//! BIP39 助记词。保存的是熵，不是种子：BIP39 密码不写入设备，种子只在需要时算出。
+//! BIP39 助记词.保存的是熵,不是种子:BIP39 密码不写入设备,种子只在需要时算出.
 
 use crate::Error;
 use bip39::{Language, Mnemonic};
 use zeroize::Zeroizing;
 
-/// 12 词对应 16 字节熵，24 词对应 32 字节。
+/// 12 词对应 16 字节熵,24 词对应 32 字节.
 pub fn generate_entropy(word_count: usize) -> Result<Zeroizing<Vec<u8>>, Error> {
     let bytes = match word_count {
         12 => 16,
@@ -24,7 +24,7 @@ pub fn words(entropy: &[u8]) -> Result<Vec<String>, Error> {
     Ok(from_entropy(entropy)?.words().map(String::from).collect())
 }
 
-/// 校验并转换用户输入的助记词。只接受 12 和 24 词。
+/// 校验并转换用户输入的助记词.只接受 12 和 24 词.
 pub fn entropy_from_words(words: &[String]) -> Result<Zeroizing<Vec<u8>>, Error> {
     if words.len() != 12 && words.len() != 24 {
         return Err(Error::InvalidWordCount);
@@ -38,7 +38,7 @@ pub fn is_valid_word(word: &str) -> bool {
     Language::English.find_word(word).is_some()
 }
 
-/// 以 `prefix` 开头的词，给内置键盘做联想。
+/// 以 `prefix` 开头的词,给内置键盘做联想.
 pub fn suggestions(prefix: &str, limit: usize) -> Vec<&'static str> {
     if prefix.is_empty() {
         return Vec::new();
@@ -46,7 +46,7 @@ pub fn suggestions(prefix: &str, limit: usize) -> Vec<&'static str> {
     Language::English.words_by_prefix_iter(prefix).take(limit).collect()
 }
 
-/// 词表里随机取一个词，作为验证助记词时的干扰项。
+/// 词表里随机取一个词,作为验证助记词时的干扰项.
 pub fn random_word() -> Result<&'static str, Error> {
     let mut bytes = [0u8; 2];
     getrandom::fill(&mut bytes).map_err(|_| Error::Random)?;

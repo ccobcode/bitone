@@ -1,5 +1,5 @@
-//! Bitcoin 签名。输入是否属于本钱包、用哪条路径、签什么摘要，都由 `prepare` 决定，
-//! 和核对时走同一份逻辑。私钥派生出来后先核对 script，再签名。
+//! Bitcoin 签名.输入是否属于本钱包,用哪条路径,签什么摘要,都由 `prepare` 决定,
+//! 和核对时走同一份逻辑.私钥派生出来后先核对 script,再签名.
 
 use crate::Error;
 use crate::keys::Wallet;
@@ -11,7 +11,7 @@ use bitone_core::Network;
 use bitone_core::request::SignRequest;
 use bitone_core::tx::bitcoin::{OwnInput, Sighash, prepare, script_for};
 
-/// RFC 6979 的确定性签名，低 s，末尾带 sighash 字节。
+/// RFC 6979 的确定性签名,低 s,末尾带 sighash 字节.
 fn sign_ecdsa(secp: &Secp256k1<All>, key: &SecretKey, digest: [u8; 32], ty: EcdsaSighashType) -> Vec<u8> {
     let signature = secp.sign_ecdsa(&Message::from_digest(digest), key);
     ecdsa::Signature {
@@ -21,7 +21,7 @@ fn sign_ecdsa(secp: &Secp256k1<All>, key: &SecretKey, digest: [u8; 32], ty: Ecds
     .to_vec()
 }
 
-/// BIP86 的 key path 签名，不用随机数，同一笔交易的结果不变。DEFAULT 时没有尾字节。
+/// BIP86 的 key path 签名,不用随机数,同一笔交易的结果不变.DEFAULT 时没有尾字节.
 fn sign_taproot(secp: &Secp256k1<All>, key: &SecretKey, digest: [u8; 32], ty: TapSighashType) -> Vec<u8> {
     let mut keypair = Keypair::from_secret_key(secp, key);
     let mut tweaked = keypair.tap_tweak(secp, None).to_keypair();
@@ -36,7 +36,7 @@ fn sign_taproot(secp: &Secp256k1<All>, key: &SecretKey, digest: [u8; 32], ty: Ta
 }
 
 impl Wallet {
-    /// 每个输入一项，下标和交易的输入对应，不属于本钱包的输入是空的。
+    /// 每个输入一项,下标和交易的输入对应,不属于本钱包的输入是空的.
     pub(crate) fn sign_bitcoin(&self, request: &SignRequest, network: Network) -> Result<Vec<Vec<u8>>, Error> {
         let fingerprint = self.fingerprint()?;
         if fingerprint != request.fingerprint {
@@ -83,7 +83,7 @@ mod tests {
         SecretKey::from_slice(&hex).unwrap()
     }
 
-    // BIP-143 的 Native P2WPKH 示例。向量的签名是 RFC 6979 的结果，所以连字节都能比。
+    // BIP-143 的 Native P2WPKH 示例.向量的签名是 RFC 6979 的结果,所以连字节都能比.
     #[test]
     fn bip143_signature_bytes() {
         let secp = Secp256k1::new();
@@ -99,7 +99,7 @@ mod tests {
         );
     }
 
-    // BIP-341 的 wallet-test-vectors.json，keyPathSpending 第 0 个输入，没有 merkle root。
+    // BIP-341 的 wallet-test-vectors.json,keyPathSpending 第 0 个输入,没有 merkle root.
     #[test]
     fn bip341_signature_bytes() {
         let secp = Secp256k1::new();

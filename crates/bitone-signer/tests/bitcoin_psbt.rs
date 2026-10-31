@@ -1,5 +1,5 @@
-//! Bitcoin PSBT 的核对、签名、核验。需要真实的 `Wallet`，所以放在这里。
-//! 助记词是 abandon×11 about，下面的伪造 PSBT 都是真的构造出来再序列化的。
+//! Bitcoin PSBT 的核对,签名,核验.需要真实的 `Wallet`,所以放在这里.
+//! 助记词是 abandon×11 about,下面的伪造 PSBT 都是真的构造出来再序列化的.
 
 use bitcoin::bip32::{DerivationPath as BipPath, Fingerprint};
 use bitcoin::consensus::{deserialize, serialize};
@@ -29,7 +29,7 @@ const NESTED: &str = "m/49'/0'/0'/0/0";
 const LEGACY: &str = "m/44'/0'/0'/0/0";
 const CHANGE: &str = "m/84'/0'/0'/1/3";
 const TAPROOT_CHANGE: &str = "m/86'/0'/0'/1/3";
-// BIP-173 的示例地址，和测试钱包无关。
+// BIP-173 的示例地址,和测试钱包无关.
 const PEER: &str = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
 const PEER_2: &str = "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2";
 const TEST_PEER: &str = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx";
@@ -132,50 +132,31 @@ fn forbidden(review: Review) -> Option<Forbid> {
     review.forbidden
 }
 
-/// 改动一份合法的 PSBT。
+/// 改动一份合法的 PSBT.
 fn forged(payload: &[u8], change: impl FnOnce(&mut Psbt)) -> Vec<u8> {
     let mut psbt = Psbt::deserialize(payload).unwrap();
     change(&mut psbt);
     psbt.serialize()
 }
 
+fn send(s: &Setup, inputs: &[Utxo], change: &str) -> Vec<u8> {
+    let payments = [pay(PEER, 400_000)];
+    build_psbt(Network::Bitcoin, &s.keys, inputs, &payments, Some((change, 599_000))).unwrap()
+}
+
 fn segwit_send(s: &Setup) -> Vec<u8> {
-    let inputs = [utxo(s, SEGWIT, 1_000_000, 1)];
-    build_psbt(
-        Network::Bitcoin,
-        &s.keys,
-        &inputs,
-        &[pay(PEER, 400_000)],
-        Some((CHANGE, 599_000)),
-    )
-    .unwrap()
+    send(s, &[utxo(s, SEGWIT, 1_000_000, 1)], CHANGE)
 }
 
 fn taproot_send(s: &Setup) -> Vec<u8> {
-    let inputs = [utxo(s, TAPROOT, 1_000_000, 1)];
-    build_psbt(
-        Network::Bitcoin,
-        &s.keys,
-        &inputs,
-        &[pay(PEER, 400_000)],
-        Some((TAPROOT_CHANGE, 599_000)),
-    )
-    .unwrap()
+    send(s, &[utxo(s, TAPROOT, 1_000_000, 1)], TAPROOT_CHANGE)
 }
 
 fn mixed_send(s: &Setup) -> Vec<u8> {
-    let inputs = [utxo(s, SEGWIT, 500_000, 1), utxo(s, TAPROOT, 500_000, 2)];
-    build_psbt(
-        Network::Bitcoin,
-        &s.keys,
-        &inputs,
-        &[pay(PEER, 400_000)],
-        Some((CHANGE, 599_000)),
-    )
-    .unwrap()
+    send(s, &[utxo(s, SEGWIT, 500_000, 1), utxo(s, TAPROOT, 500_000, 2)], CHANGE)
 }
 
-/// 给 PSBT 加一个其他钱包的输入，金额多少都用输出补平。
+/// 给 PSBT 加一个其他钱包的输入,金额多少都用输出补平.
 fn add_foreign(psbt: &mut Psbt, input: Input, prev: &Transaction) {
     psbt.unsigned_tx.input.push(TxIn {
         previous_output: OutPoint {
@@ -255,7 +236,7 @@ mod ownership {
         assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Hold));
         assert_eq!(review.alerts, vec!["有 1 个输入不属于本钱包"]);
         let row = review.rows.iter().find(|r| r.label == "其他钱包的输入").unwrap();
-        assert_eq!(row.value, "1 个，共 0.0025 BTC");
+        assert_eq!(row.value, "1 个,共 0.0025 BTC");
         assert_eq!(review.rows.iter().filter(|r| r.label == "付款账户").count(), 1);
         assert_eq!(review.amount.unwrap().text, "0.0065");
     }
@@ -320,7 +301,7 @@ mod ownership {
 
     #[test]
     fn colliding_fingerprint_does_not_make_an_input_mine() {
-        // 4 字节指纹可以撞出来：这里的公钥和 script 自洽，但路径派生不出它。
+        // 4 字节指纹可以撞出来:这里的公钥和 script 自洽,但路径派生不出它.
         let s = setup();
         let prev = funding(script(&s.other, SEGWIT), 1_000_000, 1);
         let payload = forged(&segwit_send(&s), |psbt| {
@@ -449,7 +430,7 @@ mod ownership {
         assert_eq!(forbidden(review(&s, payload)), Some(Forbid::PrevTxMismatch));
     }
 
-    /// CVE-2020-14199：SegWit 签名只承诺自身输入的金额，用户看到的手续费可以被压低。
+    /// CVE-2020-14199:SegWit 签名只承诺自身输入的金额,用户看到的手续费可以被压低.
     #[test]
     fn witness_utxo_amount_cannot_differ_from_the_previous_transaction() {
         let s = setup();
@@ -515,9 +496,9 @@ mod ownership {
         assert_eq!(forbidden(review(&s, payload)), Some(Forbid::MissingPrevTx));
     }
 
-    /// 用户有两个 SegWit 币。每一轮把其中一个说成本钱包的 Taproot 输入，金额压低，
-    /// 另一个币的 ECDSA 签名照样有效。两轮的签名拼起来，用户看到的手续费是假的。
-    /// 在按「混合交易只要求非 Taproot 带前序交易」写的代码上，这笔交易被 regtest 节点接受了。
+    /// 用户有两个 SegWit 币.每一轮把其中一个说成本钱包的 Taproot 输入,金额压低,
+    /// 另一个币的 ECDSA 签名照样有效.两轮的签名拼起来,用户看到的手续费是假的.
+    /// 在按"混合交易只要求非 Taproot 带前序交易"写的代码上,这笔交易被 regtest 节点接受了.
     #[test]
     fn segwit_coin_disguised_as_my_taproot_input_is_refused() {
         let s = setup();
@@ -565,7 +546,7 @@ mod ownership {
         let inputs = [utxo(&s, TAPROOT, 500_000, 1), utxo(&s, TAPROOT_2, 500_000, 2)];
         let payload = build_psbt(Network::Bitcoin, &s.keys, &inputs, &[pay(PEER, 999_000)], None).unwrap();
         assert_eq!(review(&s, payload.clone()).confirm, Confirm::Tap);
-        // 两个 ANYONECANPAY 各管各的金额，同样可以分两轮骗。
+        // 两个 ANYONECANPAY 各管各的金额,同样可以分两轮骗.
         let payload = forged(&payload, |psbt| {
             psbt.inputs[0].sighash_type = sighash(0x81);
             psbt.inputs[1].sighash_type = sighash(0x81);
@@ -580,7 +561,7 @@ mod ownership {
         assert_eq!(review(&s, payload).confirm, Confirm::Hold);
     }
 
-    /// 其他钱包的输入把自己声明成 Taproot，本钱包全是 SegWit，同样没有签名能替它作证。
+    /// 其他钱包的输入把自己声明成 Taproot,本钱包全是 SegWit,同样没有签名能替它作证.
     #[test]
     fn foreign_input_cannot_claim_to_be_taproot_next_to_segwit() {
         let s = setup();
@@ -725,7 +706,7 @@ mod sighash_types {
 
     #[test]
     fn single_without_a_matching_output_is_refused() {
-        // 旧式输入这样签出来的摘要是常量 1，签名能花掉这个地址的所有币。
+        // 旧式输入这样签出来的摘要是常量 1,签名能花掉这个地址的所有币.
         let s = setup();
         let inputs = [utxo(&s, SEGWIT, 500_000, 1), utxo(&s, LEGACY, 500_000, 2)];
         let payload = build_psbt(Network::Bitcoin, &s.keys, &inputs, &[pay(PEER, 900_000)], None).unwrap();
@@ -799,7 +780,7 @@ mod change {
         assert_eq!(review.actions.iter().filter(|a| a.title == "找零").count(), 0);
     }
 
-    /// 路径、公钥、script 全部对得上，能拦住它的只有白名单。
+    /// 路径,公钥,script 全部对得上,能拦住它的只有白名单.
     #[test]
     fn huge_or_other_network_change_is_refused_even_when_it_derives() {
         let s = setup();
@@ -883,7 +864,7 @@ mod change {
 
     #[test]
     fn taproot_change_hiding_a_script_path_is_refused() {
-        // 内部公钥是自己的，但输出密钥藏了别人能花的脚本树，PSBT 里的 tap_tree 故意留空。
+        // 内部公钥是自己的,但输出密钥藏了别人能花的脚本树,PSBT 里的 tap_tree 故意留空.
         let s = setup();
         let secp = Secp256k1::new();
         let internal = public(&s.keys, TAPROOT_CHANGE).x_only_public_key().0;
@@ -1008,7 +989,7 @@ mod fees {
     #[test]
     fn amounts_above_the_supply_are_refused() {
         let s = setup();
-        // 输入和输出一起放大，手续费看起来正常，只有总量上限能发现。
+        // 输入和输出一起放大,手续费看起来正常,只有总量上限能发现.
         let payload = forged(&taproot_send(&s), |psbt| {
             psbt.inputs[0].witness_utxo.as_mut().unwrap().value = Amount::MAX_MONEY + Amount::from_sat(1_000_000);
             psbt.unsigned_tx.output[0].value = Amount::MAX_MONEY + Amount::from_sat(1);
@@ -1019,9 +1000,9 @@ mod fees {
     #[test]
     fn fee_at_five_percent_passes_and_one_sat_more_alerts() {
         let s = setup();
-        // 手续费 25000，发送额 500000，正好 5%。
+        // 手续费 25000,发送额 500000,正好 5%.
         assert_eq!(review(&s, with_outputs(&s, 500_000, 475_000)).confirm, Confirm::Tap);
-        // 手续费 25001，发送额 500000。
+        // 手续费 25001,发送额 500000.
         let high = review(&s, with_outputs(&s, 500_000, 474_999));
         assert_eq!((high.risk, high.confirm), (Risk::Transfer, Confirm::Hold));
         assert_eq!(high.alerts, vec!["手续费明显偏高"]);
@@ -1041,7 +1022,7 @@ mod fees {
     fn fee_rate_is_in_sat_per_vbyte() {
         let s = setup();
         let (req, response, review) = sign(&s, Network::Bitcoin, segwit_send(&s)).unwrap();
-        // 手续费 1000 sat。估算的大小要和真实签名后的交易一致。
+        // 手续费 1000 sat.估算的大小要和真实签名后的交易一致.
         let tx: Transaction = deserialize(&btc::verify(Network::Bitcoin, &req, &response).unwrap().raw).unwrap();
         assert_eq!(tx.vsize(), 141);
         assert_eq!(
@@ -1106,11 +1087,11 @@ mod display {
         assert_eq!(review.actions[0].title, "转给自己");
         assert_eq!(review.actions[1].title, "找零");
         assert_eq!(review.counterparty, None);
-        // 发送额是 0，任何手续费都超过发送额的 5%。
+        // 发送额是 0,任何手续费都超过发送额的 5%.
         assert_eq!(review.alerts, vec!["手续费明显偏高"]);
     }
 
-    /// 取消交易没有收款方，全部回到找零。
+    /// 取消交易没有收款方,全部回到找零.
     #[test]
     fn cancel_without_a_payment_is_a_self_transfer() {
         let s = setup();
@@ -1168,9 +1149,9 @@ mod display {
             ]
         );
         assert_eq!(review.rows[0].value, "Bitcoin");
-        assert_eq!(review.rows[7].value, "原生 SegWit、Taproot");
+        assert_eq!(review.rows[7].value, "原生 SegWit,Taproot");
         assert_eq!(review.rows[8].value, "0.00001 BTC");
-        assert_eq!(review.rows[10].value, "ALL、DEFAULT");
+        assert_eq!(review.rows[10].value, "ALL,DEFAULT");
         assert!(!review.raw.is_empty());
     }
 
@@ -1461,7 +1442,7 @@ mod signing {
             w.push([2u8; 33]);
             w
         };
-        // 其他钱包的输入排在前面，签名下标不能错位。
+        // 其他钱包的输入排在前面,签名下标不能错位.
         let payload = forged(&segwit_send(&s), |psbt| {
             psbt.unsigned_tx.input.insert(
                 0,
@@ -1626,7 +1607,7 @@ mod signing {
         let bytes = response.signatures[0].to_vec();
         let parsed = ecdsa::Signature::from_der(&bytes[..bytes.len() - 1]).unwrap();
         let mut compact = parsed.serialize_compact();
-        // n - s。
+        // n - s.
         let order = bitcoin::secp256k1::constants::CURVE_ORDER;
         let mut borrow = 0i16;
         for i in (32..64).rev() {
@@ -1690,8 +1671,8 @@ mod signing {
 
     #[test]
     fn stale_public_keys_cannot_sign_with_another_wallet() {
-        // 换了 BIP39 密码，本机保存的公钥还是旧钱包的。核对时第二个输入是「其他钱包」，
-        // 用户没有确认过花它，解锁的钱包却能签。
+        // 换了 BIP39 密码,本机保存的公钥还是旧钱包的.核对时第二个输入是"其他钱包",
+        // 用户没有确认过花它,解锁的钱包却能签.
         let s = setup();
         let unlocked = Wallet::new(&[0u8; 16], "TREZOR").unwrap();
         let unlocked_keys = PublicKeys::decode(&unlocked.public_keys(false).unwrap()).unwrap();

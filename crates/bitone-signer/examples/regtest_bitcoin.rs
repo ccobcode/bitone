@@ -1,7 +1,7 @@
-//! 用真实节点验证 Bitcoin 交易。由 scripts/regtest-bitcoin.sh 启动，容器名从环境变量传入。
+//! 用真实节点验证 Bitcoin 交易.由 scripts/regtest-bitcoin.sh 启动,容器名从环境变量传入.
 //!
-//! 冷钱包的请求按 Testnet4 走测试网路径，或按主网走旧路径，scriptPubKey 和 regtest 通用，
-//! 只有地址前缀不同，所以节点这边用 bcrt1 地址打币和收款。
+//! 冷钱包的请求按 Testnet4 走测试网路径,或按主网走旧路径,scriptPubKey 和 regtest 通用,
+//! 只有地址前缀不同,所以节点这边用 bcrt1 地址打币和收款.
 
 use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::hex::{DisplayHex, FromHex};
@@ -28,7 +28,7 @@ struct Harness {
     container: String,
     wallet: Wallet,
     keys: PublicKeys,
-    /// 节点钱包的收款地址，下面的外部收款方。
+    /// 节点钱包的收款地址,下面的外部收款方.
     peer: ScriptBuf,
 }
 
@@ -75,7 +75,7 @@ impl Harness {
         script_for(classify(&parsed).expect("白名单").kind, &key).expect("比特币路径")
     }
 
-    /// 打一笔钱到路径对应的地址，确认后返回 UTXO。
+    /// 打一笔钱到路径对应的地址,确认后返回 UTXO.
     fn fund(&self, path: &str, sats: u64) -> Utxo {
         let script = self.script(path);
         let address = Address::from_script(&script, BitcoinNetwork::Regtest)
@@ -100,7 +100,7 @@ impl Harness {
         }
     }
 
-    /// 全 Taproot 的交易不需要前序交易。
+    /// 全 Taproot 的交易不需要前序交易.
     fn fund_taproot(&self, path: &str, sats: u64) -> Utxo {
         Utxo {
             prev_tx: None,
@@ -162,7 +162,7 @@ fn broadcast(h: &Harness, s: Scenario) -> Result<(), String> {
     };
     let review = tx::review(&request, &ctx);
     if review.confirm != Confirm::Tap {
-        return Err(format!("核对没有放行：{:?} {:?}", review.forbidden, review.alerts));
+        return Err(format!("核对没有放行:{:?} {:?}", review.forbidden, review.alerts));
     }
     let (response, _) = h
         .wallet
@@ -171,7 +171,7 @@ fn broadcast(h: &Harness, s: Scenario) -> Result<(), String> {
     let verified = tx::verify(&request, &response, &[]).map_err(|e| e.to_string())?;
     let raw = verified.raw.to_lower_hex_string();
 
-    // 改一个字节的交易必须被节点拒绝，否则下面的「接受」说明不了什么。
+    // 改一个字节的交易必须被节点拒绝,否则下面的"接受"说明不了什么.
     let mut broken = verified.raw.clone();
     let tail = broken.len() - 8;
     broken[tail] ^= 1;
@@ -184,18 +184,18 @@ fn broadcast(h: &Harness, s: Scenario) -> Result<(), String> {
     let accept: Value = serde_json::from_str(&h.node(&["testmempoolaccept", &format!("[\"{raw}\"]")])).expect("JSON");
     let result = &accept[0];
     if result["allowed"].as_bool() != Some(true) {
-        return Err(format!("testmempoolaccept 拒绝：{result}"));
+        return Err(format!("testmempoolaccept 拒绝:{result}"));
     }
     let vsize = result["vsize"].as_u64().unwrap_or(0);
     let node_fee = result["fees"]["base"]
         .as_f64()
         .map_or(0, |btc| (btc * BTC as f64).round() as u64);
     if node_fee != fee {
-        return Err(format!("手续费和节点算的不同：本地 {fee}，节点 {node_fee}"));
+        return Err(format!("手续费和节点算的不同:本地 {fee},节点 {node_fee}"));
     }
     let txid = h.node(&["sendrawtransaction", &raw]);
     if txid != verified.hash {
-        return Err(format!("txid 不一致：本地 {}，节点 {txid}", verified.hash));
+        return Err(format!("txid 不一致:本地 {},节点 {txid}", verified.hash));
     }
     h.mine(1);
     let confirmed: Value = serde_json::from_str(&h.node(&["getrawtransaction", &txid, "1"])).expect("JSON");
@@ -204,7 +204,7 @@ fn broadcast(h: &Harness, s: Scenario) -> Result<(), String> {
         return Err("没有确认".to_string());
     }
     println!(
-        "{} 通过\n  txid {txid}\n  输入 {} 个，手续费 {fee} sat，虚拟大小 {vsize} vB，找零 {change} sat\n  testmempoolaccept allowed=true，sendrawtransaction 返回同一 txid，确认数 {confirmations}",
+        "{} 通过\n  txid {txid}\n  输入 {} 个,手续费 {fee} sat,虚拟大小 {vsize} vB,找零 {change} sat\n  testmempoolaccept allowed=true,sendrawtransaction 返回同一 txid,确认数 {confirmations}",
         s.name,
         inputs.len()
     );
@@ -240,7 +240,7 @@ fn main() {
 
     let scenarios = vec![
         Scenario {
-            name: "SegWit 单输入，带找零",
+            name: "SegWit 单输入,带找零",
             network: Network::BtcTestnet4,
             utxos: vec![h.fund(SEGWIT, 2 * BTC)],
             amount: BTC / 2,
@@ -249,7 +249,7 @@ fn main() {
             sighash: None,
         },
         Scenario {
-            name: "SegWit 单输入，无找零",
+            name: "SegWit 单输入,无找零",
             network: Network::BtcTestnet4,
             utxos: vec![h.fund("m/84'/1'/0'/0/1", 50_000)],
             amount: 49_500,
@@ -258,7 +258,7 @@ fn main() {
             sighash: None,
         },
         Scenario {
-            name: "Taproot 单输入，带 Taproot 找零",
+            name: "Taproot 单输入,带 Taproot 找零",
             network: Network::BtcTestnet4,
             utxos: vec![h.fund(TAPROOT, 2 * BTC)],
             amount: BTC / 2,
@@ -267,7 +267,7 @@ fn main() {
             sighash: None,
         },
         Scenario {
-            name: "Taproot 单输入，显式 SIGHASH_ALL",
+            name: "Taproot 单输入,显式 SIGHASH_ALL",
             network: Network::BtcTestnet4,
             utxos: vec![h.fund("m/86'/1'/0'/0/1", 2 * BTC)],
             amount: BTC / 2,
@@ -276,7 +276,7 @@ fn main() {
             sighash: Some(1),
         },
         Scenario {
-            name: "两个 Taproot 输入，都不带前序交易",
+            name: "两个 Taproot 输入,都不带前序交易",
             network: Network::BtcTestnet4,
             utxos: vec![
                 h.fund_taproot("m/86'/1'/0'/0/3", BTC),
@@ -288,7 +288,7 @@ fn main() {
             sighash: None,
         },
         Scenario {
-            name: "SegWit 加 Taproot 混合输入，带找零",
+            name: "SegWit 加 Taproot 混合输入,带找零",
             network: Network::BtcTestnet4,
             utxos: vec![h.fund("m/84'/1'/0'/0/2", BTC), h.fund("m/86'/1'/0'/0/2", BTC)],
             amount: 3 * BTC / 2,
@@ -320,7 +320,7 @@ fn main() {
     for scenario in scenarios {
         let name = scenario.name.to_string();
         if let Err(reason) = broadcast(&h, scenario) {
-            eprintln!("{name} 失败：{reason}");
+            eprintln!("{name} 失败:{reason}");
             failed += 1;
         }
     }

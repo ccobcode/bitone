@@ -25,7 +25,7 @@ mod tests {
     use bitone_core::keys::PublicKeys;
     use bitone_core::manifest::Manifest;
     use bitone_core::protocol::VERSION;
-    use bitone_core::request::{KIND_TRANSACTION, KIND_TYPED_DATA, SignRequest};
+    use bitone_core::request::{KIND_TRANSACTION, KIND_TYPED_DATA, SignRequest, SignResponse};
     use bitone_core::review::{Confirm, Forbid, Review, Risk};
     use bitone_core::tx::solana::{
         ASSOCIATED_TOKEN_PROGRAM, COMPUTE_BUDGET_PROGRAM, Instruction, Lookup, Message, RECENT_BLOCKHASHES_SYSVAR,
@@ -65,6 +65,12 @@ mod tests {
 
     fn hex_text(bytes: &[u8]) -> String {
         bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    fn sign(s: &Setup, req: &SignRequest) -> (SignResponse, Review) {
+        s.wallet
+            .sign(req, &s.keys, Manifest::builtin(), HighestChange::default())
+            .unwrap()
     }
 
     fn request(s: &Setup, payload: Vec<u8>) -> SignRequest {
@@ -156,7 +162,7 @@ mod tests {
         build_transfer(&token_params(create_recipient_ata)).unwrap()
     }
 
-    /// 测试用的指令，账户直接写地址。
+    /// 测试用的指令,账户直接写地址.
     struct Ix {
         program: [u8; 32],
         accounts: Vec<[u8; 32]>,
@@ -171,7 +177,7 @@ mod tests {
         }
     }
 
-    /// 账户表：付款账户、其他签名者、指令里的账户、程序。
+    /// 账户表:付款账户,其他签名者,指令里的账户,程序.
     fn compose(payer: [u8; 32], signers: &[[u8; 32]], instructions: &[Ix]) -> Message {
         let mut keys = vec![payer];
         keys.extend_from_slice(signers);
@@ -260,9 +266,9 @@ mod tests {
         ix(COMPUTE_BUDGET_PROGRAM, &[], &data)
     }
 
-    // 下面的期望值由 @solana/web3.js 1.99.0、@solana/spl-token 0.4.15 用同一助记词算出：
-    // TransactionMessage.compileToLegacyMessage 生成消息，tweetnacl 签名，VersionedTransaction 序列化。
-    // 私钥用 ed25519-hd-key 派生，都是独立实现。
+    // 下面的期望值由 @solana/web3.js 1.99.0,@solana/spl-token 0.4.15 用同一助记词算出:
+    // TransactionMessage.compileToLegacyMessage 生成消息,tweetnacl 签名,VersionedTransaction 序列化.
+    // 私钥用 ed25519-hd-key 派生,都是独立实现.
     const WEB3_CREATE: [&str; 4] = [
         "01000305f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7b87b23eec251cafcbf375b02a80ce9e968597baebaed58bba1fcf5b8591ffefe000000000000000000000000000000000000000000000000000000000000000006a7d517192c568ee08a845f73d29788cf035c3145b21ab344d8062ea940000006a7d517192c5c51218cc94c3d4af17f58daee089ba1fd44e3dbd98a00000000070707070707070707070707070707070707070707070707070707070707070703020200010c020000000017160000000000020201006009000000f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70c000000000000006269746f6e652d6e6f6e63655000000000000000000000000000000000000000000000000000000000000000000000000000000002030103042406000000f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7",
         "4ba3234bc25eee10b28d79809c73e56f90fd7dc70ba6a588cc703c7a02e621edc326d098ba64d0bb8317b87f04a79b8eb990c0e0a1e431dcea5250ceb5613505",
@@ -292,10 +298,7 @@ mod tests {
         let [message, signature, raw, hash] = vector;
         assert_eq!(hex_text(&payload), message);
         let req = request(s, payload);
-        let (response, _) = s
-            .wallet
-            .sign(&req, &s.keys, Manifest::builtin(), HighestChange::default())
-            .unwrap();
+        let (response, _) = sign(s, &req);
         assert_eq!(hex_text(&response.signatures[0]), signature);
         let verified = tx::verify(&req, &response, &payer()).unwrap();
         assert_eq!(hex_text(&verified.raw), raw);
@@ -343,7 +346,7 @@ mod tests {
         );
     }
 
-    /// web3.js 的 findProgramAddressSync 算出的例子。bump 都小于 253，前几次哈希落在曲线上。
+    /// web3.js 的 findProgramAddressSync 算出的例子.bump 都小于 253,前几次哈希落在曲线上.
     #[test]
     fn program_addresses_skip_points_on_the_curve() {
         let cases = [
@@ -410,7 +413,7 @@ mod tests {
         assert_eq!(row(&review, "指令数"), "4");
         assert_eq!(row(&review, "基础费"), "0.000005 SOL");
         assert_eq!(row(&review, "优先费"), "0.0000002 SOL");
-        // Advance 和 ComputeBudget 不算动作。
+        // Advance 和 ComputeBudget 不算动作.
         assert_eq!(review.actions.len(), 1);
         assert!(review.alerts.is_empty());
     }
@@ -432,7 +435,7 @@ mod tests {
         let s = setup();
         let review = review(&s, &hinted(&s, token(true), PEER));
         assert_eq!((review.risk, review.confirm), (Risk::Recognized, Confirm::Tap));
-        // 顶部仍然显示转账。
+        // 顶部仍然显示转账.
         assert_eq!(review.amount.as_ref().unwrap().text, "1.25");
         assert_eq!(review.counterparty.as_deref(), Some(PEER));
         assert!(action_has(&review, "所有者", PEER));
@@ -451,12 +454,12 @@ mod tests {
             assert_eq!(review.counterparty.as_deref(), Some(PEER_ATA));
             assert_eq!(row(&review, "收款地址"), "无法确认所有者");
             assert!(action_has(&review, "收款地址", "无法确认所有者"));
-            // 收款方是谁都没确认，不能点一下就签。
+            // 收款方是谁都没确认,不能点一下就签.
             assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Hold));
         }
     }
 
-    /// 给 PEER 建账户，转账却转给别人的代币账户，声明的所有者也推不出目标账户。
+    /// 给 PEER 建账户,转账却转给别人的代币账户,声明的所有者也推不出目标账户.
     #[test]
     fn creating_one_account_and_paying_another_is_caught() {
         let s = setup();
@@ -541,7 +544,7 @@ mod tests {
         );
     }
 
-    /// CreateAccountWithSeed 会被预存款挡住，所以这种写法不再算本钱包的 nonce 创建。
+    /// CreateAccountWithSeed 会被预存款挡住,所以这种写法不再算本钱包的 nonce 创建.
     #[test]
     fn old_create_account_flow_is_not_recognized() {
         let s = setup();
@@ -551,7 +554,7 @@ mod tests {
         assert_eq!(review.risk, Risk::Unknown);
     }
 
-    /// 「创建 nonce 账户」是点按确认，不能让转账藏在这个标题后面。
+    /// "创建 nonce 账户"是点按确认,不能让转账藏在这个标题后面.
     #[test]
     fn nonce_creation_cannot_carry_other_actions() {
         let s = setup();
@@ -565,7 +568,7 @@ mod tests {
         let review = check(&s, &compose(payer(), &[], &[transfer(9_000_000_000), a, b, c]));
         assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
 
-        // 优先费不算动作。
+        // 优先费不算动作.
         let [a, b, c] = own_creation();
         let review = check(
             &s,
@@ -620,9 +623,9 @@ mod tests {
         let lamports = 1_447_680;
         let attacker_nonce = [0x66; 32];
         let cases = [
-            // authority 是别人：对方可以提走 nonce 账户里的钱。
+            // authority 是别人:对方可以提走 nonce 账户里的钱.
             vec![fund(), allocate(), initialize(STRANGER, nonce())],
-            // 地址不是本钱包的 nonce 账户。
+            // 地址不是本钱包的 nonce 账户.
             vec![
                 ix(
                     SYSTEM_PROGRAM,
@@ -631,7 +634,7 @@ mod tests {
                 ),
                 initialize(payer(), attacker_nonce),
             ],
-            // 种子、大小、所有者不对。
+            // 种子,大小,所有者不对.
             vec![
                 ix(
                     SYSTEM_PROGRAM,
@@ -656,16 +659,16 @@ mod tests {
                 ),
                 initialize(payer(), nonce()),
             ],
-            // 只有一半。
+            // 只有一半.
             vec![fund(), allocate()],
             vec![allocate(), initialize(payer(), nonce())],
             vec![initialize(payer(), nonce())],
-            // 中间插了指令。
+            // 中间插了指令.
             vec![fund(), allocate(), transfer(1), initialize(payer(), nonce())],
         ];
         for (i, instructions) in cases.iter().enumerate() {
             let review = check(&s, &compose(payer(), &[], instructions));
-            assert!(review.risk >= Risk::Unknown, "第 {i} 例：{:?}", review.risk);
+            assert!(review.risk >= Risk::Unknown, "第 {i} 例:{:?}", review.risk);
             assert_eq!(review.confirm, Confirm::Hold, "第 {i} 例");
         }
     }
@@ -733,7 +736,7 @@ mod tests {
         assert_eq!((amount.text.as_str(), amount.symbol), ("2000000", None));
     }
 
-    /// 链上程序解码时忽略尾部字节，这几条指令带上尾部字节一样执行，不能因此降级。
+    /// 链上程序解码时忽略尾部字节,这几条指令带上尾部字节一样执行,不能因此降级.
     #[test]
     fn trailing_bytes_do_not_downgrade_dangerous_instructions() {
         let s = setup();
@@ -809,7 +812,7 @@ mod tests {
             assert!(action_has(&review, "当前控制方", PAYER));
             assert!(action_has(&review, "权限类型", "AccountOwner"));
         }
-        // 新权限为空：权限被永久移除，同样是权限变更。
+        // 新权限为空:权限被永久移除,同样是权限变更.
         let none = ix(TOKEN_PROGRAM, &[key(SOURCE_ATA), payer()], &[6, 3, 0]);
         let review = check(&s, &compose(payer(), &[], &[advance(), none]));
         assert_eq!(review.risk, Risk::PermissionChange);
@@ -872,19 +875,19 @@ mod tests {
     fn advance_of_a_foreign_nonce_is_unknown() {
         let s = setup();
         let cases = [
-            // nonce 账户是别人的：对方能控制这笔交易什么时候生效。
+            // nonce 账户是别人的:对方能控制这笔交易什么时候生效.
             ix(
                 SYSTEM_PROGRAM,
                 &[[0x66; 32], RECENT_BLOCKHASHES_SYSVAR, payer()],
                 &[4, 0, 0, 0],
             ),
-            // authority 不是付款账户。
+            // authority 不是付款账户.
             ix(
                 SYSTEM_PROGRAM,
                 &[nonce(), RECENT_BLOCKHASHES_SYSVAR, STRANGER],
                 &[4, 0, 0, 0],
             ),
-            // 系统变量不对，账户数不对，数据有尾部字节。
+            // 系统变量不对,账户数不对,数据有尾部字节.
             ix(SYSTEM_PROGRAM, &[nonce(), RENT_SYSVAR, payer()], &[4, 0, 0, 0]),
             ix(
                 SYSTEM_PROGRAM,
@@ -1064,11 +1067,11 @@ mod tests {
         assert_eq!(review.alerts.len(), 1);
         assert_eq!(review.actions.len(), 2);
         assert!(action_has(&review, "金额", "2 SOL"));
-        // 两笔都不能单独当标题。
+        // 两笔都不能单独当标题.
         assert_eq!((review.amount, review.counterparty), (None, None));
     }
 
-    /// 同类动作并列最高时，第一个不能盖住后面的。
+    /// 同类动作并列最高时,第一个不能盖住后面的.
     #[test]
     fn equal_actions_do_not_hide_behind_the_first() {
         let s = setup();
@@ -1091,7 +1094,7 @@ mod tests {
         assert_eq!(review.counterparty, None);
     }
 
-    /// 账户多一个或数据多一个字节，节点照样转账，已在 solana-test-validator 上确认。
+    /// 账户多一个或数据多一个字节,节点照样转账,已在 solana-test-validator 上确认.
     #[test]
     fn irregular_transfers_still_show_the_amount() {
         let s = setup();
@@ -1101,7 +1104,7 @@ mod tests {
         assert_eq!(review.risk, Risk::Unknown);
         assert_eq!(review.alerts.len(), 1);
         assert!(action_has(&review, "金额", "1000 SOL"));
-        // 风险最高的是这一笔，顶部显示它。
+        // 风险最高的是这一笔,顶部显示它.
         assert_eq!(review.amount.unwrap().text, "1000");
 
         let mut tailed = transfer_checked(TOKEN_PROGRAM, key(USDC), 6);
@@ -1119,7 +1122,7 @@ mod tests {
         assert_eq!(review.amount.unwrap().symbol, None);
     }
 
-    /// 无法识别的指令可能动用更多资金，小额转账不能占住顶部。
+    /// 无法识别的指令可能动用更多资金,小额转账不能占住顶部.
     #[test]
     fn small_transfer_does_not_headline_over_an_unknown_instruction() {
         let s = setup();
@@ -1167,11 +1170,11 @@ mod tests {
             Some(bitcoin::base58::encode(&VICTIM_PROGRAM)).as_deref()
         );
         assert_eq!(
-            find("账户 1（签名者、只读）"),
+            find("账户 1(签名者,只读)"),
             Some(bitcoin::base58::encode(&STRANGER)).as_deref()
         );
-        assert_eq!(find("账户 2（可写）"), Some(PEER));
-        assert_eq!(find("账户 3（签名者、可写）"), Some(PAYER));
+        assert_eq!(find("账户 2(可写)"), Some(PEER));
+        assert_eq!(find("账户 3(签名者,可写)"), Some(PAYER));
         assert_eq!(find("数据长度"), Some("4 字节"));
         assert_eq!(find("数据"), Some("deadbeef"));
         assert_eq!(review.raw[0].note, None);
@@ -1197,7 +1200,7 @@ mod tests {
         assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
         assert_eq!(row(&review, "地址查找表"), "2 个地址无法离线解析");
         assert_eq!(row(&review, "消息版本"), "v0");
-        assert!(action_has(&review, "账户 2（可写）", "查找表地址"));
+        assert!(action_has(&review, "账户 2(可写)", "查找表地址"));
     }
 
     #[test]
@@ -1253,31 +1256,31 @@ mod tests {
             let review = check(&s, &compose(payer(), &[], instructions));
             (row(&review, "优先费").to_string(), review.alerts.len())
         };
-        // 1 微 lamport 乘 1 个单元，向上取整到 1 lamport。
+        // 1 微 lamport 乘 1 个单元,向上取整到 1 lamport.
         assert_eq!(
             fee(&[compute_limit(1), compute_price(1), transfer(1)]).0,
             "0.000000001 SOL"
         );
-        // 1000 微 lamports 乘 200000 单元是 200 lamports。
+        // 1000 微 lamports 乘 200000 单元是 200 lamports.
         assert_eq!(
             fee(&[compute_limit(200_000), compute_price(1000), transfer(1)]).0,
             "0.0000002 SOL"
         );
-        // 没写单元数时按每条指令 200000 算。
+        // 没写单元数时按每条指令 200000 算.
         assert_eq!(fee(&[compute_price(1000), transfer(1)]).0, "0.0000004 SOL");
-        // 单元数超过协议上限时按上限算。
+        // 单元数超过协议上限时按上限算.
         assert_eq!(
             fee(&[compute_limit(u32::MAX), compute_price(1000), transfer(1)]).0,
             "0.0000014 SOL"
         );
-        // 没有单价就没有优先费。
+        // 没有单价就没有优先费.
         assert_eq!(fee(&[compute_limit(1_000_000), transfer(1)]).0, "0 SOL");
     }
 
     #[test]
     fn fee_over_the_ceiling_needs_a_long_press() {
         let s = setup();
-        // 基础费 5000 lamports，优先费 9995000 lamports，正好 0.01 SOL。
+        // 基础费 5000 lamports,优先费 9995000 lamports,正好 0.01 SOL.
         let at = compose(
             payer(),
             &[],
@@ -1293,7 +1296,7 @@ mod tests {
         let review = check(&s, &over);
         assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Hold));
         assert_eq!(review.alerts.len(), 1);
-        // 乘积超过 64 位时不能回绕成小数字，否则告警会被绕过。
+        // 乘积超过 64 位时不能回绕成小数字,否则告警会被绕过.
         let wrapped = ((1u128 << 64) * 10 / 14 + 1) as u64;
         for price in [u64::MAX, wrapped] {
             let huge = compose(
@@ -1317,7 +1320,7 @@ mod tests {
     #[test]
     fn other_compute_budget_instructions_are_unknown() {
         let s = setup();
-        // 请求堆内存不是这里认识的指令。
+        // 请求堆内存不是这里认识的指令.
         let heap = ix(COMPUTE_BUDGET_PROGRAM, &[], &[1, 0, 0, 1, 0]);
         assert_eq!(
             check(&s, &compose(payer(), &[], &[heap, transfer(1)])).risk,
@@ -1436,7 +1439,7 @@ mod tests {
         }
     }
 
-    /// 随机改字节、删字节、插字节。不能 panic，能进入确认的消息必须能原样重新编码。
+    /// 随机改字节,删字节,插字节.不能 panic,能进入确认的消息必须能原样重新编码.
     #[test]
     fn mutated_messages_never_panic() {
         let s = setup();
@@ -1498,7 +1501,7 @@ mod tests {
         let s = setup();
         let mut params = native_params();
         params.network = Network::SolanaDevnet;
-        // 主网地址在 Devnet 路径下对不上。
+        // 主网地址在 Devnet 路径下对不上.
         let req = SignRequest {
             network: "solana-devnet".into(),
             paths: vec![DEVNET_PATH.into()],
@@ -1511,10 +1514,7 @@ mod tests {
             ..req
         };
         assert_eq!(review(&s, &req).risk, Risk::Transfer);
-        let (response, _) = s
-            .wallet
-            .sign(&req, &s.keys, Manifest::builtin(), HighestChange::default())
-            .unwrap();
+        let (response, _) = sign(&s, &req);
         let signer = s.keys.ed25519(&DerivationPath::parse(DEVNET_PATH).unwrap()).unwrap();
         tx::verify(&req, &response, &signer).unwrap();
     }
@@ -1524,10 +1524,7 @@ mod tests {
         use bitone_core::Error as Core;
         let s = setup();
         let req = request(&s, native());
-        let (response, _) = s
-            .wallet
-            .sign(&req, &s.keys, Manifest::builtin(), HighestChange::default())
-            .unwrap();
+        let (response, _) = sign(&s, &req);
         let signer = payer();
         tx::verify(&req, &response, &signer).unwrap();
 
@@ -1546,7 +1543,7 @@ mod tests {
             Core::ResponseMismatch
         );
 
-        // 不是手续费支付者的公钥。
+        // 不是手续费支付者的公钥.
         assert_eq!(tx::verify(&req, &response, &key(PEER)).unwrap_err(), Core::BadSignature);
         assert_eq!(tx::verify(&req, &response, &[1u8; 31]).unwrap_err(), Core::InvalidKey);
 
@@ -1577,10 +1574,7 @@ mod tests {
         let s = setup();
         let message = compose(payer(), &[STRANGER], &[advance(), transfer(1)]);
         let req = request(&s, message.encode());
-        let (response, review) = s
-            .wallet
-            .sign(&req, &s.keys, Manifest::builtin(), HighestChange::default())
-            .unwrap();
+        let (response, review) = sign(&s, &req);
         assert_eq!(review.confirm, Confirm::Hold);
         assert_eq!(
             tx::verify(&req, &response, &payer()).unwrap_err(),

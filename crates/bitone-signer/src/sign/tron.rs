@@ -177,9 +177,9 @@ mod tests {
     const TRANSFER: [u8; 4] = hex!("a9059cbb");
     const APPROVE: [u8; 4] = hex!("095ea7b3");
 
-    // 下面的期望值由 tronweb 6.5.1 用同一助记词算出：transactionBuilder.sendTrx、triggerSmartContract
-    // 生成 raw_data_hex 和 txID，utils.crypto.signTransaction 生成签名，是独立实现。
-    // tronweb 的 v 是 27 或 28，协议里的恢复位是 0 或 1，节点两种都接受，r 和 s 必须完全相同。
+    // 下面的期望值由 tronweb 6.5.1 用同一助记词算出:transactionBuilder.sendTrx,triggerSmartContract
+    // 生成 raw_data_hex 和 txID,utils.crypto.signTransaction 生成签名,是独立实现.
+    // tronweb 的 v 是 27 或 28,协议里的恢复位是 0 或 1,节点两种都接受,r 和 s 必须完全相同.
     const TRONWEB_NATIVE_RAW: &str = "0a02abcd2208010203040506070840c08edfc3b1345a67080112630a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412320a1541c8599111f29c1e1e061265b4af93ea1f274ad78a121541a2726afbecbd8e936000ed684cef5e2f5cf4300818e0c65b7080a0f1c2b134";
     const TRONWEB_NATIVE_TXID: &str = "511d43288922077444e1a92eceedd31d83a8e0a1c7d76bfb4bff5e37c5437997";
     const TRONWEB_NATIVE_SIGNATURE: &str = "eeb5513427c675e071ef2d09a7eda39eab7624f0d2907e17062770b01f1d20ba7ca63d7d20be7033827efd79afaebc6b98c288048140b204ab8cac553a54694f1b";
@@ -196,7 +196,7 @@ mod tests {
         assert_eq!(produced[64] + 27, expected[64]);
         let verified = tx::verify(&req, &response, &public_key(s)).unwrap();
         assert_eq!(verified.hash, txid);
-        // Transaction：字段 1 是 raw_data，字段 2 是签名。
+        // Transaction:字段 1 是 raw_data,字段 2 是签名.
         let mut raw = vec![0x0a];
         let mut len = payload.len();
         while len >= 0x80 {
@@ -211,17 +211,20 @@ mod tests {
     }
 
     #[test]
-    fn native_matches_tronweb() {
+    fn transfers_match_tronweb() {
         let s = setup();
-        assert_eq!(hex_text(&native()), TRONWEB_NATIVE_RAW);
-        check_against_tronweb(&s, native(), TRONWEB_NATIVE_TXID, TRONWEB_NATIVE_SIGNATURE);
-    }
-
-    #[test]
-    fn token_matches_tronweb() {
-        let s = setup();
-        assert_eq!(hex_text(&token()), TRONWEB_TOKEN_RAW);
-        check_against_tronweb(&s, token(), TRONWEB_TOKEN_TXID, TRONWEB_TOKEN_SIGNATURE);
+        for (payload, raw, txid, signature) in [
+            (
+                native(),
+                TRONWEB_NATIVE_RAW,
+                TRONWEB_NATIVE_TXID,
+                TRONWEB_NATIVE_SIGNATURE,
+            ),
+            (token(), TRONWEB_TOKEN_RAW, TRONWEB_TOKEN_TXID, TRONWEB_TOKEN_SIGNATURE),
+        ] {
+            assert_eq!(hex_text(&payload), raw);
+            check_against_tronweb(&s, payload, txid, signature);
+        }
     }
 
     #[test]
@@ -370,7 +373,7 @@ mod tests {
         const NILE_OWNER: &str = "TS8utE69gMxZo48E2fhTBNtkWBsEPZWLGc";
         let mut p = params("1", None, 0);
         p.network = Network::TronNile;
-        // 主网地址在 Nile 路径下对不上。
+        // 主网地址在 Nile 路径下对不上.
         let req = request(&s, "tron-nile", NILE_PATH, build_transfer(&p).unwrap());
         assert_eq!(forbidden(review(&s, &req)), Some(Forbid::AddressMismatch));
         p.from = NILE_OWNER;
@@ -402,9 +405,9 @@ mod tests {
         assert_eq!(over.alerts.len(), 1);
     }
 
-    /// tronweb 的 txJsonToPb 编码：owner 和 active 都换成 PEER。
+    /// tronweb 的 txJsonToPb 编码:owner 和 active 都换成 PEER.
     const TRONWEB_PERMISSION: &str = "0a02abcd2208010203040506070840c08edfc3b1345ad001082e12cb010a3c747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e4163636f756e745065726d697373696f6e557064617465436f6e7472616374128a010a1541c8599111f29c1e1e061265b4af93ea1f274ad78a12241a056f776e657220013a190a1541a2726afbecbd8e936000ed684cef5e2f5cf430081001224b080210021a06616374697665200132207fff1fc0033e00000000000000000000000000000000000000000000000000003a190a1541a2726afbecbd8e936000ed684cef5e2f5cf4300810017080a0f1c2b134";
-    /// 第一个地址还是自己，第二个地址和 active 权限都是 PEER。
+    /// 第一个地址还是自己,第二个地址和 active 权限都是 PEER.
     const TRONWEB_PERMISSION_HIDDEN: &str = "0a02abcd2208010203040506070840c08edfc3b1345aeb01082e12e6010a3c747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e4163636f756e745065726d697373696f6e557064617465436f6e747261637412a5010a1541c8599111f29c1e1e061265b4af93ea1f274ad78a123f1a056f776e657220013a190a1541c8599111f29c1e1e061265b4af93ea1f274ad78a10013a190a1541a2726afbecbd8e936000ed684cef5e2f5cf430081001224b080210021a06616374697665200132207fff1fc0033e00000000000000000000000000000000000000000000000000003a190a1541a2726afbecbd8e936000ed684cef5e2f5cf4300810017080a0f1c2b134";
 
     #[test]
@@ -435,7 +438,7 @@ mod tests {
     #[test]
     fn other_system_contracts_are_unknown_and_show_raw_fields() {
         let s = setup();
-        // tronweb 的 txJsonToPb 编码。
+        // tronweb 的 txJsonToPb 编码.
         let cases = [
             (
                 "FreezeBalanceV2Contract",
@@ -460,7 +463,7 @@ mod tests {
             assert_eq!(review.actions[0].title, name);
             assert_eq!(value(&review, "交易类型"), name);
             assert!(review.actions[0].rows.iter().any(|r| r.label == "字段 1"));
-            // 原始数据是 raw_data，不是 ABI，不能标方法选择器。
+            // 原始数据是 raw_data,不是 ABI,不能标方法选择器.
             assert_eq!(review.raw[0].note, None);
             assert!(raw.starts_with(&review.raw[0].text));
         }
@@ -497,7 +500,7 @@ mod tests {
         }
     }
 
-    /// 随机改字节、删字节、插字节。不能 panic，能进入确认的载荷必须能原样重新编码。
+    /// 随机改字节,删字节,插字节.不能 panic,能进入确认的载荷必须能原样重新编码.
     #[test]
     fn mutated_payloads_never_panic() {
         let s = setup();
@@ -559,7 +562,7 @@ mod tests {
 
         assert!(tx::verify(&req, &response, &[2u8; 33]).is_err());
 
-        // 另一把合法公钥：签名恢复不出它，发起方也对不上。
+        // 另一把合法公钥:签名恢复不出它,发起方也对不上.
         let nile = s.keys.secp256k1(&DerivationPath::parse(NILE_PATH).unwrap()).unwrap();
         assert_eq!(
             tx::verify(&req, &response, &nile).unwrap_err(),
@@ -603,7 +606,7 @@ mod tests {
         let req = main_request(&s, native());
         let (response, _) = sign(&s, &req);
         let mut bytes = response.signatures[0].to_vec();
-        // 用 n - s 和翻转的恢复位构造同一把公钥的高 s 签名。
+        // 用 n - s 和翻转的恢复位构造同一把公钥的高 s 签名.
         const N: [u8; 32] = hex!("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
         let mut borrow = 0i16;
         for i in (0..32).rev() {

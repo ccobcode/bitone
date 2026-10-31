@@ -1,4 +1,4 @@
-//! 清单包的验签。这里的私钥写在代码里，只用来测试规则。
+//! 清单包的验签.这里的私钥写在代码里,只用来测试规则.
 
 use bitone_core::Error;
 use bitone_core::manifest::{Manifest, VENDOR_KEY};
@@ -34,7 +34,7 @@ fn package(version: u32, secret: &[u8; 32]) -> Vec<u8> {
     signed(&manifest(version), secret)
 }
 
-/// 私钥公开的密钥不能当厂商密钥，否则任何人都能发清单。走到验签这一步也说明厂商公钥能解析。
+/// 私钥公开的密钥不能当厂商密钥,否则任何人都能发清单.走到验签这一步也说明厂商公钥能解析.
 #[test]
 fn vendor_key_is_not_the_test_key() {
     assert_ne!(public(), VENDOR_KEY);
@@ -82,7 +82,7 @@ fn tampering_is_rejected() {
     assert_eq!(Manifest::from_package(&[0; 64], &public(), 0), Err(Error::Decode));
 }
 
-/// 签名长度来自包本身，长度和实际内容对不上时不能越界。
+/// 签名长度来自包本身,长度和实际内容对不上时不能越界.
 #[test]
 fn truncated_packages_are_rejected() {
     let whole = package(5, &SECRET);
@@ -95,7 +95,7 @@ fn truncated_packages_are_rejected() {
     }
 }
 
-/// 签名通过就整体覆盖，内置资产和原生币也一样。
+/// 签名通过就整体覆盖,内置资产和原生币也一样.
 #[test]
 fn a_signed_package_overrides_the_builtin_manifest() {
     let mut changed = manifest(5);

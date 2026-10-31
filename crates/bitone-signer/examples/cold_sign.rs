@@ -1,8 +1,8 @@
-//! 开发用的冷钱包：用测试助记词核对并签名，不要用在真实资金上。
+//! 开发用的冷钱包:用测试助记词核对并签名,不要用在真实资金上.
 //!
-//! 网页端的端到端测试用它代替手机：
+//! 网页端的端到端测试用它代替手机:
 //!   cold_sign review <请求十六进制>    打印核对结果
-//!   cold_sign sign <请求十六进制>      打印签名结果的 UR 帧，一行一帧，循环三遍
+//!   cold_sign sign <请求十六进制>      打印签名结果的 UR 帧,一行一帧,循环三遍
 //!   cold_sign accounts                 打印观察钱包的 UR 帧
 
 use bitone_core::keys::PublicKeys;
@@ -52,6 +52,6 @@ fn main() {
             let mut encoder = response.frames(DEFAULT_FRAGMENT_BYTES).expect("编码成功");
             print_frames(&mut encoder);
         }
-        _ => eprintln!("用法：cold_sign accounts|review|sign [请求十六进制]"),
+        _ => eprintln!("用法:cold_sign accounts|review|sign [请求十六进制]"),
     }
 }

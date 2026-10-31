@@ -1,6 +1,6 @@
-//! 本地节点验证用。走完构建、核对、签名、核验，标准输出打印可以广播的交易和哈希，
-//! 标准错误打印核对结果。见 scripts/localnet-solana.sh 和 scripts/localnet-tron.sh。
-//! 用的是公开的测试助记词，只能用在本地节点上。
+//! 本地节点验证用.走完构建,核对,签名,核验,标准输出打印可以广播的交易和哈希,
+//! 标准错误打印核对结果.见 scripts/localnet-solana.sh 和 scripts/localnet-tron.sh.
+//! 用的是公开的测试助记词,只能用在本地节点上.
 
 use bitcoin::secp256k1::{Message, Secp256k1, SecretKey};
 use bitone_core::address::{parse_solana_address, solana_address, tron_address};
@@ -56,7 +56,7 @@ fn number<T: std::str::FromStr>(text: &str) -> T {
     text.parse().ok().expect("数字")
 }
 
-/// 把本地合约加进清单，这样核对结果和主网上的代币一样。
+/// 把本地合约加进清单,这样核对结果和主网上的代币一样.
 fn manifest_with(network: Network, contract: &str, decimals: u8, standard: &str) -> Manifest {
     let mut manifest = Manifest::builtin().clone();
     manifest.assets.push(Asset {
@@ -136,7 +136,7 @@ fn tron_params<'a>(from: &'a str, to: &'a str, amount: &'a str, block: &[&str]) 
     }
 }
 
-/// 用节点自带的测试账户给本钱包打款。这笔不经过核对，只是准备数据。
+/// 用节点自带的测试账户给本钱包打款.这笔不经过核对,只是准备数据.
 fn tron_sign_with_key(key: &str, raw_data: &str) {
     let key = SecretKey::from_slice(&unhex::<32>(key)).expect("私钥有效");
     let raw_data: Vec<u8> = unhex_vec(raw_data);
@@ -231,9 +231,9 @@ fn main() {
                 &manifest,
             );
         }
-        // 节点自己构建的交易，比如部署合约，也走一遍同样的核对和签名。
+        // 节点自己构建的交易,比如部署合约,也走一遍同样的核对和签名.
         ["tron-sign", raw_data] => submit(TRON, TRON_PATH, unhex_vec(raw_data), None, builtin),
         ["tron-sign-with-key", key, raw_data] => tron_sign_with_key(key, raw_data),
-        _ => panic!("未知命令：{args:?}"),
+        _ => panic!("未知命令:{args:?}"),
     }
 }

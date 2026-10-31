@@ -1,4 +1,4 @@
-//! 从种子派生账户公钥。私钥只在这里出现，用完即弃。
+//! 从种子派生账户公钥.私钥只在这里出现,用完即弃.
 
 use crate::Error;
 use bitcoin::NetworkKind;
@@ -15,7 +15,7 @@ use zeroize::Zeroizing;
 
 const HARDENED: u32 = 0x8000_0000;
 
-/// 解锁后的钱包。只持有种子，随对象销毁而清除。
+/// 解锁后的钱包.只持有种子,随对象销毁而清除.
 pub struct Wallet {
     seed: Zeroizing<[u8; 64]>,
     secp: Secp256k1<All>,
@@ -52,7 +52,7 @@ impl Wallet {
             .map_err(|_| Error::Derivation)
     }
 
-    /// 种子不离开这个模块，所以 ed25519 私钥从这里取。
+    /// 种子不离开这个模块,所以 ed25519 私钥从这里取.
     pub(crate) fn ed25519_key(&self, path: &DerivationPath) -> Result<Zeroizing<[u8; 32]>, Error> {
         slip10_ed25519(self.seed.as_ref(), path)
     }
@@ -76,12 +76,12 @@ impl Wallet {
         }
     }
 
-    /// 生成导出给网页端的账户信息，只含公钥。一次导出全部账户，网页端自己按网络分开。
+    /// 生成导出给网页端的账户信息,只含公钥.一次导出全部账户,网页端自己按网络分开.
     pub fn export(&self, imported: bool) -> Result<AccountsExport, Error> {
         let accounts = all_account_specs(imported)
             .iter()
             .map(|spec| {
-                // 测试币账户的路径用 coin type 1'，扩展公钥的版本前缀也跟着变。
+                // 测试币账户的路径用 coin type 1',扩展公钥的版本前缀也跟着变.
                 let mode = if spec.path.contains("/1'/") {
                     Mode::Testnet
                 } else {
@@ -103,7 +103,7 @@ impl Wallet {
     }
 }
 
-/// SLIP-0010 的 ed25519 派生，只支持硬化路径。
+/// SLIP-0010 的 ed25519 派生,只支持硬化路径.
 fn slip10_ed25519(seed: &[u8], path: &DerivationPath) -> Result<Zeroizing<[u8; 32]>, Error> {
     let split = |mac: Hmac<Sha512>| {
         let output = Zeroizing::new(<[u8; 64]>::from(mac.finalize().into_bytes()));
@@ -135,7 +135,7 @@ mod tests {
     use bitone_core::{AccountKind, Network};
     use hex_literal::hex;
 
-    // BIP84 和 BIP86 的测试向量都用这组助记词。
+    // BIP84 和 BIP86 的测试向量都用这组助记词.
     fn abandon() -> Wallet {
         Wallet::new(&[0u8; 16], "").unwrap()
     }
@@ -150,34 +150,35 @@ mod tests {
     }
 
     #[test]
-    fn bip84_vectors() {
+    fn bip84_and_bip86_vectors() {
         let export = abandon().export(false).unwrap();
-        let xpub = key(&export, "m/84'/0'/0'");
-        let address =
-            |change, index| bitcoin_address(&xpub, AccountKind::SegWit, change, index, Network::Bitcoin).unwrap();
-        assert_eq!(address(false, 0), "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu");
-        assert_eq!(address(false, 1), "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g");
-        assert_eq!(address(true, 0), "bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el");
-    }
-
-    #[test]
-    fn bip86_vectors() {
-        let export = abandon().export(false).unwrap();
-        let xpub = key(&export, "m/86'/0'/0'");
-        let address =
-            |change, index| bitcoin_address(&xpub, AccountKind::Taproot, change, index, Network::Bitcoin).unwrap();
-        assert_eq!(
-            address(false, 0),
-            "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr"
-        );
-        assert_eq!(
-            address(false, 1),
-            "bc1p4qhjn9zdvkux4e44uhx8tc55attvtyu358kutcqkudyccelu0was9fqzwh"
-        );
-        assert_eq!(
-            address(true, 0),
-            "bc1p3qkhfews2uk44qtvauqyr2ttdsw7svhkl9nkm9s9c3x4ax5h60wqwruhk7"
-        );
+        let cases = [
+            (
+                "m/84'/0'/0'",
+                AccountKind::SegWit,
+                [
+                    "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu",
+                    "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g",
+                    "bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el",
+                ],
+            ),
+            (
+                "m/86'/0'/0'",
+                AccountKind::Taproot,
+                [
+                    "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr",
+                    "bc1p4qhjn9zdvkux4e44uhx8tc55attvtyu358kutcqkudyccelu0was9fqzwh",
+                    "bc1p3qkhfews2uk44qtvauqyr2ttdsw7svhkl9nkm9s9c3x4ax5h60wqwruhk7",
+                ],
+            ),
+        ];
+        for (account, kind, [first, second, change]) in cases {
+            let xpub = key(&export, account);
+            let address = |change, index| bitcoin_address(&xpub, kind, change, index, Network::Bitcoin).unwrap();
+            assert_eq!(address(false, 0), first);
+            assert_eq!(address(false, 1), second);
+            assert_eq!(address(true, 0), change);
+        }
     }
 
     #[test]
@@ -196,15 +197,6 @@ mod tests {
     }
 
     #[test]
-    fn evm_vector() {
-        let export = abandon().export(false).unwrap();
-        assert_eq!(
-            evm_address(&key(&export, "m/44'/60'/0'/0/0")).unwrap(),
-            "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
-        );
-    }
-
-    #[test]
     fn slip10_ed25519_vector() {
         let seed = hex!("000102030405060708090a0b0c0d0e0f");
         let path = DerivationPath::parse("m/0'/1'").unwrap();
@@ -215,49 +207,43 @@ mod tests {
     }
 
     #[test]
-    fn solana_vector() {
-        let export = abandon().export(false).unwrap();
-        assert_eq!(
-            solana_address(&key(&export, "m/44'/501'/0'/0'")).unwrap(),
-            "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
-        );
-    }
-
-    #[test]
     fn testnet_keys_differ_from_mainnet_on_tron_and_solana() {
-        let wallet = abandon();
-        let main = wallet.export(false).unwrap();
-        let test = wallet.export(false).unwrap();
+        let export = abandon().export(false).unwrap();
         assert_ne!(
-            tron_address(&key(&main, "m/44'/195'/0'/0/0")).unwrap(),
-            tron_address(&key(&test, "m/44'/1'/0'/0/0")).unwrap()
+            tron_address(&key(&export, "m/44'/195'/0'/0/0")).unwrap(),
+            tron_address(&key(&export, "m/44'/1'/0'/0/0")).unwrap()
         );
-        assert_ne!(key(&main, "m/44'/501'/0'/0'"), key(&test, "m/44'/1'/0'/0'"));
+        assert_ne!(key(&export, "m/44'/501'/0'/0'"), key(&export, "m/44'/1'/0'/0'"));
     }
 
-    // TRON 和 Solana 没有官方向量，这几个值用独立实现算出（@scure/bip32、Node 的 ed25519）。
+    // TRON 和 Solana 没有官方向量,这几个值用独立实现算出(@scure/bip32,Node 的 ed25519).
     #[test]
-    fn tron_vectors() {
-        let wallet = abandon();
-        let main = wallet.export(false).unwrap();
-        let test = wallet.export(false).unwrap();
-        assert_eq!(
-            tron_address(&key(&main, "m/44'/195'/0'/0/0")).unwrap(),
-            "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH"
-        );
-        assert_eq!(
-            tron_address(&key(&test, "m/44'/1'/0'/0/0")).unwrap(),
-            "TS8utE69gMxZo48E2fhTBNtkWBsEPZWLGc"
-        );
-    }
-
-    #[test]
-    fn solana_testnet_vector() {
-        let test = abandon().export(false).unwrap();
-        assert_eq!(
-            solana_address(&key(&test, "m/44'/1'/0'/0'")).unwrap(),
-            "9BbGG7UMnNRJGMk1m52F4Q4gCSUnSVBosiT9kJhmgWvQ"
-        );
+    fn account_address_vectors() {
+        let export = abandon().export(false).unwrap();
+        for (actual, expected) in [
+            (
+                evm_address(&key(&export, "m/44'/60'/0'/0/0")).unwrap(),
+                "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+            ),
+            (
+                solana_address(&key(&export, "m/44'/501'/0'/0'")).unwrap(),
+                "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+            ),
+            (
+                solana_address(&key(&export, "m/44'/1'/0'/0'")).unwrap(),
+                "9BbGG7UMnNRJGMk1m52F4Q4gCSUnSVBosiT9kJhmgWvQ",
+            ),
+            (
+                tron_address(&key(&export, "m/44'/195'/0'/0/0")).unwrap(),
+                "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+            ),
+            (
+                tron_address(&key(&export, "m/44'/1'/0'/0/0")).unwrap(),
+                "TS8utE69gMxZo48E2fhTBNtkWBsEPZWLGc",
+            ),
+        ] {
+            assert_eq!(actual, expected);
+        }
     }
 
     #[test]

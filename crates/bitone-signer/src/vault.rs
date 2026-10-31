@@ -1,7 +1,7 @@
-//! 种子加密，见 docs/04-security.md 第 2.3 节。
+//! 种子加密,见 docs/04-security.md 第 2.3 节.
 //!
-//! 解密密钥由 PIN 和硬件的 HMAC 结果一起派生。每猜一次 PIN 都要手机硬件算一次，
-//! 所以密文拿走之后没法离线试 PIN。
+//! 解密密钥由 PIN 和硬件的 HMAC 结果一起派生.每猜一次 PIN 都要手机硬件算一次,
+//! 所以密文拿走之后没法离线试 PIN.
 
 use crate::Error;
 use aes_gcm::aead::{Aead, KeyInit, Payload};
@@ -9,17 +9,17 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use argon2::{Algorithm, Argon2, Params, Version};
 use zeroize::{Zeroize, Zeroizing};
 
-/// 旧格式的第一个字节。解密密钥只来自 PIN，平台层外面再包一层硬件加密。
+/// 旧格式的第一个字节.解密密钥只来自 PIN,平台层外面再包一层硬件加密.
 const LEGACY_FORMAT: u8 = 1;
-/// 当前格式的开头。旧格式的文件以随机 IV 开头，要靠这 8 个字节区分。
+/// 当前格式的开头.旧格式的文件以随机 IV 开头,要靠这 8 个字节区分.
 const MAGIC: [u8; 8] = *b"BITONE02";
 const PARAMS_LEN: usize = 12;
 const SALT_LEN: usize = 16;
 const NONCE_LEN: usize = 12;
-/// 硬件 HMAC-SHA256 的结果。
+/// 硬件 HMAC-SHA256 的结果.
 const TAG_LEN: usize = 32;
 
-/// Argon2id 参数。写进密文头，日后调整不影响已有钱包。
+/// Argon2id 参数.写进密文头,日后调整不影响已有钱包.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct KdfParams {
     pub memory_kib: u32,
@@ -28,14 +28,14 @@ pub struct KdfParams {
 }
 
 impl KdfParams {
-    /// 初始值，要在低端手机上实测后校准。
+    /// 初始值,要在低端手机上实测后校准.
     pub const DEFAULT: Self = Self {
         memory_kib: 64 * 1024,
         iterations: 3,
         parallelism: 1,
     };
 
-    /// 内存和耗时的下限，防止篡改密文头来削弱暴力破解的成本。
+    /// 内存和耗时的下限,防止篡改密文头来削弱暴力破解的成本.
     const MINIMUM: Self = Self {
         memory_kib: 8 * 1024,
         iterations: 1,
@@ -58,7 +58,7 @@ fn check_pin(pin: &str) -> Result<(), Error> {
     }
 }
 
-/// 太容易猜的 PIN：最多两种数字，或者逐位加一、减一。设置时拒绝，已有的钱包不受影响。
+/// 太容易猜的 PIN:最多两种数字,或者逐位加一,减一.设置时拒绝,已有的钱包不受影响.
 pub fn is_weak_pin(pin: &str) -> bool {
     let digits: Vec<i8> = pin.bytes().map(|b| b as i8 - b'0' as i8).collect();
     let mut seen = digits.clone();
@@ -82,7 +82,7 @@ fn cipher(key: &[u8; 32]) -> Aes256Gcm {
     Aes256Gcm::new_from_slice(key).expect("密钥长度固定为 32 字节")
 }
 
-/// 头部不加密，但参与认证，改动头部会解密失败。
+/// 头部不加密,但参与认证,改动头部会解密失败.
 fn seal_with(prefix: &[u8], entropy: &[u8], password: &[u8], params: KdfParams) -> Result<Vec<u8>, Error> {
     let mut salt = [0u8; SALT_LEN];
     let mut nonce = [0u8; NONCE_LEN];
@@ -110,7 +110,7 @@ fn seal_with(prefix: &[u8], entropy: &[u8], password: &[u8], params: KdfParams) 
     Ok(sealed)
 }
 
-/// `prefix` 是头部里参数之前的长度。密码错误和数据损坏无法区分，都返回 `WrongPin`。
+/// `prefix` 是头部里参数之前的长度.密码错误和数据损坏无法区分,都返回 `WrongPin`.
 fn open_with(prefix: usize, sealed: &[u8], password: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error> {
     let salt_at = prefix + PARAMS_LEN;
     let nonce_at = salt_at + SALT_LEN;
@@ -144,7 +144,7 @@ fn open_with(prefix: usize, sealed: &[u8], password: &[u8]) -> Result<Zeroizing<
     Ok(entropy)
 }
 
-/// PIN 和硬件结果拼在一起作为 Argon2id 的密码。结果长度不对时拒绝，不能退化成只靠 PIN。
+/// PIN 和硬件结果拼在一起作为 Argon2id 的密码.结果长度不对时拒绝,不能退化成只靠 PIN.
 fn bound_password(pin: &str, tag: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error> {
     check_pin(pin)?;
     if tag.len() != TAG_LEN {
@@ -156,12 +156,12 @@ fn bound_password(pin: &str, tag: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error> {
     Ok(password)
 }
 
-/// 密文是不是当前格式。不是时要走 [`open_legacy`]。
+/// 密文是不是当前格式.不是时要走 [`open_legacy`].
 pub fn is_bound(sealed: &[u8]) -> bool {
     sealed.starts_with(&MAGIC)
 }
 
-/// 用 PIN 和硬件结果加密熵。
+/// 用 PIN 和硬件结果加密熵.
 pub fn seal(entropy: &[u8], pin: &str, tag: &[u8], params: KdfParams) -> Result<Vec<u8>, Error> {
     seal_with(&MAGIC, entropy, &bound_password(pin, tag)?, params)
 }
@@ -174,7 +174,7 @@ pub fn open(sealed: &[u8], pin: &str, tag: &[u8]) -> Result<Zeroizing<Vec<u8>>, 
     open_with(MAGIC.len(), sealed, &password)
 }
 
-/// 解开旧格式，只用于迁移。这里拿到的是平台层已经去掉硬件那层的内容。
+/// 解开旧格式,只用于迁移.这里拿到的是平台层已经去掉硬件那层的内容.
 pub fn open_legacy(sealed: &[u8], pin: &str) -> Result<Zeroizing<Vec<u8>>, Error> {
     check_pin(pin)?;
     if sealed.first() != Some(&LEGACY_FORMAT) {
@@ -219,7 +219,7 @@ mod tests {
         assert_eq!(open(&sealed, "654321", &TAG).unwrap_err(), Error::WrongPin);
     }
 
-    /// 只有 PIN 解不开。这是硬件绑定的全部意义：离线试 PIN 拿不到硬件结果。
+    /// 只有 PIN 解不开.这是硬件绑定的全部意义:离线试 PIN 拿不到硬件结果.
     #[test]
     fn the_right_pin_needs_the_hardware_result() {
         let sealed = seal(&[7u8; 32], "123456", &TAG, FAST).unwrap();
