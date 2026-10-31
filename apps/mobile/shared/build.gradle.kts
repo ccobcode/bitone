@@ -9,7 +9,7 @@ plugins {
 
 kotlin {
     android {
-        namespace = "com.bitone.wallet.shared"
+        namespace = "com.ccobcode.bitone.shared"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }

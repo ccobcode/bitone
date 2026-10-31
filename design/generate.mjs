@@ -83,7 +83,7 @@ function kotlin() {
             .map(([k, v]) => `    val ${camel(k)} = ${v}.${unit}`)
             .join("\n");
     return `// ${header}
-package com.bitone.wallet.ui.theme
+package com.ccobcode.bitone.ui.theme
 
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.ui.graphics.Color
@@ -168,7 +168,7 @@ function kotlinIcons() {
         ([name, path]) => `    const val ${name[0].toUpperCase()}${name.slice(1)} = ${JSON.stringify(path)}`,
     );
     return `// ${header}
-package com.bitone.wallet.ui.components
+package com.ccobcode.bitone.ui.components
 
 object Icons {
 ${rows.join("\n")}
@@ -186,7 +186,7 @@ function kotlinString(text) {
 function translations() {
     const rows = Object.entries(english).map(([zh, en]) => `    ${kotlinString(zh)} to ${kotlinString(en)},`);
     return `// ${header}
-package com.bitone.wallet.i18n
+package com.ccobcode.bitone.i18n
 
 internal val EN: Map<String, String> = mapOf(
 ${rows.join("\n")}
@@ -196,10 +196,10 @@ ${rows.join("\n")}
 
 const outputs = [
     ["apps/web/src/core/i18n.gen.json", `${JSON.stringify(english, null, 4)}\n`],
-    ["apps/mobile/shared/src/commonMain/kotlin/com/bitone/wallet/i18n/Translations.kt", translations()],
+    ["apps/mobile/shared/src/commonMain/kotlin/com/ccobcode/bitone/i18n/Translations.kt", translations()],
     ["apps/web/src/styles/tokens.css", css()],
-    ["apps/mobile/shared/src/commonMain/kotlin/com/bitone/wallet/ui/theme/Tokens.kt", kotlin()],
-    ["apps/mobile/shared/src/commonMain/kotlin/com/bitone/wallet/ui/components/IconPaths.kt", kotlinIcons()],
+    ["apps/mobile/shared/src/commonMain/kotlin/com/ccobcode/bitone/ui/theme/Tokens.kt", kotlin()],
+    ["apps/mobile/shared/src/commonMain/kotlin/com/ccobcode/bitone/ui/components/IconPaths.kt", kotlinIcons()],
     ["apps/web/src/ui/icons.gen.json", `${JSON.stringify(icons, null, 4)}\n`],
     [
         "apps/web/src/core/tokens.gen.json",

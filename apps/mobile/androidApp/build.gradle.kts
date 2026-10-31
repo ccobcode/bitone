@@ -10,11 +10,11 @@ plugins {
 val appVersion = providers.gradleProperty("appVersion").getOrElse("0.1.0")
 
 android {
-    namespace = "com.bitone.wallet"
+    namespace = "com.ccobcode.bitone"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.bitone.wallet"
+        applicationId = "com.ccobcode.bitone"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = appVersion.split(".").fold(0) { code, part -> code * 100 + part.toInt() }
