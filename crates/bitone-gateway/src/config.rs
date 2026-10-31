@@ -109,17 +109,57 @@ impl PricesConfig {
     }
 }
 
+/// 命令行参数，优先于配置文件。镜像靠它固定监听地址和网页目录，配置文件不用改就能挂载。
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Options {
+    pub config: Option<PathBuf>,
+    pub listen: Option<SocketAddr>,
+    pub web_dir: Option<PathBuf>,
+    pub trusted_proxies: Vec<IpAddr>,
+}
+
+impl Options {
+    pub fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
+        let mut options = Options::default();
+        while let Some(arg) = args.next() {
+            let mut value = || args.next().ok_or_else(|| format!("{arg} 缺少参数"));
+            match arg.as_str() {
+                "--config" | "-c" => options.config = Some(value()?.into()),
+                "--listen" => options.listen = Some(value()?.parse().map_err(|e| format!("--listen 无效: {e}"))?),
+                "--web-dir" => options.web_dir = Some(value()?.into()),
+                "--trusted-proxy" => options
+                    .trusted_proxies
+                    .push(value()?.parse().map_err(|e| format!("--trusted-proxy 无效: {e}"))?),
+                _ if arg.starts_with('-') || options.config.is_some() => return Err(format!("未知参数 {arg}")),
+                _ => options.config = Some(arg.into()),
+            }
+        }
+        Ok(options)
+    }
+}
+
 impl Config {
-    pub fn load(path: &Path) -> Result<Config, String> {
+    pub fn load(options: Options) -> Result<Config, String> {
+        let path = options.config.as_deref().unwrap_or(Path::new("gateway.toml"));
         let text = std::fs::read_to_string(path).map_err(|e| format!("读取配置 {} 失败: {e}", path.display()))?;
-        Config::parse(&text)
+        let mut config = Config::read(&text)?;
+        config.listen = options.listen.unwrap_or(config.listen);
+        config.web_dir = options.web_dir.or(config.web_dir);
+        config.trusted_proxies.extend(options.trusted_proxies);
+        config.validate()?;
+        Ok(config)
     }
 
     pub fn parse(text: &str) -> Result<Config, String> {
+        let config = Config::read(text)?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    fn read(text: &str) -> Result<Config, String> {
         let mut config: Config = toml::from_str(text).map_err(|e| format!("配置格式错误: {e}"))?;
         // 没有上游等于没有配置这个网络。
         config.networks.retain(|_, network| !network.upstreams.is_empty());
-        config.validate()?;
         Ok(config)
     }
 
@@ -159,6 +199,81 @@ mod tests {
     use bitone_core::manifest::Manifest;
 
     const USDT: &str = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+
+    fn options(args: &[&str]) -> Result<Options, String> {
+        Options::parse(args.iter().map(ToString::to_string))
+    }
+
+    #[test]
+    fn command_line_options_are_parsed() {
+        let parsed = options(&[
+            "--config",
+            "a.toml",
+            "--listen",
+            "0.0.0.0:8787",
+            "--web-dir",
+            "web",
+            "--trusted-proxy",
+            "172.30.0.2",
+            "--trusted-proxy",
+            "::1",
+        ])
+        .unwrap();
+        assert_eq!(parsed.config, Some("a.toml".into()));
+        assert_eq!(parsed.listen, Some("0.0.0.0:8787".parse().unwrap()));
+        assert_eq!(parsed.web_dir, Some("web".into()));
+        assert_eq!(parsed.trusted_proxies.len(), 2);
+        assert_eq!(options(&["a.toml"]).unwrap().config, Some("a.toml".into()));
+        assert_eq!(options(&[]).unwrap(), Options::default());
+    }
+
+    #[test]
+    fn bad_command_lines_are_rejected() {
+        for args in [
+            &["--listen"][..],
+            &["--listen", "nope"],
+            &["--trusted-proxy", "10.0.0.0/8"],
+            &["--typo", "x"],
+            &["a.toml", "b.toml"],
+        ] {
+            assert!(options(args).is_err(), "{args:?}");
+        }
+    }
+
+    /// 命令行的目录替换配置文件里的，所以配置文件里的旧目录不存在时也能启动。
+    #[test]
+    fn command_line_overrides_the_file() {
+        let dir = std::env::temp_dir().join(format!("bitone-config-{}", std::process::id()));
+        let web = dir.join("web");
+        std::fs::create_dir_all(&web).unwrap();
+        std::fs::write(web.join("index.html"), "").unwrap();
+        let file = dir.join("gateway.toml");
+        std::fs::write(
+            &file,
+            "listen = '127.0.0.1:1'\nweb_dir = '/nonexistent/bitone'\ntrusted_proxies = ['10.0.0.1']",
+        )
+        .unwrap();
+
+        assert!(
+            Config::load(Options {
+                config: Some(file.clone()),
+                ..Options::default()
+            })
+            .is_err()
+        );
+        let config = Config::load(Options {
+            config: Some(file),
+            listen: Some("0.0.0.0:8787".parse().unwrap()),
+            web_dir: Some(web.clone()),
+            trusted_proxies: vec!["172.30.0.2".parse().unwrap()],
+        })
+        .unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(config.listen.to_string(), "0.0.0.0:8787");
+        assert_eq!(config.web_dir, Some(web));
+        assert_eq!(config.trusted_proxies.len(), 2, "命令行的代理加在配置文件的后面");
+    }
 
     #[test]
     fn example_config_is_valid() {

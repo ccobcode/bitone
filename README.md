@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/web/public/favicon.svg" width="112" alt="BitOne">
+  <img src="design/logo.svg" width="112" alt="BitOne">
 </p>
 
 <h1 align="center">BitOne</h1>
@@ -24,6 +24,7 @@
   <a href="#data-sources">Data Sources</a>　
   <a href="#usage">Usage</a>　
   <a href="#development">Development</a>　
+  <a href="#release">Release</a>　
   <a href="#license">License</a>　
   <a href="docs/README.md">Docs</a>
 </p>
@@ -123,11 +124,11 @@ All of these services can see the addresses you query, see [What It Does Not Pro
 
 The cold wallet works the same way in all three. They differ in who runs the gateway and who builds the software.
 
-| Option            | Web App and Gateway          | Cold Wallet        |
-| :---------------- | :--------------------------- | :----------------- |
-| Official          | bitone.cloudtay.com          | Official APK       |
-| Private gateway   | Your server, release package | Official APK       |
-| Build from source | Your build                   | Your build and key |
+| Option            | Web App and Gateway         | Cold Wallet        |
+| :---------------- | :-------------------------- | :----------------- |
+| Official          | bitone.cloudtay.com         | Official APK       |
+| Private gateway   | Your server, official image | Official APK       |
+| Build from source | Your build                  | Your build and key |
 
 ### 1. Official
 
@@ -150,21 +151,37 @@ Open [bitone.cloudtay.com](https://bitone.cloudtay.com) and pair the cold wallet
 
 ### 2. Private Gateway
 
-The release package holds the gateway and web app, so the web app talks only to your server. It runs on Linux `x86_64` and `aarch64`. Set up the cold wallet as in [Official](#1-official).
+The official image holds the gateway and web app, so the web app talks only to your server. Set up the cold wallet as in [Official](#1-official).
+
+The web app needs HTTPS or localhost for the camera and for building transactions, so the compose file puts Caddy in front of the gateway to get a certificate. Point your domain at the server and open ports 80 and 443.
+
+```bash
+export VERSION=0.1.0
+export DOMAIN=bitone.example.com
+curl -fLO https://raw.githubusercontent.com/ccobcode/bitone/v$VERSION/docker/compose.yaml
+docker compose up -d
+```
+
+To try it on one machine, run the image alone and open `http://localhost:8787`.
+
+```bash
+docker run -p 127.0.0.1:8787:8787 ghcr.io/ccobcode/bitone:0.1.0
+```
+
+Without Docker, use the release package on Linux `x86_64` or `aarch64`, behind your own HTTPS proxy.
 
 ```bash
 VERSION=0.1.0
 curl -fL https://github.com/ccobcode/bitone/releases/download/v$VERSION/bitone-v$VERSION-linux-$(uname -m).tar.gz | tar -xz
 cd bitone
-{ echo 'web_dir = "web"'; cat gateway.example.toml; } > gateway.toml
-./bin/bitone-gateway --config gateway.toml
+./bin/bitone-gateway --config gateway.example.toml --web-dir web
 ```
 
-The gateway listens on `127.0.0.1:8787`. Browsers allow the camera only over HTTPS or on localhost, so put a reverse proxy with a certificate in front of it and add the proxy's IP to `trusted_proxies`. The defaults use free public services, see [Data Sources](#data-sources).
+The defaults use free public services, see [Data Sources](#data-sources). To add API keys, copy `gateway.example.toml` to `gateway.toml` and pass it with `--config`, or mount it as the comment in `compose.yaml` shows. Add a proxy's IP with `--trusted-proxy`.
 
 ### 3. Build from Source
 
-Requires rustup, Node, pnpm, JDK 21, the Android SDK and NDK. The WASM build needs LLVM from Homebrew (`brew install llvm`).
+Requires rustup, Node, pnpm, JDK 21, the Android SDK and NDK, OpenSSL and GnuPG. The WASM build needs LLVM from Homebrew (`brew install llvm`). `apksigner` and `adb` are in the Android SDK `build-tools` and `platform-tools`.
 
 ```bash
 git clone https://github.com/ccobcode/bitone.git
@@ -175,30 +192,33 @@ make dist VERSION=$VERSION
 
 Outputs go to `dist/`:
 
-- `bitone-v<VERSION>-<os>-<arch>.tar.gz`: Gateway and web app. Deploy it as in [Private Gateway](#2-private-gateway).
+- `bitone-v<VERSION>-<os>-<arch>.tar.gz`: Gateway and web app.
 - `bitone-v<VERSION>-android-unsigned.apk`: Cold wallet.
 
-Android installs only signed APKs, so generate a signing key once. `keytool` asks for a password.
+Android installs only signed APKs. Generate a signing key once. `S` is where the encrypted key and certificate live. gpg asks for a new passphrase, then for that passphrase again to issue the certificate.
 
 ```bash
-KEYSTORE=$HOME/bitone.jks
-keytool -genkeypair -keystore $KEYSTORE -alias bitone -keyalg EC -groupname secp256r1 -validity 10000 -dname "CN=BitOne"
+S=$HOME/Signing/bitone
+mkdir -p "$S/apk/v1"
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -outform DER | gpg --symmetric --no-symkey-cache --cipher-algo AES256 --s2k-mode 3 --s2k-digest-algo SHA512 --s2k-count 65011712 -o "$S/key.der.gpg" &&
+openssl req -x509 -new -key <(gpg --decrypt --no-symkey-cache --quiet "$S/key.der.gpg") -keyform DER -sha256 -days 10000 -subj "/CN=BitOne" -addext "basicConstraints=critical,CA:FALSE" -addext "keyUsage=critical,digitalSignature" -out "$S/apk/v1/cert.pem"
 ```
 
-Sign the APK and install it over USB, then set up the phone as in [Official](#1-official).
+Sign the APK and install it over USB, then set up the phone as in [Official](#1-official). The private key passes through a pipe and is never written in plain text.
 
 ```bash
-apksigner sign --ks $KEYSTORE --out dist/bitone-v$VERSION-android.apk dist/bitone-v$VERSION-android-unsigned.apk && adb install dist/bitone-v$VERSION-android.apk
+apksigner sign --key <(gpg --decrypt --no-symkey-cache --quiet "$S/key.der.gpg") --cert "$S/apk/v1/cert.pem" --min-sdk-version 31 --v1-signing-enabled false --v4-signing-enabled false --alignment-preserved true --out dist/bitone-v$VERSION-android.apk dist/bitone-v$VERSION-android-unsigned.apk &&
+apksigner verify --min-sdk-version 31 --print-certs dist/bitone-v$VERSION-android.apk &&
+adb install dist/bitone-v$VERSION-android.apk
 ```
 
-Keep the keystore, because updates must use the same key. Your build and the official APK cannot update each other.
+Keep the key and certificate, because updates must use the same certificate. Your build and the official APK cannot update each other.
 
-To run the gateway and web app in a container instead:
+To build the container image yourself:
 
 ```bash
-{ printf 'listen = "0.0.0.0:8787"\nweb_dir = "/srv/bitone/web"\n'; grep -v '^listen =' crates/bitone-gateway/gateway.example.toml; } > gateway.toml
 docker build -f docker/selfhost.Dockerfile -t bitone .
-docker run -p 8787:8787 -v ./gateway.toml:/etc/bitone/gateway.toml bitone
+docker run -p 127.0.0.1:8787:8787 bitone
 ```
 
 ## Development
@@ -225,6 +245,25 @@ adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
 `make dev` reads `gateway.local.toml` in the repo root, then falls back to the example config. Copy the example to add API keys. The copy stays out of Git.
 
 `make lint` runs clippy and Biome, `make audit` checks dependency vulnerabilities and licenses, and `make hooks` enables the Git hooks. Debug builds are for development and testnet only.
+
+## Release
+
+CI builds everything from a tag and creates a draft Release. It holds no signing key. Set the version in `Cargo.toml`, merge to `main`, then push a tag.
+
+```bash
+VERSION=0.1.0
+git tag -a v$VERSION -m v$VERSION
+git push origin main v$VERSION
+```
+
+When CI finishes, sign the APK and publish. `scripts/release.sh` downloads the draft, checks it, signs it after gpg asks for the passphrase, uploads the signed files and publishes.
+
+```bash
+S=$HOME/Signing/bitone
+scripts/release.sh v$VERSION --key "$S/key.der.gpg" --cert "$S/apk/v1/cert.pem"
+```
+
+Tags are `vMAJOR.MINOR.PATCH`, each part at most 99, taken only from `main` and never moved. If a release fails, use the next patch number.
 
 ## License
 

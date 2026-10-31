@@ -119,7 +119,8 @@ design/
 - **WASM**：`secp256k1` 要编译 C 代码，Apple clang 没有 wasm 目标。本机用 Homebrew 的 LLVM，CI 用系统的 LLVM，容器用自带 wasm 目标的 clang。
 - **工具链**：Homebrew 的 cargo 会绕过 `rust-toolchain.toml`，所以构建都走 Makefile。`make test` 跑全部检查。
 - **Android 版本**：CMP 1.12 要求 compileSdk 至少 37。Gradle 9.8 超出 Kotlin 2.4 官方兼容表（到 9.7），实测通过。
-- **发布**：推送 `v1.2.3` 这样的 tag，版本号要和 `Cargo.toml` 一致。CI 全部通过后发布 GitHub Release，包含 Linux x86_64 和 arm64 的网关加网页端、未签名的 APK 和 `SHA256SUMS`。发布构建不用缓存。
-- **APK 签名**：签名私钥不进 CI。Release 发布后在本地签名，再用 `gh release upload` 上传。
+- **发布**：推送 `v1.2.3` 这样的 tag，版本号要和 `Cargo.toml` 一致。CI 全部通过后构建 Linux x86_64 和 aarch64 的发布包、未签名的 APK 和双架构镜像 `ghcr.io/ccobcode/bitone`，并创建草稿 Release。发布构建不用缓存。
+- **APK 签名**：签名私钥不进 CI。`scripts/release.sh` 在本地下载草稿，检查后签名 APK，内置清单版本升高时生成清单包，再生成 `SHA256SUMS`，上传并转为正式发布。
+- **镜像**：网关和网页端在同一个镜像里，基础镜像固定到 digest。`docker/compose.yaml` 用 Caddy 申请证书，组成私有部署。
 - **代码裁剪**：发布版开 R8，只裁剪和优化，不混淆，堆栈和发布包审计都看得懂。JNA、UniFFI 和 zxing-cpp 靠反射或原生回调，规则在 `proguard-rules.pro`。
 - **可复现构建**：Kotlin 钱包的常见失败点是 dex 和 baseline profile 不一致，所以关闭 baseline profile，把构建版本写死。Rust 用 `--remap-path-prefix` 去掉本机路径。验证范围见[验证状态](07-verification.md)。

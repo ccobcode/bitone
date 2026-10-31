@@ -492,18 +492,32 @@ async fn evm_tokens_are_pushed_by_the_node_not_polled() {
     assert_eq!(filters[1]["params"][1]["topics"][1], json!([padded(EVM)]), "转出");
     assert_eq!(filters[2]["params"][1]["topics"][2], json!([padded(EVM)]), "转入");
 
-    let token_calls = node.calls.count("eth_call");
+    // 第一个块要取原生币基线,取到后对账一次,这一次会查代币.
+    let baseline = node.calls.count("eth_call");
     chain.lock().unwrap().block = 11;
     node.push(new_head(11));
     let update = next_json(&mut ws).await;
     assert_eq!(update["params"]["height"], 11);
+    timeout(Duration::from_secs(5), async {
+        while node.calls.count("eth_call") <= baseline {
+            sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("第一个块之后要对账");
+
+    let token_calls = node.calls.count("eth_call");
+    chain.lock().unwrap().block = 12;
+    node.push(new_head(12));
+    let update = next_json(&mut ws).await;
+    assert_eq!(update["params"]["height"], 12);
     assert_eq!(update["params"]["balances"], json!([]));
     assert_eq!(update["params"]["txs"], json!([]));
     assert_eq!(node.calls.count("eth_call"), token_calls, "没有动静不查代币余额");
 
     let log = json!({
         "address": USDT.to_lowercase(),
-        "blockNumber": "0xb",
+        "blockNumber": "0xc",
         "transactionHash": "0xdd",
         "topics": [TRANSFER, padded(OTHER), padded(EVM)],
         "data": format!("{:#066x}", 7),

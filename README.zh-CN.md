@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/web/public/favicon.svg" width="112" alt="BitOne">
+  <img src="design/logo.svg" width="112" alt="BitOne">
 </p>
 
 <h1 align="center">BitOne</h1>
@@ -24,6 +24,7 @@
   <a href="#数据源">数据源</a>　
   <a href="#使用方式">使用方式</a>　
   <a href="#开发">开发</a>　
+  <a href="#发布">发布</a>　
   <a href="#许可证">许可证</a>　
   <a href="docs/README.md">文档</a>
 </p>
@@ -123,11 +124,11 @@ Bitcoin、TRON 和 Solana 的交易历史来自同一批服务。EVM 节点查�
 
 三种方式的冷钱包用法相同，区别在于谁运行网关、谁构建软件。
 
-| 方式     | 网页端和网关         | 冷钱包         |
-| :------- | :------------------- | :------------- |
-| 官方版   | bitone.cloudtay.com  | 官方 APK       |
-| 私有网关 | 自己的服务器和发布包 | 官方 APK       |
-| 源码构建 | 自己构建             | 自己构建并签名 |
+| 方式     | 网页端和网关           | 冷钱包         |
+| :------- | :--------------------- | :------------- |
+| 官方版   | bitone.cloudtay.com    | 官方 APK       |
+| 私有网关 | 自己的服务器和官方镜像 | 官方 APK       |
+| 源码构建 | 自己构建               | 自己构建并签名 |
 
 ### 1. 官方版
 
@@ -150,21 +151,37 @@ apksigner verify --print-certs $APK | grep $CERT && adb install $APK
 
 ### 2. 私有网关
 
-发布包里有网关和网页端，网页端只连接你自己的服务器。发布包支持 Linux 的 `x86_64` 和 `aarch64`。冷钱包的设置方法同[官方版](#1-官方版)。
+官方镜像里有网关和网页端，网页端只连接你自己的服务器。冷钱包的设置方法同[官方版](#1-官方版)。
+
+网页端的摄像头和交易构建都要求 HTTPS 或 localhost，所以 compose 文件在网关前放了 Caddy 来申请证书。把域名解析到服务器，并开放 80 和 443 端口。
+
+```bash
+export VERSION=0.1.0
+export DOMAIN=bitone.example.com
+curl -fLO https://raw.githubusercontent.com/ccobcode/bitone/v$VERSION/docker/compose.yaml
+docker compose up -d
+```
+
+如果只想在本机试用，单独运行镜像，打开 `http://localhost:8787`。
+
+```bash
+docker run -p 127.0.0.1:8787:8787 ghcr.io/ccobcode/bitone:0.1.0
+```
+
+不用 Docker 时，使用发布包，支持 Linux 的 `x86_64` 和 `aarch64`，需要自己配 HTTPS 反向代理。
 
 ```bash
 VERSION=0.1.0
 curl -fL https://github.com/ccobcode/bitone/releases/download/v$VERSION/bitone-v$VERSION-linux-$(uname -m).tar.gz | tar -xz
 cd bitone
-{ echo 'web_dir = "web"'; cat gateway.example.toml; } > gateway.toml
-./bin/bitone-gateway --config gateway.toml
+./bin/bitone-gateway --config gateway.example.toml --web-dir web
 ```
 
-网关监听 `127.0.0.1:8787`。浏览器只允许在 HTTPS 或 localhost 下使用摄像头，所以要在网关前放一个配好证书的反向代理，并把代理的 IP 写进 `trusted_proxies`。默认配置使用免费公共服务，见[数据源](#数据源)。
+默认配置使用免费公共服务，见[数据源](#数据源)。要填 API key 时，把 `gateway.example.toml` 复制成 `gateway.toml`，用 `--config` 传入，或者按 `compose.yaml` 里的注释挂载。代理的 IP 用 `--trusted-proxy` 添加。
 
 ### 3. 源码构建
 
-需要 rustup、Node、pnpm、JDK 21、Android SDK 和 NDK。WASM 构建需要 Homebrew 的 LLVM（`brew install llvm`）。
+需要 rustup、Node、pnpm、JDK 21、Android SDK 和 NDK、OpenSSL 和 GnuPG。WASM 构建需要 Homebrew 的 LLVM（`brew install llvm`）。`apksigner` 和 `adb` 在 Android SDK 的 `build-tools` 和 `platform-tools` 目录里。
 
 ```bash
 git clone https://github.com/ccobcode/bitone.git
@@ -175,30 +192,33 @@ make dist VERSION=$VERSION
 
 产物在 `dist/`：
 
-- `bitone-v<VERSION>-<os>-<arch>.tar.gz`：网关和网页端，部署方法同[私有网关](#2-私有网关)。
+- `bitone-v<VERSION>-<os>-<arch>.tar.gz`：网关和网页端。
 - `bitone-v<VERSION>-android-unsigned.apk`：冷钱包。
 
-Android 只能安装已签名的 APK，所以要先生成一次签名密钥。`keytool` 会要求设置密码。
+Android 只能安装已签名的 APK。先生成一次签名密钥，`S` 是存放加密私钥和证书的目录。gpg 会要求设置口令，签发证书时再输入一次。
 
 ```bash
-KEYSTORE=$HOME/bitone.jks
-keytool -genkeypair -keystore $KEYSTORE -alias bitone -keyalg EC -groupname secp256r1 -validity 10000 -dname "CN=BitOne"
+S=$HOME/Signing/bitone
+mkdir -p "$S/apk/v1"
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -outform DER | gpg --symmetric --no-symkey-cache --cipher-algo AES256 --s2k-mode 3 --s2k-digest-algo SHA512 --s2k-count 65011712 -o "$S/key.der.gpg" &&
+openssl req -x509 -new -key <(gpg --decrypt --no-symkey-cache --quiet "$S/key.der.gpg") -keyform DER -sha256 -days 10000 -subj "/CN=BitOne" -addext "basicConstraints=critical,CA:FALSE" -addext "keyUsage=critical,digitalSignature" -out "$S/apk/v1/cert.pem"
 ```
 
-签名 APK 并通过 USB 安装，手机的设置方法同[官方版](#1-官方版)。
+签名 APK 并通过 USB 安装，手机的设置方法同[官方版](#1-官方版)。私钥只经过管道，不会以明文写入磁盘。
 
 ```bash
-apksigner sign --ks $KEYSTORE --out dist/bitone-v$VERSION-android.apk dist/bitone-v$VERSION-android-unsigned.apk && adb install dist/bitone-v$VERSION-android.apk
+apksigner sign --key <(gpg --decrypt --no-symkey-cache --quiet "$S/key.der.gpg") --cert "$S/apk/v1/cert.pem" --min-sdk-version 31 --v1-signing-enabled false --v4-signing-enabled false --alignment-preserved true --out dist/bitone-v$VERSION-android.apk dist/bitone-v$VERSION-android-unsigned.apk &&
+apksigner verify --min-sdk-version 31 --print-certs dist/bitone-v$VERSION-android.apk &&
+adb install dist/bitone-v$VERSION-android.apk
 ```
 
-请保管好 keystore，以后更新必须使用同一把密钥。自己构建的版本和官方 APK 不能互相覆盖安装。
+请保管好私钥和证书，以后更新必须使用同一张证书。自己构建的版本和官方 APK 不能互相覆盖安装。
 
-如果要在容器里运行网关和网页端：
+如果要自己构建容器镜像：
 
 ```bash
-{ printf 'listen = "0.0.0.0:8787"\nweb_dir = "/srv/bitone/web"\n'; grep -v '^listen =' crates/bitone-gateway/gateway.example.toml; } > gateway.toml
 docker build -f docker/selfhost.Dockerfile -t bitone .
-docker run -p 8787:8787 -v ./gateway.toml:/etc/bitone/gateway.toml bitone
+docker run -p 127.0.0.1:8787:8787 bitone
 ```
 
 ## 开发
@@ -225,6 +245,25 @@ adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
 `make dev` 优先读根目录的 `gateway.local.toml`，没有时读示例配置。要填 API key 时复制一份再改，这个文件不进 Git。
 
 `make lint` 跑 clippy 和 Biome，`make audit` 审查依赖漏洞和许可证，`make hooks` 启用 Git 钩子。debug 构建只用于开发和测试网。
+
+## 发布
+
+CI 从 tag 构建全部产物并创建草稿 Release，不持有签名私钥。先在 `Cargo.toml` 改好版本号，合并到 `main`，再推送 tag。
+
+```bash
+VERSION=0.1.0
+git tag -a v$VERSION -m v$VERSION
+git push origin main v$VERSION
+```
+
+CI 完成后，在本地签名并发布。`scripts/release.sh` 会下载草稿并检查，gpg 询问口令后完成签名，再上传已签名的文件并发布。
+
+```bash
+S=$HOME/Signing/bitone
+scripts/release.sh v$VERSION --key "$S/key.der.gpg" --cert "$S/apk/v1/cert.pem"
+```
+
+tag 的格式是 `vMAJOR.MINOR.PATCH`，每段不超过 99，只从 `main` 打，打了就不再移动。发布失败时用下一个补丁号。
 
 ## 许可证
 

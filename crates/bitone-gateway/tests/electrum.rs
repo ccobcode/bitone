@@ -922,9 +922,8 @@ async fn long_connection_unsubscribes_addresses_nobody_watches() {
         update = next_json(&mut ws).await;
     }
     wait_for_calls(&calls, "blockchain.scripthash.unsubscribe", 1).await;
-    let heads = calls.count("blockchain.headers.subscribe");
     pushes.send(status_push(BTC)).unwrap();
-    chain.lock().unwrap().tip = 101;
+    // 节点的高度不动,这个高度只能从长连接的推送拿到,退回轮询时等不到.
     pushes.send(head_push(101)).unwrap();
     let mut height = json!(null);
     for _ in 0..4 {
@@ -933,6 +932,5 @@ async fn long_connection_unsubscribes_addresses_nobody_watches() {
             break;
         }
     }
-    assert_eq!(height, 101, "连接还在");
-    assert_eq!(calls.count("blockchain.headers.subscribe"), heads, "没有退回轮询");
+    assert_eq!(height, 101, "退订之后长连接还在");
 }
