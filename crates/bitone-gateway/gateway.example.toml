@@ -99,14 +99,14 @@ upstreams = [
 upstreams = ["https://ethereum-rpc.publicnode.com", "https://eth.drpc.org"]
 indexer = "https://api.routescan.io/v2/network/mainnet/evm/1/etherscan/api"
 tokens = [
-  "0xdAC17F958D2ee523a2206206994597C13D831ec7", # USDT
-  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", # USDC
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7",  # USDT
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",  # USDC
 ]
 
 [networks.sepolia]
 upstreams = ["https://ethereum-sepolia-rpc.publicnode.com"]
 indexer = "https://api.routescan.io/v2/network/testnet/evm/11155111/etherscan/api"
-tokens = ["0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"] # USDC
+tokens = ["0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"]  # USDC
 
 [networks.hoodi]
 upstreams = ["https://ethereum-hoodi-rpc.publicnode.com"]
@@ -115,8 +115,8 @@ indexer = "https://api.routescan.io/v2/network/testnet/evm/560048/etherscan/api"
 [networks.bsc]
 upstreams = ["https://bsc-rpc.publicnode.com"]
 tokens = [
-  "0x55d398326f99059fF775485246999027B3197955", # USDT
-  "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", # USDC
+    "0x55d398326f99059fF775485246999027B3197955",  # USDT
+    "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",  # USDC
 ]
 
 [networks.bsc-testnet]
@@ -125,26 +125,26 @@ upstreams = ["https://bsc-testnet-rpc.publicnode.com"]
 [networks.polygon]
 upstreams = ["https://polygon-bor-rpc.publicnode.com"]
 tokens = [
-  "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", # USDT
-  "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", # USDC
+    "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",  # USDT
+    "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",  # USDC
 ]
 
 [networks.amoy]
 upstreams = ["https://polygon-amoy-bor-rpc.publicnode.com"]
-tokens = ["0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582"] # USDC
+tokens = ["0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582"]  # USDC
 
 # tron_api_key 放在 TRON-PRO-API-KEY 请求头里，发给这个网络的全部上游。
 [networks.tron]
 upstreams = ["https://api.trongrid.io"]
 # tron_api_key = "你的 key"
 tokens = [
-  "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", # USDT
-  "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8", # USDC
+    "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",  # USDT
+    "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8",  # USDC
 ]
 
 [networks.tron-nile]
 upstreams = ["https://nile.trongrid.io"]
-tokens = ["TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"] # USDT
+tokens = ["TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"]  # USDT
 
 [networks.tron-shasta]
 upstreams = ["https://api.shasta.trongrid.io"]
@@ -152,13 +152,13 @@ upstreams = ["https://api.shasta.trongrid.io"]
 [networks.solana]
 upstreams = ["https://api.mainnet-beta.solana.com"]
 tokens = [
-  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", # USDT
-  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # USDC
+    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
 ]
 
 [networks.solana-devnet]
 upstreams = ["https://api.devnet.solana.com"]
-tokens = ["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"] # USDC
+tokens = ["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"]  # USDC
 
 [networks.solana-testnet]
 upstreams = ["https://api.testnet.solana.com"]
