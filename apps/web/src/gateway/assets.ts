@@ -45,11 +45,6 @@ export function buildTargets(
     return [...byNetwork].map(([network, set]) => ({ network, addresses: [...set] }));
 }
 
-/** 新推送替换这个地址的全部余额，docs/09 规定推送格式与 HTTP 接口相同。 */
-export function applyUpdate(previous: readonly Balance[], address: string, next: readonly Balance[]): Balance[] {
-    return [...previous.filter((b) => b.address !== address), ...next];
-}
-
 export interface AssetRow {
     id: string;
     account: Account;

@@ -5,7 +5,7 @@
 // 一批有记录时再二分到单个地址，单个地址的查询不存在归纳的问题。
 import { fetchHistory } from "../gateway/client";
 import { db, type Account, type Address } from "./db";
-import { GAP_LIMIT, MAX_ADDRESS_INDEX, ensureAddress } from "./pairing";
+import { GAP_LIMIT, MAX_ADDRESS_INDEX, draftAddress, ensureAddress } from "./pairing";
 import { t } from "../core/i18n";
 
 /** 空页也可能带游标。连续这么多空页还没结束，就当查询失败，不下结论。 */
@@ -46,21 +46,32 @@ async function discoverChain(
     network: string,
     mode: "mainnet" | "testnet",
     change: 0 | 1,
-): Promise<void> {
+): Promise<Address[]> {
+    const found: Address[] = [];
     let last = -1;
     let next = 0;
     while (next <= last + GAP_LIMIT && next < MAX_ADDRESS_INDEX) {
         const end = Math.min(next + GAP_LIMIT, last + GAP_LIMIT + 1, MAX_ADDRESS_INDEX);
         const rows: Address[] = [];
-        for (let index = next; index < end; index++) rows.push(await ensureAddress(account, mode, index, change));
+        for (let index = next; index < end; index++) rows.push(await draftAddress(account, mode, index, change));
         const fresh = await usedAmong(
             network,
             rows.filter((row) => !row.used),
         );
-        for (const row of fresh) await db.addresses.update([row.accountId, row.change, row.index], { used: true });
-        for (const row of [...rows.filter((item) => item.used), ...fresh]) last = Math.max(last, row.index);
+        for (const row of fresh) row.used = true;
+        for (const row of rows) if (row.used) last = Math.max(last, row.index);
+        found.push(...rows);
         next = end;
     }
+    return found;
+}
+
+/** 地址一变，页面就要换订阅、重查余额，所以发现结束时才写入，而且只写一次。发现途中其他地方改过的字段以库里为准。 */
+async function saveFound(rows: readonly Address[]): Promise<void> {
+    await db.transaction("rw", db.addresses, async () => {
+        const stored = await db.addresses.bulkGet(rows.map((row) => [row.accountId, row.change, row.index]));
+        await db.addresses.bulkPut(rows.map((row, i) => ({ ...row, ...stored[i], used: row.used ?? stored[i]?.used })));
+    });
 }
 
 /**
@@ -73,7 +84,9 @@ export async function discoverAccount(account: Account, network: string, mode: "
     const first = await ensureAddress(account, mode, 0, 0);
     const probe = await fetchHistory(network, [first.address], null, typeof saved === "string" ? saved : null);
     if (probe.unchanged) return;
-    await discoverChain(account, network, mode, 0);
-    await discoverChain(account, network, mode, 1);
+    await saveFound([
+        ...(await discoverChain(account, network, mode, 0)),
+        ...(await discoverChain(account, network, mode, 1)),
+    ]);
     await db.settings.put({ key, value: probe.checkpoint });
 }

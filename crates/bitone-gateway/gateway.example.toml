@@ -9,7 +9,8 @@ listen = "127.0.0.1:8787"
 # web_dir = "/srv/bitone/web"
 
 upstream_timeout_ms = 10000
-ws_poll_interval_ms = 15000
+# 上游没有长连接时轮询区块高度的间隔。有订阅才跟块，闲时不访问上游。
+ws_poll_interval_ms = 6000
 ws_heartbeat_ms = 30000
 rate_limit_burst = 1200
 rate_limit_per_second = 20
@@ -88,7 +89,11 @@ upstreams = [
 
 # EVM 的交易历史要配 indexer，格式是 Etherscan 的 account 接口，Blockscout 也兼容。
 # 节点查不到地址的历史，不配置时 history 返回 upstream_unavailable。
-# BSC、Polygon 和它们的测试网没有免费的公共索引器，所以没有配置，交易记录只显示本地记录。
+# BSC、Polygon 和它们的测试网没有不用 key 的索引服务，没有配置时只有订阅期间的交易和本机发出的交易。
+# 有 HyperSync token 时这样配，这个网络的 indexer 就按 HyperSync 的接口访问：
+# indexer = "https://56.hypersync.xyz"
+# indexer_token = "你的 token"
+# 免费 token 每分钟 15 次，所有网络共用，只用来补历史，跟块不用它。
 [networks.ethereum]
 upstreams = ["https://ethereum-rpc.publicnode.com", "https://eth.drpc.org"]
 indexer = "https://api.routescan.io/v2/network/mainnet/evm/1/etherscan/api"

@@ -11,28 +11,55 @@ use bitcoin::hex::DisplayHex;
 use bitcoin::transaction::Version;
 use bitcoin::{Address, Amount, KnownHrp, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness};
 use bitone_gateway::config::Config;
-use common::{Calls, Gateway, dead_url, error_code, ok, rpc_failure};
+use common::{Calls, Gateway, call, dead_url, error_code, next_json, ok, rpc_failure};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
+use tokio::sync::broadcast;
 
 const BTC: &str = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu";
 const BTC_OTHER: &str = "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr";
 const TIME: u64 = 1_700_000_000;
 
-/// 一次读到的请求反序回复，前面夹一条没有 id 的推送，验证网关按 id 归位。
+/// 服务器主动推送的入口，连接着的会话都收得到。空字符串让服务器断开连接。
+type Pushes = broadcast::Sender<String>;
+
 async fn server(reply: impl Fn(&str, &Value) -> Value + Clone + Send + Sync + 'static) -> (String, Calls) {
+    let (url, calls, _) = pushing_server(reply).await;
+    (url, calls)
+}
+
+/// 一次读到的请求反序回复，前面夹一条没有 id 的推送，验证网关按 id 归位。
+async fn pushing_server(
+    reply: impl Fn(&str, &Value) -> Value + Clone + Send + Sync + 'static,
+) -> (String, Calls, Pushes) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("tcp://{}", listener.local_addr().unwrap());
     let calls = Calls::default();
     let log = calls.clone();
+    let (pushes, _) = broadcast::channel(16);
+    let sender: Pushes = pushes.clone();
     tokio::spawn(async move {
         while let Ok((socket, _)) = listener.accept().await {
             let (reply, log) = (reply.clone(), log.clone());
+            let (reader, writer) = socket.into_split();
+            let writer = Arc::new(tokio::sync::Mutex::new(writer));
+            let mut pushed = pushes.subscribe();
+            let outbound = writer.clone();
             tokio::spawn(async move {
-                let (reader, mut writer) = socket.into_split();
+                while let Ok(message) = pushed.recv().await {
+                    let mut outbound = outbound.lock().await;
+                    if message.is_empty() {
+                        let _ = outbound.shutdown().await;
+                        return;
+                    }
+                    let _ = outbound.write_all(format!("{message}\n").as_bytes()).await;
+                }
+            });
+            tokio::spawn(async move {
                 let mut reader = BufReader::new(reader);
                 loop {
                     let mut batch = Vec::new();
@@ -46,27 +73,28 @@ async fn server(reply: impl Fn(&str, &Value) -> Value + Clone + Send + Sync + 's
                             break;
                         }
                     }
-                    let push = json!({"method": "blockchain.headers.subscribe", "params": [{"height": 1}]});
+                    let push = json!({"method": "server.peers.subscribe", "params": []});
                     let mut out = format!("{push}\n");
                     for call in batch.iter().rev() {
                         let method = call["method"].as_str().unwrap();
                         log.record(method);
                         let mut response = match method {
                             "server.version" => ok(json!(["mock", "1.4"])),
+                            "server.ping" => ok(Value::Null),
                             _ => reply(method, &call["params"]),
                         };
                         response["jsonrpc"] = json!("2.0");
                         response["id"] = call["id"].clone();
                         out.push_str(&format!("{response}\n"));
                     }
-                    if writer.write_all(out.as_bytes()).await.is_err() {
+                    if writer.lock().await.write_all(out.as_bytes()).await.is_err() {
                         return;
                     }
                 }
             });
         }
     });
-    (url, calls)
+    (url, calls, sender)
 }
 
 fn one_upstream(network: &str, url: &str) -> String {
@@ -154,6 +182,11 @@ impl Chain {
     fn reply(&self, method: &str, params: &Value) -> Value {
         match method {
             "blockchain.headers.subscribe" => ok(json!({"height": self.tip, "hex": ""})),
+            "blockchain.scripthash.subscribe" => ok(Value::Null),
+            "blockchain.scripthash.get_balance" => {
+                let mine = self.history.contains_key(params[0].as_str().unwrap());
+                ok(json!({"confirmed": if mine { 700 } else { 0 }, "unconfirmed": 0}))
+            }
             "blockchain.block.header" => ok(json!(header(params[0].as_u64().unwrap()))),
             "blockchain.scripthash.get_history" => {
                 let rows = self.history.get(params[0].as_str().unwrap());
@@ -715,4 +748,98 @@ fn config_keeps_electrum_to_bitcoin_and_verified_mainnet() {
     );
     assert!(!parses("bitcoin", "ssl://electrum.example"), "端口不能省略");
     assert!(!parses("ethereum", "ssl://electrum.example:50002"));
+}
+
+fn watch(network: &str, addresses: &[&str]) -> Value {
+    json!({"jsonrpc": "2.0", "id": 1, "method": "subscribe",
+           "params": {"channel": "addresses", "network": network, "addresses": addresses}})
+}
+
+fn status_push(address: &str) -> String {
+    json!({"method": "blockchain.scripthash.subscribe", "params": [script_hash(address), "changed"]}).to_string()
+}
+
+fn head_push(height: u64) -> String {
+    json!({"method": "blockchain.headers.subscribe", "params": [{"height": height, "hex": ""}]}).to_string()
+}
+
+async fn wait_for_calls(calls: &Calls, method: &str, count: usize) {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while calls.count(method) < count {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("等 {method} 超时"));
+}
+
+/// 内存池里的交易不改变已确认余额，只有服务器的推送能让用户立刻看到。
+#[tokio::test]
+async fn long_connection_reports_mempool_transactions_at_once() {
+    let (parent, _, _) = payment_pair();
+    let mut chain = Chain::new(100);
+    chain.add(&parent, 80, &[]);
+    let chain = Arc::new(Mutex::new(chain));
+    let node = chain.clone();
+    let (url, calls, pushes) = pushing_server(move |method, params| node.lock().unwrap().reply(method, params)).await;
+    let gateway = Gateway::start(&format!(
+        "{}{}",
+        "ws_poll_interval_ms = 10\n",
+        one_upstream("bitcoin", &url)
+    ))
+    .await;
+    let mut ws = gateway.ws().await;
+    assert!(call(&mut ws, watch("bitcoin", &[BTC])).await["result"].is_string());
+    wait_for_calls(&calls, "blockchain.scripthash.subscribe", 1).await;
+    // 建立连接时补查一次，内容为空，这里先消费掉。
+    assert_eq!(next_json(&mut ws).await["params"]["txs"], json!([]));
+
+    let incoming = tx(&[outpoint(&parent, 0)], vec![pay(BTC, 1_000)]);
+    chain.lock().unwrap().add(&incoming, 0, &[BTC]);
+    pushes.send(status_push(BTC)).unwrap();
+    let update = next_json(&mut ws).await;
+    assert_eq!(update["params"]["height"], 100, "高度没变，交易照样推送");
+    assert_eq!(update["params"]["txs"][0]["hash"], incoming.compute_txid().to_string());
+    assert_eq!(update["params"]["txs"][0]["status"], "pending");
+    assert_eq!(
+        calls.count("blockchain.scripthash.subscribe"),
+        1,
+        "地址只订阅一次，不轮询"
+    );
+
+    chain.lock().unwrap().tip = 101;
+    pushes.send(head_push(101)).unwrap();
+    let update = next_json(&mut ws).await;
+    assert_eq!(
+        (&update["params"]["previous"], &update["params"]["height"]),
+        (&json!(100), &json!(101))
+    );
+}
+
+/// 连接断了要换上游，重新订阅，并补一次断开期间可能错过的变化。
+#[tokio::test]
+async fn long_connection_moves_on_when_the_server_goes_away() {
+    let (parent, _, _) = payment_pair();
+    let mut chain = Chain::new(100);
+    chain.add(&parent, 80, &[]);
+    let incoming = tx(&[outpoint(&parent, 0)], vec![pay(BTC, 1_000)]);
+    let chain = Arc::new(Mutex::new(chain));
+    let (first, second) = (chain.clone(), chain.clone());
+    let (first, first_calls, pushes) =
+        pushing_server(move |method, params| first.lock().unwrap().reply(method, params)).await;
+    let (second, second_calls, _) =
+        pushing_server(move |method, params| second.lock().unwrap().reply(method, params)).await;
+    let config = format!("ws_poll_interval_ms = 10\n{}", two_upstreams(&first, &second));
+    let gateway = Gateway::start(&config).await;
+    let mut ws = gateway.ws().await;
+    call(&mut ws, watch("bitcoin", &[BTC])).await;
+    wait_for_calls(&first_calls, "blockchain.scripthash.subscribe", 1).await;
+    assert_eq!(next_json(&mut ws).await["params"]["txs"], json!([]));
+
+    // 这笔交易到达时连接已经断了，服务器不会推送。
+    chain.lock().unwrap().add(&incoming, 0, &[BTC]);
+    pushes.send(String::new()).unwrap();
+    wait_for_calls(&second_calls, "blockchain.scripthash.subscribe", 1).await;
+    let update = next_json(&mut ws).await;
+    assert_eq!(update["params"]["txs"][0]["status"], "pending");
 }

@@ -1,10 +1,24 @@
-// 链上历史的本地缓存和增量同步，见 docs/03-system.md 第 3 节。
-// 做法和 delta token 相同：网关不存状态，水位由浏览器保存，下次带上它只取之后的变化。
+// 链上状态的本地缓存：余额、交易记录和同步游标，见 docs/03-system.md 第 3 节。
+// 网页端是一个有状态的小客户端：先订阅，再取快照，两边的结果都按同样的规则写入本地，谁先到都一样。
+// 余额带高度，不低于本地才覆盖。交易记录按标识写入，重复收到没有影响。
 // 水位是已经不可回滚的位置，水位之后的记录每次都以链上结果为准，这样被重组掉的交易会消失。
 import { networkList } from "../core";
-import { GatewayError, addressKey, fetchHistory, type HistoryItem } from "../gateway/client";
+import {
+    GatewayError,
+    MAX_SNAPSHOT_ITEMS,
+    addressKey,
+    fetchHistory,
+    fetchSnapshot,
+    fetchTxs,
+    type Balance,
+    type ChainUpdate,
+    type HistoryItem,
+    type HistoryPage,
+    type SnapshotItem,
+    type SnapshotResult,
+} from "../gateway/client";
 import type { HistoryStream } from "../gateway/history";
-import { db, txKey, type ChainEntry, type FeedCursor } from "./db";
+import { db, txKey, type BalanceRow, type ChainEntry, type FeedCursor } from "./db";
 
 const isBitcoin = (network: string) => networkList().some((n) => n.id === network && n.chain === "bitcoin");
 
@@ -23,65 +37,204 @@ function entry(walletId: string, stream: string, network: string, item: HistoryI
     return { ...item, id, walletId, stream, txKey: key, network, amount: item.amount.toString() };
 }
 
-/** 第一次下载。第一页的水位最早，下载途中上链的交易下次增量时能补上。边下边存，中断后续传。 */
-async function download(id: string, walletId: string, stream: HistoryStream, resume: FeedCursor | null): Promise<void> {
+/** 高度不低于本地才覆盖，快照和推送谁先到都不会用旧值盖掉新值。 */
+async function mergeBalances(network: string, height: number, rows: readonly Balance[]): Promise<void> {
+    const fresh: BalanceRow[] = rows.map(({ address, asset, amount }) => ({
+        id: `${network}|${addressKey(address)}|${addressKey(asset)}`,
+        network,
+        address,
+        asset,
+        amount: amount.toString(),
+        height,
+    }));
+    const stored = await db.balances.bulkGet(fresh.map((row) => row.id));
+    await db.balances.bulkPut(fresh.filter((_, i) => (stored[i]?.height ?? 0) <= height));
+}
+
+/** 第一次同步只取最新一页，更早的记录用户翻到时再取。 */
+async function saveFirstPage(id: string, walletId: string, stream: HistoryStream, page: HistoryPage): Promise<void> {
     const { network, addresses } = stream;
-    const size = addresses.length;
-    let checkpoint = resume?.checkpoint ?? null;
-    let cursor = resume?.older ?? null;
-    do {
-        const page = await fetchHistory(network, addresses, cursor);
-        checkpoint ??= page.checkpoint;
+    const cursor: FeedCursor = {
+        id,
+        network,
+        addresses,
+        checkpoint: page.checkpoint,
+        older: page.cursor,
+        done: page.cursor === null,
+    };
+    await db.transaction("rw", db.chainTxs, db.feedCursors, async () => {
         await db.chainTxs.bulkPut(page.items.map((item) => entry(walletId, id, network, item)));
-        cursor = page.cursor;
-        await db.feedCursors.put({ id, size, checkpoint, older: cursor, done: cursor === null });
-    } while (cursor !== null);
+        await db.feedCursors.put(cursor);
+    });
 }
 
 /** 取水位之后的变化，全部拿到后才写入。未定论的记录以这次结果为准，中途失败时什么都不改。 */
-async function update(id: string, walletId: string, stream: HistoryStream, saved: FeedCursor): Promise<void> {
+async function saveChanges(
+    id: string,
+    walletId: string,
+    stream: HistoryStream,
+    saved: FeedCursor,
+    first: HistoryPage,
+): Promise<void> {
     const { network, addresses } = stream;
-    const rows: ChainEntry[] = [];
-    let checkpoint: string | null = null;
-    let cursor: string | null = null;
-    do {
+    const rows = first.items.map((item) => entry(walletId, id, network, item));
+    let cursor = first.cursor;
+    while (cursor !== null) {
         const page = await fetchHistory(network, addresses, cursor, saved.checkpoint);
-        if (page.unchanged) return;
-        checkpoint ??= page.checkpoint;
         rows.push(...page.items.map((item) => entry(walletId, id, network, item)));
         cursor = page.cursor;
-    } while (cursor !== null);
+    }
     await db.transaction("rw", db.chainTxs, db.feedCursors, async () => {
         const open = await db.chainTxs.where("walletId").equals(walletId);
         await open.filter((row) => row.stream === id && OPEN.has(row.status)).delete();
         await db.chainTxs.bulkPut(rows);
-        await db.feedCursors.update(id, { checkpoint: checkpoint ?? saved.checkpoint });
+        await db.feedCursors.update(id, { checkpoint: first.checkpoint });
     });
 }
 
-async function syncStream(walletId: string, stream: HistoryStream): Promise<void> {
-    const id = streamId(walletId, stream);
-    const saved = await db.feedCursors.get(id);
-    // 地址变多后，新地址的历史还没下载过，水位对它们不成立，要从头下载。
-    const usable = saved?.size === stream.addresses.length ? saved : null;
-    if (usable) await update(id, walletId, stream, usable);
-    if (usable?.done) return;
-    try {
-        // 增量刚推进了水位，要读最新的。
-        await download(id, walletId, stream, usable ? ((await db.feedCursors.get(id)) ?? null) : null);
-    } catch (error) {
-        // 续传游标过期时清掉，下次从头下载，已有的记录不受影响。
-        if (usable && error instanceof GatewayError && error.code === "invalid_request") {
-            await db.feedCursors.delete(id);
+function snapshotItems(
+    stream: HistoryStream,
+    group: number,
+    saved: FeedCursor | undefined,
+    assets: readonly string[],
+): SnapshotItem[] {
+    const since = saved?.checkpoint ? { since: saved.checkpoint } : {};
+    return stream.addresses.flatMap((address) =>
+        assets.map((asset) => ({
+            network: stream.network,
+            address,
+            group,
+            ...since,
+            ...(asset === "native" ? {} : { contract: asset }),
+        })),
+    );
+}
+
+/** 一次请求放不下时分几次，同一批地址不拆开。 */
+function batches(groups: readonly SnapshotItem[][]): SnapshotItem[][] {
+    const packed: SnapshotItem[][] = [];
+    let current: SnapshotItem[] = [];
+    for (const items of groups) {
+        if (current.length + items.length > MAX_SNAPSHOT_ITEMS && current.length > 0) {
+            packed.push(current);
+            current = [];
         }
-        throw error;
+        current.push(...items);
+    }
+    if (current.length > 0) packed.push(current);
+    return packed;
+}
+
+/** 没有索引服务的网络收不到增量结果，未定论的记录逐笔查状态。 */
+async function settleUnindexed(walletId: string, networks: readonly string[]): Promise<void> {
+    const open = db.chainTxs.where("walletId").equals(walletId);
+    const rows = await open.filter((row) => networks.includes(row.network) && OPEN.has(row.status)).toArray();
+    for (const network of new Set(rows.map((row) => row.network))) {
+        const group = rows.filter((row) => row.network === network);
+        const seen = await fetchTxs(network, [...new Set(group.map((row) => row.hash))]).catch(() => []);
+        const status = new Map(seen.map((tx) => [addressKey(tx.hash), tx.status]));
+        await db.chainTxs.bulkPut(
+            group.map((row) => ({ ...row, status: status.get(addressKey(row.hash)) ?? row.status })),
+        );
     }
 }
 
-/** 同步全部地址，返回失败的网络。一个网络失败不影响其他网络。 */
-export async function syncFeed(walletId: string, streams: readonly HistoryStream[]): Promise<string[]> {
-    const results = await Promise.allSettled(streams.map((stream) => syncStream(walletId, stream)));
-    return [...new Set(streams.filter((_, i) => results[i]?.status === "rejected").map((stream) => stream.network))];
+export interface FeedFailure {
+    network: string;
+    code: string;
+}
+
+export interface FeedResult {
+    /** 余额没查到的网络。 */
+    failures: FeedFailure[];
+    /** 链上记录没同步成的网络。 */
+    failed: string[];
+}
+
+async function applyResult(
+    walletId: string,
+    stream: HistoryStream,
+    saved: FeedCursor | undefined,
+    result: SnapshotResult,
+): Promise<boolean> {
+    if (result.height !== null && result.balances) await mergeBalances(stream.network, result.height, result.balances);
+    const page = result.history;
+    if (!page) return false;
+    const id = streamId(walletId, stream);
+    if (!saved) await saveFirstPage(id, walletId, stream, page);
+    else if (!page.unchanged) await saveChanges(id, walletId, stream, saved, page);
+    return true;
+}
+
+/** 取一次全部网络的最新状态并合并到本地。一个网络失败不影响其他网络。 */
+export async function syncFeed(
+    walletId: string,
+    streams: readonly HistoryStream[],
+    assets: (network: string) => readonly string[],
+    noHistory: readonly string[] = [],
+): Promise<FeedResult> {
+    const saved = await db.feedCursors.bulkGet(streams.map((stream) => streamId(walletId, stream)));
+    const groups = streams.map((stream, group) => snapshotItems(stream, group, saved[group], assets(stream.network)));
+
+    const failures = new Map<string, string>();
+    const failed = new Set<string>();
+    const answered = new Set<string>();
+    const apply = async (result: SnapshotResult) => {
+        const index = streams.findIndex(
+            (stream) => stream.network === result.network && stream.addresses[0] === result.addresses[0],
+        );
+        const stream = streams[index];
+        if (!stream) return;
+        answered.add(streamId(walletId, stream));
+        if (result.balances === null) failures.set(stream.network, result.error ?? "unreachable");
+        const indexed = !noHistory.includes(stream.network);
+        const synced = await applyResult(walletId, stream, saved[index], result).catch(() => false);
+        if (indexed && !synced) failed.add(stream.network);
+    };
+    const replies = await Promise.allSettled(batches(groups).map((items) => fetchSnapshot(items, apply)));
+    const lost = replies.find((reply) => reply.status === "rejected");
+    const code = lost?.status === "rejected" && lost.reason instanceof GatewayError ? lost.reason.code : "unreachable";
+    for (const stream of streams) {
+        if (answered.has(streamId(walletId, stream))) continue;
+        failures.set(stream.network, code);
+        if (!noHistory.includes(stream.network)) failed.add(stream.network);
+    }
+    await settleUnindexed(walletId, noHistory);
+    return { failures: [...failures].map(([network, code]) => ({ network, code })), failed: [...failed] };
+}
+
+/** 把一条跟块推送写入本地。 */
+export async function applyChainUpdate(walletId: string, stream: HistoryStream, update: ChainUpdate): Promise<void> {
+    const { network } = stream;
+    const id = streamId(walletId, stream);
+    await db.transaction("rw", db.balances, db.chainTxs, async () => {
+        await mergeBalances(network, update.height, update.balances);
+        await db.chainTxs.bulkPut((update.items ?? []).map((item) => entry(walletId, id, network, item)));
+    });
+}
+
+/** 往前翻一页。返回取到新记录的批次数。 */
+export async function loadOlder(walletId: string, streams: readonly HistoryStream[]): Promise<void> {
+    await Promise.allSettled(
+        streams.map(async (stream) => {
+            const id = streamId(walletId, stream);
+            const saved = await db.feedCursors.get(id);
+            if (!saved?.older) return;
+            try {
+                const page = await fetchHistory(stream.network, stream.addresses, saved.older);
+                await db.transaction("rw", db.chainTxs, db.feedCursors, async () => {
+                    await db.chainTxs.bulkPut(page.items.map((item) => entry(walletId, id, stream.network, item)));
+                    await db.feedCursors.update(id, { older: page.cursor, done: page.cursor === null });
+                });
+            } catch (error) {
+                // 翻页游标过期时清掉，下次从最新一页重来，已有的记录不受影响。
+                if (error instanceof GatewayError && error.code === "invalid_request") {
+                    await db.feedCursors.delete(id);
+                }
+                throw error;
+            }
+        }),
+    );
 }
 
 /** 还有未定论的记录时要继续同步，否则它们的状态不会更新。 */

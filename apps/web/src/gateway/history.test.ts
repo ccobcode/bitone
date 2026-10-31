@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { EVM_ADDRESS, PEER_EVM, USDT, initCore } from "../testing";
-import type { Account, Address, Note, TxRecord } from "../data/db";
+import type { FeedCursor, Note, TxRecord } from "../data/db";
 import { addressKey, type HistoryItem } from "./client";
 import { historyStreams, mergeFeed, type RemoteItem } from "./history";
 
@@ -58,19 +58,22 @@ function local(extra: Partial<TxRecord> = {}): TxRecord {
 }
 
 describe("historyStreams", () => {
-    it("EVM 地址在每个网络都查，只查支持的网络，超过上限分批", () => {
-        const evm = { id: "e", chain: "evm", kind: "single", network: "ethereum" } as Account;
-        const btc = { id: "b", chain: "bitcoin", kind: "segwit", network: "bitcoin" } as Account;
-        const rows = [
-            { accountId: "e", address: EVM_ADDRESS },
-            ...Array.from({ length: 150 }, (_, i) => ({ accountId: "b", address: `bc1q${i}` })),
-        ] as Address[];
-        const streams = historyStreams([evm, btc], rows, "mainnet", ["ethereum", "bsc", "bitcoin"]);
-        expect(streams.map((stream) => [stream.network, stream.addresses.length])).toEqual([
-            ["ethereum", 1],
-            ["bsc", 1],
-            ["bitcoin", 100],
-            ["bitcoin", 50],
+    const addresses = Array.from({ length: 150 }, (_, i) => `bc1q${i}`);
+
+    it("没同步过的地址按单次上限分批", () => {
+        const streams = historyStreams("w", [{ network: "bitcoin", addresses }], []);
+        expect(streams.map((stream) => stream.addresses.length)).toEqual([100, 50]);
+    });
+
+    it("新地址另成一批，已同步的批次不动，这样水位和翻页游标都不失效", () => {
+        const synced = addresses.slice(0, 2);
+        const cursor = (id: string, network: string) =>
+            ({ id, network, addresses: synced, checkpoint: "1", older: null, done: true }) as FeedCursor;
+        const cursors = [cursor("w:bitcoin:bc1q0", "bitcoin"), cursor("other:bitcoin:x", "bitcoin")];
+        const target = { network: "bitcoin", addresses: ["bc1q9", ...synced] };
+        expect(historyStreams("w", [target], cursors)).toEqual([
+            { network: "bitcoin", addresses: synced },
+            { network: "bitcoin", addresses: ["bc1q9"] },
         ]);
     });
 });

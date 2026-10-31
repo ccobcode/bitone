@@ -54,6 +54,12 @@ function entries(): Map<string, AssetEntry> {
     return manifest;
 }
 
+/** 这个网络要查询的资产，原生币和清单里的合约。 */
+export function assetsOf(network: string): string[] {
+    const listed = (assets() as ManifestAsset[]).filter((asset) => asset.network === network);
+    return ["native", ...listed.map((asset) => asset.contract).filter((contract) => contract !== "native")];
+}
+
 /** `asset` 是 `native` 或合约地址。查不到时返回 null，界面按不在内置清单处理。 */
 export function lookupAsset(network: string, asset: string): AssetEntry | null {
     return entries().get(key(network, asset)) ?? null;

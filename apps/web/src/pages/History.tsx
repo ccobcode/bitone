@@ -97,6 +97,7 @@ export default function History() {
     const [network, setNetwork] = useState<"all" | NetworkIcon>("all");
     const [group, setGroup] = useState<"全部" | StateGroup>("全部");
     const [limit, setLimit] = useState(PAGE_SIZE);
+    const [loadingOlder, setLoadingOlder] = useState(false);
 
     // 看过交易记录后，顶栏不再提示这些链上失败。
     useEffect(() => void saveSetting("historySeenAt", Date.now()), []);
@@ -118,9 +119,12 @@ export default function History() {
     const visible = shown.slice(0, limit);
     const saved = new Map((cursors ?? []).map((cursor) => [cursor.id, cursor]));
     const cursorOf = (stream: HistoryStream) => (wallet ? saved.get(streamId(wallet.id, stream)) : undefined);
+    // 更早的记录还在链上，翻到时才取。
+    const older = gateway.feedStreams.filter(
+        (stream) => cursorOf(stream)?.older && (network === "all" || networkIcon(stream.network) === network),
+    );
     // 第一次下载且没有内容可看时才盖住列表。其余情况只是一个小提示，上游慢也不挡已有的记录。
-    const downloading =
-        visible.length === 0 && gateway.syncing && gateway.feedStreams.some((stream) => !cursorOf(stream)?.done);
+    const downloading = visible.length === 0 && gateway.syncing && gateway.feedStreams.some((s) => !cursorOf(s));
     const never = gateway.syncFailed.filter(
         (id) => !gateway.feedStreams.some((stream) => stream.network === id && cursorOf(stream)),
     );
@@ -237,9 +241,19 @@ export default function History() {
                 ) : null}
             </Section>
 
-            {shown.length > limit ? (
+            {shown.length > limit || older.length > 0 ? (
                 <div className="flex justify-end">
-                    <Button onClick={() => setLimit(limit + PAGE_SIZE)}>{t("加载更多")}</Button>
+                    <Button
+                        disabled={loadingOlder}
+                        onClick={async () => {
+                            setLoadingOlder(true);
+                            if (shown.length <= limit) await gateway.loadOlder(older).catch(() => undefined);
+                            setLimit(limit + PAGE_SIZE);
+                            setLoadingOlder(false);
+                        }}
+                    >
+                        {t("加载更多")}
+                    </Button>
                 </div>
             ) : null}
         </>

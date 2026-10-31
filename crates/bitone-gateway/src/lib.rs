@@ -9,6 +9,7 @@ mod api;
 mod cache;
 pub mod config;
 mod error;
+mod follow;
 mod limit;
 mod metrics;
 mod prices;
@@ -26,6 +27,7 @@ use axum::{Json, Router};
 use bitone_core::Network;
 use config::Config;
 use error::ApiError;
+use follow::Follower;
 use limit::{ConnectionLimit, RateLimiter};
 use metrics::Metrics;
 use prices::Prices;
@@ -45,6 +47,8 @@ use upstream::Pool;
 const MAX_BODY: usize = 64 * 1024;
 /// 广播的请求体上限。标准交易最大约 400 KB，十六进制翻倍。
 const MAX_BROADCAST_BODY: usize = 1024 * 1024;
+/// 快照的请求体上限，放得下 1000 个带合约的条目。
+const MAX_SNAPSHOT_BODY: usize = 256 * 1024;
 /// 连接上游的时限。连接失败时请求肯定没有发出，广播可以放心换上游，
 /// 所以要和总时限区分开，不能让没响应的地址耗尽总时限。
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
@@ -65,6 +69,7 @@ struct ClientIp(IpAddr);
 
 struct AppState {
     networks: HashMap<Network, Pool>,
+    followers: HashMap<Network, Arc<Follower>>,
     prices: Option<Prices>,
     limiter: RateLimiter,
     ws_connections: ConnectionLimit,
@@ -86,12 +91,16 @@ impl AppState {
             .user_agent(USER_AGENT)
             .build()
             .map_err(|_| io::Error::other("创建 HTTP 客户端失败"))?;
-        let networks = config
+        let networks: HashMap<Network, Pool> = config
             .networks
             .iter()
             .map(|(network, upstreams)| (*network, Pool::new(*network, upstreams, &client, upstream_timeout)))
             .collect();
         Ok(Self {
+            followers: networks
+                .keys()
+                .map(|network| (*network, Arc::new(Follower::new(*network))))
+                .collect(),
             networks,
             prices: config
                 .prices
@@ -172,6 +181,10 @@ fn router(state: Arc<AppState>, web_dir: Option<&std::path::Path>) -> Router {
         .route("/version", get(version))
         .route("/prices", get(api::prices))
         .route("/ws", get(ws::upgrade))
+        .route(
+            "/snapshot",
+            post(api::snapshot).layer(DefaultBodyLimit::max(MAX_SNAPSHOT_BODY)),
+        )
         .route("/{network}/balances", post(api::balances))
         .route("/{network}/utxos", post(api::utxos))
         .route("/{network}/raw-txs", post(api::raw_txs))

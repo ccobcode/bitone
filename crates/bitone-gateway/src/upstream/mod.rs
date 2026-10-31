@@ -1,4 +1,4 @@
-//! 上游适配层。一个 trait，四条链各一个实现，都走 HTTP。
+//! 上游适配层。一个 trait，四条链各一个实现。查询都走 HTTP，只有跟块用长连接。
 //!
 //! 适配器只报告「这个上游这次不可用」。reqwest 的错误文本带 URL，
 //! URL 里可能有查询地址或 API key，所以错误内容一律丢弃，不传出也不记录。
@@ -18,13 +18,14 @@ use crate::cache::Cached;
 use crate::config::NetworkConfig;
 use crate::error::ApiError;
 use crate::raw::RawTx;
+use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method};
 use bitone_core::{Chain, Network};
 use electrum::Electrum;
 use esplora::Esplora;
 use evm::Evm;
 use futures_util::future::BoxFuture;
-use futures_util::{StreamExt, TryStreamExt, stream};
+use futures_util::{SinkExt, StreamExt, TryStreamExt, stream};
 use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -33,12 +34,17 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
-use tokio::time::timeout;
+use tokio::sync::{mpsc, watch};
+use tokio::time::{sleep, timeout};
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::Message;
 use tron::Tron;
 
-const NATIVE: &str = "native";
+pub const NATIVE: &str = "native";
 /// 单次查询里对同一上游的并发请求数。
 const CONCURRENCY: usize = 8;
+/// 连接长连接的时限。
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// 手续费随区块变化，几秒的误差没有影响。
 const FEES_TTL: Duration = Duration::from_secs(15);
 /// 区块相关的公共数据，比出块间隔略短。
@@ -47,6 +53,10 @@ const BLOCK_TTL: Duration = Duration::from_secs(3);
 const TRON_API_KEY: &str = "tron-pro-api-key";
 /// 游标里单个续页标记的长度上限。
 const MAX_CURSOR_TOKEN: usize = 512;
+/// 全部上游的长连接都断开后，隔这么久再试。其间网关轮询高度。
+const WATCH_RETRY: Duration = Duration::from_secs(30);
+/// 新块推送停了这么久就当连接已经失效。比最慢的出块间隔长。
+const HEAD_SILENCE: Duration = Duration::from_secs(90);
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Balance {
@@ -156,6 +166,16 @@ pub struct HistoryPage {
     pub checkpoint: u64,
     /// 上次之后没有任何变化，这一页没有查询地址。
     pub unchanged: bool,
+}
+
+/// 长连接发给跟块任务的信号。
+pub enum Signal {
+    /// 新高度。
+    Head(u64),
+    /// 这些地址有新动静，包括还在内存池的交易。
+    Touched(Vec<String>),
+    /// 长连接断了，改回轮询高度。
+    Lost,
 }
 
 /// 校验客户端传回的游标。键和标记都可能被拼进上游请求，所以只放行固定的字符。
@@ -299,6 +319,18 @@ pub trait Upstream: Send + Sync {
     -> Query<'a, HistoryPage>;
     fn broadcast<'a>(&'a self, raw: &'a RawTx) -> BoxFuture<'a, Broadcast>;
 
+    /// 保持一条长连接，发来新高度和地址变化，断开时返回。上游没有长连接时立刻返回。
+    fn watch(&self, _addresses: watch::Receiver<Vec<String>>, _signals: mpsc::Sender<Signal>) -> BoxFuture<'_, ()> {
+        Box::pin(async {})
+    }
+    /// 跟块时取这批地址最近的交易，`previous` 是上一轮的高度。默认取最新一页。
+    fn recent<'a>(&'a self, addresses: &'a [String], _previous: u64) -> Query<'a, Vec<HistoryItem>> {
+        Box::pin(async move {
+            let cursor = Cursor::new();
+            Ok(self.history(addresses, &cursor, None).await?.items)
+        })
+    }
+
     /// 内层的 `Err` 是节点拒绝这次调用，带节点原文，换上游也不会有不同结果。
     fn estimate<'a>(&'a self, _request: &'a Estimate) -> Query<'a, Result<Value, String>> {
         not_applicable()
@@ -324,6 +356,29 @@ pub trait Upstream: Send + Sync {
     }
     fn blockhash(&self) -> Query<'_, Value> {
         not_applicable()
+    }
+}
+
+/// 订阅节点的新块，收到的高度交给跟块任务。节点在 HTTP 地址上同时提供 WebSocket。
+async fn watch_heads(url: String, subscribe: Value, height: fn(&Value) -> Option<u64>, signals: mpsc::Sender<Signal>) {
+    let Ok(Ok((mut socket, _))) = timeout(CONNECT_TIMEOUT, connect_async(url)).await else {
+        return;
+    };
+    let subscribe = Message::text(subscribe.to_string());
+    if socket.send(subscribe).await.is_err() {
+        return;
+    }
+    while let Ok(Some(Ok(message))) = timeout(HEAD_SILENCE, socket.next()).await {
+        let Ok(text) = message.to_text() else { continue };
+        let Ok(value) = serde_json::from_str::<Value>(text) else {
+            continue;
+        };
+        let Some(head) = value.pointer("/params/result").and_then(height) else {
+            continue;
+        };
+        if signals.send(Signal::Head(head)).await.is_err() {
+            return;
+        }
     }
 }
 
@@ -365,6 +420,10 @@ impl Http {
             url: url.trim_end_matches('/').to_string(),
             headers,
         }
+    }
+
+    fn socket_url(&self) -> String {
+        self.url.replacen("http", "ws", 1)
     }
 
     fn request(&self, method: Method, path: &str) -> RequestBuilder {
@@ -538,16 +597,31 @@ impl Pool {
             .map(|url| {
                 let http = Http::new(client, url, headers.clone());
                 let tokens = config.tokens.clone();
+                let mut auth = HeaderMap::new();
+                if let Some(mut token) = config
+                    .indexer_token
+                    .as_deref()
+                    .and_then(|token| HeaderValue::from_str(&format!("Bearer {token}")).ok())
+                {
+                    token.set_sensitive(true);
+                    auth.insert(AUTHORIZATION, token);
+                }
+                let hypersync = config.indexer_token.is_some();
                 let indexer = config
                     .indexer
                     .as_deref()
-                    .map(|url| Http::new(client, url, HeaderMap::new()));
+                    .map(|url| Http::new(client, url, auth.clone()));
                 let upstream: Box<dyn Upstream> = match network.chain() {
                     Chain::Bitcoin => match Electrum::new(url, network) {
                         Some(electrum) => Box::new(electrum),
                         None => Box::new(Esplora { http, network }),
                     },
-                    Chain::Evm => Box::new(Evm { http, tokens, indexer }),
+                    Chain::Evm => Box::new(Evm {
+                        http,
+                        tokens,
+                        indexer,
+                        hypersync,
+                    }),
                     Chain::Tron => Box::new(Tron { http, tokens }),
                     Chain::Solana => Box::new(Solana { http, tokens }),
                 };
@@ -586,6 +660,11 @@ impl Pool {
         self.height.get(self.attempt(|upstream| upstream.height())).await
     }
 
+    /// 跟块用的高度，不走缓存。
+    pub async fn head(&self) -> Result<u64, ApiError> {
+        self.attempt(|upstream| upstream.height()).await
+    }
+
     pub async fn fees(&self) -> Result<Value, ApiError> {
         self.fees.get(self.attempt(|upstream| upstream.fees())).await
     }
@@ -602,6 +681,21 @@ impl Pool {
     ) -> Result<HistoryPage, ApiError> {
         self.attempt(|upstream| upstream.history(addresses, cursor, since))
             .await
+    }
+
+    pub async fn recent(&self, addresses: &[String], previous: u64) -> Result<Vec<HistoryItem>, ApiError> {
+        self.attempt(|upstream| upstream.recent(addresses, previous)).await
+    }
+
+    /// 依次用每个上游保持长连接，断开就换下一个，直到跟块任务结束。
+    pub async fn watch(&self, addresses: watch::Receiver<Vec<String>>, signals: mpsc::Sender<Signal>) {
+        while !signals.is_closed() {
+            for upstream in &self.upstreams {
+                upstream.watch(addresses.clone(), signals.clone()).await;
+                let _ = signals.send(Signal::Lost).await;
+            }
+            sleep(WATCH_RETRY).await;
+        }
     }
 
     /// EVM 没有配置索引服务时查不到历史，这是配置决定的，不是临时故障。

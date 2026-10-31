@@ -90,18 +90,27 @@ export async function savePairing(pairing: Pairing, { name, paths, mode }: Pairi
     return wallet;
 }
 
-/** 取得一个地址，还没派生时派生并写入。 */
-export async function ensureAddress(account: Account, mode: Mode, index: number, change: 0 | 1 = 0): Promise<Address> {
+function newAddress(account: Account, mode: Mode, index: number, change: 0 | 1): Address {
     if (index >= MAX_ADDRESS_INDEX) throw new Error(t("地址序号超出上限"));
-    const existing = await db.addresses.get([account.id, change, index]);
-    if (existing) return existing;
-    const address: Address = {
+    return {
         accountId: account.id,
         change,
         index,
         address: deriveAddress(account, mode, change, index),
         verified: false,
     };
+}
+
+/** 取得一个地址，还没派生时派生，不写入。 */
+export async function draftAddress(account: Account, mode: Mode, index: number, change: 0 | 1): Promise<Address> {
+    return (await db.addresses.get([account.id, change, index])) ?? newAddress(account, mode, index, change);
+}
+
+/** 取得一个地址，还没派生时派生并写入。 */
+export async function ensureAddress(account: Account, mode: Mode, index: number, change: 0 | 1 = 0): Promise<Address> {
+    const existing = await db.addresses.get([account.id, change, index]);
+    if (existing) return existing;
+    const address = newAddress(account, mode, index, change);
     await db.addresses.put(address);
     return address;
 }

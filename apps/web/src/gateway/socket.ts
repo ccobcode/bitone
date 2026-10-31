@@ -16,12 +16,14 @@ export type SocketStatus = "connecting" | "live" | "retrying" | "degraded";
 
 export interface SocketEvents {
     onStatus(status: SocketStatus, retryAt: number | null): void;
-    /** 收到某地址的新余额，内容还没校验。 */
-    onUpdate(network: string, address: string, balances: unknown): void;
+    /** 收到这批地址的跟块推送，内容还没校验。 */
+    onUpdate(network: string, addresses: readonly string[], update: unknown): void;
     /** 收到交易的最终性变化，内容还没校验。 */
     onTx?(network: string, tx: unknown): void;
     /** 新增的交易订阅收到回复。网关先取好基线再回复，这时要用 HTTP 补一次，基线本身不会推送。 */
     onTxWatched?(network: string, hash: string): void;
+    /** 地址变化后这个网络的订阅全部收到回复，这时要用 HTTP 补一次，理由同上。 */
+    onAddressesWatched?(network: string): void;
     onPrices?(prices: unknown): void;
     /**
      * 全部订阅都收到了回复。网关先取好基线再回复，所以这时用 HTTP 补一次不会漏掉变化，
@@ -40,8 +42,15 @@ export interface WatchedTx {
     hash: string;
 }
 
+/** `stale` 是还没等到回复地址就变了，回复后要退订。 */
 type Topic =
-    { kind: "addresses"; network: string } | { kind: "tx"; network: string; hash: string } | { kind: "prices" };
+    | { kind: "addresses"; network: string; addresses: readonly string[]; stale?: boolean }
+    | { kind: "tx"; network: string; hash: string }
+    | { kind: "prices" };
+
+function batchKey({ network, addresses }: { network: string; addresses: readonly string[] }): string {
+    return `${network}|${addresses[0]}`;
+}
 
 function txKey({ network, hash }: WatchedTx): string {
     return `${network}|${hash}`;
@@ -83,14 +92,22 @@ export class BalanceSocket {
         this.#drop();
     }
 
-    /** 地址变化时调用。旧订阅随连接失效，换一条连接比逐个退订简单。 */
+    /** 地址变化时调用。只换变了的那批订阅，连接和其他批次不动，否则每变一次全部都要重查。 */
     setTargets(targets: Target[]): void {
-        const changed = JSON.stringify(targets) !== JSON.stringify(this.#targets);
+        const before = this.#allowed();
         this.#targets = targets;
-        if (!changed || this.#stopped) return;
-        if (this.#socket?.readyState === WebSocket.OPEN) {
-            this.#drop();
-            this.#connect();
+        const after = this.#allowed();
+        const socket = this.#socket;
+        if (this.#stopped || socket?.readyState !== WebSocket.OPEN) return;
+        const changed = (key: string) => before.get(key)?.addresses.join() !== after.get(key)?.addresses.join();
+        for (const [id, topic] of this.#subscriptions) {
+            if (topic.kind === "addresses" && changed(batchKey(topic))) this.#unsubscribe(socket, id);
+        }
+        for (const topic of this.#pending.values()) {
+            if (topic.kind === "addresses" && changed(batchKey(topic))) topic.stale = true;
+        }
+        for (const [key, target] of after) {
+            if (changed(key)) this.#subscribeAddresses(socket, target);
         }
     }
 
@@ -101,12 +118,7 @@ export class BalanceSocket {
         const open = socket?.readyState === WebSocket.OPEN;
         if (open) {
             for (const [id, topic] of this.#subscriptions) {
-                if (topic.kind === "tx" && !next.has(txKey(topic))) {
-                    this.#subscriptions.delete(id);
-                    socket.send(
-                        JSON.stringify({ jsonrpc: "2.0", id: this.#nextId++, method: "unsubscribe", params: [id] }),
-                    );
-                }
+                if (topic.kind === "tx" && !next.has(txKey(topic))) this.#unsubscribe(socket, id);
             }
             for (const [key, tx] of next) if (!this.#txs.has(key)) this.#subscribeTx(socket, tx);
         }
@@ -199,21 +211,38 @@ export class BalanceSocket {
         this.#timer = setTimeout(() => this.#connect(), delay);
     }
 
-    #subscribe(socket: WebSocket): void {
+    /** 单连接上限内要订阅的批次，键是 `网络|第一个地址`。 */
+    #allowed(): Map<string, Target> {
         let room = MAX_SUBSCRIBED;
+        const allowed = new Map<string, Target>();
         for (const { network, addresses } of this.#targets) {
-            const allowed = addresses.slice(0, room);
-            room -= allowed.length;
-            for (let i = 0; i < allowed.length; i += MAX_ADDRESSES) {
-                this.#request(
-                    socket,
-                    { kind: "addresses", network },
-                    { channel: "addresses", network, addresses: allowed.slice(i, i + MAX_ADDRESSES) },
-                );
-            }
+            const target = { network, addresses: addresses.slice(0, room) };
+            if (target.addresses.length > 0) allowed.set(batchKey(target), target);
+            room -= target.addresses.length;
         }
+        return allowed;
+    }
+
+    #subscribe(socket: WebSocket): void {
+        for (const target of this.#allowed().values()) this.#subscribeAddresses(socket, target);
         for (const tx of this.#txs.values()) this.#subscribeTx(socket, tx);
         if (this.#prices) this.#subscribePrices(socket);
+    }
+
+    #subscribeAddresses(socket: WebSocket, { network, addresses }: Target): void {
+        for (let i = 0; i < addresses.length; i += MAX_ADDRESSES) {
+            const chunk = addresses.slice(i, i + MAX_ADDRESSES);
+            this.#request(
+                socket,
+                { kind: "addresses", network, addresses: chunk },
+                { channel: "addresses", network, addresses: chunk },
+            );
+        }
+    }
+
+    #unsubscribe(socket: WebSocket, id: string): void {
+        this.#subscriptions.delete(id);
+        socket.send(JSON.stringify({ jsonrpc: "2.0", id: this.#nextId++, method: "unsubscribe", params: [id] }));
     }
 
     #subscribeTx(socket: WebSocket, { network, hash }: WatchedTx): void {
@@ -230,6 +259,12 @@ export class BalanceSocket {
         socket.send(JSON.stringify({ jsonrpc: "2.0", id, method: "subscribe", params }));
     }
 
+    #waitingFor(network: string): boolean {
+        return [...this.#pending.values()].some(
+            (topic) => topic.kind === "addresses" && topic.network === network && !topic.stale,
+        );
+    }
+
     #message(data: unknown): void {
         if (typeof data !== "string") return;
         let message: { id?: unknown; result?: unknown; method?: unknown; params?: Record<string, unknown> };
@@ -242,9 +277,16 @@ export class BalanceSocket {
             const topic = this.#pending.get(message.id);
             if (!topic) return;
             this.#pending.delete(message.id);
-            if (typeof message.result === "string") this.#subscriptions.set(message.result, topic);
+            const stale = topic.kind === "addresses" && topic.stale;
+            const id = typeof message.result === "string" ? message.result : null;
+            if (stale) {
+                if (id && this.#socket) this.#unsubscribe(this.#socket, id);
+            } else if (id) this.#subscriptions.set(id, topic);
             else this.#rejected = true;
             if (!this.#opening && topic.kind === "tx") this.#events.onTxWatched?.(topic.network, topic.hash);
+            if (!this.#opening && topic.kind === "addresses" && !stale && !this.#waitingFor(topic.network)) {
+                this.#events.onAddressesWatched?.(topic.network);
+            }
             if (this.#pending.size > 0) return;
             if (this.#rejected) this.#events.onStatus("degraded", null);
             if (this.#opening) {
@@ -254,10 +296,9 @@ export class BalanceSocket {
             return;
         }
         if (message.method !== "update") return;
-        const { subscription, address, balances, tx, prices } = message.params ?? {};
+        const { subscription, tx, prices } = message.params ?? {};
         const topic = typeof subscription === "string" ? this.#subscriptions.get(subscription) : undefined;
-        if (topic?.kind === "addresses" && typeof address === "string")
-            this.#events.onUpdate(topic.network, address, balances);
+        if (topic?.kind === "addresses") this.#events.onUpdate(topic.network, topic.addresses, message.params);
         if (topic?.kind === "tx") this.#events.onTx?.(topic.network, tx);
         if (topic?.kind === "prices") this.#events.onPrices?.(prices);
     }

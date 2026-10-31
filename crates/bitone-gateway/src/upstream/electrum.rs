@@ -7,7 +7,10 @@
 use super::esplora::{
     FAST_TARGET, FINAL_CONFIRMATIONS, MEDIUM_TARGET, SLOW_TARGET, fee_rates, history_item, is_already_known, parse_tx,
 };
-use super::{Balance, Broadcast, Cursor, Failed, HistoryPage, NATIVE, Query, Tx, Upstream, Utxo, balance, rejected};
+use super::{
+    Balance, Broadcast, Cursor, Failed, HistoryItem, HistoryPage, NATIVE, Query, Signal, Tx, Upstream, Utxo, balance,
+    rejected,
+};
 use crate::raw::RawTx;
 use bitcoin::consensus::deserialize;
 use bitcoin::hashes::{Hash, sha256};
@@ -23,8 +26,11 @@ use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
+use tokio::sync::{mpsc, watch};
+use tokio::time::{interval, timeout};
 use tokio_rustls::TlsConnector;
 
 const PROTOCOL: &str = "1.4";
@@ -40,6 +46,9 @@ const SAT_PER_VB: f64 = 100_000.0;
 const REJECTED: i64 = 1;
 /// electrs 系的错误码不区分拒绝和节点故障，要看它转述的节点错误码，这三个是交易本身的问题。
 const NODE_REJECTIONS: [&str; 3] = ["-25", "-26", "-27"];
+/// 长连接的心跳。服务器会断开长时间没有请求的连接，连接死了也要靠它发现。
+const PING_INTERVAL: Duration = Duration::from_secs(60);
+const PING_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// 上游地址的写法，决定是否验证证书。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,19 +143,33 @@ type Call = (&'static str, Value);
 struct Session {
     stream: BufReader<Box<dyn Stream>>,
     next: u64,
+    /// 读到一半的行。等推送时读取可能被打断，下次接着读。
+    line: Vec<u8>,
+    /// 等回复时收到的推送，回复处理完再看。
+    pushes: Vec<Value>,
 }
 
 impl Session {
+    /// 读一条消息。可以被 `select!` 打断，读到一半的内容留在 `line` 里。
+    async fn read_message(&mut self) -> Result<Value, Failed> {
+        let read = (&mut self.stream)
+            .take(MAX_LINE)
+            .read_until(b'\n', &mut self.line)
+            .await;
+        if read.map_err(|_| Failed)? == 0 || self.line.len() as u64 >= MAX_LINE {
+            return Err(Failed);
+        }
+        let message = serde_json::from_slice(&self.line).map_err(|_| Failed);
+        self.line.clear();
+        message
+    }
+
     async fn read_reply(&mut self) -> Result<(u64, Reply), Failed> {
         loop {
-            let mut line = String::new();
-            let read = (&mut self.stream).take(MAX_LINE).read_line(&mut line).await;
-            if read.map_err(|_| Failed)? == 0 {
-                return Err(Failed);
-            }
-            let message: Value = serde_json::from_str(&line).map_err(|_| Failed)?;
-            // 区块头订阅的推送没有 id。
+            let message = self.read_message().await?;
+            // 区块头和地址订阅的推送没有 id。
             let Some(id) = message.get("id").and_then(Value::as_u64) else {
+                self.pushes.push(message);
                 continue;
             };
             let error = message.get("error").filter(|error| !error.is_null());
@@ -396,9 +419,63 @@ impl Electrum {
         let mut session = Session {
             stream: BufReader::new(stream),
             next: 1,
+            line: Vec::new(),
+            pushes: Vec::new(),
         };
         session.one("server.version", json!(["bitone", PROTOCOL])).await?;
         Ok(session)
+    }
+
+    /// 一条长连接：订阅区块头和全部地址，把推送转给跟块任务。推送包含内存池里的交易。
+    async fn follow(
+        &self,
+        mut addresses: watch::Receiver<Vec<String>>,
+        signals: mpsc::Sender<Signal>,
+    ) -> Result<(), Failed> {
+        let mut session = self.open().await?;
+        let tip = session.tip().await?;
+        signals.send(Signal::Head(tip)).await.map_err(|_| Failed)?;
+        let mut owners: HashMap<String, String> = HashMap::new();
+        let mut known: HashSet<String> = HashSet::new();
+        let mut ping = interval(PING_INTERVAL);
+        ping.tick().await;
+        let mut connected = true;
+        loop {
+            let fresh: Vec<String> = addresses
+                .borrow_and_update()
+                .iter()
+                .filter(|address| !known.contains(*address))
+                .cloned()
+                .collect();
+            if !fresh.is_empty() {
+                let calls = by_address("blockchain.scripthash.subscribe", &fresh)?;
+                for reply in session.call(&calls).await? {
+                    reply.map_err(|_| Failed)?;
+                }
+                for address in &fresh {
+                    owners.insert(address_hash(address)?, address.clone());
+                }
+                known.extend(fresh.iter().cloned());
+                // 上一条连接断开期间可能错过推送，换连接后补一次。
+                if connected {
+                    signals.send(Signal::Touched(fresh)).await.map_err(|_| Failed)?;
+                }
+            }
+            connected = false;
+            let pushes = std::mem::take(&mut session.pushes);
+            for push in &pushes {
+                forward(push, &owners, &signals).await?;
+            }
+            tokio::select! {
+                message = session.read_message() => forward(&message?, &owners, &signals).await?,
+                changed = addresses.changed() => changed.map_err(|_| Failed)?,
+                _ = ping.tick() => {
+                    timeout(PING_TIMEOUT, session.one("server.ping", json!([])))
+                        .await
+                        .map_err(|_| Failed)??;
+                }
+            }
+        }
     }
 
     fn address_of(&self, output: &TxOut) -> Option<String> {
@@ -623,7 +700,46 @@ impl Electrum {
     }
 }
 
+/// 把一条推送转给跟块任务。没有 id 的消息只有这两种。
+async fn forward(
+    message: &Value,
+    owners: &HashMap<String, String>,
+    signals: &mpsc::Sender<Signal>,
+) -> Result<(), Failed> {
+    let params = message.get("params");
+    let signal = match message.get("method").and_then(Value::as_str) {
+        Some("blockchain.headers.subscribe") => {
+            let height = params
+                .and_then(|params| params.pointer("/0/height"))
+                .and_then(Value::as_u64);
+            Signal::Head(height.ok_or(Failed)?)
+        }
+        Some("blockchain.scripthash.subscribe") => {
+            let hash = params.and_then(|params| params.get(0)).and_then(Value::as_str);
+            let owner = hash.and_then(|hash| owners.get(hash)).ok_or(Failed)?;
+            Signal::Touched(vec![owner.clone()])
+        }
+        _ => return Ok(()),
+    };
+    signals.send(signal).await.map_err(|_| Failed)
+}
+
 impl Upstream for Electrum {
+    fn watch(&self, addresses: watch::Receiver<Vec<String>>, signals: mpsc::Sender<Signal>) -> BoxFuture<'_, ()> {
+        Box::pin(async move {
+            let _ = self.follow(addresses, signals).await;
+        })
+    }
+
+    fn recent<'a>(&'a self, addresses: &'a [String], previous: u64) -> Query<'a, Vec<HistoryItem>> {
+        Box::pin(async move {
+            // 从不可回滚的位置之前开始，这样不会命中「高度没变」的捷径，内存池的交易也在里面。
+            let since = previous.saturating_sub(FINAL_CONFIRMATIONS);
+            let cursor = Cursor::new();
+            Ok(self.page(addresses, &cursor, Some(since)).await?.items)
+        })
+    }
+
     fn balances<'a>(&'a self, addresses: &'a [String]) -> Query<'a, Vec<Balance>> {
         Box::pin(self.balances_of(addresses))
     }

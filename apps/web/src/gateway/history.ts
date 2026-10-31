@@ -1,11 +1,11 @@
 // 交易记录：本地 txs 合并缓存的链上历史。本地记录优先，它的状态由状态机决定。
-import { networkName, type Mode } from "../core";
+import { networkName } from "../core";
 import { explorerLink } from "../core/explorer";
 import { formatAsset, lookupAsset } from "../core/manifest";
 import { shortAddress } from "../core/text";
-import { txKey, type Account, type Address, type ChainEntry, type Note, type TxRecord } from "../data/db";
+import { txKey, type ChainEntry, type FeedCursor, type Note, type TxRecord } from "../data/db";
 import { STATE_GROUPS, STATE_LABELS, failureNote, type ChainStatus, type StateGroup } from "../data/machine";
-import { accountNetworks } from "./assets";
+import type { Target } from "./assets";
 import { MAX_ADDRESSES, addressKey, type HistoryItem } from "./client";
 import { t } from "../core/i18n";
 
@@ -14,28 +14,22 @@ export interface HistoryStream {
     addresses: string[];
 }
 
-/** 每个网络的地址按单次上限分批。游标绑定一批地址，翻页时不能换。 */
+/** 已同步过的批次保持不变，翻页游标绑定它们。没同步过的地址按单次上限分成新批次。 */
 export function historyStreams(
-    accounts: readonly Account[],
-    addresses: readonly Address[],
-    mode: Mode,
-    supported: readonly string[],
+    walletId: string,
+    targets: readonly Target[],
+    cursors: readonly FeedCursor[],
 ): HistoryStream[] {
-    const byNetwork = new Map<string, Set<string>>();
-    for (const account of accounts) {
-        for (const network of accountNetworks(account, mode, supported)) {
-            const set = byNetwork.get(network) ?? new Set<string>();
-            for (const row of addresses) if (row.accountId === account.id) set.add(row.address);
-            byNetwork.set(network, set);
+    return targets.flatMap(({ network, addresses }) => {
+        const kept = cursors
+            .filter((cursor) => cursor.network === network && cursor.id.startsWith(`${walletId}:`))
+            .map((cursor) => ({ network, addresses: cursor.addresses }));
+        const synced = new Set(kept.flatMap((stream) => stream.addresses));
+        const fresh = addresses.filter((address) => !synced.has(address));
+        for (let i = 0; i < fresh.length; i += MAX_ADDRESSES) {
+            kept.push({ network, addresses: fresh.slice(i, i + MAX_ADDRESSES) });
         }
-    }
-    return [...byNetwork].flatMap(([network, set]) => {
-        const list = [...set];
-        const streams: HistoryStream[] = [];
-        for (let i = 0; i < list.length; i += MAX_ADDRESSES) {
-            streams.push({ network, addresses: list.slice(i, i + MAX_ADDRESSES) });
-        }
-        return streams;
+        return kept;
     });
 }
 

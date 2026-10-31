@@ -1,48 +1,35 @@
-// 网关连接状态、余额、价格和交易跟踪。HTTP 由 TanStack Query 管理，WebSocket 推送直接写入同一份缓存。
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+// 网关连接状态、余额、价格和交易跟踪。余额和链上记录在本地库里，快照和推送都写入本地，界面只读本地。
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { liveQuery } from "dexie";
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useApp } from "../data/app";
+import { assetsOf } from "../core/manifest";
+import { useApp, useLive } from "../data/app";
+import { db } from "../data/db";
 import { discoverAccount } from "../data/discovery";
-import { hasOpenEntries, syncFeed } from "../data/feed";
+import { applyChainUpdate, hasOpenEntries, loadOlder as fetchOlder, syncFeed, type FeedFailure } from "../data/feed";
 import { historyStreams, type HistoryStream } from "./history";
 import { onSync } from "../data/sync";
 import { sweepExpired } from "../data/txs";
-import { accountNetworks, applyUpdate, buildTargets, type Target } from "./assets";
-import {
-    addressKey,
-    fetchBalances,
-    fetchPrices,
-    fetchVersion,
-    parseBalances,
-    parsePrices,
-    type Balance,
-    type PriceMap,
-} from "./client";
+import { accountNetworks, buildTargets, type Target } from "./assets";
+import { fetchPrices, fetchVersion, parsePrices, parseUpdate, type Balance, type PriceMap } from "./client";
 import { BalanceSocket, type SocketStatus } from "./socket";
 import { applyPush, pollOpenTxs, watchedTxs } from "./tracker";
 import { t } from "../core/i18n";
 
 /** 断线时的 HTTP 轮询间隔。 */
 export const POLL_INTERVAL = 15_000;
-const FEED_HINT_DELAY = 2000;
 const FEED_OPEN_INTERVAL = 60_000;
 /** 连接正常时也要轮询，推送只带状态，被替换要靠 HTTP 查 nonce 和 UTXO。 */
 const LIVE_POLL_INTERVAL = 60_000;
 /** 检查本地到期和该不该轮询的间隔。 */
 const TICK_INTERVAL = 5000;
 
-interface NetworkFailure {
-    network: string;
-    code: string;
-}
-
 interface GatewayState {
     /** 网关配置了上游的网络。 */
     supported: string[];
     targets: Target[];
     balances: Map<string, Balance[]>;
-    failures: NetworkFailure[];
+    failures: FeedFailure[];
     /** 全部查询都还没有结果。 */
     loading: boolean;
     /** HTTP 不可用，或者全部网络都查询失败。 */
@@ -64,6 +51,8 @@ interface GatewayState {
     syncing: boolean;
     /** 这次同步失败的网络。 */
     syncFailed: string[];
+    /** 往前翻一页交易记录。 */
+    loadOlder(streams: readonly HistoryStream[]): Promise<void>;
 }
 
 const GatewayContext = createContext<GatewayState | null>(null);
@@ -78,6 +67,9 @@ async function timedVersion() {
     const version = await fetchVersion();
     return { ...version, latency: Math.round(performance.now() - started) };
 }
+
+/** 手续费、nonce 这类随链变化的查询。地址发现不在内，重连时重跑发现会写入地址，又引发一轮查询。 */
+const chainData = { queryKey: ["chain"] };
 
 export function GatewayProvider({ children }: { children: ReactNode }) {
     const { accounts, addresses, mode } = useApp();
@@ -111,17 +103,30 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
 
     // 地址发现只用于 Bitcoin。派生出的新地址写入 addresses，余额和订阅随之更新。
     const walletId = accounts[0]?.walletId;
+    const cursors = useLive(() => db.feedCursors.toArray(), []);
+    const streams = useMemo(() => historyStreams(walletId ?? "", targets, cursors ?? []), [walletId, targets, cursors]);
     const feedStreams = useMemo(
-        () =>
-            historyStreams(accounts, addresses, mode, supported).filter(
-                (stream) => !noHistory.includes(stream.network),
-            ),
-        [accounts, addresses, mode, supported, noHistory],
+        () => streams.filter((stream) => !noHistory.includes(stream.network)),
+        [streams, noHistory],
     );
-    const feedTarget = useRef({ walletId, streams: feedStreams });
+    const feedTarget = useRef({ walletId, streams, noHistory });
     const feedRun = useRef({ running: false, again: false });
-    const feedHint = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const [feed, setFeed] = useState({ syncing: false, failed: [] as string[] });
+    const [feed, setFeed] = useState({
+        syncing: false,
+        failed: [] as string[],
+        failures: [] as FeedFailure[],
+        updatedAt: 0,
+    });
+    const stored = useLive(() => db.balances.toArray(), []);
+    const balances = useMemo(() => {
+        const grouped = new Map<string, Balance[]>();
+        for (const { network, address, asset, amount } of stored ?? []) {
+            const rows = grouped.get(network) ?? [];
+            rows.push({ address, asset, amount: BigInt(amount) });
+            grouped.set(network, rows);
+        }
+        return grouped;
+    }, [stored]);
 
     // 同一时间只跑一轮，期间的请求合并成跑完后再来一轮。
     const syncNow = useCallback(async () => {
@@ -132,14 +137,16 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         }
         run.running = true;
         setFeed((previous) => ({ ...previous, syncing: true }));
-        let failed: string[] = [];
+        let result: { failed: string[]; failures: FeedFailure[] } = { failed: [], failures: [] };
         do {
             run.again = false;
             const target = feedTarget.current;
-            if (target.walletId) failed = await syncFeed(target.walletId, target.streams);
+            if (target.walletId) {
+                result = await syncFeed(target.walletId, target.streams, assetsOf, target.noHistory);
+            }
         } while (run.again);
         run.running = false;
-        setFeed({ syncing: false, failed });
+        setFeed({ syncing: false, updatedAt: Date.now(), ...result });
     }, []);
     const discovery = useQuery({
         queryKey: ["discovery", walletId, supported.join(",")],
@@ -156,18 +163,9 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         retry: 1,
     });
 
-    const results = useQueries({
-        queries: targets.map(({ network, addresses }) => ({
-            queryKey: ["balances", network, addresses.join(",")],
-            queryFn: () => fetchBalances(network, addresses),
-            retry: 1,
-            // 推送只更新已有结果，查询失败的网络要继续重试，不能等推送。
-            refetchInterval: (query: { state: { status: string } }) =>
-                live && query.state.status !== "error" ? false : POLL_INTERVAL,
-        })),
-    });
-
-    const targetsRef = useRef(targets);
+    const streamsRef = useRef(streams);
+    /** 每批地址收到的最后一个高度，用来发现漏掉的推送。 */
+    const heights = useRef(new Map<string, number>());
     const socketRef = useRef<BalanceSocket | null>(null);
     const supportedRef = useRef(supported);
     const lastPoll = useRef(0);
@@ -184,31 +182,30 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
                 // 断线不一定是网关挂了，立刻用 HTTP 确认一次，不等下一轮轮询。
                 if (status === "retrying") void client.invalidateQueries({ queryKey: ["version"] });
             },
-            // 先订阅再补一次增量，这样下载和订阅之间到账的交易不会丢。
+            // 先订阅再取快照，这样两者之间到账的交易不会丢。
             onReady: () => {
-                void client.invalidateQueries();
+                heights.current.clear();
+                void client.invalidateQueries(chainData);
                 void pollTxs();
                 void syncNow();
             },
+            onAddressesWatched: () => void syncNow(),
             onTx: (network, tx) => void applyPush(network, tx),
             onTxWatched: () => void pollTxs(),
             onPrices: (raw) => client.setQueryData(["prices"], parsePrices(raw)),
-            onUpdate: (network, address, raw) => {
-                const key = addressKey(address);
-                const local = targetsRef.current
-                    .find((target) => target.network === network)
-                    ?.addresses.find((candidate) => addressKey(candidate) === key);
-                if (!local) return;
-                // 余额变了说明有新交易。一批地址可能同时推送，等一下再取增量。
-                if (feedHint.current !== null) clearTimeout(feedHint.current);
-                feedHint.current = setTimeout(() => void syncNow(), FEED_HINT_DELAY);
-                const next = parseBalances(raw, [local]);
-                client.setQueriesData<Balance[]>({ queryKey: ["balances", network] }, (previous) =>
-                    previous ? applyUpdate(previous, local, next) : previous,
-                );
+            onUpdate: (network, addresses, raw) => {
+                const update = parseUpdate(raw, addresses);
+                const { walletId: wallet } = feedTarget.current;
+                if (!update || !wallet) return;
+                const key = `${network}|${addresses[0]}`;
+                const last = heights.current.get(key);
+                heights.current.set(key, update.height);
+                void applyChainUpdate(wallet, { network, addresses: [...addresses] }, update);
+                // 接不上说明中间漏了推送，交易没取到时网关也会说。两种情况都取一次快照补齐。
+                if ((last !== undefined && update.previous !== last) || update.items === null) void syncNow();
             },
         });
-        socket.setTargets(targetsRef.current);
+        socket.setTargets(streamsRef.current);
         socket.start();
         socket.watchPrices();
         socketRef.current = socket;
@@ -219,9 +216,9 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
     }, [client, pollTxs, syncNow]);
 
     useEffect(() => {
-        targetsRef.current = targets;
-        socketRef.current?.setTargets(targets);
-    }, [targets]);
+        streamsRef.current = streams;
+        socketRef.current?.setTargets(streams);
+    }, [streams]);
 
     useEffect(() => {
         supportedRef.current = supported;
@@ -255,9 +252,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
     useEffect(
         () =>
             onSync(() => {
-                void client.invalidateQueries({
-                    predicate: ({ queryKey: [head] }) => head === "balances" || head === "chain" || head === "history",
-                });
+                void client.invalidateQueries(chainData);
             }),
         [client],
     );
@@ -267,31 +262,27 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         void client.invalidateQueries();
     }, [client]);
 
-    const balances = new Map<string, Balance[]>();
-    const failures: NetworkFailure[] = [];
-    targets.forEach(({ network }, i) => {
-        const result = results[i];
-        if (result?.data) balances.set(network, result.data);
-        if (result?.isError) {
-            const code = (result.error as { code?: string }).code ?? "unreachable";
-            failures.push({ network, code });
-        }
-    });
-
+    const failures = feed.failures.filter((failure) => targets.some((target) => target.network === failure.network));
     const everyNetworkFailed = targets.length > 0 && failures.length === targets.length;
     // 全部网络都查询失败也算不可用，版本接口正常不代表上游正常。
     const httpOk = version.isSuccess && !everyNetworkFailed;
-    const lastUpdated = Math.max(0, ...results.map((result) => result.dataUpdatedAt));
 
     useEffect(() => {
-        feedTarget.current = { walletId, streams: feedStreams };
-    }, [walletId, feedStreams]);
+        feedTarget.current = { walletId, streams, noHistory };
+    }, [walletId, streams, noHistory]);
 
     // 地址列表换了引用不算变化，换钱包或地址数量变了才同步。
-    const feedKey = [walletId, ...feedStreams.map((stream) => `${stream.network}:${stream.addresses.length}`)].join();
+    const feedKey = [walletId, ...streams.map((stream) => `${stream.network}:${stream.addresses.length}`)].join();
     useEffect(() => {
         if (feedKey) void syncNow();
     }, [feedKey, syncNow]);
+
+    // 推送断开时靠轮询，查询失败的网络也要继续重试，不能等推送。
+    useEffect(() => {
+        if (live && feed.failures.length === 0) return;
+        const timer = setInterval(() => void syncNow(), POLL_INTERVAL);
+        return () => clearInterval(timer);
+    }, [live, feed.failures.length, syncNow]);
 
     // 确认中的记录没有余额变化也要更新状态，全部有定论后就不再请求。
     useEffect(() => {
@@ -310,12 +301,12 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         targets,
         balances,
         failures,
-        loading: version.isPending || results.some((result) => result.isPending),
+        loading: version.isPending || (feed.updatedAt === 0 && (stored ?? []).length === 0),
         down: !version.isPending && !httpOk,
         httpOk,
         socket: socketState.status,
         retryAt: socketState.retryAt,
-        lastUpdated,
+        lastUpdated: feed.updatedAt,
         latency: version.data?.latency ?? null,
         prices: prices.data ?? null,
         discoveryFailed: discovery.isError,
@@ -324,6 +315,9 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         feedStreams,
         syncing: feed.syncing,
         syncFailed: feed.failed,
+        loadOlder: async (list) => {
+            if (walletId) await fetchOlder(walletId, list);
+        },
     };
     return <GatewayContext value={value}>{children}</GatewayContext>;
 }

@@ -1,13 +1,14 @@
 //! Solana。标准 JSON-RPC 节点。
 
 use super::{
-    Balance, Broadcast, Cursor, Estimate, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, StreamPage, Tx,
-    TxStatus, Upstream, balance, merge_pages, rejected, run_all, stream_index,
+    Balance, Broadcast, Cursor, Estimate, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, Signal, StreamPage,
+    Tx, TxStatus, Upstream, balance, merge_pages, rejected, run_all, stream_index, watch_heads,
 };
 use crate::raw::RawTx;
 use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
+use tokio::sync::{mpsc, watch};
 
 /// 主网已有版本 1 的交易，不声明这里的版本号时 getTransaction 会直接报错。
 const MAX_TX_VERSION: u64 = 1;
@@ -18,6 +19,8 @@ const MEDIUM_FLOOR: u64 = 1000;
 const FAST_FLOOR: u64 = 100_000;
 /// 一次历史查询里每条记录流的条数。getTransaction 要逐笔调用，这个值不能大。
 const PAGE_SIZE: usize = 25;
+/// 跟块时往回看的 slot 数，约两分钟。
+const RECENT_SLOTS: u64 = 300;
 
 pub struct Solana {
     pub http: Http,
@@ -460,6 +463,21 @@ impl Upstream for Solana {
                     .collect(),
             )
             .await
+        })
+    }
+
+    fn watch(&self, _addresses: watch::Receiver<Vec<String>>, signals: mpsc::Sender<Signal>) -> BoxFuture<'_, ()> {
+        let subscribe = json!({"jsonrpc": "2.0", "id": 1, "method": "slotSubscribe"});
+        let slot = |result: &Value| result.get("slot")?.as_u64();
+        Box::pin(watch_heads(self.http.socket_url(), subscribe, slot, signals))
+    }
+
+    fn recent<'a>(&'a self, addresses: &'a [String], previous: u64) -> Query<'a, Vec<HistoryItem>> {
+        Box::pin(async move {
+            // 余额是 finalized，比交易的 confirmed 晚十几秒才变，所以要往回多看一段。
+            let since = previous.saturating_sub(RECENT_SLOTS);
+            let cursor = Cursor::new();
+            Ok(self.page(addresses, &cursor, Some(since)).await?.items)
         })
     }
 

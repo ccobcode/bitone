@@ -18,6 +18,29 @@
 
 只返回配置了上游的网络。Chain ID 等信息内置在网页端，这里不提供。
 
+## POST /v1/snapshot
+
+一次取回多个网络的最新状态。响应是一行一个 JSON，哪批先查完就先发，慢的网络不拖累其他网络，一个网络失败也不影响其他网络。
+
+```json
+{
+    "items": [
+        { "network": "ethereum", "address": "0x...", "since": "20000000", "group": 0 },
+        { "network": "ethereum", "address": "0x...", "contract": "0x...", "since": "20000000", "group": 0 },
+        { "network": "bitcoin", "address": "bc1...", "group": 1 }
+    ]
+}
+```
+
+没有 `contract` 时是原生币。`since` 是这批地址上次的 `checkpoint`。`group` 是客户端的分批编号，同一网络、同一 `since`、同一 `group` 的条目一起查询，一组最多 100 个地址。一次最多 1000 个条目。
+
+```text
+{"network":"ethereum","addresses":["0x..."],"height":20000100,"balances":[{"address":"0x...","asset":"native","amount":"1"}],"history":{"items":[],"cursor":null,"checkpoint":"20000040","unchanged":false}}
+{"network":"bitcoin","addresses":["bc1..."],"error":"upstream_unavailable"}
+```
+
+`height` 在查询之前取，之后的变化都在它之上。`balances` 只含请求的资产，`history` 的格式与 `/history` 相同，翻页和增量都接着用 `/history`。余额或历史没查到时对应字段为 `null`，没有索引服务的网络 `history` 也是 `null`。
+
 ## POST /v1/{network}/balances
 
 请求：
@@ -214,15 +237,27 @@ JSON-RPC 2.0。`addresses` 频道：
 }
 ```
 
-响应 `{"jsonrpc": "2.0", "id": 1, "result": "<订阅 ID>"}`。余额变化时推送：
+网关先取好基线和当时的高度，再回复 `{"jsonrpc": "2.0", "id": 1, "result": "<订阅 ID>"}`。有新高度时推送：
 
 ```json
-{ "jsonrpc": "2.0", "method": "update", "params": { "subscription": "<订阅 ID>", "address": "0x...", "balances": [] } }
+{
+    "jsonrpc": "2.0",
+    "method": "update",
+    "params": {
+        "subscription": "<订阅 ID>",
+        "height": 20000101,
+        "previous": 20000100,
+        "balances": [{ "address": "0x...", "asset": "native", "amount": "1" }],
+        "txs": []
+    }
+}
 ```
+
+`balances` 只含余额变了的地址，是绝对值。`txs` 的格式与 `/history` 的条目相同，地址没有变化时为空数组，网关这次没取到时为 `null`，这时客户端要自己补取。`previous` 是这个订阅上一条推送的高度，接不上说明漏了推送。Bitcoin 的内存池交易不改变高度，这时 `previous` 等于 `height`。
 
 `ping` 方法返回 `"pong"`。浏览器看不到 WebSocket 的 ping 帧，要靠它发现连接已经断了。
 
-`balances` 的格式与 HTTP 接口相同。网关用轮询上游的方式发现变化，订阅只存在于当前连接的内存里。Bitcoin 的余额只算已确认，区块高度没变时不查询地址。
+订阅只存在于当前连接的内存里。Bitcoin 的余额只算已确认。
 
 `tx` 频道：
 

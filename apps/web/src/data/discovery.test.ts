@@ -47,6 +47,38 @@ async function rows(change: 0 | 1) {
 }
 
 describe("地址发现", () => {
+    it("发现结束时一次写入地址，途中不写，否则每个地址都会引发一轮页面查询", async () => {
+        const used = new Set<string>();
+        for (const index of [0, 19]) used.add(await address(0, index));
+        historyFor(() => used);
+        const bulkPut = vi.spyOn(db.addresses, "bulkPut");
+        const put = vi.spyOn(db.addresses, "put");
+        const update = vi.spyOn(db.addresses, "update");
+
+        await discoverAccount(account, "bitcoin", "mainnet");
+
+        expect(bulkPut).toHaveBeenCalledTimes(1);
+        expect(put).not.toHaveBeenCalled();
+        expect(update).not.toHaveBeenCalled();
+        expect((await rows(0)).filter((row) => row.used).map((row) => row.index)).toEqual([0, 19]);
+        expect(await rows(0)).toHaveLength(40);
+    });
+
+    it("发现途中核对过的地址不会被写回未核对", async () => {
+        historyFor(() => new Set());
+        const fetchSpy = globalThis.fetch;
+        let touched = false;
+        vi.stubGlobal("fetch", async (...args: Parameters<typeof fetch>) => {
+            if (!touched) {
+                touched = true;
+                await db.addresses.update([account.id, 0, 3], { verified: true });
+            }
+            return fetchSpy(...args);
+        });
+        await discoverAccount(account, "bitcoin", "mainnet");
+        expect((await rows(0)).find((row) => row.index === 3)?.verified).toBe(true);
+    });
+
     it("高度没变时只探测一个地址，不再逐个查询", async () => {
         const { calls } = stubGateway({
             "bitcoin/history": ({ since }) => ({

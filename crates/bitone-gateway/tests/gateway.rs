@@ -60,25 +60,39 @@ fn pairs(expected: &[(&str, &str)]) -> Vec<(String, String)> {
 #[derive(Clone)]
 struct EvmNode {
     native: Arc<Mutex<String>>,
+    block: Arc<AtomicUsize>,
     hits: Arc<AtomicUsize>,
+    balance_calls: Arc<AtomicUsize>,
 }
 
 impl EvmNode {
     async fn start(native: &str) -> (Self, String) {
         let node = Self {
             native: Arc::new(Mutex::new(native.into())),
+            block: Arc::new(AtomicUsize::new(1)),
             hits: Default::default(),
+            balance_calls: Default::default(),
         };
         let router = Router::new().route("/", post(evm_rpc)).with_state(node.clone());
         (node, mock(router).await)
     }
 
+    /// 余额只会在新块里变化。
     fn set_native(&self, native: &str) {
         *self.native.lock().unwrap() = native.into();
+        self.next_block();
+    }
+
+    fn next_block(&self) {
+        self.block.fetch_add(1, Ordering::SeqCst);
     }
 
     fn hits(&self) -> usize {
         self.hits.load(Ordering::SeqCst)
+    }
+
+    fn balance_calls(&self) -> usize {
+        self.balance_calls.load(Ordering::SeqCst)
     }
 
     /// 等到网关至少又轮询了一次。
@@ -94,15 +108,26 @@ impl EvmNode {
     }
 }
 
-async fn evm_rpc(State(node): State<EvmNode>, Json(calls): Json<Vec<Value>>) -> Json<Value> {
+async fn evm_rpc(State(node): State<EvmNode>, Json(body): Json<Value>) -> Json<Value> {
     node.hits.fetch_add(1, Ordering::SeqCst);
     let native = node.native.lock().unwrap().clone();
+    let block = format!("{:#x}", node.block.load(Ordering::SeqCst));
+    let calls = body.as_array().cloned().unwrap_or_else(|| vec![body.clone()]);
     let replies: Vec<Value> = calls
         .iter()
         .rev()
         .map(|call| {
             let result = match call["method"].as_str().unwrap() {
-                "eth_getBalance" => native.clone(),
+                "eth_getBalance" => {
+                    node.balance_calls.fetch_add(1, Ordering::SeqCst);
+                    native.clone()
+                }
+                "eth_blockNumber" => block.clone(),
+                "eth_getBlockByNumber" => {
+                    let block = json!({"number": block, "timestamp": "0x1", "transactions": []});
+                    return json!({"jsonrpc": "2.0", "id": call["id"], "result": block});
+                }
+                "eth_getLogs" => return json!({"jsonrpc": "2.0", "id": call["id"], "result": []}),
                 _ => {
                     assert_eq!(call["params"][0]["to"], USDT);
                     let data = call["params"][0]["data"].as_str().unwrap();
@@ -114,7 +139,11 @@ async fn evm_rpc(State(node): State<EvmNode>, Json(calls): Json<Vec<Value>>) -> 
             json!({"jsonrpc": "2.0", "id": call["id"], "result": result})
         })
         .collect();
-    Json(Value::Array(replies))
+    Json(if body.is_array() {
+        Value::Array(replies)
+    } else {
+        replies[0].clone()
+    })
 }
 
 fn evm_config(urls: &[&str], extra: &str) -> String {
@@ -556,13 +585,72 @@ async fn ws_pushes_only_when_balance_changes() {
     assert_eq!(update["method"], "update");
     assert!(update.get("id").is_none(), "推送是通知，不能带 id");
     assert_eq!(update["params"]["subscription"], id.as_str());
-    assert_eq!(update["params"]["address"], EVM);
+    assert_eq!(update["params"]["height"], 2);
+    assert_eq!(update["params"]["txs"], json!([]));
     assert_eq!(update["params"]["balances"], http["balances"], "格式要与 HTTP 接口相同");
 
     // 同一个变化只推一次，再变再推。
     assert!(timeout(Duration::from_millis(50), next_json(&mut ws)).await.is_err());
     node.set_native("0x3");
-    assert_eq!(next_json(&mut ws).await["params"]["balances"][0]["amount"], "3");
+    let update = next_json(&mut ws).await;
+    assert_eq!(update["params"]["balances"][0]["amount"], "3");
+    assert_eq!(
+        (&update["params"]["previous"], &update["params"]["height"]),
+        (&json!(2), &json!(3))
+    );
+}
+
+/// 没有变化的新块也要通知高度，客户端靠它推进游标，靠 `previous` 发现漏了推送。
+#[tokio::test]
+async fn ws_reports_every_new_height() {
+    let (node, url) = EvmNode::start("0x1").await;
+    let gateway = Gateway::start(&evm_config(&[&url], FAST_POLL)).await;
+    let mut ws = gateway.ws().await;
+    subscribe(&mut ws, &[EVM]).await;
+    node.wait_for_poll().await;
+
+    node.next_block();
+    let first = next_json(&mut ws).await;
+    assert_eq!(first["params"]["balances"], json!([]));
+    node.next_block();
+    let second = next_json(&mut ws).await;
+    assert_eq!(second["params"]["previous"], first["params"]["height"]);
+    assert_eq!(second["params"]["height"], 3);
+}
+
+/// 同一个地址有多少订阅，一轮都只查一次。
+#[tokio::test]
+async fn ws_subscribers_share_one_round() {
+    let (node, url) = EvmNode::start("0x1").await;
+    let gateway = Gateway::start(&evm_config(&[&url], FAST_POLL)).await;
+    let (mut first, mut second) = (gateway.ws().await, gateway.ws().await);
+    subscribe(&mut first, &[EVM]).await;
+    subscribe(&mut second, &[EVM]).await;
+    node.wait_for_poll().await;
+
+    let before = node.balance_calls();
+    node.set_native("0x2");
+    next_json(&mut first).await;
+    next_json(&mut second).await;
+    assert_eq!(node.balance_calls() - before, 1);
+}
+
+/// 有订阅才跟块，闲时不访问上游。
+#[tokio::test]
+async fn ws_follows_only_while_someone_is_subscribed() {
+    let (node, url) = EvmNode::start("0x1").await;
+    let gateway = Gateway::start(&evm_config(&[&url], FAST_POLL)).await;
+    sleep(Duration::from_millis(50)).await;
+    assert_eq!(node.hits(), 0, "没有订阅时不访问上游");
+
+    let mut ws = gateway.ws().await;
+    subscribe(&mut ws, &[EVM]).await;
+    node.wait_for_poll().await;
+    ws.close(None).await.unwrap();
+    sleep(Duration::from_millis(100)).await;
+    let after = node.hits();
+    sleep(Duration::from_millis(100)).await;
+    assert_eq!(node.hits(), after, "最后一个订阅离开后跟块停止");
 }
 
 /// 公共 Esplora 按 IP 限流，80 个地址每轮都查撑不住。余额只算已确认，所以高度没变就不查地址。
@@ -643,6 +731,7 @@ async fn ws_pushes_after_upstream_recovers_from_failed_baseline() {
 
     // 上游恢复：同一个端口开始监听。
     let (node, _) = EvmNode::start("0x7").await;
+    node.next_block();
     let router = Router::new().route("/", post(evm_rpc)).with_state(node);
     let listener = TcpListener::bind(dead.trim_start_matches("http://")).await.unwrap();
     tokio::spawn(async move { axum::serve(listener, router).await });

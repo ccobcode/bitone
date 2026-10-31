@@ -1,21 +1,23 @@
 //! WebSocket，JSON-RPC 2.0，见 docs/09-gateway-api.md。
 //!
-//! 每个订阅是一个轮询任务，任务句柄只存在于连接的内存里，
+//! 每个订阅是一个任务，任务句柄只存在于连接的内存里，
 //! 连接结束时句柄被丢弃，任务随之中止，这就是「断开即清除」。
+//! 地址频道由 follow.rs 共用的跟块任务推送，其余频道各自轮询。
 //!
 //! 单 IP 的连接数有上限，单连接的订阅数也有上限，轮询上游的成本因此是有界的。
 
 use crate::address;
 use crate::error::ApiError;
+use crate::follow::{AbortOnDrop, Watcher, current_balances};
 use crate::limit::ConnectionSlot;
 use crate::prices::PriceMap;
-use crate::upstream::{Balance, Pool, Tx};
+use crate::upstream::Tx;
 use crate::{AppState, ClientIp};
 use axum::Extension;
 use axum::extract::State;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade, close_code};
 use axum::response::{IntoResponse, Response};
-use bitone_core::{Chain, Network};
+use bitone_core::Network;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -34,8 +36,6 @@ const MAX_TXS: usize = 100;
 const MAX_FEEDS: usize = Network::ALL.len() + 1;
 /// 一条消息的上限，放得下 1000 个最长的地址。
 const MAX_MESSAGE: usize = 128 * 1024;
-/// 轮询时每批的地址数，与 HTTP 接口的单次上限一致。
-const POLL_CHUNK: usize = 100;
 const OUTBOUND_QUEUE: usize = 64;
 /// 客户端不读数据时，超过这个时间就断开。
 const SEND_TIMEOUT: Duration = Duration::from_secs(10);
@@ -90,42 +90,14 @@ fn api_error(id: Value, error: &ApiError) -> String {
     json!({"jsonrpc": "2.0", "id": id, "error": error}).to_string()
 }
 
-fn update(subscription: &str, address: &str, balances: &[Balance]) -> String {
-    let params = json!({"subscription": subscription, "address": address, "balances": balances});
-    json!({"jsonrpc": "2.0", "method": "update", "params": params}).to_string()
-}
-
 /// 单值频道的推送，`params` 是一个对象，这里补上订阅 ID。
 fn push(subscription: &str, mut params: Value) -> String {
     params["subscription"] = json!(subscription);
     json!({"jsonrpc": "2.0", "method": "update", "params": params}).to_string()
 }
 
-/// 分批查询当前余额，按地址分组。第一次失败就结束本轮，上游故障时不逐批等超时。
-/// 没查到的地址不出现在结果里，下一轮重试。
-async fn snapshot(pool: &Pool, addresses: &[String]) -> HashMap<String, Vec<Balance>> {
-    let mut grouped: HashMap<String, Vec<Balance>> = HashMap::new();
-    for chunk in addresses.chunks(POLL_CHUNK) {
-        let Ok(balances) = pool.balances(chunk).await else {
-            break;
-        };
-        for balance in balances {
-            grouped.entry(balance.address.clone()).or_default().push(balance);
-        }
-    }
-    grouped
-}
-
-/// Bitcoin 的余额只算已确认，出新块才会变。公共节点按 IP 限流，高度没变就不查地址。其他链返回 None，每轮都查。
-async fn watched_tip(pool: &Pool, network: Network) -> Option<u64> {
-    if network.chain() != Chain::Bitcoin {
-        return None;
-    }
-    pool.height().await.ok()
-}
-
-/// 一个订阅的轮询循环。
-async fn poll(
+/// 加入这个网络的跟块，一直占着成员资格，直到连接结束或退订。
+async fn follow_addresses(
     state: Arc<AppState>,
     network: Network,
     id: String,
@@ -133,37 +105,17 @@ async fn poll(
     addresses: Vec<String>,
     out: mpsc::Sender<String>,
 ) {
-    let Some(pool) = state.networks.get(&network) else {
+    let (Some(pool), Some(follower)) = (state.networks.get(&network), state.followers.get(&network)) else {
         return;
     };
-    // 先取基线再回复订阅 ID。客户端收到回复后用 HTTP 拉一次余额，之后的变化一定会被推送。
+    // 先取基线再回复订阅 ID。客户端收到回复后取一次快照，之后的变化一定会被推送。
     // 基线缺失的地址（上游故障）在下一次查询成功时推送，宁可多推一次，不能漏掉。
-    // 高度要在基线之前取，两者之间出块时下一轮一定会重查。
-    let mut tip = watched_tip(pool, network).await;
-    let mut last = snapshot(pool, &addresses).await;
-    if last.len() != addresses.len() {
-        tip = None;
-    }
-    if out.send(rpc_result(request, json!(id))).await.is_err() {
-        return;
-    }
-    loop {
-        sleep(state.poll_interval).await;
-        let height = watched_tip(pool, network).await;
-        if height.is_some() && height == tip {
-            continue;
-        }
-        let current = snapshot(pool, &addresses).await;
-        // 没查全时不记高度，否则这个块里的入账要等到下一个块才推送。
-        tip = height.filter(|_| current.len() == addresses.len());
-        for (address, balances) in current {
-            if last.get(&address) != Some(&balances) {
-                if out.send(update(&id, &address, &balances)).await.is_err() {
-                    return;
-                }
-                last.insert(address, balances);
-            }
-        }
+    let height = pool.head().await.ok();
+    let baseline = current_balances(pool, &addresses).await;
+    let watcher = Watcher::new(id.clone(), addresses, out.clone(), height, baseline);
+    let _member = follower.join(&state, watcher);
+    if out.send(rpc_result(request, json!(id))).await.is_ok() {
+        std::future::pending::<()>().await;
     }
 }
 
@@ -200,15 +152,6 @@ async fn watch<T, Fetch, Output>(
             }
             last = Some(value);
         }
-    }
-}
-
-/// 丢弃时中止轮询任务。
-struct AbortOnDrop(JoinHandle<()>);
-
-impl Drop for AbortOnDrop {
-    fn drop(&mut self) {
-        self.0.abort();
     }
 }
 
@@ -311,7 +254,7 @@ impl Connection {
                 Ok((
                     Quota::Addresses,
                     units,
-                    tokio::spawn(poll(state, network, id, request, addresses, out)),
+                    tokio::spawn(follow_addresses(state, network, id, request, addresses, out)),
                 ))
             }
             SubscribeParams::Tx { network, hash } => {
@@ -431,7 +374,7 @@ async fn run(mut socket: WebSocket, state: Arc<AppState>, ip: IpAddr, _slot: Con
             }
             Some(text) = outbound.recv() => Message::text(text),
             _ = heartbeat.tick() => {
-                // 连续两个周期没有任何数据，对端已经失联，这里断开才能停掉轮询。
+                // 连续两个周期没有任何数据，对端已经失联，这里断开才能退出跟块。
                 if last_seen.elapsed() > period * 2 {
                     break;
                 }

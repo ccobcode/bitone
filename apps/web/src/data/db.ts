@@ -206,18 +206,30 @@ export interface ChainEntry {
     status: ChainStatus;
 }
 
-/** 一批地址的同步进度。 */
+/** 一批地址的同步进度。新地址另成一批，已有的批次和水位不受影响。 */
 export interface FeedCursor {
     /** `钱包:网络:这批的第一个地址`。 */
     id: string;
-    /** 这批的地址数。变了以后游标作废，从头同步。 */
-    size: number;
+    network: string;
+    /** 翻页游标绑定这批地址，不能改动。 */
+    addresses: string[];
     /** 水位。这之前的记录不会再变，下次只查这之后的。 */
     checkpoint: string;
-    /** 第一次下载的续传游标。 */
+    /** 往前翻页的游标。 */
     older: string | null;
-    /** 已经下载到最早一条。 */
+    /** 已经翻到最早一条。 */
     done: boolean;
+}
+
+/** 余额的本地缓存。`height` 是取到它时的高度，只有不低于它的结果才能覆盖。 */
+export interface BalanceRow {
+    /** `网络|地址|资产`。 */
+    id: string;
+    network: string;
+    address: string;
+    asset: string;
+    amount: string;
+    height: number;
 }
 
 export interface Note {
@@ -238,6 +250,7 @@ export class BitOneDb extends Dexie {
     notes!: Table<Note, string>;
     chainTxs!: Table<ChainEntry, string>;
     feedCursors!: Table<FeedCursor, string>;
+    balances!: Table<BalanceRow, string>;
 
     constructor() {
         super("bitone");
@@ -267,6 +280,13 @@ export class BitOneDb extends Dexie {
                     await notes.delete(note.id);
                     await notes.put({ ...note, id });
                 }
+            });
+        // 旧游标没有记下地址，只能从头同步。链上记录随时能重新拉取。
+        this.version(4)
+            .stores({ balances: "id, network" })
+            .upgrade(async (tx) => {
+                await tx.table("feedCursors").clear();
+                await tx.table("chainTxs").clear();
             });
     }
 }

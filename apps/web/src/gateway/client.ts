@@ -6,6 +6,8 @@ import { t } from "../core/i18n";
 
 /** 单次请求的地址上限。 */
 export const MAX_ADDRESSES = 100;
+/** 一次快照的条目上限。 */
+export const MAX_SNAPSHOT_ITEMS = 1000;
 
 export interface Balance {
     address: string;
@@ -18,6 +20,8 @@ export interface Balance {
 const REQUEST_TIMEOUT = 20_000;
 /** 网关可能依次尝试几个上游，广播要比普通查询等得久。 */
 const BROADCAST_TIMEOUT = 45_000;
+/** 快照要等最慢的网络，单个上游超时后还要换下一个。 */
+const SNAPSHOT_TIMEOUT = 60_000;
 
 export class GatewayError extends Error {
     readonly code: string;
@@ -30,20 +34,23 @@ export class GatewayError extends Error {
     }
 }
 
-async function request(path: string, init?: RequestInit, timeout = REQUEST_TIMEOUT): Promise<unknown> {
+async function open(path: string, init?: RequestInit, timeout = REQUEST_TIMEOUT): Promise<Response> {
     let response: Response;
     try {
         response = await fetch(path, { ...init, signal: AbortSignal.timeout(timeout) });
     } catch {
         throw new GatewayError("unreachable");
     }
+    if (response.ok) return response;
     const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) {
-        const error = (body as { error?: { code?: unknown; message?: unknown } } | null)?.error;
-        const detail = typeof error?.message === "string" ? cleanText(error.message, 200) : "";
-        throw new GatewayError(typeof error?.code === "string" ? cleanText(error.code) : "unreachable", detail);
-    }
-    return body;
+    const error = (body as { error?: { code?: unknown; message?: unknown } } | null)?.error;
+    const detail = typeof error?.message === "string" ? cleanText(error.message, 200) : "";
+    throw new GatewayError(typeof error?.code === "string" ? cleanText(error.code) : "unreachable", detail);
+}
+
+async function request(path: string, init?: RequestInit, timeout?: number): Promise<unknown> {
+    const response = await open(path, init, timeout);
+    return response.json().catch(() => null);
 }
 
 function post(network: string, path: string, body: unknown, timeout?: number): Promise<unknown> {
@@ -135,18 +142,6 @@ export function parseBalances(list: unknown, addresses: readonly string[]): Bala
         merged.set(`${address}\n${addressKey(asset)}`, { address, asset, amount });
     }
     return [...merged.values()];
-}
-
-export async function fetchBalances(network: string, addresses: readonly string[]): Promise<Balance[]> {
-    const pages = await Promise.all(
-        chunks(addresses, MAX_ADDRESSES).map(async (chunk) => {
-            const body = (await post(network, "balances", { addresses: chunk })) as { balances?: unknown } | null;
-            // 响应不完整时算查询失败，不能当成余额为 0。
-            if (!Array.isArray(body?.balances)) throw new GatewayError("unreachable");
-            return parseBalances(body.balances, chunk);
-        }),
-    );
-    return pages.flat();
 }
 
 export interface Utxo {
@@ -422,16 +417,8 @@ export interface HistoryPage {
     unchanged: boolean;
 }
 
-export async function fetchHistory(
-    network: string,
-    addresses: readonly string[],
-    cursor: string | null,
-    since: string | null = null,
-): Promise<HistoryPage> {
-    const body = await post(network, "history", { addresses, cursor, since });
-    const list = isRecord(body) ? body.items : null;
-    if (!isRecord(body) || !Array.isArray(list)) throw malformed();
-    const items = list.flatMap((item: unknown): HistoryItem[] => {
+function parseItems(list: readonly unknown[]): HistoryItem[] {
+    return list.flatMap((item: unknown): HistoryItem[] => {
         if (!isRecord(item) || typeof item.hash !== "string" || !isStatus(item.status)) return [];
         const amount = parseAmount(item.amount);
         const asset = typeof item.asset === "string" ? cleanText(item.asset, 128) : "";
@@ -450,11 +437,121 @@ export async function fetchHistory(
             },
         ];
     });
+}
+
+function parsePage(body: unknown): HistoryPage {
+    const list = isRecord(body) ? body.items : null;
+    if (!isRecord(body) || !Array.isArray(list)) throw malformed();
     return {
-        items,
+        items: parseItems(list),
         cursor: typeof body.cursor === "string" && body.cursor ? body.cursor : null,
         checkpoint: typeof body.checkpoint === "string" ? cleanText(body.checkpoint, 32) : "",
         unchanged: body.unchanged === true,
+    };
+}
+
+export async function fetchHistory(
+    network: string,
+    addresses: readonly string[],
+    cursor: string | null,
+    since: string | null = null,
+): Promise<HistoryPage> {
+    return parsePage(await post(network, "history", { addresses, cursor, since }));
+}
+
+export interface SnapshotItem {
+    network: string;
+    address: string;
+    /** 没有时是原生币。 */
+    contract?: string;
+    since?: string;
+    /** 分批编号。翻页游标绑定一批地址，水位相同的批次也不能合并。 */
+    group: number;
+}
+
+/** 一批地址的最新状态。`balances` 和 `history` 分开报告失败，空表示这部分没查到。 */
+export interface SnapshotResult {
+    network: string;
+    addresses: string[];
+    height: number | null;
+    balances: Balance[] | null;
+    history: HistoryPage | null;
+    error: string | null;
+}
+
+function parseHeight(value: unknown): number | null {
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function parseSnapshot(value: unknown): SnapshotResult | null {
+    if (!isRecord(value) || typeof value.network !== "string" || !Array.isArray(value.addresses)) return null;
+    const addresses = value.addresses.filter((address): address is string => typeof address === "string");
+    return {
+        network: value.network,
+        addresses,
+        height: parseHeight(value.height),
+        // 响应不完整时算查询失败，不能当成余额为 0。
+        balances: Array.isArray(value.balances) ? parseBalances(value.balances, addresses) : null,
+        history: isRecord(value.history) ? parsePage(value.history) : null,
+        error: typeof value.error === "string" ? cleanText(value.error) : null,
+    };
+}
+
+/** 响应一行一个 JSON，哪批先查完就先到，到一批处理一批。慢的网络不拖累其他网络。 */
+export async function fetchSnapshot(
+    items: readonly SnapshotItem[],
+    onResult: (result: SnapshotResult) => Promise<void>,
+): Promise<void> {
+    const response = await open(
+        "/v1/snapshot",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) },
+        SNAPSHOT_TIMEOUT,
+    );
+    const reader = response.body?.pipeThrough(new TextDecoderStream()).getReader();
+    if (!reader) throw malformed();
+    let buffer = "";
+    for (;;) {
+        const { done, value } = await reader.read().catch(() => {
+            throw new GatewayError("unreachable");
+        });
+        buffer += value ?? "";
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+            const result = parseSnapshot(parseLine(line));
+            if (result) await onResult(result);
+        }
+        if (done) return;
+    }
+}
+
+function parseLine(line: string): unknown {
+    try {
+        return JSON.parse(line);
+    } catch {
+        throw malformed();
+    }
+}
+
+/** 跟块推送。`items` 为空表示网关这次没取到交易，要自己补取。 */
+export interface ChainUpdate {
+    height: number;
+    /** 上一条推送的高度，接不上说明中间漏了。 */
+    previous: number;
+    balances: Balance[];
+    items: HistoryItem[] | null;
+}
+
+export function parseUpdate(value: unknown, addresses: readonly string[]): ChainUpdate | null {
+    if (!isRecord(value)) return null;
+    const height = parseHeight(value.height);
+    const previous = parseHeight(value.previous);
+    if (height === null || previous === null) return null;
+    return {
+        height,
+        previous,
+        balances: parseBalances(value.balances, addresses),
+        items: Array.isArray(value.txs) ? parseItems(value.txs) : null,
     };
 }
 

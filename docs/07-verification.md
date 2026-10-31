@@ -59,7 +59,10 @@
 - Web Locks 只在安全上下文可用，自部署用 HTTP 局域网地址时无法构建交易。
 - 网关切换到备用上游后不会自动切回。`trusted_proxies` 只支持单个 IP，不支持 CIDR。
 - EVM 的交易历史依赖 Etherscan 兼容的索引服务，JSON-RPC 查不了地址历史。
-- 公共节点限流很紧，TronGrid 要配 API key。
+- 公共节点限流很紧，TronGrid 要配 API key。TRON 和 Solana 跟块时每轮逐个地址查余额，成本随订阅的地址数增长。
+- BSC、Polygon、BSC Testnet、Amoy 没有不用 key 的索引服务。HyperSync 免费额度是每分钟 15 次，所有网络和用户共用，它也看不到合约内部转入的原生币。
+- EVM 跟块看不到合约内部转入的原生币，余额会更新，交易记录要等索引服务。
+- 记录多到 HyperSync 一个请求扫不完时，最早的在前，中间的要翻页才看得到。
 - 公共 Electrum 服务器由志愿者运营，不保证可用，能看到查询的地址。正式部署要用自建的 electrs 或 Fulcrum。
 - Bitcoin 历史接口的条目按一批地址归纳，同一笔交易里第二个自有输出不会出现在 `from` 和 `to` 里，地址发现不能只靠这两个字段。
 - ERC-7730 只实现了函数清单的最小子集。

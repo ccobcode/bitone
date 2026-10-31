@@ -2,12 +2,13 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { initCoreSync } from "../core";
 import type { Account, Address } from "../data/db";
-import { applyUpdate, buildRows, buildTargets } from "./assets";
+import { buildRows, buildTargets } from "./assets";
 import {
     GatewayError,
-    MAX_ADDRESSES,
-    fetchBalances,
+    fetchSnapshot,
     parseBalances,
+    parseUpdate,
+    type SnapshotResult,
     parseObservation,
     parsePrices,
     type Balance,
@@ -86,43 +87,77 @@ describe("parseBalances", () => {
     });
 });
 
-describe("fetchBalances", () => {
-    it("超过单次上限时分批请求", async () => {
-        const fetchMock = vi.fn(async () => Response.json({ balances: [] }));
-        vi.stubGlobal("fetch", fetchMock);
-        const addresses = Array.from({ length: MAX_ADDRESSES * 2 + 1 }, (_, i) => `a${i}`);
-        await fetchBalances("bitcoin", addresses);
-        expect(fetchMock).toHaveBeenCalledTimes(3);
+describe("fetchSnapshot", () => {
+    const item = { network: "bitcoin", address: "a", group: 0 };
+    const collect = async () => {
+        const results: SnapshotResult[] = [];
+        await fetchSnapshot([item], async (result) => void results.push(result));
+        return results;
+    };
+
+    it("逐行处理，一行被拆成两段也能拼回来，余额和历史分开报告失败", async () => {
+        const encoder = new TextEncoder();
+        const first = {
+            network: "bitcoin",
+            addresses: ["a"],
+            height: 7,
+            balances: [{ address: "A", asset: "native", amount: "5" }],
+            history: null,
+        };
+        const text = `${JSON.stringify(first)}\n${JSON.stringify({ network: "bsc", addresses: ["b"], error: "upstream_unavailable" })}\n`;
+        const body = new ReadableStream({
+            start(controller) {
+                controller.enqueue(encoder.encode(text.slice(0, 20)));
+                controller.enqueue(encoder.encode(text.slice(20)));
+                controller.close();
+            },
+        });
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => new Response(body)),
+        );
+        const [ok, failed] = await collect();
+        expect(ok).toMatchObject({ height: 7, history: null, error: null });
+        expect(ok?.balances).toEqual([]);
+        expect(failed).toMatchObject({ height: null, balances: null, error: "upstream_unavailable" });
     });
 
     it("网关错误带错误码，连不上时也是 GatewayError", async () => {
         vi.stubGlobal(
             "fetch",
-            vi.fn(async () =>
-                Response.json({ error: { code: "upstream_unavailable", message: "x" } }, { status: 503 }),
-            ),
+            vi.fn(async () => Response.json({ error: { code: "rate_limited", message: "x" } }, { status: 429 })),
         );
-        await expect(fetchBalances("bitcoin", ["a"])).rejects.toMatchObject({ code: "upstream_unavailable" });
+        await expect(collect()).rejects.toMatchObject({ code: "rate_limited" });
         vi.stubGlobal(
             "fetch",
             vi.fn(async () => Promise.reject(new TypeError("failed"))),
         );
-        await expect(fetchBalances("bitcoin", ["a"])).rejects.toBeInstanceOf(GatewayError);
+        await expect(collect()).rejects.toBeInstanceOf(GatewayError);
+    });
+
+    it("正文不完整时报错，不完整的最后一行不算结果", async () => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => new Response("<html></html>\n")),
+        );
+        await expect(collect()).rejects.toBeInstanceOf(GatewayError);
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => new Response('{"network":"bitcoin"')),
+        );
+        expect(await collect()).toEqual([]);
     });
 });
 
-describe("fetchBalances 的异常响应", () => {
-    it("正文不完整时报错，不当成余额为 0", async () => {
-        vi.stubGlobal(
-            "fetch",
-            vi.fn(async () => new Response("<html></html>")),
-        );
-        await expect(fetchBalances("bitcoin", ["a"])).rejects.toBeInstanceOf(GatewayError);
-        vi.stubGlobal(
-            "fetch",
-            vi.fn(async () => Response.json({})),
-        );
-        await expect(fetchBalances("bitcoin", ["a"])).rejects.toBeInstanceOf(GatewayError);
+describe("parseUpdate", () => {
+    it("高度不完整的推送不要，txs 为空值表示网关没取到", () => {
+        expect(parseUpdate({ height: 2 }, ["a"])).toBeNull();
+        expect(parseUpdate({ height: 2, previous: 1, balances: [], txs: null }, ["a"])).toEqual({
+            height: 2,
+            previous: 1,
+            balances: [],
+            items: null,
+        });
     });
 });
 
@@ -182,14 +217,6 @@ describe("资产表", () => {
         expect(list[0]?.amount).toBe(big + 1n);
         expect(list[0]?.address).toBe("a");
     });
-
-    it("推送替换该地址的余额，不动其他地址", () => {
-        const other = { address: "b", asset: "native", amount: 2n };
-        const next = applyUpdate([{ address: "a", asset: "native", amount: 1n }, other], "a", [
-            { address: "a", asset: "native", amount: 7n },
-        ]);
-        expect(next).toEqual([other, { address: "a", asset: "native", amount: 7n }]);
-    });
 });
 
 class FakeSocket {
@@ -226,7 +253,7 @@ describe("BalanceSocket", () => {
         vi.useFakeTimers();
         FakeSocket.count = 0;
         vi.stubGlobal("WebSocket", FakeSocket);
-        const events = { onStatus: vi.fn(), onUpdate: vi.fn(), onReady: vi.fn() };
+        const events = { onStatus: vi.fn(), onUpdate: vi.fn(), onReady: vi.fn(), onAddressesWatched: vi.fn() };
         const socket = new BalanceSocket("ws://x/v1/ws", events);
         socket.setTargets([{ network: "ethereum", addresses: [EVM] }]);
         socket.start();
@@ -248,15 +275,15 @@ describe("BalanceSocket", () => {
         FakeSocket.last.push({
             jsonrpc: "2.0",
             method: "update",
-            params: { subscription: "sub-1", address: EVM, balances: [] },
+            params: { subscription: "sub-1", height: 5 },
         });
         FakeSocket.last.push({
             jsonrpc: "2.0",
             method: "update",
-            params: { subscription: "sub-9", address: EVM, balances: [] },
+            params: { subscription: "sub-9", height: 5 },
         });
         expect(events.onUpdate).toHaveBeenCalledTimes(1);
-        expect(events.onUpdate).toHaveBeenCalledWith("ethereum", EVM, []);
+        expect(events.onUpdate).toHaveBeenCalledWith("ethereum", [EVM], { subscription: "sub-1", height: 5 });
     });
 
     it("全部订阅回复后才通知 HTTP 补一次", () => {
@@ -331,13 +358,59 @@ describe("BalanceSocket", () => {
         expect(FakeSocket.count).toBe(1);
     });
 
-    it("地址变化时换连接重新订阅", () => {
-        const { socket } = setup();
+    it("地址变化时只换这个网络的订阅，不换连接，也不触发全量补查", () => {
+        const { socket, events } = setup();
+        socket.setTargets([
+            { network: "ethereum", addresses: [EVM] },
+            { network: "bitcoin", addresses: ["b"] },
+        ]);
         FakeSocket.last.open();
+        const [ethereum, bitcoin] = FakeSocket.last.sent;
+        FakeSocket.last.push({ id: ethereum?.id, result: "s1" });
+        FakeSocket.last.push({ id: bitcoin?.id, result: "s2" });
+        expect(events.onReady).toHaveBeenCalledTimes(1);
+
+        FakeSocket.last.sent.length = 0;
+        socket.setTargets([
+            { network: "ethereum", addresses: [EVM, "x"] },
+            { network: "bitcoin", addresses: ["b"] },
+        ]);
+        expect(FakeSocket.count).toBe(1);
+        const [unsubscribe, subscribe] = FakeSocket.last.sent as unknown as {
+            id: number;
+            method: string;
+            params: { addresses: string[] };
+        }[];
+        expect(unsubscribe).toMatchObject({ method: "unsubscribe", params: ["s1"] });
+        expect(subscribe).toMatchObject({ method: "subscribe", params: { addresses: [EVM, "x"] } });
+        expect(FakeSocket.last.sent).toHaveLength(2);
+
+        FakeSocket.last.push({ id: subscribe?.id, result: "s3" });
+        expect(events.onAddressesWatched).toHaveBeenCalledExactlyOnceWith("ethereum");
+        expect(events.onReady).toHaveBeenCalledTimes(1);
+    });
+
+    it("订阅还没回复地址就变了，回复后退订旧的，只用新的", () => {
+        const { socket, events } = setup();
+        FakeSocket.last.open();
+        const old = FakeSocket.last.sent[0];
+        FakeSocket.last.push({ id: old?.id, result: "s1" });
+        FakeSocket.last.sent.length = 0;
+
         socket.setTargets([{ network: "ethereum", addresses: [EVM, "x"] }]);
-        expect(FakeSocket.count).toBe(2);
-        FakeSocket.last.open();
-        expect(FakeSocket.last.sent[0]?.params.addresses).toEqual([EVM, "x"]);
+        const first = FakeSocket.last.sent.at(-1);
+        socket.setTargets([{ network: "ethereum", addresses: [EVM, "x", "y"] }]);
+        const second = FakeSocket.last.sent.at(-1);
+        expect(second?.params.addresses).toEqual([EVM, "x", "y"]);
+
+        FakeSocket.last.push({ id: first?.id, result: "late" });
+        expect(FakeSocket.last.sent.at(-1)).toMatchObject({ method: "unsubscribe", params: ["late"] });
+        expect(events.onAddressesWatched).not.toHaveBeenCalled();
+        FakeSocket.last.push({ id: second?.id, result: "s3" });
+        expect(events.onAddressesWatched).toHaveBeenCalledExactlyOnceWith("ethereum");
+
+        FakeSocket.last.push({ method: "update", params: { subscription: "late", address: "x", balances: [] } });
+        expect(events.onUpdate).not.toHaveBeenCalled();
     });
 
     it("超过单次上限的地址分批订阅", () => {

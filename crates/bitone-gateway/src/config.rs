@@ -42,6 +42,8 @@ pub struct NetworkConfig {
     pub tron_api_key: Option<String>,
     /// EVM 的 Etherscan 兼容索引服务，只用于交易历史。节点查不到地址的历史。
     pub indexer: Option<String>,
+    /// HyperSync 的 token。配了它，`indexer` 就按 HyperSync 的接口访问，否则按 Etherscan 的接口。
+    pub indexer_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,7 +68,7 @@ impl Default for Config {
             listen: SocketAddr::from(([127, 0, 0, 1], 8787)),
             web_dir: None,
             upstream_timeout_ms: 10_000,
-            ws_poll_interval_ms: 15_000,
+            ws_poll_interval_ms: 6_000,
             ws_heartbeat_ms: 30_000,
             // 放宽阈值，运营商 NAT 下很多用户共用一个 IP。
             rate_limit_burst: 1200.0,
@@ -124,6 +126,14 @@ impl NetworkConfig {
         }
         if self.indexer.is_some() && network.chain() != Chain::Evm {
             return Err(format!("{id} 不需要 indexer"));
+        }
+        if let Some(token) = &self.indexer_token {
+            if self.indexer.is_none() {
+                return Err(format!("{id} 配了 indexer_token，没有 indexer"));
+            }
+            if HeaderValue::from_str(token).is_err() {
+                return Err(format!("{id} 的 indexer_token 无效"));
+            }
         }
         if let Some(key) = &self.tron_api_key {
             if network.chain() != Chain::Tron {
@@ -277,6 +287,8 @@ mod tests {
             "[networks.tron]\nupstreams = ['http://a']\ntron_api_key = \"a\nb\"",
             "[networks.tron]\nupstreams = ['http://a']\nindexer = 'http://b'",
             "[networks.ethereum]\nupstreams = ['http://a']\nindexer = 'ftp://b'",
+            "[networks.ethereum]\nupstreams = ['http://a']\nindexer_token = 'k'",
+            "[networks.ethereum]\nupstreams = ['http://a']\nindexer = 'http://b'\nindexer_token = \"a\nb\"",
             "web_dir = '/nonexistent/bitone'",
             "ws_heartbeat_ms = 0",
             "ws_max_connections_per_ip = 0",
