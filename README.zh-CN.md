@@ -233,9 +233,6 @@ make test
 # 格式化 Rust,前端和 Kotlin
 make format
 
-# 修改 design/tokens.json 后重新生成两端的令牌
-make tokens
-
 # 在已连接的手机上安装 debug 构建
 make android-core
 cd apps/mobile && ./gradlew :androidApp:assembleDebug

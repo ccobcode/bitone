@@ -7,12 +7,12 @@ plugins {
     alias(libs.plugins.spotless)
 }
 
-// 与根目录的 Prettier 配置一致:4 空格,120 列.生成文件不格式化.
+// 与根目录的 Prettier 配置一致:4 空格,120 列.
 spotless {
     val ktfmtVersion = libs.versions.ktfmt.get()
     kotlin {
         target("**/*.kt")
-        targetExclude("**/build/**", "**/uniffi/**", "**/Tokens.kt", "**/Translations.kt", "**/IconPaths.kt")
+        targetExclude("**/build/**", "**/uniffi/**")
         ktfmt(ktfmtVersion).kotlinlangStyle().configure { it.setMaxWidth(120) }
     }
     kotlinGradle {

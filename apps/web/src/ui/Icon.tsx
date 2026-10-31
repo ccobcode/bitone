@@ -1,5 +1,5 @@
 // 界面功能图标,线宽 1.8,圆角端点,24 网格.路径和冷钱包共用,来源是 design/icons.json.
-import PATHS from "./icons.gen.json";
+import PATHS from "../../../../design/icons.json";
 
 export type IconName = keyof typeof PATHS;
 

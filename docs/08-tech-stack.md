@@ -105,9 +105,9 @@ apps/
   mobile/
     shared/             Compose Multiplatform 共享界面
     androidApp/         Android 应用
+    buildSrc/           构建时从 design/ 生成 Kotlin
 design/
-  tokens.json           设计令牌,唯一来源
-  generate.mjs          生成 CSS 和 Kotlin
+  tokens.json           设计令牌,唯一来源,网页端构建时生成 CSS 变量
 ```
 
 `bitone-signer` 不进 WASM,网页端的构建产物里不存在任何签名代码.

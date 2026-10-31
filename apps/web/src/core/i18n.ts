@@ -1,6 +1,6 @@
 // 多语言.词典以中文原文为键,来源是 design/i18n.json.语言在启动时确定,切换时重新加载页面.
 // 核心库返回的文案是中文,显示时用 translate 按模板翻译,译不出来就显示原文.
-import en from "./i18n.gen.json";
+import en from "../../../../design/i18n.json";
 
 /** 语言选择器和系统语言匹配都读这张表. */
 export const LANGUAGES = [

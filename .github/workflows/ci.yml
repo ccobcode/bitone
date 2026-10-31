@@ -40,7 +40,7 @@ jobs:
                   distribution: microsoft
                   java-version: 21
             - run: npm install --global pnpm@12.4.2
-            - run: make test-punct check-punct test-copy check-copy tokens-check format-check
+            - run: make test-punct check-punct test-copy check-copy format-check
 
     rust:
         name: Rust

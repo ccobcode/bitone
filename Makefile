@@ -29,7 +29,7 @@ REPRO_FLAGS := --remap-path-prefix=$(CURDIR)=/src --remap-path-prefix=$(HOME)/.c
 .PHONY: dev gateway dist dist-server dist-android clean \
 	test test-rust test-web test-android test-punct check-punct fix-punct test-copy check-copy \
 	format format-check lint audit hooks \
-	tokens tokens-check wasm android-core
+	wasm android-core
 
 # Development: 网关和网页端都在宿主机,网页端用 Vite 把 /v1 代理到网关
 dev: apps/web/node_modules wasm
@@ -70,7 +70,7 @@ clean:
 
 # Test & Quality
 test: test-rust test-web test-android
-	$(MAKE) test-punct check-punct test-copy check-copy tokens-check format-check lint
+	$(MAKE) test-punct check-punct test-copy check-copy format-check lint
 
 test-rust:
 	$(CARGO) test --workspace
@@ -122,12 +122,6 @@ hooks:
 	git config core.hooksPath .githooks
 
 # 生成物
-tokens:
-	node design/generate.mjs
-
-tokens-check:
-	node design/generate.mjs --check
-
 wasm:
 	CC_wasm32_unknown_unknown=$(LLVM)/clang AR_wasm32_unknown_unknown=$(LLVM)/llvm-ar \
 		$(CARGO) build -p bitone-wasm --target wasm32-unknown-unknown --release

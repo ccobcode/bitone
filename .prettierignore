@@ -2,10 +2,6 @@
 Cargo.lock
 pnpm-lock.yaml
 apps/web/pnpm-lock.yaml
-apps/web/src/styles/tokens.css
-apps/web/src/core/i18n.gen.json
-apps/web/src/core/tokens.gen.json
-apps/web/src/ui/icons.gen.json
 apps/web/src/core/__fixtures__/
 apps/mobile/*
 !apps/mobile/gradle/

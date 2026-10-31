@@ -1,6 +1,6 @@
 import { initCore, loadPairing, must } from "../testing";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { type Mode, type Pairing } from "../core";
+import type { Mode, Pairing } from "../core";
 import { clearLocalData, db } from "./db";
 import { GAP_LIMIT, addressPath, ensureAddress, savePairing, selectableAccounts, walletId } from "./pairing";
 

@@ -6,6 +6,7 @@ import { App } from "./App";
 import { initCore } from "./core";
 import { AppProvider } from "./data/app";
 import { PageRouter } from "./ui/PageRouter";
+import "virtual:tokens.css";
 import "./styles/index.css";
 import { t } from "./core/i18n";
 

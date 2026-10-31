@@ -11,6 +11,9 @@ const SEMICOLON = String.fromCodePoint(0xff1b);
 const BINARY =
     /\.(png|jpe?g|gif|webp|ico|bmp|tiff?|woff2?|ttf|otf|eot|pdf|zip|gz|tgz|bz2|xz|7z|rar|mp4|webm|mp3|wav|wasm|so|a|db|sqlite3?|bin|der|jar)$/i;
 
+// 规则本身,以及 KotlinPoet 的格式串,它用这个符号表示不换行的空格.
+const EXEMPT = /^(scripts\/copy-check|apps\/mobile\/buildSrc\/)/;
+
 // 引用规则本身时可以出现.
 const QUOTED_DOT = `"${DOT}"`;
 
@@ -49,7 +52,7 @@ function trackedFiles(staged) {
     const output = staged
         ? git("diff", "--cached", "--name-only", "--diff-filter=ACMR")
         : git("ls-files", "--cached", "--others", "--exclude-standard");
-    return output.split("\n").filter((path) => path && !BINARY.test(path) && !path.startsWith("scripts/copy-check"));
+    return output.split("\n").filter((path) => path && !BINARY.test(path) && !EXEMPT.test(path));
 }
 
 function report(path, hits) {

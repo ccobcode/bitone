@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { qrMatrix, qrText } from "../core";
-import tokens from "../core/tokens.gen.json";
+import { tokens } from "../core/tokens";
 
 /** 四周的静区,单位是码元,见 docs/06-ui.md 第 4.5 节. */
 const QUIET = tokens.qr.quiet;

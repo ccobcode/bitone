@@ -233,9 +233,6 @@ make test
 # Format Rust, web and Kotlin
 make format
 
-# Regenerate tokens for both clients after editing design/tokens.json
-make tokens
-
 # Install a debug build on a connected phone
 make android-core
 cd apps/mobile && ./gradlew :androidApp:assembleDebug

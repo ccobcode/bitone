@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FrameSender } from "../core";
-import tokens from "../core/tokens.gen.json";
+import { tokens } from "../core/tokens";
 import { Icon } from "./Icon";
 import { Button } from "./primitives";
 import { QrCode } from "./QrCode";

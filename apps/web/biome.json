@@ -7,14 +7,7 @@
         "root": "../.."
     },
     "files": {
-        "includes": [
-            "src/**",
-            "!src/core/pkg",
-            "!src/core/i18n.gen.json",
-            "!src/core/tokens.gen.json",
-            "!src/ui/icons.gen.json",
-            "!src/styles/tokens.css"
-        ]
+        "includes": ["src/**", "!src/core/pkg"]
     },
     "formatter": {
         "enabled": false

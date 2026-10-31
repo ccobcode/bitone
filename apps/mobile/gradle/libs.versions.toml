@@ -1,5 +1,5 @@
 # 版本组合依据:Kotlin 官方兼容表里 Kotlin 2.4.20 到 2.4.21 对应 AGP 8.5.2 到 9.3.1.
-# AGP 9.4 和 9.5 已发布,但不在这个范围内,所以停在 9.3.1.
+# AGP 用 9.5.0,超出这张表,为了去掉 Gradle 的弃用警告,实测全部任务通过,如有异常退回 9.3.1.
 # 同一张表里 Gradle 只测到 9.7.0.wrapper 用 9.8.2,实测全部任务通过,如有异常退回 9.7.x.
 [versions]
 agp = "9.5.0"
@@ -12,12 +12,14 @@ camerax = "1.6.2"
 zxing-cpp = "3.1.1"
 spotless = "8.10.4"
 ktfmt = "0.64"
+kotlinpoet = "2.4.0"
 # Compose Multiplatform 1.12.2 对应 Jetpack Compose 1.12.1,它的 AAR 元数据要求 compileSdk 至少 37.
 android-compileSdk = "37"
 android-minSdk = "31"
 android-targetSdk = "36"
 
 [libraries]
+kotlinpoet = { module = "com.squareup:kotlinpoet", version.ref = "kotlinpoet" }
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
 compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }
 compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose-multiplatform" }

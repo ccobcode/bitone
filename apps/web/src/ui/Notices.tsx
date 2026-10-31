@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Link, useLocation, useNavigate } from "react-router";
 import { playChime, unlockChime } from "../core/chime";
 import { t } from "../core/i18n";
-import tokens from "../core/tokens.gen.json";
+import { tokens } from "../core/tokens";
 import { saveSetting, useLive } from "../data/app";
 import { db, type TxRecord, type TxState } from "../data/db";
 import { claimNotice, isTestnet, mergedNotice, onNotice, publish, systemNotice, type Notice } from "../data/notify";
