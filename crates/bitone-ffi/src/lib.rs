@@ -255,12 +255,8 @@ impl From<ChangeIndexes> for HighestChange {
     }
 }
 
-/// 没有传清单包时用内置清单.传了就重新验签,本机文件也不信任.
 fn load_manifest(package: Option<Vec<u8>>) -> Result<std::borrow::Cow<'static, Manifest>, WalletError> {
-    match package {
-        None => Ok(std::borrow::Cow::Borrowed(Manifest::builtin())),
-        Some(bytes) => Ok(std::borrow::Cow::Owned(Manifest::from_package(&bytes, &VENDOR_KEY, 0)?)),
-    }
+    Ok(Manifest::active(package.as_deref(), &VENDOR_KEY)?)
 }
 
 /// 建钱包过程中的助记词.设置 PIN 之后就不再需要这个对象.

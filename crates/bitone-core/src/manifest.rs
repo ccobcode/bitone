@@ -6,6 +6,7 @@ use p256::ecdsa::signature::Verifier;
 use p256::ecdsa::{DerSignature, VerifyingKey};
 use p256::pkcs8::DecodePublicKey;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::sync::OnceLock;
 
 /// 厂商公钥,P-256 的 SPKI DER.和 APK 签名证书是同一把密钥,换公钥就是替换这个文件.
@@ -94,6 +95,19 @@ impl Manifest {
             return Err(Error::StaleManifest);
         }
         Ok(manifest)
+    }
+
+    /// 生效的清单:内置清单和已导入的清单包里版本高的一份.升级到内置版本更高的 APK 后,旧包不再生效.
+    /// 包每次都重新验签,本机文件也不信任.
+    pub fn active(package: Option<&[u8]>, key: &[u8]) -> Result<Cow<'static, Self>, Error> {
+        let builtin = Self::builtin();
+        let Some(package) = package else {
+            return Ok(Cow::Borrowed(builtin));
+        };
+        match Self::from_package(package, key, builtin.version) {
+            Err(Error::StaleManifest) => Ok(Cow::Borrowed(builtin)),
+            imported => imported.map(Cow::Owned),
+        }
     }
 }
 

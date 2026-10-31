@@ -113,3 +113,29 @@ fn a_signed_package_overrides_the_builtin_manifest() {
     assert_eq!((native.symbol.as_str(), native.decimals), ("NEW", 9));
     assert!(accepted.native("polygon").is_none());
 }
+
+/// 升级到内置版本更高的 APK 后,手机上的旧包不能盖住新的内置清单.
+#[test]
+fn the_higher_version_of_builtin_and_imported_is_active() {
+    let builtin = Manifest::builtin();
+    assert_eq!(*Manifest::active(None, &public()).unwrap(), *builtin);
+
+    let mut stale = manifest(builtin.version);
+    stale.assets.clear();
+    assert_eq!(
+        *Manifest::active(Some(&signed(&stale, &SECRET)), &public()).unwrap(),
+        *builtin
+    );
+
+    let newer = manifest(builtin.version + 1);
+    assert_eq!(
+        *Manifest::active(Some(&signed(&newer, &SECRET)), &public()).unwrap(),
+        newer
+    );
+}
+
+#[test]
+fn an_imported_package_with_a_bad_signature_is_an_error() {
+    let forged = package(Manifest::builtin().version + 1, &[7; 32]);
+    assert_eq!(Manifest::active(Some(&forged), &public()), Err(Error::BadSignature));
+}
