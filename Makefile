@@ -39,7 +39,7 @@ gateway:
 	$(CARGO) run -p bitone-gateway -- --config $(GATEWAY)
 
 # Distribution: 网关和网页端按平台打包，APK 单独产出。Linux arm64 上没有 NDK，所以两者分开。
-# APK 未签名，发布前用离线密钥签名，签名私钥不进 CI。
+# APK 未签名，发布后在本地签名，签名私钥不进 CI。
 dist: dist-server dist-android
 
 dist-server: apps/web/node_modules wasm
@@ -51,7 +51,7 @@ dist-server: apps/web/node_modules wasm
 	@pnpm -C apps/web build
 	@cp target/release/bitone-gateway $(DIST_DIR)/bin/
 	@cp -R apps/web/dist $(DIST_DIR)/web
-	@cp crates/bitone-gateway/gateway.example.toml $(DIST_DIR)/
+	@cp crates/bitone-gateway/gateway.example.toml LICENSE $(DIST_DIR)/
 	@printf '%s\n' "$(VERSION)" > $(DIST_DIR)/VERSION
 	@tar -C dist -czf dist/$(DIST_NAME).tar.gz bitone
 	@rm -rf $(DIST_DIR)

@@ -47,5 +47,5 @@ allow = [
 confidence-threshold = 0.9
 
 [licenses.private]
-# 工作区自己的 crate 不发布，许可证还没定。
+# 工作区自己的 crate 不发布，不检查。
 ignore = true
