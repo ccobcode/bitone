@@ -4,12 +4,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-enum class Lang {
-    Zh,
-    En;
+/** 语言选择器和系统语言匹配都读这张表。 */
+enum class Lang(val code: String, val label: String) {
+    En("en", "English"),
+    Zh("zh", "中文");
 
     companion object {
-        fun of(code: String): Lang = if (code.lowercase().startsWith("zh")) Zh else En
+        fun of(code: String): Lang = entries.firstOrNull { code.lowercase().startsWith(it.code) } ?: En
     }
 }
 

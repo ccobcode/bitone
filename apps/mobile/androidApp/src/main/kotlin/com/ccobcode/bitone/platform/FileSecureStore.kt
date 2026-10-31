@@ -101,7 +101,7 @@ class FileSecureStore(context: Context) : SecureStore {
 
     override fun readLanguage(): String? = prefs.getString("language", null)
 
-    override fun writeLanguage(code: String) {
+    override fun writeLanguage(code: String?) {
         prefs.edit().putString("language", code).commit()
     }
 

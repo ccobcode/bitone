@@ -528,7 +528,7 @@ class FakeStore : SecureStore {
 
     override fun readLanguage() = language
 
-    override fun writeLanguage(code: String) {
+    override fun writeLanguage(code: String?) {
         language = code
     }
 

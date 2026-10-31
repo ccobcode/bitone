@@ -1,7 +1,50 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { setLang, t, translate } from "./i18n";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { langChoice, setLang, t, translate } from "./i18n";
 
-afterEach(() => setLang("zh"));
+afterEach(() => {
+    vi.restoreAllMocks();
+    setLang("zh");
+});
+
+describe("setLang", () => {
+    beforeEach(() => {
+        const saved = new Map<string, string>();
+        vi.stubGlobal("localStorage", {
+            getItem: (key: string) => saved.get(key) ?? null,
+            setItem: (key: string, value: string) => saved.set(key, value),
+            removeItem: (key: string) => saved.delete(key),
+        });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it("自动跟随系统语言，不保存具体语言", () => {
+        vi.spyOn(navigator, "language", "get").mockReturnValue("en-US");
+        setLang("zh");
+        setLang("auto");
+        expect(langChoice()).toBe("auto");
+        expect(t("收款")).toBe("Receive");
+
+        vi.spyOn(navigator, "language", "get").mockReturnValue("zh-TW");
+        setLang("auto");
+        expect(t("收款")).toBe("收款");
+    });
+
+    it("没有对应语言的系统用英文", () => {
+        vi.spyOn(navigator, "language", "get").mockReturnValue("ja-JP");
+        setLang("auto");
+        expect(t("收款")).toBe("Receive");
+    });
+
+    it("选过之后以选择为准", () => {
+        vi.spyOn(navigator, "language", "get").mockReturnValue("en-US");
+        setLang("zh");
+        expect(langChoice()).toBe("zh");
+        expect(t("收款")).toBe("收款");
+    });
+});
 
 describe("t", () => {
     it("中文时原样返回并填入参数", () => {

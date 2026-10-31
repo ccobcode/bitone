@@ -11,7 +11,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.ccobcode.bitone.flow.WalletFlow
-import com.ccobcode.bitone.i18n.I18n
 import com.ccobcode.bitone.i18n.Lang
 import com.ccobcode.bitone.ui.components.ActionArea
 import com.ccobcode.bitone.ui.components.Card
@@ -20,6 +19,7 @@ import com.ccobcode.bitone.ui.components.Icons
 import com.ccobcode.bitone.ui.components.LargeTitle
 import com.ccobcode.bitone.ui.components.LineIcon
 import com.ccobcode.bitone.ui.components.ListRow
+import com.ccobcode.bitone.ui.components.Medium
 import com.ccobcode.bitone.ui.components.Notice
 import com.ccobcode.bitone.ui.components.NoticeTone
 import com.ccobcode.bitone.ui.components.Page
@@ -36,9 +36,9 @@ import com.ccobcode.bitone.ui.theme.FontSize
 import com.ccobcode.bitone.ui.theme.LineHeight
 import com.ccobcode.bitone.ui.theme.Space
 
-/** A10 设置。分组列表，组内没有分隔线。抹除确认在 [MainTabs]，它要盖住底部导航。 */
+/** A10 设置。分组列表，组内没有分隔线。语言选择和抹除确认在 [MainTabs]，它们要盖住底部导航。 */
 @Composable
-fun SettingsScreen(flow: WalletFlow, onWipe: () -> Unit) {
+fun SettingsScreen(flow: WalletFlow, onLanguage: () -> Unit, onWipe: () -> Unit) {
     val c = BitOneTheme.colors
     LaunchedEffect(Unit) { flow.loadManifestVersion() }
     Page(
@@ -61,8 +61,8 @@ fun SettingsScreen(flow: WalletFlow, onWipe: () -> Unit) {
                     Txt("展示二维码时调到最亮", size = FontSize.t2, color = c.text3)
                 }
             }
-            NavRow("语言", flow::toggleLanguage) {
-                Txt(if (I18n.lang == Lang.Zh) "中文" else "English", size = FontSize.t2, color = c.text2)
+            NavRow("语言", onLanguage) {
+                Txt(languageLabel(flow.languageChoice), size = FontSize.t2, color = c.text2)
             }
         }
         Card(Modifier.staggerIn(2).fillMaxWidth()) {
@@ -92,6 +92,29 @@ private fun NavRow(label: String, onClick: () -> Unit, trailing: @Composable () 
         Txt(label, Modifier.weight(1f))
         trailing()
         LineIcon(Icons.Caret, 16.dp, BitOneTheme.colors.text3)
+    }
+}
+
+private fun languageLabel(choice: Lang?) = choice?.label ?: "自动"
+
+/** 语言选择，立即生效。 */
+@Composable
+internal fun BoxScope.LanguageSheet(visible: Boolean, flow: WalletFlow, onClose: () -> Unit) {
+    Sheet(flow, visible, "语言", onClose, list = true) {
+        Column {
+            (listOf(null) + Lang.entries).forEach { choice ->
+                ListRow(
+                    selected = choice == flow.languageChoice,
+                    inset = Space.s1,
+                    onClick = {
+                        flow.chooseLanguage(choice)
+                        onClose()
+                    },
+                ) {
+                    Txt(languageLabel(choice), Modifier.weight(1f), weight = Medium)
+                }
+            }
+        }
     }
 }
 

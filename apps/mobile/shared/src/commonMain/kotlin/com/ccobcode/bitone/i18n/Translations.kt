@@ -747,6 +747,7 @@ internal val EN: Map<String, String> = mapOf(
     "网络超时" to "Network timed out",
     "联系人" to "Contact",
     "能量" to "Energy",
+    "自动" to "Auto",
     "自动亮度" to "Auto brightness",
     "自动重连" to "Reconnecting automatically",
     "至" to "To",

@@ -65,10 +65,23 @@ class I18nTest {
         assertEquals(Lang.Zh, I18n.lang)
 
         val flow = rig("zh", store).flow
-        flow.toggleLanguage()
+        assertEquals(null, flow.languageChoice)
+        flow.chooseLanguage(Lang.En)
         assertEquals(Lang.En, I18n.lang)
         assertEquals("en", store.language)
-        rig("zh", store)
+
+        val chosen = rig("zh", store).flow
+        assertEquals(Lang.En, I18n.lang)
+        assertEquals(Lang.En, chosen.languageChoice)
+
+        chosen.chooseLanguage(null)
+        assertEquals(Lang.Zh, I18n.lang)
+        assertEquals(null, store.language)
+    }
+
+    @Test
+    fun anUnsupportedSystemLanguageUsesEnglish() = runTest {
+        rig("ja-JP", FakeStore())
         assertEquals(Lang.En, I18n.lang)
     }
 

@@ -53,10 +53,10 @@ interface SecureStore {
 
     fun writePinRecord(record: PinRecord)
 
-    /** 用户选过的语言，没选过时是 null，跟随系统。 */
+    /** 用户选的语言，null 是自动，跟随系统。 */
     fun readLanguage(): String?
 
-    fun writeLanguage(code: String)
+    fun writeLanguage(code: String?)
 
     /** 展示二维码时把屏幕调到最亮，默认开。 */
     fun readAutoBrightness(): Boolean

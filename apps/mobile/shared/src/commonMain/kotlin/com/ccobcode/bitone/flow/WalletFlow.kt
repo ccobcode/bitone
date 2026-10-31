@@ -309,13 +309,22 @@ class WalletFlow(
         store.writeAutoBrightness(autoBrightness)
     }
 
-    fun toggleLanguage() {
-        I18n.lang = if (I18n.lang == Lang.Zh) Lang.En else Lang.Zh
-        store.writeLanguage(if (I18n.lang == Lang.Zh) "zh" else "en")
+    /** null 是自动，跟随系统。 */
+    var languageChoice by mutableStateOf(store.readLanguage()?.let(Lang::of))
+        private set
+
+    fun chooseLanguage(choice: Lang?) {
+        languageChoice = choice
+        store.writeLanguage(choice?.code)
+        applyLanguage()
+    }
+
+    private fun applyLanguage() {
+        I18n.lang = languageChoice ?: Lang.of(systemLanguage)
     }
 
     init {
-        I18n.lang = Lang.of(store.readLanguage() ?: systemLanguage)
+        applyLanguage()
     }
 
     var unlockError by mutableStateOf<String?>(null)

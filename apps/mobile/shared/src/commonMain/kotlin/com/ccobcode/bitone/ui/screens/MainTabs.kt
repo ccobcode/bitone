@@ -44,7 +44,7 @@ private val Tabs = listOf(Screen.Home, Screen.Receive, Screen.Settings)
 /**
  * A3、A11 和 A10 是底部导航的三个标签页，共用一个外层，导航不随页面滑动，选中块才能在项目之间连续滑动。
  *
- * 抹除确认和收款的账户选择也放在这一层，要盖住导航。
+ * 抹除确认、语言选择和收款的账户选择也放在这一层，要盖住导航。
  */
 @Composable
 fun MainTabs(flow: WalletFlow, brightness: Brightness) {
@@ -52,9 +52,11 @@ fun MainTabs(flow: WalletFlow, brightness: Brightness) {
     val density = LocalDensity.current
     var confirming by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
+    var choosingLanguage by remember { mutableStateOf(false) }
     LaunchedEffect(tab) {
         confirming = false
         picking = false
+        choosingLanguage = false
     }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         AnimatedContent(
@@ -66,12 +68,13 @@ fun MainTabs(flow: WalletFlow, brightness: Brightness) {
                 when (screen) {
                     Screen.Home -> HomeScreen(flow)
                     Screen.Receive -> ReceiveScreen(flow, brightness) { picking = true }
-                    else -> SettingsScreen(flow) { confirming = true }
+                    else -> SettingsScreen(flow, onLanguage = { choosingLanguage = true }) { confirming = true }
                 }
             }
         }
         MainNav(flow, NavItem.entries[Tabs.indexOf(tab)])
         AccountSheet(picking, flow) { picking = false }
+        LanguageSheet(choosingLanguage, flow) { choosingLanguage = false }
         WipeSheet(
             flow,
             confirming,

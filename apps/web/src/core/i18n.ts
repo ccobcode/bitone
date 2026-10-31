@@ -1,33 +1,51 @@
-// 中英文。词典以中文原文为键，来源是 design/i18n.json。语言在启动时确定，切换时重新加载页面。
+// 多语言。词典以中文原文为键，来源是 design/i18n.json。语言在启动时确定，切换时重新加载页面。
 // 核心库返回的文案是中文，显示时用 translate 按模板翻译，译不出来就显示原文。
 import en from "./i18n.gen.json";
 
-export type Lang = "zh" | "en";
+/** 语言选择器和系统语言匹配都读这张表。 */
+export const LANGUAGES = [
+    { code: "en", name: "English" },
+    { code: "zh", name: "中文" },
+] as const;
+
+export type Lang = (typeof LANGUAGES)[number]["code"];
+/** `auto` 跟随系统语言。 */
+export type LangChoice = Lang | "auto";
 
 const KEY = "bitone-lang";
 const dictionary: Record<string, string> = en;
 
-function detect(): Lang {
+function saved(): Lang | undefined {
     try {
-        const saved = localStorage.getItem(KEY);
-        if (saved === "zh" || saved === "en") return saved;
+        const code = localStorage.getItem(KEY);
+        return LANGUAGES.find((item) => item.code === code)?.code;
     } catch {
         // 隐私模式下读不到，按系统语言。
+        return undefined;
     }
-    return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
-let current = detect();
+function system(): Lang {
+    const tag = navigator.language.toLowerCase();
+    return LANGUAGES.find((item) => tag.startsWith(item.code))?.code ?? "en";
+}
+
+let current = saved() ?? system();
 if (typeof document !== "undefined") document.documentElement.lang = current === "en" ? "en" : "zh-CN";
 
 export function lang(): Lang {
     return current;
 }
 
-export function setLang(next: Lang): void {
-    current = next;
+export function langChoice(): LangChoice {
+    return saved() ?? "auto";
+}
+
+export function setLang(next: LangChoice): void {
+    current = next === "auto" ? system() : next;
     try {
-        localStorage.setItem(KEY, next);
+        if (next === "auto") localStorage.removeItem(KEY);
+        else localStorage.setItem(KEY, next);
     } catch {
         // 存不下时只影响这一次。
     }
