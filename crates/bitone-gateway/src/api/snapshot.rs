@@ -17,6 +17,8 @@ use std::convert::Infallible;
 
 /// 一次快照的条目上限，和 WebSocket 单连接的地址上限一致。
 const MAX_SNAPSHOT_ITEMS: usize = 1000;
+/// 一个快照同时查询的组数。组由客户端指定，一个请求只消耗一个限流令牌，不能打出任意多的上游并发。
+const MAX_SNAPSHOT_QUERIES: usize = Network::ALL.len();
 
 #[derive(Deserialize)]
 struct SnapshotRequest {
@@ -122,8 +124,7 @@ pub async fn snapshot(State(networks): Shared, body: Body) -> Result<Response, A
             Ok::<_, Infallible>(format!("{line}\n"))
         });
     }
-    let groups = queries.len().max(1);
-    let lines = stream::iter(queries).buffer_unordered(groups);
+    let lines = stream::iter(queries).buffer_unordered(MAX_SNAPSHOT_QUERIES);
     Response::builder()
         .header(CONTENT_TYPE, "application/x-ndjson")
         // 反向代理默认攒够一块才转发，这里要逐行送达。

@@ -39,8 +39,8 @@ export function useFeed(): Feed {
         [wallet],
     );
     return useMemo(() => {
-        const remote = (chain ?? []).map(remoteItem);
         const own = new Set(addresses.map((row) => addressKey(row.address)));
+        const remote = (chain ?? []).map((row) => remoteItem(row, own));
         return {
             ledger: ledgerRows(local ?? [], remote, own, notes ?? []),
             unsent: unsentRows(local ?? [], remote),

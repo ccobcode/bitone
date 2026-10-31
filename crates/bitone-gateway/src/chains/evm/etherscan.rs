@@ -60,6 +60,7 @@ fn history_item(row: &Value, action: &str, tokens: &[String], tips: &Tips) -> Re
         asset,
         amount,
         status,
+        flows: None,
     }))
 }
 

@@ -88,7 +88,7 @@ impl Tx {
     pub fn settled(&self) -> bool {
         match self.status {
             TxStatus::Finalized => true,
-            TxStatus::Failed => matches!(self.stage, Some("finalized" | "solidified")),
+            TxStatus::Failed => self.stage == Some("finalized"),
             _ => false,
         }
     }
@@ -113,6 +113,23 @@ pub struct HistoryItem {
     pub asset: String,
     pub amount: String,
     pub status: TxStatus,
+    /// UTXO 链的输入输出。这里的 `from`、`to`、`amount` 只是按这批地址归纳的，钱包的地址可能分在
+    /// 几批里，所以把事实一起给客户端，由它按整个钱包归纳。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flows: Option<Flows>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
+pub struct Flows {
+    pub inputs: Vec<String>,
+    pub outputs: Vec<Output>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
+pub struct Output {
+    /// 数据输出没有地址。
+    pub address: Option<String>,
+    pub amount: String,
 }
 
 #[derive(Debug, Default)]
@@ -250,7 +267,6 @@ mod tests {
     fn only_finalized_or_settled_failures_stop_polling() {
         assert!(tx(TxStatus::Finalized, None, 6).settled());
         assert!(tx(TxStatus::Failed, Some("finalized"), 1).settled());
-        assert!(tx(TxStatus::Failed, Some("solidified"), 1).settled());
         // 还能被重组。
         assert!(!tx(TxStatus::Failed, Some("latest"), 1).settled());
         assert!(!tx(TxStatus::Failed, Some("confirmed"), 1).settled());

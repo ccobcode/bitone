@@ -57,13 +57,13 @@ fn block_number(block: &Value) -> Result<u64, Failed> {
 
 /// `gettransactioninfobyid` 和 `gettransactionbyid` 映射成交易状态。
 /// 合约结果不是 SUCCESS 就是失败，普通转账也有这个字段。
-fn parse_tx(hash: &str, info: &Value, tx: &Value, solidified: bool, tip: u64) -> Result<Tx, Failed> {
+fn parse_tx(hash: &str, info: &Value, tx: &Value, confirmed: bool, tip: u64) -> Result<Tx, Failed> {
     let block = info.get("blockNumber").and_then(Value::as_u64).ok_or(Failed)?;
     let result = tx.pointer("/ret/0/contractRet").and_then(Value::as_str).ok_or(Failed)?;
     let failed = result != SUCCESS || info.get("result").and_then(Value::as_str) == Some("FAILED");
     // 手续费为 0 时没有这个字段。
     let fee = info.get("fee").map_or(Ok("0".to_string()), decimal)?;
-    let status = match (failed, solidified) {
+    let status = match (failed, confirmed) {
         (true, _) => TxStatus::Failed,
         (false, true) => TxStatus::Finalized,
         (false, false) => TxStatus::Included,
@@ -72,7 +72,7 @@ fn parse_tx(hash: &str, info: &Value, tx: &Value, solidified: bool, tip: u64) ->
         hash: hash.to_string(),
         status,
         confirmations: tip.saturating_sub(block) + 1,
-        stage: Some(if solidified { "solidified" } else { "included" }),
+        stage: Some(if confirmed { "finalized" } else { "included" }),
         block: Some(block),
         fee: Some(fee),
     })
@@ -181,6 +181,7 @@ fn native_item(row: &Value) -> Result<Option<HistoryItem>, Failed> {
         asset: NATIVE.to_string(),
         amount: value.get(amount_key).map_or(Ok("0".to_string()), decimal)?,
         status: if failed { TxStatus::Failed } else { TxStatus::Finalized },
+        flows: None,
     }))
 }
 
@@ -198,6 +199,7 @@ fn token_item(row: &Value, token: &str) -> Result<Option<HistoryItem>, Failed> {
         asset: token.to_string(),
         amount: decimal(row.get("value").ok_or(Failed)?)?,
         status: TxStatus::Finalized,
+        flows: None,
     }))
 }
 
@@ -253,13 +255,13 @@ impl Tron {
     /// `walletsolidity` 查得到才算区块确认。查不到再问全节点，这时交易可能刚上链。
     async fn tx(&self, hash: &str, tip: u64) -> Result<Vec<Tx>, Failed> {
         let value = json!({"value": hash});
-        let solid = self
+        let receipt = self
             .http
             .post_to("/walletsolidity/gettransactioninfobyid", &value)
             .await?;
-        let solidified = found(&solid);
-        let info = if solidified {
-            solid
+        let confirmed = found(&receipt);
+        let info = if confirmed {
+            receipt
         } else {
             self.http.post_to("/wallet/gettransactioninfobyid", &value).await?
         };
@@ -272,7 +274,7 @@ impl Tron {
             }]);
         }
         let tx = self.http.post_to("/wallet/gettransactionbyid", &value).await?;
-        Ok(vec![parse_tx(hash, &info, &tx, solidified, tip)?])
+        Ok(vec![parse_tx(hash, &info, &tx, confirmed, tip)?])
     }
 
     async fn resource(&self, address: &String) -> Result<Vec<(String, Value)>, Failed> {
@@ -294,20 +296,50 @@ impl Tron {
         Ok(json!({"energy": "0", "bandwidth": TRANSFER_BANDWIDTH.to_string(), "activationFee": fee.to_string()}))
     }
 
+    /// 最新已确认区块的时间，单位是毫秒。
+    async fn confirmed_time(&self) -> Result<u64, Failed> {
+        let block = self.http.post_to("/walletsolidity/getnowblock", &json!({})).await?;
+        block
+            .pointer("/block_header/raw_data/timestamp")
+            .and_then(Value::as_u64)
+            .ok_or(Failed)
+    }
+
+    /// 一页记录。`confirmed` 时只取已确认的记录，这时的状态都是最终状态。
+    async fn page(
+        &self,
+        addresses: &[String],
+        cursor: &Cursor,
+        since: Option<u64>,
+        confirmed: bool,
+    ) -> Result<HistoryPage, Failed> {
+        let names =
+            || std::iter::once(NATIVE_STREAM.to_string()).chain((0..self.tokens.len()).map(|index| index.to_string()));
+        let keys = (0..addresses.len()).flat_map(|index| names().map(move |name| format!("{index}:{name}")));
+        let queries = streams(keys, cursor)
+            .into_iter()
+            .map(|(key, token)| self.stream(key, token, addresses, since, confirmed))
+            .collect();
+        Ok(merge_pages(run_all(queries).await?))
+    }
+
     async fn stream(
         &self,
         key: String,
         token: Option<String>,
         addresses: &[String],
         since: Option<u64>,
+        confirmed: bool,
     ) -> Result<Vec<StreamPage>, Failed> {
         let address = stream_index(&key)
             .and_then(|index| addresses.get(index))
             .ok_or(Failed)?;
         let name = key.split(':').nth(1).ok_or(Failed)?;
-        // 只取区块确认的记录，所以这里的状态都是最终状态。
         let start = since.map(|since| (since + 1).to_string());
-        let mut query = vec![("limit", PAGE_SIZE), ("only_confirmed", "true")];
+        let mut query = vec![("limit", PAGE_SIZE)];
+        if confirmed {
+            query.push(("only_confirmed", "true"));
+        }
         if let Some(start) = &start {
             query.push(("min_timestamp", start));
         }
@@ -369,10 +401,33 @@ impl Tron {
     }
 }
 
+/// 跟块时也取还没确认的记录，确认之前状态是 `included`。
+fn unconfirmed(mut item: HistoryItem, confirmed: u64) -> HistoryItem {
+    let newer = item.time.is_some_and(|time| time * 1000 > confirmed);
+    if newer && item.status == TxStatus::Finalized {
+        item.status = TxStatus::Included;
+    }
+    item
+}
+
 impl Upstream for Tron {
     fn watch(&self, addresses: watch::Receiver<Vec<String>>, signals: mpsc::Sender<Signal>) -> BoxFuture<'_, ()> {
         Box::pin(async move {
             let _ = self.follow(addresses, signals).await;
+        })
+    }
+
+    /// 只取已确认的记录时，刚到账的转账不在推送里，要等下次活动才看得到。
+    fn recent<'a>(&'a self, addresses: &'a [String], _previous: u64) -> Query<'a, Vec<HistoryItem>> {
+        Box::pin(async move {
+            let confirmed = self.confirmed_time().await?;
+            let cursor = Cursor::new();
+            let page = self.page(addresses, &cursor, None, false).await?;
+            Ok(page
+                .items
+                .into_iter()
+                .map(|item| unconfirmed(item, confirmed))
+                .collect())
         })
     }
 
@@ -407,21 +462,9 @@ impl Upstream for Tron {
         since: Option<u64>,
     ) -> Query<'a, HistoryPage> {
         Box::pin(async move {
-            // 这里只有区块确认的记录，所以水位是最新确认区块的时间。
-            let solid = self.http.post_to("/walletsolidity/getnowblock", &json!({})).await?;
-            let checkpoint = solid
-                .pointer("/block_header/raw_data/timestamp")
-                .and_then(Value::as_u64)
-                .ok_or(Failed)?;
-            let names = || {
-                std::iter::once(NATIVE_STREAM.to_string()).chain((0..self.tokens.len()).map(|index| index.to_string()))
-            };
-            let keys = (0..addresses.len()).flat_map(|index| names().map(move |name| format!("{index}:{name}")));
-            let queries = streams(keys, cursor)
-                .into_iter()
-                .map(|(key, token)| self.stream(key, token, addresses, since))
-                .collect();
-            let page = merge_pages(run_all(queries).await?);
+            // 这里只有已确认的记录，所以水位是最新已确认区块的时间。
+            let checkpoint = self.confirmed_time().await?;
+            let page = self.page(addresses, cursor, since, true).await?;
             Ok(HistoryPage { checkpoint, ..page })
         })
     }
@@ -477,19 +520,19 @@ mod tests {
     }
 
     #[test]
-    fn solidified_is_final_and_included_is_not() {
+    fn confirmed_is_final_and_included_is_not() {
         let tx = parse_tx(HASH, &info(), &ret(SUCCESS), false, 100).unwrap();
         assert_eq!(
             (tx.status, tx.stage, tx.confirmations),
             (TxStatus::Included, Some("included"), 6)
         );
         let tx = parse_tx(HASH, &info(), &ret(SUCCESS), true, 100).unwrap();
-        assert_eq!((tx.status, tx.stage), (TxStatus::Finalized, Some("solidified")));
+        assert_eq!((tx.status, tx.stage), (TxStatus::Finalized, Some("finalized")));
         assert_eq!((tx.block, tx.fee.as_deref()), (Some(95), Some("345000")));
     }
 
     #[test]
-    fn anything_but_success_is_failed_even_when_solidified() {
+    fn anything_but_success_is_failed_even_when_confirmed() {
         for result in [
             "REVERT",
             "OUT_OF_ENERGY",
@@ -497,8 +540,8 @@ mod tests {
             "BAD_JUMP_DESTINATION",
             "UNKNOWN",
         ] {
-            for solidified in [false, true] {
-                let tx = parse_tx(HASH, &info(), &ret(result), solidified, 100).unwrap();
+            for confirmed in [false, true] {
+                let tx = parse_tx(HASH, &info(), &ret(result), confirmed, 100).unwrap();
                 assert_eq!(tx.status, TxStatus::Failed, "{result}");
             }
         }

@@ -212,7 +212,7 @@ export function finality(tx: TxRecord): Finality {
                 t("到达 finalized 区块后完成"),
             );
         case "tron":
-            return stage([t("已打包"), t("区块确认")], ["included", "solidified"], t("区块确认后完成"));
+            return stage([t("已打包"), t("区块确认")], ["included", "finalized"], t("区块确认后完成"));
         case "solana":
             return stage(
                 [t("已处理"), t("已投票"), t("最终")],

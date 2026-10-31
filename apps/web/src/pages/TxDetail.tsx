@@ -639,7 +639,8 @@ function ChainView({ entries }: { entries: ChainEntry[] }) {
     const { wallet, addresses } = useApp();
     const rows = useMemo(() => {
         const own = new Set(addresses.map((item) => addressKey(item.address)));
-        return ledgerRows([], entries.map(remoteItem), own, []);
+        const remote = entries.map((entry) => remoteItem(entry, own));
+        return ledgerRows([], remote, own, []);
     }, [entries, addresses]);
     const [row, ...others] = rows;
     const { network, hash, txKey: key } = entries[0] as ChainEntry;

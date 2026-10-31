@@ -1,9 +1,18 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { initCore } from "../testing";
 import { fetchHistory, fetchSnapshot, type HistoryItem } from "../gateway/client";
 import { db, type ChainEntry } from "./db";
 import { applyChainUpdate, syncFeed } from "./feed";
-import { claimNotice, incomingNotices, mergedNotice, missedNotice, onNotice, publish, type Notice } from "./notify";
+import {
+    claimNotice,
+    incomingNotices,
+    mergedNotice,
+    missedNotice,
+    onNotice,
+    publish,
+    systemNotice,
+    type Notice,
+} from "./notify";
 
 vi.mock("../gateway/client", async (actual) => ({
     ...(await actual<typeof import("../gateway/client")>()),
@@ -162,5 +171,43 @@ describe("分发", () => {
         publish(notice as Notice);
         stop();
         expect(seen).toEqual([true]);
+    });
+});
+
+describe("systemNotice", () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it("Android Chrome 的构造函数抛错时不影响调用方", () => {
+        vi.stubGlobal(
+            "Notification",
+            class {
+                constructor() {
+                    throw new TypeError("Illegal constructor");
+                }
+            },
+        );
+        expect(() => systemNotice("收到", vi.fn())).not.toThrow();
+    });
+
+    it("点击时跳转并关闭", () => {
+        const close = vi.fn();
+        const shown: { onclick?: () => void }[] = [];
+        vi.stubGlobal(
+            "Notification",
+            class {
+                onclick?: () => void;
+                close = close;
+                constructor() {
+                    shown.push(this);
+                }
+            },
+        );
+        const open = vi.fn();
+        systemNotice("收到", open);
+        shown[0]?.onclick?.();
+        expect(open).toHaveBeenCalledOnce();
+        expect(close).toHaveBeenCalledOnce();
     });
 });

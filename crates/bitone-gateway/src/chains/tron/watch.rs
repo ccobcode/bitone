@@ -5,7 +5,7 @@ use crate::upstream::{Failed, Signal};
 use bitcoin::base58;
 use bitcoin::hex::DisplayHex;
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{Instant, sleep};
@@ -59,6 +59,8 @@ impl Tron {
         // 从这个高度开始解析，订阅的基线到这里之间的变化要靠对账找回来。
         signals.send(Signal::Reconcile).await.map_err(|_| Failed)?;
         let mut reconciled = Instant::now();
+        // 刚上链的交易可能还没进 TronGrid 的索引，这些地址下次对账时再看一遍。
+        let mut again: HashSet<String> = HashSet::new();
         loop {
             sleep(BLOCK_POLL).await;
             let tip = self.tip().await?;
@@ -90,9 +92,12 @@ impl Tron {
             }
 
             last = tip;
+            again.extend(touched.iter().cloned());
             signals.send(Signal::Block(tip, touched)).await.map_err(|_| Failed)?;
             if reconciled.elapsed() >= RECONCILE_INTERVAL {
                 reconciled = Instant::now();
+                let recheck = std::mem::take(&mut again).into_iter().collect();
+                signals.send(Signal::Touched(recheck)).await.map_err(|_| Failed)?;
                 signals.send(Signal::Reconcile).await.map_err(|_| Failed)?;
             }
         }

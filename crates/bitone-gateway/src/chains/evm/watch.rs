@@ -18,6 +18,11 @@ const SCAN_BACK: u64 = 16;
 /// 查原生币余额的最短间隔。
 const NATIVE_CHECK: Duration = Duration::from_secs(3);
 
+/// 有地址还没有原生币基线。基线在订阅之后才取到，这段时间的变化要靠对账找回来。
+fn needs_baseline(natives: &HashMap<String, String>, owners: &HashMap<String, String>) -> bool {
+    owners.values().any(|address| !natives.contains_key(address))
+}
+
 impl Evm {
     /// 一批地址的原生币余额。比完整区块轻得多，还能发现区块交易列表里没有的内部转账。
     async fn native_balances(&self, addresses: &[String]) -> Result<HashMap<String, String>, Failed> {
@@ -41,6 +46,8 @@ impl Evm {
         let mut socket = open_socket(self.http.socket_url()).await?;
         send_call(&mut socket, 1, "eth_subscribe", json!(["newHeads"])).await?;
         let mut next_id = 2;
+        // 等回复的订阅。被拒绝时这条连接收不到这些推送，换上游或者退回轮询。
+        let mut subscribing = HashSet::from([1]);
         let mut filters: Vec<String> = Vec::new();
         let mut owners: HashMap<String, String> = HashMap::new();
         let mut natives: HashMap<String, String> = HashMap::new();
@@ -50,9 +57,14 @@ impl Evm {
             tokio::select! {
                 message = next_message(&mut socket) => {
                     let message = message?;
-                    if let Some(id) = message.get("result").and_then(Value::as_str) {
-                        if message.get("id").and_then(Value::as_u64).is_some_and(|id| id > 1) {
-                            filters.push(id.to_string());
+                    let id = message.get("id").and_then(Value::as_u64);
+                    let pending = id.is_some_and(|id| subscribing.remove(&id));
+                    if pending && message.get("error").is_some_and(|error| !error.is_null()) {
+                        return Err(Failed);
+                    }
+                    if let Some(filter) = message.get("result").and_then(Value::as_str) {
+                        if id.is_some_and(|id| id > 1) {
+                            filters.push(filter.to_string());
                         }
                         continue;
                     }
@@ -67,7 +79,7 @@ impl Evm {
                         signals.send(Signal::Touched(touched)).await.map_err(|_| Failed)?;
                     } else if let Some(number) = result.get("number") {
                         signals.send(Signal::Head(hex_u64(number)?)).await.map_err(|_| Failed)?;
-                        let fresh = natives.len() != owners.len();
+                        let fresh = needs_baseline(&natives, &owners);
                         if fresh || checked.elapsed() >= NATIVE_CHECK {
                             checked = Instant::now();
                             let watched: Vec<String> = owners.values().cloned().collect();
@@ -101,6 +113,7 @@ impl Evm {
                     for topics in [json!([TRANSFER, own, null]), json!([TRANSFER, null, own])] {
                         let filter = json!({"address": self.tokens, "topics": topics});
                         send_call(&mut socket, next_id, "eth_subscribe", json!(["logs", filter])).await?;
+                        subscribing.insert(next_id);
                         next_id += 1;
                     }
                 }
@@ -113,10 +126,12 @@ impl Evm {
     // 没有索引服务的网络要显示这部分时接 trace 接口。
     pub(super) async fn scan(&self, addresses: &[String], previous: u64) -> Result<Vec<HistoryItem>, Failed> {
         let tips = self.tips().await?;
-        let first = previous
-            .saturating_sub(SCAN_BACK)
-            .max(tips.latest.saturating_sub(MAX_SCAN - 1))
-            .min(tips.latest);
+        let oldest = tips.latest.saturating_sub(MAX_SCAN - 1);
+        // 中间有看不到的块时不能报成功，失败时 `txs` 是空，客户端自己补取。
+        if previous + 1 < oldest {
+            return Err(Failed);
+        }
+        let first = previous.saturating_sub(SCAN_BACK).max(oldest).min(tips.latest);
         let own: HashSet<String> = addresses.iter().map(|a| a.to_ascii_lowercase()).collect();
         let hex = |block: u64| format!("{block:#x}");
 
@@ -182,6 +197,7 @@ impl Evm {
                 asset: NATIVE.to_string(),
                 amount,
                 status: item_status(failed, block, &tips),
+                flows: None,
             });
         }
         for log in logs.iter().flat_map(|logs| logs.as_array().into_iter().flatten()) {
@@ -202,11 +218,32 @@ impl Evm {
                 asset: asset.clone(),
                 amount: hex_to_decimal(log.get("data").and_then(Value::as_str).ok_or(Failed)?).ok_or(Failed)?,
                 status: item_status(false, block, &tips),
+                flows: None,
             });
         }
         // 自己转给自己的代币会同时出现在转出和转入两次查询里。
         let mut seen = HashSet::new();
         items.retain(|item| seen.insert(item.clone()));
         Ok(items)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn owners(list: &[&str]) -> HashMap<String, String> {
+        list.iter()
+            .map(|address| (address.to_string(), address.to_string()))
+            .collect()
+    }
+
+    /// 地址等量替换时数量不变，比较数量会跳过对账。
+    #[test]
+    fn a_replaced_address_needs_a_baseline() {
+        let natives = HashMap::from([("a".to_string(), "0x1".to_string())]);
+        assert!(!needs_baseline(&natives, &owners(&["a"])));
+        assert!(needs_baseline(&natives, &owners(&["b"])));
+        assert!(!needs_baseline(&natives, &owners(&[])), "地址变少不用对账");
     }
 }

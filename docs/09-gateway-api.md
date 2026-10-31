@@ -214,6 +214,8 @@ Bitcoin 单位是 sat/vB，EVM 是 wei，TRON 是 sun，Solana 是 micro-lamport
 }
 ```
 
+Bitcoin 的条目多一个 `flows`：`{"inputs": ["..."], "outputs": [{"address": "...", "amount": "100"}]}`，数据输出的 `address` 是 `null`。`from`、`to`、`amount` 只按这次请求的地址归纳，钱包的地址分在几批时不准，客户端要用 `flows` 按整个钱包归纳。输入输出合计超过 256 个时没有这个字段。
+
 `checkpoint` 是已经不可回滚的位置，也是不透明字符串，每页都返回，保存第一页的。`unchanged` 为真表示上次之后没有变化，这一页是空的，不能当成记录被回滚。只有 Bitcoin 会返回真，这时网关没有查询任何地址。
 
 `cursor` 为空表示没有更多，它是不透明字符串。空页也可能带 `cursor`，不能遇到空页就停。`asset` 的写法和余额接口相同。`time`、`from`、`to` 可能为 null。
@@ -257,7 +259,7 @@ JSON-RPC 2.0。`addresses` 频道：
 }
 ```
 
-`balances` 只含余额变了的地址，是绝对值。`txs` 的格式与 `/history` 的条目相同，地址没有变化时为空数组，网关这次没取到时为 `null`，这时客户端要自己补取。`previous` 是这个订阅上一条推送的高度，接不上说明漏了推送。Bitcoin 的内存池交易不改变高度，这时 `previous` 等于 `height`。
+`balances` 只含余额变了的地址，是绝对值。`txs` 的格式与 `/history` 的条目相同，地址没有变化时为空数组，网关这次没取到，或者上一条推送没发出去时为 `null`，这时客户端要自己补取。`previous` 是这个订阅上一条推送的高度，接不上说明漏了推送。Bitcoin 的内存池交易不改变高度，这时 `previous` 等于 `height`。
 
 `ping` 方法返回 `"pong"`。浏览器看不到 WebSocket 的 ping 帧，要靠它发现连接已经断了。
 

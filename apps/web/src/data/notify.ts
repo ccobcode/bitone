@@ -6,6 +6,7 @@ import { t } from "../core/i18n";
 import { formatAsset, lookupAsset, priceKey } from "../core/manifest";
 import { addressKey, type PriceMap } from "../gateway/client";
 import { db, type ChainEntry } from "./db";
+import { walletView } from "./feed";
 
 export type NoticeKind = "incoming" | "included" | "failed";
 
@@ -65,7 +66,8 @@ export function incomingNotices(
     own: ReadonlySet<string>,
     prices: PriceMap | null,
 ): Notice[] {
-    const unique = new Map(rows.filter((row) => worthTelling(row, own, prices)).map((row) => [row.txKey, row]));
+    const viewed = rows.map((row) => ({ ...row, ...walletView(row, own) }));
+    const unique = new Map(viewed.filter((row) => worthTelling(row, own, prices)).map((row) => [row.txKey, row]));
     return [...unique.values()].map(incomingNotice);
 }
 
@@ -114,4 +116,20 @@ export function publish(notice: Notice): void {
 export function onNotice(listener: Listener): () => void {
     listeners.add(listener);
     return () => listeners.delete(listener);
+}
+
+/**
+ * 弹系统通知。Android Chrome 只允许通过 Service Worker 发通知，这里的构造函数会抛错。
+ * 通知发不出去只是少一次提醒，不能影响调用方，同步也在这条调用链上。
+ */
+export function systemNotice(body: string, onClick: () => void): void {
+    try {
+        const shown = new Notification("BitOne", { body });
+        shown.onclick = () => {
+            onClick();
+            shown.close();
+        };
+    } catch {
+        // 页面内的提示和声音不受影响。
+    }
 }

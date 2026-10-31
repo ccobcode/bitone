@@ -90,6 +90,7 @@ impl Evm {
                 asset: NATIVE.to_string(),
                 amount,
                 status: item_status(failed, block, &tips),
+                flows: None,
             });
         }
         for log in rows("logs") {
@@ -110,6 +111,7 @@ impl Evm {
                 asset: asset.clone(),
                 amount: hex_amount(log.get("data"))?,
                 status: item_status(false, block, &tips),
+                flows: None,
             });
         }
         let page = StreamPage {

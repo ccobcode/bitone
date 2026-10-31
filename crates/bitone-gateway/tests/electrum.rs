@@ -183,6 +183,7 @@ impl Chain {
         match method {
             "blockchain.headers.subscribe" => ok(json!({"height": self.tip, "hex": ""})),
             "blockchain.scripthash.subscribe" => ok(Value::Null),
+            "blockchain.scripthash.unsubscribe" => ok(json!(true)),
             "blockchain.scripthash.get_balance" => {
                 let mine = self.history.contains_key(params[0].as_str().unwrap());
                 ok(json!({"confirmed": if mine { 700 } else { 0 }, "unconfirmed": 0}))
@@ -799,7 +800,7 @@ async fn long_connection_reports_mempool_transactions_at_once() {
     let (url, calls, pushes) = pushing_server(move |method, params| node.lock().unwrap().reply(method, params)).await;
     let gateway = Gateway::start(&format!(
         "{}{}",
-        "ws_poll_interval_ms = 10\n",
+        "ws_poll_interval_ms = 10\nfollow_poll_interval_ms = 10\n",
         one_upstream("bitcoin", &url)
     ))
     .await;
@@ -844,7 +845,10 @@ async fn long_connection_moves_on_when_the_server_goes_away() {
         pushing_server(move |method, params| first.lock().unwrap().reply(method, params)).await;
     let (second, second_calls, _) =
         pushing_server(move |method, params| second.lock().unwrap().reply(method, params)).await;
-    let config = format!("ws_poll_interval_ms = 10\n{}", two_upstreams(&first, &second));
+    let config = format!(
+        "ws_poll_interval_ms = 10\nfollow_poll_interval_ms = 10\n{}",
+        two_upstreams(&first, &second)
+    );
     let gateway = Gateway::start(&config).await;
     let mut ws = gateway.ws().await;
     call(&mut ws, watch("bitcoin", &[BTC])).await;
@@ -857,4 +861,78 @@ async fn long_connection_moves_on_when_the_server_goes_away() {
     wait_for_calls(&second_calls, "blockchain.scripthash.subscribe", 1).await;
     let update = next_json(&mut ws).await;
     assert_eq!(update["params"]["txs"][0]["status"], "pending");
+}
+
+/// 基线比上游订阅早，后加入的地址在这段时间到账时服务器不会推送，要补查一次。
+#[tokio::test]
+async fn an_address_added_later_is_checked_after_it_is_subscribed() {
+    let (parent, _, _) = payment_pair();
+    let mut chain = Chain::new(100);
+    chain.add(&parent, 80, &[]);
+    let incoming = tx(&[outpoint(&parent, 0)], vec![pay(BTC_OTHER, 1_000)]);
+    let txid = incoming.compute_txid().to_string();
+    let chain = Arc::new(Mutex::new(chain));
+    let node = chain.clone();
+    let later = script_hash(BTC_OTHER);
+    let (url, calls, _) = pushing_server(move |method, params| {
+        let mut chain = node.lock().unwrap();
+        if method == "blockchain.scripthash.subscribe" && params[0] == later {
+            chain.add(&incoming, 0, &[BTC_OTHER]);
+        }
+        chain.reply(method, params)
+    })
+    .await;
+    let config = format!(
+        "ws_poll_interval_ms = 10\nfollow_poll_interval_ms = 10\n{}",
+        one_upstream("bitcoin", &url)
+    );
+    let gateway = Gateway::start(&config).await;
+    let mut ws = gateway.ws().await;
+    assert!(call(&mut ws, watch("bitcoin", &[BTC])).await["result"].is_string());
+    wait_for_calls(&calls, "blockchain.scripthash.subscribe", 1).await;
+    assert_eq!(next_json(&mut ws).await["params"]["txs"], json!([]));
+
+    assert!(call(&mut ws, watch("bitcoin", &[BTC_OTHER])).await["result"].is_string());
+    let update = next_json(&mut ws).await;
+    assert_eq!(update["params"]["txs"][0]["hash"], txid, "{update}");
+}
+
+/// 没有人看的地址要退订，退订之后服务器发来的推送也不能断开连接。
+#[tokio::test]
+async fn long_connection_unsubscribes_addresses_nobody_watches() {
+    let (parent, _, _) = payment_pair();
+    let mut chain = Chain::new(100);
+    chain.add(&parent, 80, &[]);
+    let chain = Arc::new(Mutex::new(chain));
+    let node = chain.clone();
+    let (url, calls, pushes) = pushing_server(move |method, params| node.lock().unwrap().reply(method, params)).await;
+    let config = format!(
+        "ws_poll_interval_ms = 10\nfollow_poll_interval_ms = 10\n{}",
+        one_upstream("bitcoin", &url)
+    );
+    let gateway = Gateway::start(&config).await;
+    let mut ws = gateway.ws().await;
+    let first = call(&mut ws, watch("bitcoin", &[BTC])).await["result"].clone();
+    assert!(call(&mut ws, watch("bitcoin", &[BTC_OTHER])).await["result"].is_string());
+    wait_for_calls(&calls, "blockchain.scripthash.subscribe", 2).await;
+
+    let message = json!({"jsonrpc": "2.0", "id": 9, "method": "unsubscribe", "params": [first]});
+    let mut update = call(&mut ws, message).await;
+    while update.get("result").is_none() {
+        update = next_json(&mut ws).await;
+    }
+    wait_for_calls(&calls, "blockchain.scripthash.unsubscribe", 1).await;
+    let heads = calls.count("blockchain.headers.subscribe");
+    pushes.send(status_push(BTC)).unwrap();
+    chain.lock().unwrap().tip = 101;
+    pushes.send(head_push(101)).unwrap();
+    let mut height = json!(null);
+    for _ in 0..4 {
+        height = next_json(&mut ws).await["params"]["height"].clone();
+        if height == 101 {
+            break;
+        }
+    }
+    assert_eq!(height, 101, "连接还在");
+    assert_eq!(calls.count("blockchain.headers.subscribe"), heads, "没有退回轮询");
 }

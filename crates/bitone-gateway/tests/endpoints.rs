@@ -1252,12 +1252,12 @@ async fn tron_tx_walks_through_the_stages() {
     let tx = tron_status(&gateway).await;
     assert_eq!(
         (&tx["status"], &tx["stage"]),
-        (&json!("finalized"), &json!("solidified"))
+        (&json!("finalized"), &json!("finalized"))
     );
 }
 
 #[tokio::test]
-async fn tron_contract_failures_are_failed_even_after_solidification() {
+async fn tron_contract_failures_are_failed_even_after_confirmation() {
     let (node, url) = TronNode::start().await;
     let gateway = tron_gateway(&url).await;
     let info = json!({"id": hex_hash('a'), "blockNumber": 95, "fee": 27000000, "result": "FAILED"});
@@ -1275,7 +1275,7 @@ async fn tron_contract_failures_are_failed_even_after_solidification() {
     let tx = tron_status(&gateway).await;
     assert_eq!(
         (&tx["status"], &tx["stage"], &tx["fee"]),
-        (&json!("failed"), &json!("solidified"), &json!("27000000"))
+        (&json!("failed"), &json!("finalized"), &json!("27000000"))
     );
 }
 
@@ -1299,7 +1299,7 @@ async fn tron_resources_combine_two_endpoints() {
 }
 
 #[tokio::test]
-async fn tron_ref_block_is_the_latest_solidified_block() {
+async fn tron_ref_block_is_the_latest_confirmed_block() {
     let (_, url) = TronNode::start().await;
     let gateway = tron_gateway(&url).await;
     let (status, reply) = gateway.get_json("/v1/tron/ref-block").await;

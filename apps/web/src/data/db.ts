@@ -1,6 +1,7 @@
 // 浏览器存储，表结构见 docs/03-system.md 第 3 节。
 import { Dexie, type Table } from "dexie";
 import type { AccountKind, Chain, Mode } from "../core";
+import type { Flows } from "../gateway/client";
 import type { ChainStatus } from "./machine";
 
 export interface Wallet {
@@ -198,6 +199,10 @@ export interface ChainEntry {
     asset: string;
     amount: string;
     status: ChainStatus;
+    /** Bitcoin 的输入输出，显示时按整个钱包归纳。 */
+    flows?: Flows;
+    /** 最后一次在快照或推送里看到它的时间。 */
+    seenAt?: number;
 }
 
 /** 一批地址的同步进度。新地址另成一批，已有的批次和水位不受影响。 */

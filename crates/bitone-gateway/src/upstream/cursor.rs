@@ -106,6 +106,7 @@ mod tests {
             asset: NATIVE.into(),
             amount: "1".into(),
             status: TxStatus::Included,
+            flows: None,
         };
         let pages = vec![
             StreamPage {

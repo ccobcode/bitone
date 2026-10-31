@@ -563,7 +563,7 @@ async fn subscribe(ws: &mut Ws, addresses: &[&str]) -> String {
     reply["result"].as_str().expect("订阅 ID").to_string()
 }
 
-const FAST_POLL: &str = "ws_poll_interval_ms = 10";
+const FAST_POLL: &str = "ws_poll_interval_ms = 10\nfollow_poll_interval_ms = 10";
 
 #[tokio::test]
 async fn ws_pushes_only_when_balance_changes() {
@@ -893,7 +893,11 @@ async fn ws_close_frame_clears_subscriptions() {
 #[tokio::test]
 async fn ws_silent_client_is_dropped_by_heartbeat() {
     let (node, url) = EvmNode::start("0x1").await;
-    let gateway = Gateway::start(&evm_config(&[&url], "ws_poll_interval_ms = 10\nws_heartbeat_ms = 20")).await;
+    let gateway = Gateway::start(&evm_config(
+        &[&url],
+        "ws_poll_interval_ms = 10\nfollow_poll_interval_ms = 10\nws_heartbeat_ms = 20",
+    ))
+    .await;
     // 连接保持着，但不再读取，也就不会回 pong。
     let mut ws = gateway.ws().await;
     subscribe(&mut ws, &[EVM]).await;

@@ -1,10 +1,4 @@
-// 交易状态机，严格对应 docs/03-system.md 第 7 节的状态图。这里只有纯函数，写库在 txs.ts。
-//
-// 文档之外多了几条边，已写进回报：
-//   结果不明 → 已过期、已签名 → 已过期：TRON 超过过期时间后这笔不可能再上链。
-//   已广播和结果不明 → 已过期 也用于 Solana 创建 nonce 账户：blockhash 过期后同样作废。
-//   已替换 → 确认中：替换的判定来自确认中的交易或网关，重组后被判替换的那笔可能上链。
-//   这时必须如实显示，否则用户以为没有付出去，会再付一次。
+// 交易状态机，状态图见 docs/03-system.md 第 7 节。这里只有纯函数，写库在 txs.ts。
 import type { TxRecord, TxState } from "./db";
 import { t } from "../core/i18n";
 
@@ -100,7 +94,7 @@ export function isWatched(tx: Pick<TxRecord, "state" | "updatedAt">, now: number
 
 /** 回滚的结果也可能被重组，到这些阶段才算定论。 */
 function isFinalStage(stage: string | null): boolean {
-    return stage === null || stage === "finalized" || stage === "solidified";
+    return stage === null || stage === "finalized";
 }
 
 /** 链上失败的说明。只有 EVM 是合约回滚，其他链的失败原因不止这一种。 */

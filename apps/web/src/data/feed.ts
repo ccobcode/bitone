@@ -12,6 +12,7 @@ import {
     fetchTxs,
     type Balance,
     type ChainUpdate,
+    type Flows,
     type HistoryItem,
     type HistoryPage,
     type SnapshotItem,
@@ -19,6 +20,9 @@ import {
 } from "../gateway/client";
 import type { HistoryStream } from "../gateway/history";
 import { db, txKey, type BalanceRow, type ChainEntry, type FeedCursor } from "./db";
+
+/** 索引服务比推送慢。这么久之后快照里还没有，才算被重组掉或者被内存池丢弃。 */
+const INDEX_LAG = 10 * 60_000;
 
 const isBitcoin = (network: string) => networkList().some((n) => n.id === network && n.chain === "bitcoin");
 
@@ -32,9 +36,66 @@ export function streamId(walletId: string, { network, addresses }: HistoryStream
 export function entry(walletId: string, stream: string, network: string, item: HistoryItem): ChainEntry {
     const key = txKey(network, item.hash);
     const asset = addressKey(item.asset);
-    // Bitcoin 的条目按一批地址归纳，地址变多后金额会变，所以一笔只留一条。
-    const id = isBitcoin(network) ? key : `${key}:${asset}:${item.from}:${item.to}:${item.amount}`;
-    return { ...item, id, walletId, stream, txKey: key, network, amount: item.amount.toString() };
+    // 本地构建的记录是校验和地址，网关返回的是小写，同一笔要算成一条。
+    const party = (address: string | null) => address && addressKey(address);
+    const content = `${asset}:${party(item.from)}:${party(item.to)}:${item.amount}`;
+    // Bitcoin 的条目带输入输出，从哪批地址看都是同一笔，所以一笔只留一条。
+    const id = isBitcoin(network) ? key : `${key}:${content}`;
+    const seenAt = Date.now();
+    return { ...item, id, walletId, stream, txKey: key, network, amount: item.amount.toString(), seenAt };
+}
+
+/** 显示用的方向和金额。 */
+export type WalletView = Pick<ChainEntry, "from" | "to" | "amount">;
+
+/**
+ * 按整个钱包归纳一笔 Bitcoin 交易。网关只看到一批地址，找零可能在另一批里，直接用它的结果会把
+ * 找零算成付款。规则和网关相同：输入里有自己的地址算转出，金额是付给别人的部分，否则算转入。
+ * 没有输入输出的链和老记录用保存的结果。
+ */
+export function walletView(row: WalletView & { flows?: Flows }, own: ReadonlySet<string>): WalletView {
+    if (!row.flows) return row;
+    const { inputs, outputs } = row.flows;
+    const isOwn = (address: string | null) => address !== null && own.has(addressKey(address));
+    const mine = outputs.filter((output) => isOwn(output.address));
+    const others = outputs.filter((output) => !isOwn(output.address));
+    const total = (list: Flows["outputs"]) => list.reduce((sum, output) => sum + BigInt(output.amount), 0n).toString();
+    // 数据输出没有地址，不算收款方。
+    const first = (list: Flows["outputs"]) => list.find((output) => output.address !== null)?.address ?? null;
+    const sender = inputs.find(isOwn);
+    if (sender === undefined) return { from: inputs[0] ?? null, to: first(mine), amount: total(mine) };
+    const recipient = first(others);
+    if (recipient === null) return { from: sender, to: first(mine), amount: total(mine) };
+    return { from: sender, to: recipient, amount: total(others) };
+}
+
+/** 同一时间只跑一轮，期间要同步的批次排队，合成下一轮。 */
+export interface SyncRun<T> {
+    running: boolean;
+    queue: Map<string, T>;
+}
+
+/**
+ * 跑完队列。一批出错不影响后面的批次，`failed` 负责记下来。`running` 留在 true 时，
+ * 刷新页面之前同步都不会再运行。
+ */
+export async function drainQueue<T>(
+    run: SyncRun<T>,
+    gather: number,
+    step: (batch: T[]) => Promise<void>,
+    failed: (batch: T[]) => void,
+): Promise<void> {
+    run.running = true;
+    try {
+        while (run.queue.size > 0) {
+            await new Promise((resolve) => setTimeout(resolve, gather));
+            const batch = [...run.queue.values()];
+            run.queue.clear();
+            await step(batch).catch(() => failed(batch));
+        }
+    } finally {
+        run.running = false;
+    }
 }
 
 /** 高度不低于本地才覆盖，快照和推送谁先到都不会用旧值盖掉新值。 */
@@ -73,7 +134,11 @@ async function saveFirstPage(id: string, walletId: string, stream: HistoryStream
     });
 }
 
-/** 取水位之后的变化，全部拿到后才写入。未定论的记录以这次结果为准，中途失败时什么都不改。 */
+/**
+ * 取水位之后的变化，全部拿到后才写入，中途失败时什么都不改。未定论的记录以这次结果为准，
+ * 但刚看到的记录可能只是索引还没跟上，要等一段时间。等待期间水位不动，否则水位越过它之后，
+ * 增量再也取不到这笔交易。
+ */
 async function saveChanges(
     id: string,
     walletId: string,
@@ -91,10 +156,13 @@ async function saveChanges(
     }
     return db.transaction("rw", db.chainTxs, db.feedCursors, async () => {
         const fresh = await unseen(rows);
-        const open = await db.chainTxs.where("walletId").equals(walletId);
-        await open.filter((row) => row.stream === id && OPEN.has(row.status)).delete();
+        const found = new Set(rows.map((row) => row.id));
+        const stored = await db.chainTxs.where("walletId").equals(walletId).toArray();
+        const missing = stored.filter((row) => row.stream === id && OPEN.has(row.status) && !found.has(row.id));
+        const expired = missing.filter((row) => Date.now() - (row.seenAt ?? 0) >= INDEX_LAG);
+        await db.chainTxs.bulkDelete(expired.map((row) => row.id));
         await db.chainTxs.bulkPut(rows);
-        await db.feedCursors.update(id, { checkpoint: first.checkpoint });
+        if (expired.length === missing.length) await db.feedCursors.update(id, { checkpoint: first.checkpoint });
         return fresh;
     });
 }

@@ -73,16 +73,18 @@ impl AppState {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(CONNECT_TIMEOUT.min(upstream_timeout))
+            // 跟块的长连接里也有 HTTP 查询，那里没有 `Pool` 的总时限，节点不回应时会一直卡住。
+            .timeout(upstream_timeout)
             .user_agent(USER_AGENT)
             .build()
             .map_err(|_| io::Error::other("创建 HTTP 客户端失败"))?;
-        let poll_interval = Duration::from_millis(config.ws_poll_interval_ms);
+        let follow_poll = Duration::from_millis(config.follow_poll_interval_ms);
         Ok(Self {
             networks: Arc::new(chains::networks(&config.networks, &client, upstream_timeout)),
             followers: config
                 .networks
                 .keys()
-                .map(|network| (*network, Arc::new(Follower::new(*network, poll_interval))))
+                .map(|network| (*network, Arc::new(Follower::new(*network, follow_poll))))
                 .collect(),
             prices: config
                 .prices
@@ -93,7 +95,7 @@ impl AppState {
             trusted_proxies: config.trusted_proxies.iter().map(|ip| ip.to_canonical()).collect(),
             metrics: Metrics::default(),
             closing: watch::Sender::new(false),
-            poll_interval,
+            poll_interval: Duration::from_millis(config.ws_poll_interval_ms),
             heartbeat: Duration::from_millis(config.ws_heartbeat_ms),
         })
     }

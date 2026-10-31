@@ -13,7 +13,7 @@ use tokio::time::{sleep, timeout};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
-const FAST_POLL: &str = "ws_poll_interval_ms = 10";
+const FAST_POLL: &str = "ws_poll_interval_ms = 10\nfollow_poll_interval_ms = 10";
 
 fn hash() -> String {
     format!("0x{}", "a".repeat(64))

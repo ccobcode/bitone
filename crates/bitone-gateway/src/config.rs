@@ -19,7 +19,10 @@ pub struct Config {
     pub web_dir: Option<PathBuf>,
     /// 一个上游一次查询的总时限，超时切换下一个。
     pub upstream_timeout_ms: u64,
+    /// 交易、高度、价格这几个单值频道轮询上游的间隔。
     pub ws_poll_interval_ms: u64,
+    /// 跟块退回轮询时查高度的间隔。
+    pub follow_poll_interval_ms: u64,
     pub ws_heartbeat_ms: u64,
     pub rate_limit_burst: f64,
     pub rate_limit_per_second: f64,
@@ -53,7 +56,9 @@ impl Default for Config {
             listen: SocketAddr::from(([127, 0, 0, 1], 8787)),
             web_dir: None,
             upstream_timeout_ms: 10_000,
-            ws_poll_interval_ms: 6_000,
+            // Electrum 查交易状态每次都要开一条 TLS 连接，太频繁公共服务器会限流。
+            ws_poll_interval_ms: 15_000,
+            follow_poll_interval_ms: 6_000,
             ws_heartbeat_ms: 30_000,
             // 放宽阈值，运营商 NAT 下很多用户共用一个 IP。
             rate_limit_burst: 1200.0,
@@ -119,7 +124,13 @@ impl Config {
     }
 
     fn validate(&self) -> Result<(), String> {
-        if self.upstream_timeout_ms == 0 || self.ws_poll_interval_ms == 0 || self.ws_heartbeat_ms == 0 {
+        let periods = [
+            self.upstream_timeout_ms,
+            self.ws_poll_interval_ms,
+            self.follow_poll_interval_ms,
+            self.ws_heartbeat_ms,
+        ];
+        if periods.contains(&0) {
             return Err("超时和间隔必须大于 0".into());
         }
         if self.rate_limit_burst < 1.0 || self.rate_limit_per_second <= 0.0 {
@@ -220,6 +231,7 @@ mod tests {
             "[networks.ethereum]\nupstreams = ['http://a']\nindexer = 'http://b'\nindexer_token = \"a\nb\"",
             "web_dir = '/nonexistent/bitone'",
             "ws_heartbeat_ms = 0",
+            "follow_poll_interval_ms = 0",
             "ws_max_connections_per_ip = 0",
             "rate_limit_burst = 0",
             "trusted_proxies = ['10.0.0.0/8']",

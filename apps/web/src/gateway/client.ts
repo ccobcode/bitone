@@ -388,6 +388,12 @@ export async function fetchTxs(network: string, hashes: readonly string[]): Prom
     return pages.flat();
 }
 
+/** 一笔交易的输入输出。Bitcoin 才有，见 `walletView`。 */
+export interface Flows {
+    inputs: string[];
+    outputs: { address: string | null; amount: string }[];
+}
+
 export interface HistoryItem {
     hash: string;
     time: number | null;
@@ -396,6 +402,7 @@ export interface HistoryItem {
     asset: string;
     amount: bigint;
     status: ChainStatus;
+    flows?: Flows;
 }
 
 export interface HistoryPage {
@@ -408,6 +415,20 @@ export interface HistoryPage {
     unchanged: boolean;
 }
 
+/** 只收形状完整的。不完整时退回网关按批归纳的结果。 */
+function parseFlows(value: unknown): Flows | null {
+    if (!isRecord(value) || !Array.isArray(value.inputs) || !Array.isArray(value.outputs)) return null;
+    const inputs = value.inputs.flatMap((input: unknown) => (typeof input === "string" ? [cleanText(input, 128)] : []));
+    const outputs = value.outputs.flatMap((output: unknown) => {
+        if (!isRecord(output)) return [];
+        const amount = parseAmount(output.amount);
+        const address = typeof output.address === "string" ? cleanText(output.address, 128) : null;
+        return amount === null ? [] : [{ address, amount: amount.toString() }];
+    });
+    const complete = inputs.length === value.inputs.length && outputs.length === value.outputs.length;
+    return complete ? { inputs, outputs } : null;
+}
+
 function parseItems(list: readonly unknown[]): HistoryItem[] {
     return list.flatMap((item: unknown): HistoryItem[] => {
         if (!isRecord(item) || typeof item.hash !== "string" || !isStatus(item.status)) return [];
@@ -416,6 +437,7 @@ function parseItems(list: readonly unknown[]): HistoryItem[] {
         const hash = cleanText(item.hash, 128);
         if (amount === null || !asset || !hash) return [];
         const text = (value: unknown) => (typeof value === "string" && cleanText(value, 128)) || null;
+        const flows = parseFlows(item.flows);
         return [
             {
                 hash,
@@ -425,6 +447,7 @@ function parseItems(list: readonly unknown[]): HistoryItem[] {
                 asset,
                 amount,
                 status: item.status,
+                ...(flows ? { flows } : {}),
             },
         ];
     });

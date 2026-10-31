@@ -3,6 +3,7 @@ import { networkName } from "../core";
 import { formatAsset, lookupAsset, type AssetEntry } from "../core/manifest";
 import { shortAddress } from "../core/text";
 import { txKey, type ChainEntry, type FeedCursor, type Note, type TxRecord, type TxState } from "../data/db";
+import { walletView } from "../data/feed";
 import { STATE_LABELS, failureNote, isOverdue, type ChainStatus } from "../data/machine";
 import type { Target } from "./assets";
 import { MAX_ADDRESSES, addressKey, chunks, type HistoryItem } from "./client";
@@ -32,8 +33,9 @@ export interface RemoteItem {
     item: HistoryItem;
 }
 
-export function remoteItem(row: ChainEntry): RemoteItem {
-    return { id: row.id, network: row.network, item: { ...row, amount: BigInt(row.amount) } };
+export function remoteItem(row: ChainEntry, own: ReadonlySet<string>): RemoteItem {
+    const view = walletView(row, own);
+    return { id: row.id, network: row.network, item: { ...row, ...view, amount: BigInt(view.amount) } };
 }
 
 export type FeedTone = "neutral" | "accent" | "ok" | "warn" | "danger";

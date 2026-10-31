@@ -4,13 +4,14 @@
 mod common;
 
 use axum::Router;
-use axum::extract::Path;
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
+use axum::extract::{Path, RawQuery};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use common::{Calls, Gateway, call, dead_url, error_code, mock, next_json, ok, rpc_failure, rpc_node};
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -37,6 +38,7 @@ struct Scene {
     txs: HashMap<u64, Vec<Value>>,
     logs: Vec<Value>,
     broken_logs: bool,
+    broken_calls: bool,
 }
 
 type Chain = Arc<Mutex<Scene>>;
@@ -47,6 +49,7 @@ fn reply(chain: &Chain, method: &str, params: &Value) -> Value {
     match method {
         "eth_blockNumber" => ok(json!(hex(scene.block))),
         "eth_getBalance" => ok(json!(scene.native)),
+        "eth_call" if scene.broken_calls => rpc_failure(-32000, "execution timeout"),
         "eth_call" => ok(json!(format!("{:#066x}", scene.token))),
         "eth_getLogs" if scene.broken_logs => rpc_failure(-32000, "query returned more than 10000 results"),
         "eth_getLogs" => {
@@ -86,7 +89,9 @@ async fn evm_chain() -> (Chain, String) {
 }
 
 fn evm_config(url: &str) -> String {
-    format!("ws_poll_interval_ms = 10\n[networks.ethereum]\nupstreams = ['{url}']\ntokens = ['{USDT}']\n")
+    format!(
+        "ws_poll_interval_ms = 10\nfollow_poll_interval_ms = 10\n[networks.ethereum]\nupstreams = ['{url}']\ntokens = ['{USDT}']\n"
+    )
 }
 
 /// 快照一行一个 JSON。
@@ -362,6 +367,10 @@ struct SocketNode {
     /// 发给所有连接的推送。
     pushes: broadcast::Sender<String>,
     calls: Calls,
+    /// 这种订阅回错误。写方法名，或者 `eth_subscribe` 的第一个参数。
+    reject: Arc<Mutex<Option<String>>>,
+    /// `eth_getBalance` 不回应。
+    stall: Arc<AtomicBool>,
 }
 
 impl SocketNode {
@@ -375,11 +384,16 @@ impl SocketNode {
             subscribed: Arc::default(),
             pushes,
             calls: Calls::default(),
+            reject: Arc::default(),
+            stall: Arc::default(),
         };
-        let (state, log) = (node.clone(), node.calls.clone());
+        let (state, log, stall) = (node.clone(), node.calls.clone(), node.stall.clone());
         let rpc = move |axum::Json(body): axum::Json<Value>| {
-            let (reply, log) = (reply.clone(), log.clone());
+            let (reply, log, stall) = (reply.clone(), log.clone(), stall.clone());
             async move {
+                if stall.load(Ordering::Relaxed) && body.to_string().contains("eth_getBalance") {
+                    std::future::pending::<()>().await;
+                }
                 let answer = |call: &Value| {
                     let method = call["method"].as_str().unwrap();
                     log.record(method);
@@ -411,7 +425,13 @@ impl SocketNode {
                     let call: Value = serde_json::from_str(&text).unwrap();
                     self.subscribed.lock().unwrap().push(call.clone());
                     let id = call["id"].as_u64().unwrap();
-                    let reply = json!({"jsonrpc": "2.0", "id": id, "result": ack(id)}).to_string();
+                    let rejected = self.reject.lock().unwrap().clone();
+                    let reply = if rejected.is_some_and(|name| call["method"] == name || call["params"][0] == name) {
+                        json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": "too many subscriptions"}})
+                    } else {
+                        json!({"jsonrpc": "2.0", "id": id, "result": ack(id)})
+                    }
+                    .to_string();
                     if socket.send(WsMessage::text(reply)).await.is_err() {
                         return;
                     }
@@ -625,7 +645,7 @@ async fn solana_changes_are_pushed_by_the_node_not_polled() {
     )
     .await;
     let config = format!(
-        "ws_poll_interval_ms = 10\n[networks.solana]\nupstreams = ['{}']\ntokens = ['{ACCOUNT}']\n",
+        "ws_poll_interval_ms = 10\nfollow_poll_interval_ms = 10\n[networks.solana]\nupstreams = ['{}']\ntokens = ['{ACCOUNT}']\n",
         node.url
     );
     let gateway = Gateway::start(&config).await;
@@ -704,14 +724,30 @@ async fn tron_parses_blocks_instead_of_querying_each_address() {
                 async move { axum::Json(json!({"data": [{"balance": balance}]})) }
             }),
         )
-        .route("/v1/accounts/{address}/transactions", get(|| async { axum::Json(json!({"data": []})) }))
+        .route(
+            "/v1/accounts/{address}/transactions",
+            get(move |RawQuery(query): RawQuery| async move {
+                // 只查已确认的记录时看不到刚上链的交易。
+                let confirmed = query.is_some_and(|query| query.contains("only_confirmed"));
+                let transfer = json!({
+                    "txID": "ab".repeat(32),
+                    "block_timestamp": 2_000_000,
+                    "ret": [{"contractRet": "SUCCESS"}],
+                    "raw_data": {"contract": [{"type": "TransferContract", "parameter": {"value": {
+                        "owner_address": OWNER_HEX, "to_address": OWNER_HEX, "amount": 3,
+                    }}}]},
+                });
+                axum::Json(json!({"data": if confirmed { json!([]) } else { json!([transfer]) }}))
+            }),
+        )
         .route("/v1/accounts/{address}/transactions/trc20", get(|| async { axum::Json(json!({"data": []})) }))
         .route(
             "/walletsolidity/getnowblock",
-            get(|| async { axum::Json(json!({"block_header": {"raw_data": {"number": 90, "timestamp": 1000}}})) }),
+            post(|| async { axum::Json(json!({"block_header": {"raw_data": {"number": 90, "timestamp": 1000}}})) }),
         );
     let url = mock(node).await;
-    let config = format!("ws_poll_interval_ms = 10\n[networks.tron]\nupstreams = ['{url}']\n");
+    let config =
+        format!("ws_poll_interval_ms = 10\nfollow_poll_interval_ms = 10\n[networks.tron]\nupstreams = ['{url}']\n");
     let gateway = Gateway::start(&config).await;
     let mut ws = gateway.ws().await;
     let message = json!({"jsonrpc": "2.0", "id": 1, "method": "subscribe",
@@ -726,4 +762,264 @@ async fn tron_parses_blocks_instead_of_querying_each_address() {
     assert_eq!(update["params"]["height"], 101);
     assert_eq!(update["params"]["balances"][0]["amount"], "8");
     assert_eq!(*accounts.lock().unwrap(), baseline + 1, "只查区块里出现的地址，查一次");
+    assert_eq!(update["params"]["txs"][0]["status"], "included", "刚上链的转账也要推送");
+}
+
+fn token_log(block: u64) -> Value {
+    json!({
+        "address": USDT.to_lowercase(),
+        "blockNumber": format!("{block:#x}"),
+        "transactionHash": "0xdd",
+        "topics": [TRANSFER, padded(OTHER), padded(EVM)],
+        "data": format!("{:#066x}", 7),
+    })
+}
+
+/// 跟块先进入长连接状态，之后高度只靠推送，节点不再被轮询。
+async fn live_evm_gateway(chain: &Chain, node: &SocketNode, extra: &str) -> (Gateway, common::Ws) {
+    let gateway = Gateway::start(&format!("{extra}{}", evm_config(&node.url))).await;
+    let mut ws = gateway.ws().await;
+    assert!(call(&mut ws, subscribe(&[EVM])).await["result"].is_string());
+    node.wait_for("eth_subscribe", 3).await;
+    chain.lock().unwrap().block = 11;
+    node.push(new_head(11));
+    next_json(&mut ws).await;
+    (gateway, ws)
+}
+
+/// 余额查询失败时这轮的动静要留着，否则节点恢复后余额一直是旧值。
+#[tokio::test]
+async fn a_failed_balance_query_keeps_the_touched_address() {
+    let (chain, _) = evm_chain().await;
+    let node = evm_socket_node(&chain).await;
+    let (_gateway, mut ws) = live_evm_gateway(&chain, &node, "").await;
+
+    {
+        let mut scene = chain.lock().unwrap();
+        scene.broken_calls = true;
+        scene.token = 9;
+    }
+    node.push(json!({"method": "eth_subscription", "params": {"subscription": "0xlogs", "result": token_log(11)}}));
+    sleep(Duration::from_millis(100)).await;
+    chain.lock().unwrap().broken_calls = false;
+    chain.lock().unwrap().block = 12;
+    node.push(new_head(12));
+    let update = next_json(&mut ws).await;
+    let balances = update["params"]["balances"].as_array().unwrap();
+    assert!(
+        balances.iter().any(|row| row["asset"] == USDT && row["amount"] == "9"),
+        "{update}"
+    );
+}
+
+/// HTTP 请求也要有时限。节点不回应时不能卡住长连接，否则既不换节点也不退回轮询。
+#[tokio::test]
+async fn a_node_that_stops_answering_falls_back_to_polling() {
+    let (chain, _) = evm_chain().await;
+    let node = evm_socket_node(&chain).await;
+    let gateway = Gateway::start(&format!("upstream_timeout_ms = 300\n{}", evm_config(&node.url))).await;
+    let mut ws = gateway.ws().await;
+    assert!(call(&mut ws, subscribe(&[EVM])).await["result"].is_string());
+    node.wait_for("eth_subscribe", 3).await;
+
+    node.stall.store(true, Ordering::Relaxed);
+    chain.lock().unwrap().block = 11;
+    node.push(new_head(11));
+    assert_eq!(next_json(&mut ws).await["params"]["height"], 11);
+    sleep(Duration::from_millis(500)).await;
+    node.stall.store(false, Ordering::Relaxed);
+    chain.lock().unwrap().block = 12;
+    assert_eq!(next_json(&mut ws).await["params"]["height"], 12, "没有新块推送，靠轮询");
+}
+
+/// 日志订阅被拒绝时这条连接收不到代币转账，要退回轮询，不能当作没事。
+#[tokio::test]
+async fn a_rejected_log_subscription_falls_back_to_polling() {
+    let (chain, _) = evm_chain().await;
+    let node = evm_socket_node(&chain).await;
+    *node.reject.lock().unwrap() = Some("logs".to_string());
+    let gateway = Gateway::start(&evm_config(&node.url)).await;
+    let mut ws = gateway.ws().await;
+    assert!(call(&mut ws, subscribe(&[EVM])).await["result"].is_string());
+    node.wait_for("eth_subscribe", 2).await;
+    // 连接可能已经断开了，这时没有人收这条推送。
+    let _ = node.pushes.send(new_head(10).to_string());
+    sleep(Duration::from_millis(100)).await;
+
+    {
+        let mut scene = chain.lock().unwrap();
+        scene.block = 11;
+        scene.token = 9;
+    }
+    let update = next_json(&mut ws).await;
+    let balances = update["params"]["balances"].as_array().unwrap();
+    assert!(balances.iter().any(|row| row["amount"] == "9"), "{update}");
+}
+
+/// 回看范围放不下时不能报成功，`txs` 为空时客户端自己补取。
+#[tokio::test]
+async fn evm_update_admits_a_gap_it_cannot_scan() {
+    let (chain, url) = evm_chain().await;
+    let gateway = Gateway::start(&evm_config(&url)).await;
+    let mut ws = gateway.ws().await;
+    assert!(call(&mut ws, subscribe(&[EVM])).await["result"].is_string());
+
+    {
+        let mut scene = chain.lock().unwrap();
+        scene.block = 100;
+        scene.native = "0x11".to_string();
+    }
+    let update = next_json(&mut ws).await;
+    assert_eq!(update["params"]["height"], 100);
+    assert_eq!(update["params"]["balances"][0]["amount"], "17");
+    assert_eq!(update["params"]["txs"], Value::Null, "{update}");
+}
+
+/// 组由客户端指定，一个请求不能打出任意多的上游并发。
+#[tokio::test]
+async fn snapshot_limits_how_many_groups_run_at_once() {
+    let (running, peak) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
+    let (now, top) = (running.clone(), peak.clone());
+    let rpc = move |axum::Json(body): axum::Json<Value>| {
+        let (now, top) = (now.clone(), top.clone());
+        async move {
+            top.fetch_max(now.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
+            sleep(Duration::from_millis(30)).await;
+            now.fetch_sub(1, Ordering::SeqCst);
+            let answer = |call: &Value| {
+                let mut response = match call["method"].as_str().unwrap() {
+                    "eth_blockNumber" => ok(json!("0xa")),
+                    "eth_getBalance" => ok(json!("0x1")),
+                    "eth_call" => ok(json!(format!("{:#066x}", 1))),
+                    method => panic!("没有模拟 {method}"),
+                };
+                response["jsonrpc"] = json!("2.0");
+                response["id"] = call["id"].clone();
+                response
+            };
+            axum::Json(match body.as_array() {
+                Some(batch) => Value::Array(batch.iter().map(answer).collect()),
+                None => answer(&body),
+            })
+        }
+    };
+    let url = mock(Router::new().route("/", post(rpc))).await;
+    let gateway = Gateway::start(&evm_config(&url)).await;
+    let items: Vec<Value> = (0..60)
+        .map(|group| json!({"network": "ethereum", "address": EVM, "group": group}))
+        .collect();
+    let lines = snapshot(&gateway, &json!({"items": items})).await;
+    assert_eq!(lines.len(), 60);
+    let peak = peak.load(Ordering::SeqCst);
+    assert!(peak <= 17, "同时查询 {peak} 组");
+}
+
+const SOLANA_OWNER: &str = "11111111111111111111111111111111";
+const SOLANA_OTHER: &str = "11111111111111111111111111111112";
+const SOLANA_TOKEN: &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+
+/// `fail` 打开后代币账户的查询失败，公共节点限流时就是这样。
+async fn solana_node(lamports: Arc<Mutex<u64>>, fail: Arc<AtomicBool>) -> SocketNode {
+    let height = lamports.clone();
+    SocketNode::start(
+        |id| json!(id),
+        move |method, _| match method {
+            "getBalance" => json!({"result": {"value": *lamports.lock().unwrap()}}),
+            "getTokenAccountsByOwner" if fail.load(Ordering::Relaxed) => rpc_failure(-32005, "rate limited"),
+            "getTokenAccountsByOwner" => {
+                json!({"result": {"value": [{"pubkey": SOLANA_TOKEN, "account": {"data": {"parsed": {"info": {
+                    "mint": SOLANA_TOKEN, "tokenAmount": {"amount": "3"},
+                }}}}}]}})
+            }
+            "getSignaturesForAddress" => ok(json!([])),
+            "getSlot" => ok(json!(100 + *height.lock().unwrap())),
+            _ => panic!("没有模拟 {method}"),
+        },
+    )
+    .await
+}
+
+fn solana_config(url: &str) -> String {
+    format!(
+        "ws_poll_interval_ms = 10\nfollow_poll_interval_ms = 10\n[networks.solana]\nupstreams = ['{url}']\ntokens = ['{SOLANA_TOKEN}']\n"
+    )
+}
+
+fn solana_subscribe(id: u64, owner: &str) -> Value {
+    json!({"jsonrpc": "2.0", "id": id, "method": "subscribe",
+           "params": {"channel": "addresses", "network": "solana", "addresses": [owner]}})
+}
+
+/// 订阅被拒时不再对账，这个地址也不会重试，所以要退回轮询。
+#[tokio::test]
+async fn solana_rejected_subscription_falls_back_to_polling() {
+    let lamports = Arc::new(Mutex::new(5u64));
+    let node = solana_node(lamports.clone(), Arc::default()).await;
+    *node.reject.lock().unwrap() = Some("logsSubscribe".to_string());
+    let gateway = Gateway::start(&solana_config(&node.url)).await;
+    let mut ws = gateway.ws().await;
+    assert!(call(&mut ws, solana_subscribe(1, SOLANA_OWNER)).await["result"].is_string());
+    node.wait_for("logsSubscribe", 1).await;
+    // 连接可能已经断开了，这时没有人收这条推送。
+    let slot = json!({"method": "slotNotification", "params": {"result": {"slot": 100}}});
+    let _ = node.pushes.send(slot.to_string());
+    sleep(Duration::from_millis(100)).await;
+
+    *lamports.lock().unwrap() = 9;
+    let update = next_json(&mut ws).await;
+    assert_eq!(update["params"]["balances"][0]["amount"], "9", "{update}");
+}
+
+/// 日志很多时不能跟着查代币账户。查询失败也只影响这一次，不能断开全部订阅。
+#[tokio::test]
+async fn solana_log_flood_neither_blocks_nor_breaks_the_connection() {
+    let fail = Arc::new(AtomicBool::new(false));
+    let node = solana_node(Arc::new(Mutex::new(5)), fail.clone()).await;
+    let gateway = Gateway::start(&solana_config(&node.url)).await;
+    let mut ws = gateway.ws().await;
+    assert!(call(&mut ws, solana_subscribe(1, SOLANA_OWNER)).await["result"].is_string());
+    node.wait_for("accountSubscribe", 2).await;
+    node.wait_for("logsSubscribe", 1).await;
+    sleep(Duration::from_millis(50)).await;
+    // 收到第一个 slot 才算长连接在工作，这之前网关还在轮询。
+    node.push(json!({"method": "slotNotification", "params": {"result": {"slot": 200}}}));
+    assert_eq!(next_json(&mut ws).await["params"]["height"], 200);
+
+    fail.store(true, Ordering::Relaxed);
+    let subscription = node.methods("logsSubscribe")[0]["id"].clone();
+    for _ in 0..5 {
+        node.push(json!({"method": "logsNotification", "params": {"subscription": subscription, "result": {}}}));
+    }
+    sleep(Duration::from_millis(300)).await;
+    let polls = node.calls.count("getSlot");
+    fail.store(false, Ordering::Relaxed);
+    sleep(Duration::from_millis(200)).await;
+    assert_eq!(node.calls.count("getSlot"), polls, "连接没断，不用退回轮询");
+    node.push(json!({"method": "slotNotification", "params": {"result": {"slot": 500}}}));
+    let mut height = json!(null);
+    for _ in 0..6 {
+        height = next_json(&mut ws).await["params"]["height"].clone();
+        if height == 500 {
+            break;
+        }
+    }
+    assert_eq!(height, 500);
+}
+
+/// 没有人看的地址要退订，上游的订阅不能只增不减。
+#[tokio::test]
+async fn solana_unsubscribes_addresses_nobody_watches() {
+    let node = solana_node(Arc::new(Mutex::new(5)), Arc::default()).await;
+    let gateway = Gateway::start(&solana_config(&node.url)).await;
+    let mut ws = gateway.ws().await;
+    let first = call(&mut ws, solana_subscribe(1, SOLANA_OWNER)).await["result"].clone();
+    assert!(call(&mut ws, solana_subscribe(2, SOLANA_OTHER)).await["result"].is_string());
+    node.wait_for("logsSubscribe", 2).await;
+    sleep(Duration::from_millis(100)).await;
+
+    let message = json!({"jsonrpc": "2.0", "id": 3, "method": "unsubscribe", "params": [first]});
+    assert_eq!(call(&mut ws, message).await["result"], true);
+    node.wait_for("logsUnsubscribe", 1).await;
+    node.wait_for("accountUnsubscribe", 1).await;
+    assert_eq!(node.methods("logsUnsubscribe").len(), 1, "另一个地址还在");
 }

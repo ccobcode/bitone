@@ -5,7 +5,7 @@ import { t } from "../core/i18n";
 import tokens from "../core/tokens.gen.json";
 import { saveSetting, useLive } from "../data/app";
 import { db, type TxRecord, type TxState } from "../data/db";
-import { claimNotice, isTestnet, mergedNotice, onNotice, publish, type Notice } from "../data/notify";
+import { claimNotice, isTestnet, mergedNotice, onNotice, publish, systemNotice, type Notice } from "../data/notify";
 import { Icon } from "./Icon";
 import { Button } from "./primitives";
 
@@ -158,12 +158,10 @@ export function Notices() {
             const { background, amount } = current.current.settings;
             if (!document.hidden || !background || typeof Notification !== "function") return;
             if (Notification.permission !== "granted") return;
-            const shown = new Notification("BitOne", { body: amount ? notice.title : notice.summary });
-            shown.onclick = () => {
+            systemNotice(amount ? notice.title : notice.summary, () => {
                 window.focus();
                 void navigate(notice.link);
-                shown.close();
-            };
+            });
         },
         [navigate],
     );

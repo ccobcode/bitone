@@ -33,7 +33,8 @@ use tokio_rustls::TlsConnector;
 mod session;
 mod watch;
 
-const PROTOCOL: &str = "1.4";
+/// 退订从 1.4.2 开始才有，老服务器按 1.4 协商。
+const PROTOCOLS: [&str; 2] = ["1.4", "1.4.2"];
 /// 历史每页的交易数。每笔还要取它花费的前序交易，太多会碰到上游超时。
 const PAGE: usize = 25;
 /// `blockchain.estimatefee` 的单位是 BTC/kB，网页端用 sat/vB。
@@ -147,7 +148,7 @@ impl Electrum {
             line: Vec::new(),
             pushes: Vec::new(),
         };
-        session.one("server.version", json!(["bitone", PROTOCOL])).await?;
+        session.one("server.version", json!(["bitone", PROTOCOLS])).await?;
         Ok(session)
     }
 

@@ -10,7 +10,8 @@ listen = "127.0.0.1:8787"
 
 upstream_timeout_ms = 10000
 # 上游没有长连接时轮询区块高度的间隔。有订阅才跟块，闲时不访问上游。
-ws_poll_interval_ms = 6000
+ws_poll_interval_ms = 15000
+follow_poll_interval_ms = 6000
 ws_heartbeat_ms = 30000
 rate_limit_burst = 1200
 rate_limit_per_second = 20

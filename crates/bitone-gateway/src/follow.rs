@@ -53,6 +53,8 @@ pub async fn current_balances(pool: &Pool, addresses: &[String]) -> HashMap<Stri
 struct Progress {
     height: Option<u64>,
     balances: HashMap<String, Vec<Balance>>,
+    /// 上一条推送没发出去。下一条的 `txs` 是空，客户端补取这批地址。
+    lost: bool,
 }
 
 /// 一个订阅。基线要在回复订阅 ID 之前取好，客户端随后取的快照才不会漏掉变化。
@@ -76,7 +78,11 @@ impl Watcher {
             subscription,
             addresses,
             out,
-            progress: Mutex::new(Progress { height, balances }),
+            progress: Mutex::new(Progress {
+                height,
+                balances,
+                lost: false,
+            }),
         }
     }
 
@@ -91,8 +97,8 @@ impl Watcher {
         json!({"jsonrpc": "2.0", "method": "update", "params": params}).to_string()
     }
 
-    /// 给这个订阅发一轮结果。发不出去时什么都不记，下一轮连同这次的变化一起发。
-    /// 交易没取到时 `txs` 是空，余额照常推送，客户端自己补取。
+    /// 给这个订阅发一轮结果。长连接下只有被触发的地址才会再查，发不出去的变化不会自己回来，
+    /// 所以记下来，下一条的 `txs` 是空，客户端自己补取。交易没取到时也一样，余额照常推送。
     async fn notify(
         &self,
         pool: &Pool,
@@ -100,7 +106,7 @@ impl Watcher {
         current: &HashMap<String, Vec<Balance>>,
         touched: &HashSet<String>,
     ) {
-        let (last, changed) = {
+        let (last, changed, lost) = {
             let progress = self.progress.lock().expect("跟块状态被污染");
             let changed: Vec<&String> = self
                 .addresses
@@ -111,14 +117,16 @@ impl Watcher {
                         .is_some_and(|balances| progress.balances.get(*address) != Some(balances))
                 })
                 .collect();
-            (progress.height, changed)
+            (progress.height, changed, progress.lost)
         };
         let hit = !changed.is_empty() || self.addresses.iter().any(|address| touched.contains(address));
-        if !hit && last == Some(height) {
+        if !hit && !lost && last == Some(height) {
             return;
         }
         let previous = last.unwrap_or(height);
-        let txs = if hit {
+        let txs = if lost {
+            None
+        } else if hit {
             pool.recent(&self.addresses, previous).await.ok()
         } else {
             Some(Vec::new())
@@ -131,8 +139,10 @@ impl Watcher {
             .collect();
         // 客户端读不过来时不能卡住其他订阅。
         let update = self.update(height, previous, &balances, txs.as_deref());
-        if self.out.try_send(update).is_ok() {
-            let mut progress = self.progress.lock().expect("跟块状态被污染");
+        let sent = self.out.try_send(update).is_ok();
+        let mut progress = self.progress.lock().expect("跟块状态被污染");
+        progress.lost = !sent;
+        if sent {
             progress.height = Some(height);
             for address in changed {
                 if let Some(balances) = current.get(address) {
@@ -219,17 +229,18 @@ impl Follower {
         })
     }
 
-    /// 查一轮并通知全部订阅。`query` 里的地址都查到才推进，否则下一轮重查。
-    async fn round(&self, pool: &Pool, height: u64, query: &[String], touched: &HashSet<String>) {
+    /// 查一轮并通知全部订阅。`query` 里的地址都查到才推进，否则返回假，这些地址下一轮重查。
+    async fn round(&self, pool: &Pool, height: u64, query: &[String], touched: &HashSet<String>) -> bool {
         let watchers: Vec<Arc<Watcher>> = self.lock().watchers.values().cloned().collect();
         let current = current_balances(pool, query).await;
         if current.len() != query.len() {
-            return;
+            return false;
         }
         let notices = watchers
             .iter()
             .map(|watcher| watcher.notify(pool, height, &current, touched));
         join_all(notices).await;
+        true
     }
 }
 
@@ -284,6 +295,8 @@ async fn follow(networks: Arc<Networks>, follower: Arc<Follower>) {
     };
     let pause = ROUND_INTERVAL.min(poll_interval);
     let mut next = Instant::now();
+    // 查询失败后隔一段再试，节点不稳时不能每个块都查一遍。
+    let mut retry = Instant::now();
     let mut pending = Pending::default();
     loop {
         match timeout(poll_interval, incoming.recv()).await {
@@ -296,6 +309,9 @@ async fn follow(networks: Arc<Networks>, follower: Arc<Follower>) {
         while let Ok(signal) = incoming.try_recv() {
             pending.take(signal);
         }
+        if Instant::now() < retry {
+            continue;
+        }
         let urgent = !pending.touched.is_empty() || pending.reconcile;
         if !urgent && Instant::now() < next {
             continue;
@@ -306,8 +322,63 @@ async fn follow(networks: Arc<Networks>, follower: Arc<Follower>) {
         }
         next = Instant::now() + pause;
         let query = pending.query(&follower.watched.borrow());
-        follower.round(pool, head, &query, &pending.touched).await;
-        pending.touched.clear();
-        pending.reconcile = false;
+        if follower.round(pool, head, &query, &pending.touched).await {
+            pending.touched.clear();
+            pending.reconcile = false;
+        } else {
+            retry = Instant::now() + poll_interval;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::upstream::{Broadcast, Cursor, HistoryPage, Query, RawTx, Tx, Upstream};
+    use futures_util::future::BoxFuture;
+    use serde_json::Value;
+
+    struct Quiet;
+
+    impl Upstream for Quiet {
+        fn balances<'a>(&'a self, _: &'a [String]) -> Query<'a, Vec<Balance>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+        fn height(&self) -> Query<'_, u64> {
+            Box::pin(async { Ok(1) })
+        }
+        fn fees(&self) -> Query<'_, Value> {
+            Box::pin(async { Ok(Value::Null) })
+        }
+        fn txs<'a>(&'a self, _: &'a [String]) -> Query<'a, Vec<Tx>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+        fn history<'a>(&'a self, _: &'a [String], _: &'a Cursor, _: Option<u64>) -> Query<'a, HistoryPage> {
+            Box::pin(async { Ok(HistoryPage::default()) })
+        }
+        fn broadcast<'a>(&'a self, _: &'a RawTx) -> BoxFuture<'a, Broadcast> {
+            Box::pin(async { Broadcast::Unknown })
+        }
+    }
+
+    /// 队列满时推送发不出去。长连接下这些地址不会再被查询，只能让客户端自己补。
+    #[tokio::test]
+    async fn an_update_the_queue_refused_makes_the_next_one_ask_for_a_refill() {
+        let pool = Pool::new(vec![Box::new(Quiet)], true, Duration::from_secs(1));
+        let (out, mut sent) = mpsc::channel(1);
+        out.try_send(String::new()).unwrap();
+        let watcher = Watcher::new("s".to_string(), vec!["a".to_string()], out, Some(10), HashMap::new());
+        let touched = HashSet::from(["a".to_string()]);
+        watcher.notify(&pool, 11, &HashMap::new(), &touched).await;
+        sent.recv().await;
+
+        watcher.notify(&pool, 12, &HashMap::new(), &HashSet::new()).await;
+        let update: Value = serde_json::from_str(&sent.recv().await.unwrap()).unwrap();
+        assert_eq!(update["params"]["txs"], Value::Null);
+        assert_eq!(update["params"]["previous"], 10);
+
+        watcher.notify(&pool, 13, &HashMap::new(), &HashSet::new()).await;
+        let update: Value = serde_json::from_str(&sent.recv().await.unwrap()).unwrap();
+        assert_eq!(update["params"]["txs"], json!([]), "补取一次就够了");
     }
 }

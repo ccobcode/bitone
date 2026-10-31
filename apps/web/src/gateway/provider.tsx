@@ -6,7 +6,14 @@ import { assetsOf } from "../core/manifest";
 import { useApp, useLive } from "../data/app";
 import { db } from "../data/db";
 import { discoverAccount } from "../data/discovery";
-import { applyChainUpdate, hasOpenEntries, loadOlder as fetchOlder, syncFeed, type FeedFailure } from "../data/feed";
+import {
+    applyChainUpdate,
+    drainQueue,
+    hasOpenEntries,
+    loadOlder as fetchOlder,
+    syncFeed,
+    type FeedFailure,
+} from "../data/feed";
 import { incomingNotices, missedNotice, publish } from "../data/notify";
 import { historyStreams, type HistoryStream } from "./history";
 import { onSync } from "../data/sync";
@@ -147,16 +154,16 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         const run = feedRun.current;
         for (const stream of list ?? feedTarget.current.streams) run.queue.set(batchKey(stream), stream);
         if (run.running) return;
-        run.running = true;
         setFeed((previous) => ({ ...previous, syncing: true }));
-        while (run.queue.size > 0) {
-            await new Promise((resolve) => setTimeout(resolve, SYNC_GATHER));
+        const failed = (batch: readonly HistoryStream[]) => {
+            for (const { network } of batch) run.failed.add(network);
+        };
+        const step = async (queued: HistoryStream[]) => {
             const { walletId: wallet, streams: current, noHistory: unindexed } = feedTarget.current;
             // 切换钱包或网络后，排队的批次可能已经不属于当前钱包。
             const known = new Set(current.map(batchKey));
-            const batch = [...run.queue.values()].filter((stream) => known.has(batchKey(stream)));
-            run.queue.clear();
-            if (!wallet || batch.length === 0) continue;
+            const batch = queued.filter((stream) => known.has(batchKey(stream)));
+            if (!wallet || batch.length === 0) return;
             const result = await syncFeed(wallet, batch, assetsOf, unindexed);
             for (const { network } of batch) {
                 run.failed.delete(network);
@@ -166,8 +173,8 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
             for (const { network, code } of result.failures) run.failures.set(network, code);
             const notice = missedNotice(result.missed, ownRef.current, pricesRef.current);
             if (notice) publish(notice);
-        }
-        run.running = false;
+        };
+        await drainQueue(run, SYNC_GATHER, step, failed);
         setFeed({
             syncing: false,
             updatedAt: Date.now(),

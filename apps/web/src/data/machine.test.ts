@@ -187,7 +187,6 @@ describe("observe", () => {
         expect(next).toMatchObject({ state: "confirming", reverted: true, fee: "42000" });
         expect(observe(next, seen("failed", { stage: "safe" }), { now: NOW }).state).toBe("confirming");
         expect(observe(next, seen("failed", { stage: "finalized" }), { now: NOW }).state).toBe("failed");
-        expect(observe(next, seen("failed", { stage: "solidified" }), { now: NOW }).state).toBe("failed");
     });
 
     it("回滚被重组后重新执行成功，失败标记清除", () => {

@@ -1,6 +1,6 @@
 //! 两种上游共用的解析和归纳规则。Electrum 的查询结果也转成 Esplora 的形状，规则只有一份。
 
-use crate::upstream::{Failed, HistoryItem, NATIVE, Tx, TxStatus};
+use crate::upstream::{Failed, Flows, HistoryItem, NATIVE, Output, Tx, TxStatus};
 use bitone_core::Mode;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashSet};
@@ -11,6 +11,8 @@ pub const FINAL_CONFIRMATIONS: u64 = 6;
 pub const FAST_TARGET: u64 = 1;
 pub const MEDIUM_TARGET: u64 = 6;
 pub const SLOW_TARGET: u64 = 144;
+/// 输入输出超过这么多就不带明细。批量付款的一笔能有几千个输出，只有这种交易退回按批归纳。
+const MAX_FLOWS: usize = 256;
 /// 节点报出这些内容时，交易已经在内存池或链上。不同版本的措辞都有。
 const ALREADY_KNOWN: [&str; 5] = [
     "txn-already-known",
@@ -140,6 +142,16 @@ pub fn history_item(tx: &Value, own: &HashSet<&str>, tip: u64) -> Result<History
         },
         None => (inputs.first().cloned(), first(&mine), total(&mine)?),
     };
+    let flows = (inputs.len() + outputs.len() <= MAX_FLOWS).then(|| Flows {
+        inputs: inputs.clone(),
+        outputs: outputs
+            .iter()
+            .map(|(address, value)| Output {
+                address: address.clone(),
+                amount: value.to_string(),
+            })
+            .collect(),
+    });
     Ok(HistoryItem {
         hash,
         time: status.get("block_time").and_then(Value::as_u64),
@@ -148,6 +160,7 @@ pub fn history_item(tx: &Value, own: &HashSet<&str>, tip: u64) -> Result<History
         asset: NATIVE.to_string(),
         amount: amount.to_string(),
         status: status_for(confirmed, height.map_or(0, |height| confirmations(tip, height))),
+        flows,
     })
 }
 
@@ -308,5 +321,27 @@ mod tests {
         tx["status"] = json!({"confirmed": false});
         let item = history_item(&tx, &own, 100).unwrap();
         assert_eq!((item.status, item.time), (TxStatus::Pending, None));
+    }
+
+    #[test]
+    fn history_carries_the_facts_behind_the_summary() {
+        let own = HashSet::from(["mine"]);
+        let tx = sample(
+            vec![json!({"prevout": {"scriptpubkey_address": "mine"}})],
+            vec![output("peer", 7), output("change", 3), json!({"value": 0})],
+        );
+        let flows = history_item(&tx, &own, 100).unwrap().flows.unwrap();
+        assert_eq!(flows.inputs, ["mine"]);
+        assert_eq!(flows.outputs[1].address.as_deref(), Some("change"));
+        assert_eq!(flows.outputs[1].amount, "3");
+        assert_eq!(flows.outputs[2].address, None, "数据输出没有地址");
+    }
+
+    #[test]
+    fn a_huge_batch_payment_leaves_out_the_details() {
+        let own = HashSet::from(["mine"]);
+        let many = vec![output("peer", 1); MAX_FLOWS + 1];
+        let tx = sample(vec![json!({"prevout": {"scriptpubkey_address": "mine"}})], many);
+        assert_eq!(history_item(&tx, &own, 100).unwrap().flows, None);
     }
 }

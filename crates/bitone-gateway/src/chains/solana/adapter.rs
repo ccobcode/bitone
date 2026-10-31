@@ -131,6 +131,7 @@ fn item(signature: &str, time: Option<u64>, change: &Change, deltas: &[(&str, i1
         asset: change.asset.to_string(),
         amount: change.delta.unsigned_abs().to_string(),
         status,
+        flows: None,
     }
 }
 
