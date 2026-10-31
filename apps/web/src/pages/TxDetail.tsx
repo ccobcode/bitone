@@ -1,12 +1,14 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link, Navigate, useNavigate, useParams } from "react-router";
+import { networkName } from "../core";
 import { formatUnits } from "../core/amount";
 import { explorerLink } from "../core/explorer";
-import { lookupAsset } from "../core/manifest";
+import { formatAsset, lookupAsset } from "../core/manifest";
 import { cleanText, shortAddress } from "../core/text";
 import { useApp, useLive } from "../data/app";
-import { db, txKey, type TxRecord } from "../data/db";
-import { STATE_LABELS, isOverdue } from "../data/machine";
+import { db, txKey, type ChainEntry, type TxRecord } from "../data/db";
+import { isOverdue } from "../data/machine";
 import { TransferError, broadcastTx, createReplacement, resendTx, type ReplaceMode } from "../data/transfer";
 import {
     amountText,
@@ -17,21 +19,25 @@ import {
     sequenceFact,
     timelineSteps,
 } from "../data/txview";
-import { cancelTx, planOf } from "../data/txs";
+import { planOf } from "../data/txs";
+import { addressKey, fetchTxs } from "../gateway/client";
+import { markSeen } from "../gateway/feed";
+import { ledgerRows, localTitle, remoteItem, txHref } from "../gateway/history";
 import { useGateway } from "../gateway/provider";
 import { GatewayDown } from "../ui/GatewayDown";
 import { Icon, type IconName } from "../ui/Icon";
-import { clockLabel } from "../ui/labels";
+import { clockLabel, timeLabel } from "../ui/labels";
 import {
-    Alert,
     Button,
+    ChildTitle,
     Chip,
     Empty,
     Fact,
+    FullAddress,
     Helper,
     LABEL,
     LinkButton,
-    PageTitle,
+    Notice,
     Section,
     SectionTitle,
     SkeletonRows,
@@ -139,7 +145,7 @@ function Hero({ tx, tracking }: { tx: TxRecord; tracking: boolean }) {
                     {tx.state === "confirmed" ? null : <Helper>{goal}</Helper>}
                 </div>
             ) : null}
-            <HashLine tx={tx} />
+            {tx.hash ? <HashLine network={tx.network} hash={tx.hash} /> : null}
         </Section>
     );
 }
@@ -272,7 +278,7 @@ function useReplace(tx: TxRecord) {
         setFailure("");
         try {
             const next = await createReplacement(tx, mode, { wallet, accounts, account });
-            await navigate(`/sign?id=${encodeURIComponent(next.id)}`);
+            await navigate(`/sign/${encodeURIComponent(next.id)}`);
         } catch (error) {
             setFailure(
                 error instanceof TransferError ? translate(error.message) : t("暂时无法生成新的请求，请稍后重试。"),
@@ -311,7 +317,7 @@ function SolanaCard({ tx }: { tx: TxRecord }) {
                             {notice}
                         </p>
                     ) : null}
-                    {failure ? <Alert>{failure}</Alert> : null}
+                    {failure ? <Notice tone="danger">{failure}</Notice> : null}
                 </>
             }
         >
@@ -351,7 +357,7 @@ function SpeedCard({ tx }: { tx: TxRecord }) {
                     <Helper tone={overdue ? "text-warn" : "text-text-3"}>
                         {t("两种操作都会生成新的待签名请求，要回到冷钱包签名。")}
                     </Helper>
-                    {failure ? <Alert>{failure}</Alert> : null}
+                    {failure ? <Notice tone="danger">{failure}</Notice> : null}
                 </>
             }
         >
@@ -361,29 +367,6 @@ function SpeedCard({ tx }: { tx: TxRecord }) {
                 </Button>
                 <Button variant="primary" disabled={busy} onClick={() => void replace("speedup")}>
                     {t("加速")}
-                </Button>
-            </div>
-        </ActionBlock>
-    );
-}
-
-function SignedCard({ tx }: { tx: TxRecord }) {
-    const [busy, setBusy] = useState(false);
-
-    async function send() {
-        setBusy(true);
-        await broadcastTx(tx.id).catch(() => undefined);
-        setBusy(false);
-    }
-
-    return (
-        <ActionBlock id="h-send" title={t("核验通过")} helper={<Helper>{t("签名与构建记录一致，可以提交。")}</Helper>}>
-            <div className="flex gap-s2">
-                <Button disabled={busy} onClick={() => void cancelTx(tx.id, t("用户取消，签名仍然有效"))}>
-                    {t("放弃")}
-                </Button>
-                <Button variant="primary" disabled={busy} onClick={() => void send()}>
-                    {t("广播交易")}
                 </Button>
             </div>
         </ActionBlock>
@@ -424,7 +407,11 @@ function UncertainCard({ tx }: { tx: TxRecord }) {
             ]}
             actions={
                 <>
-                    {failure ? <Alert className="mr-auto">{failure}</Alert> : null}
+                    {failure ? (
+                        <Notice tone="danger" className="mr-auto">
+                            {failure}
+                        </Notice>
+                    ) : null}
                     {rebuild ? (
                         <>
                             <Button disabled={busy || sending} onClick={() => void replace("cancel")}>
@@ -461,7 +448,6 @@ function RevertingCard({ tx }: { tx: TxRecord }) {
                 { label: t("手续费"), value: feeText(tx) },
                 { label: t("区块"), value: tx.block === null ? "—" : tx.block.toLocaleString("en-US") },
             ]}
-            actions={<LinkButton to="/history">{t("查看记录")}</LinkButton>}
         />
     );
 }
@@ -483,12 +469,9 @@ function FailedCard({ tx }: { tx: TxRecord }) {
                 { label: t("区块"), value: tx.block === null ? "—" : tx.block.toLocaleString("en-US") },
             ]}
             actions={
-                <>
-                    <LinkButton to="/history">{t("查看记录")}</LinkButton>
-                    <LinkButton variant="primary" to={retryLink(tx)}>
-                        {t("重新发起")}
-                    </LinkButton>
-                </>
+                <LinkButton variant="primary" to={retryLink(tx)}>
+                    {t("重新发起")}
+                </LinkButton>
             }
         />
     );
@@ -507,7 +490,7 @@ function AbandonedCard({ tx }: { tx: TxRecord }) {
                 {t("取消只影响本地记录")}
             </SectionTitle>
             <Helper tone="text-text-2">{t("这笔交易已经签名，签名仍然有效，序号会一直占用。")}</Helper>
-            {failure ? <Alert>{failure}</Alert> : null}
+            {failure ? <Notice tone="danger">{failure}</Notice> : null}
             {label ? (
                 <div className="flex justify-end">
                     <Button disabled={busy} onClick={() => void replace("cancel")}>
@@ -525,8 +508,8 @@ const CLOSED: Partial<Record<TxRecord["state"], { title: string; body: string }>
     abandoned: { title: t("已放弃"), body: t("这笔交易已从本地取消。") },
 };
 
-function HashLine({ tx }: { tx: TxRecord }) {
-    const link = tx.hash ? explorerLink(tx.network, tx.hash) : null;
+function HashLine({ network, hash }: { network: string; hash: string }) {
+    const link = explorerLink(network, hash);
     const [copied, setCopied] = useState(false);
 
     useEffect(() => {
@@ -535,20 +518,18 @@ function HashLine({ tx }: { tx: TxRecord }) {
         return () => clearTimeout(timer);
     }, [copied]);
 
-    if (!tx.hash) return null;
     return (
         <div className="flex flex-wrap items-center gap-x-s2 gap-y-s1">
-            <span className="min-w-0 font-mono text-t2 text-text-2 [overflow-wrap:anywhere]">{tx.hash}</span>
+            <span className="min-w-0 font-mono text-t2 text-text-2 [overflow-wrap:anywhere]">{hash}</span>
             <Button
                 variant="ghost"
                 size="iconSm"
                 aria-label={t("复制交易哈希")}
                 onClick={() => {
-                    if (tx.hash)
-                        void navigator.clipboard.writeText(tx.hash).then(
-                            () => setCopied(true),
-                            () => undefined,
-                        );
+                    void navigator.clipboard.writeText(hash).then(
+                        () => setCopied(true),
+                        () => undefined,
+                    );
                 }}
             >
                 <Icon key={String(copied)} name={copied ? "check" : "copy"} size={16} draw={copied} />
@@ -560,7 +541,7 @@ function HashLine({ tx }: { tx: TxRecord }) {
                     rel="noreferrer noopener"
                     className="link inline-flex items-center gap-s1"
                 >
-                    {t("区块浏览器")}
+                    {t("在区块浏览器打开")}
                     <Icon name="external" size={14} />
                 </a>
             ) : null}
@@ -568,16 +549,30 @@ function HashLine({ tx }: { tx: TxRecord }) {
     );
 }
 
+const HISTORY = { to: "/history", label: t("交易记录") };
+const UNSENT = { to: "/history/unsent", label: t("未上链的请求") };
+
+/** 这个浏览器发起的交易。上过链的和没上链的都在这里看，操作按状态出现。 */
 function View({ tx }: { tx: TxRecord }) {
     const { down } = useGateway();
     const closed = CLOSED[tx.state];
     const tracking = tx.state === "broadcast" || tx.state === "confirming" || tx.state === "confirmed";
+
+    // 看过这笔失败，顶栏和首页不再提示。
+    useEffect(() => {
+        if (tx.state === "failed") void markSeen(tx.updatedAt);
+    }, [tx.state, tx.updatedAt]);
+
+    // 还在签名的请求不在这里处理，回到签名流程。
+    if (tx.state === "signing" || tx.state === "signed") {
+        return <Navigate to={`/sign/${encodeURIComponent(tx.id)}`} replace />;
+    }
+
     return (
         <>
-            <PageTitle>{STATE_LABELS[tx.state]}</PageTitle>
+            <ChildTitle parent={closed ? UNSENT : HISTORY}>{localTitle(tx)}</ChildTitle>
             <Hero tx={tx} tracking={tracking} />
             {down && tx.state !== "confirmed" ? <GatewayDown /> : null}
-            {tx.state === "signed" ? <SignedCard tx={tx} /> : null}
             {tx.state === "uncertain" ? <UncertainCard tx={tx} /> : null}
             {tx.state === "failed" ? <FailedCard tx={tx} /> : null}
             {tx.state === "confirming" && tx.reverted ? <RevertingCard tx={tx} /> : null}
@@ -591,37 +586,132 @@ function View({ tx }: { tx: TxRecord }) {
                 <Timeline tx={tx} />
                 <Details tx={tx} />
             </div>
-            <div className="flex flex-wrap justify-end gap-s2">
-                <LinkButton to="/">{t("返回资产")}</LinkButton>
-                <LinkButton variant="primary" to="/send">
-                    {t("再转一笔")}
-                </LinkButton>
-            </div>
         </>
     );
 }
 
-export default function Broadcast() {
-    const [params] = useSearchParams();
-    const id = params.get("id");
-    const tx = useLive(async () => (id ? ((await db.txs.get(id)) ?? null) : null), [id]);
-    if (tx === undefined) {
+function nativeAmount(network: string, raw: string | null): string {
+    return raw === null ? "—" : formatAsset(network, "native", BigInt(raw));
+}
+
+/** 别处发出的交易和转入的记录。只有链上事实，确认数和手续费现查。 */
+function ChainView({ entry }: { entry: ChainEntry }) {
+    const { wallet, addresses } = useApp();
+    const row = useMemo(() => {
+        const own = new Set(addresses.map((item) => addressKey(item.address)));
+        return ledgerRows([], [remoteItem(entry)], own, [])[0];
+    }, [entry, addresses]);
+    const seen = useQuery({
+        queryKey: ["chain", "tx", entry.network, entry.hash],
+        queryFn: async () => (await fetchTxs(entry.network, [entry.hash]))[0] ?? null,
+    });
+    // 这个浏览器曾经发起过这笔，后来判定没上链。
+    const stale = useLive(async () => {
+        if (!wallet) return null;
+        const rows = await db.txs.where("walletId").equals(wallet.id).toArray();
+        return rows.find((tx) => tx.hash && txKey(tx.network, tx.hash) === entry.txKey) ?? null;
+    }, [wallet, entry.txKey]);
+
+    if (!row) return <Empty icon="search">{t("没有找到这笔交易。")}</Empty>;
+    const { confirmations, block, fee } = seen.data ?? { confirmations: 0, block: null, fee: null };
+    const party = row.direction === "in" ? entry.from : entry.to;
+
+    return (
+        <>
+            <ChildTitle parent={HISTORY}>{row.title}</ChildTitle>
+            <Section className="flex flex-col gap-s4">
+                <div className="flex min-w-0 items-center gap-s4">
+                    <TokenIcon
+                        asset={row.entry}
+                        chain={row.entry && !row.entry.native ? networkIcon(row.network) : undefined}
+                        size={48}
+                    />
+                    <div className="flex min-w-0 flex-1 flex-col">
+                        <span className="text-t7 font-semibold [overflow-wrap:anywhere]">{row.amount}</span>
+                        <span className="truncate text-t3 text-text-2">
+                            {row.direction === "in" ? t("来自") : t("至")}{" "}
+                            <span className="font-mono">{party ? shortAddress(party) : "—"}</span>
+                        </span>
+                    </div>
+                    <Chip tone={row.tone}>{row.status}</Chip>
+                </div>
+                <HashLine network={entry.network} hash={entry.hash} />
+            </Section>
+            {stale ? (
+                <Notice tone="warn">
+                    {t("链上查到这笔，本地记录已过时")} <LinkTo tx={stale} />
+                </Notice>
+            ) : null}
+            {row.note && !stale ? <Notice tone="danger">{row.note}</Notice> : null}
+            {row.entry ? null : <Notice tone="warn">{t("这个代币不在内置清单里。")}</Notice>}
+            {row.direction === "in" ? <Notice>{t("大额收款请在区块浏览器核对入账。")}</Notice> : null}
+            <Section aria-labelledby="h-detail">
+                <SectionTitle id="h-detail">{t("交易详情")}</SectionTitle>
+                <dl className="flex flex-col text-t2">
+                    <Fact label={t("网络")}>{networkName(entry.network)}</Fact>
+                    <Fact label={t("时间")}>{entry.time === null ? t("等待打包") : timeLabel(entry.time * 1000)}</Fact>
+                    {entry.from ? (
+                        <Fact label={t("发送方")}>
+                            <FullAddress address={entry.from} className="justify-end" />
+                        </Fact>
+                    ) : null}
+                    {entry.to ? (
+                        <Fact label={t("接收方")}>
+                            <FullAddress address={entry.to} className="justify-end" />
+                        </Fact>
+                    ) : null}
+                    {entry.asset === "native" ? null : (
+                        <Fact label={t("代币合约")} mono>
+                            {entry.asset}
+                        </Fact>
+                    )}
+                    {confirmations ? <Fact label={t("确认数")}>{confirmations.toLocaleString("en-US")}</Fact> : null}
+                    {block === null ? null : <Fact label={t("区块")}>{block.toLocaleString("en-US")}</Fact>}
+                    {/* 转入的手续费是对方付的。 */}
+                    {fee === null || row.direction === "in" ? null : (
+                        <Fact label={t("手续费")}>{nativeAmount(entry.network, fee)}</Fact>
+                    )}
+                </dl>
+                <Remark id={entry.txKey} />
+            </Section>
+        </>
+    );
+}
+
+function LinkTo({ tx }: { tx: TxRecord }) {
+    return (
+        <Link to={txHref(tx.id)} className="link">
+            {t("查看本地记录")}
+        </Link>
+    );
+}
+
+export default function TxDetail() {
+    const { id } = useParams();
+    const record = useLive(async () => {
+        if (!id) return null;
+        const tx = await db.txs.get(id);
+        if (tx) return { tx };
+        const entry = await db.chainTxs.get(id);
+        return entry ? { entry } : null;
+    }, [id]);
+    if (record === undefined) {
         return (
             <>
-                <PageTitle>{t("广播")}</PageTitle>
-                <SkeletonRows />
+                <ChildTitle parent={HISTORY}>{t("交易详情")}</ChildTitle>
+                <Section>
+                    <SkeletonRows />
+                </Section>
             </>
         );
     }
-    if (tx === null) {
+    if (record === null) {
         return (
             <>
-                <PageTitle>{t("广播")}</PageTitle>
-                <Empty icon="search" action={<LinkButton to="/history">{t("查看记录")}</LinkButton>}>
-                    {t("没有找到这笔交易。")}
-                </Empty>
+                <ChildTitle parent={HISTORY}>{t("交易详情")}</ChildTitle>
+                <Empty icon="search">{t("没有找到这笔交易。")}</Empty>
             </>
         );
     }
-    return <View tx={tx} />;
+    return record.tx ? <View tx={record.tx} /> : <ChainView entry={record.entry} />;
 }

@@ -7,11 +7,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const tokens = JSON.parse(readFileSync(join(root, "design/tokens.json"), "utf8"));
 const header = "由 design/generate.mjs 生成，不要手改。";
 
-/** `web` 是网页端专用的圆角和尺寸，只进 CSS，不影响冷钱包的 Kotlin 令牌。 */
+/** `web` 是网页端专用的圆角、尺寸和图表颜色，只进 CSS，不影响冷钱包的 Kotlin 令牌。 */
 function css() {
     const web = tokens.web;
     const colors = (mode) =>
-        Object.entries({ ...tokens.color, ...tokens.elevation })
+        Object.entries({ ...tokens.color, ...tokens.elevation, ...web.chart })
             .map(([k, v]) => `  --${k}: ${v[mode]};`)
             .join("\n");
     const px = (group) =>

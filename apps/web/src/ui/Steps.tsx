@@ -1,7 +1,7 @@
 import { t } from "../core/i18n";
 const LABELS = [t("填写"), t("签名"), t("广播")];
 
-/** 转账步骤，W3、W4、W5 共用。一条细进度，和内容左右对齐。 */
+/** 转账步骤，W3、W4 共用，第三步是 W4 里核验后的广播。一条细进度，和内容左右对齐。 */
 export function Steps({ current }: { current: 1 | 2 | 3 }) {
     return (
         <ol aria-label={t("转账步骤")} className="grid grid-cols-3 gap-s2">

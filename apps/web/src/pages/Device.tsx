@@ -3,34 +3,28 @@ import { Link } from "react-router";
 import { isLegacyKind, manifestPackageVersion } from "../core";
 import { cleanText, shortAddress } from "../core/text";
 import { useApp } from "../data/app";
-import { accountIcon, accountKind, accountTitle } from "../ui/labels";
+import { accountIcon, accountKind, accountTitle, dateLabel } from "../ui/labels";
 import { AnimatedQr } from "../ui/AnimatedQr";
 import {
-    Alert,
     Button,
     Chip,
     Collapse,
     Empty,
     Fact,
-    Helper,
     LinkButton,
     ListHead,
+    Notice,
     PageTitle,
     Section,
     SectionTitle,
     SelectList,
     SelectRow,
 } from "../ui/primitives";
+import { overlayLink, receiveLink } from "../ui/Sheet";
 import { TokenIcon } from "../ui/TokenIcon";
 import { t, translate } from "../core/i18n";
 
 const GRID = "grid grid-cols-[minmax(0,1fr)_auto] gap-x-s4 @split:grid-cols-12 @split:gap-x-s6";
-
-function day(time: number): string {
-    const date = new Date(time);
-    const pad = (value: number) => String(value).padStart(2, "0");
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
 
 /** 与核心库的 MAX_MESSAGE_BYTES 一致，超限时二维码发不出去。 */
 const MAX_PACKAGE = 256 * 1024;
@@ -65,10 +59,7 @@ function ManifestCard() {
     return (
         <Section aria-labelledby="h-man">
             <div className="flex flex-wrap items-start justify-between gap-s4">
-                <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-s1">
-                    <SectionTitle id="h-man">{t("内置清单")}</SectionTitle>
-                    <Helper>{t("冷钱包扫码导入，用内置公钥验签，版本号只增不减。")}</Helper>
-                </div>
+                <SectionTitle id="h-man">{t("内置清单")}</SectionTitle>
                 <div className="flex gap-s2">
                     <Button onClick={() => input.current?.click()}>{t("选择清单包")}</Button>
                     {pack ? (
@@ -96,7 +87,7 @@ function ManifestCard() {
                     <Fact label={t("大小")}>{kib(pack.bytes.length)}</Fact>
                 </dl>
             ) : null}
-            {failure ? <Alert>{failure}</Alert> : null}
+            {failure ? <Notice tone="danger">{failure}</Notice> : null}
             <Collapse open={Boolean(pack && shown)}>
                 {pack && shown ? (
                     <AnimatedQr
@@ -124,7 +115,7 @@ export default function Device() {
             <Section aria-labelledby="h-wal">
                 <div className="flex flex-wrap items-center justify-between gap-s4">
                     <SectionTitle id="h-wal">{t("已配对")}</SectionTitle>
-                    <LinkButton variant="primary" to="/pair">
+                    <LinkButton variant="primary" {...overlayLink("?connect=1")}>
                         {t("配对新钱包")}
                     </LinkButton>
                 </div>
@@ -140,7 +131,7 @@ export default function Device() {
                                 <span className="font-mono text-t1 text-text-3">{item.fingerprint}</span>
                             </span>
                             <span className="hidden text-t2 text-text-3 @split:inline">
-                                {t("配对于")} {day(item.pairedAt)}
+                                {t("配对于")} {dateLabel(item.pairedAt)}
                             </span>
                         </SelectRow>
                     ))}
@@ -148,10 +139,7 @@ export default function Device() {
             </Section>
 
             <Section aria-labelledby="h-acc">
-                <div className="flex flex-col gap-s1">
-                    <SectionTitle id="h-acc">{t("账户")}</SectionTitle>
-                    <Helper>{t("这里的核对状态存在浏览器，唯一的依据是冷钱包屏幕。")}</Helper>
-                </div>
+                <SectionTitle id="h-acc">{t("账户")}</SectionTitle>
                 {list.length > 0 ? (
                     <div>
                         <ListHead grid={GRID}>
@@ -164,6 +152,7 @@ export default function Device() {
                                 const first = addresses.find(
                                     (a) => a.accountId === account.id && a.change === 0 && a.index === 0,
                                 );
+                                const open = receiveLink(account.id, { verify: !first?.verified });
                                 return (
                                     <li key={account.id} className={`${GRID} row min-h-row items-center py-s2`}>
                                         <span className="flex min-w-0 items-center gap-s3 @split:col-span-6">
@@ -182,20 +171,20 @@ export default function Device() {
                                         </span>
                                         <span className="flex items-center justify-end gap-s2 @split:col-span-3">
                                             <LinkButton
-                                                to={`/receive?account=${encodeURIComponent(account.id)}`}
+                                                {...open}
                                                 variant="ghost"
                                                 size="sm"
                                                 className="row-actions hidden @split:inline-flex"
                                             >
-                                                {t("核对")}
+                                                {first?.verified ? t("收款") : t("核对")}
                                             </LinkButton>
                                             <Chip tone={first?.verified ? "ok" : "warn"}>
                                                 {first?.verified ? t("已核对") : t("未核对")}
                                             </Chip>
                                         </span>
-                                        {/* 窄屏没有操作列，点整行去核对。 */}
+                                        {/* 窄屏没有操作列，点整行打开。 */}
                                         <Link
-                                            to={`/receive?account=${encodeURIComponent(account.id)}`}
+                                            {...open}
                                             aria-label={t("核对 {0}", accountTitle(account))}
                                             className="absolute inset-0 @split:hidden"
                                         />

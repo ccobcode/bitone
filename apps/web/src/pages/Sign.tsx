@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Navigate, useNavigate, useSearchParams } from "react-router";
+import { Navigate, useNavigate, useParams } from "react-router";
 import { UrReceiver, accountKeyList, previewRequest, verifyResponse, type Review } from "../core";
 import { useApp, useLive } from "../data/app";
 import { db, type TxRecord } from "../data/db";
-import { replaceAndCancel, TransferError } from "../data/transfer";
+import { txHref } from "../gateway/history";
+import { broadcastTx, replaceAndCancel, TransferError } from "../data/transfer";
 import {
     amountText,
     cancelNote,
@@ -23,15 +24,15 @@ import { Camera, type CameraFailure } from "../ui/Camera";
 import { CAMERA_FAILURES } from "../ui/cameraFailures";
 import { Icon } from "../ui/Icon";
 import {
-    Alert,
     Button,
     Chip,
     Collapse,
     Disclosure,
     Empty,
     Fact,
-    Helper,
+    FullAddress,
     LinkButton,
+    Notice,
     PageTitle,
     Section,
     SectionTitle,
@@ -166,7 +167,7 @@ function ScanPanel({
 
     async function abandon() {
         await cancelTx(tx.id, t("核验失败，用户放弃"));
-        await navigate("/history");
+        await navigate(txHref(tx.id), { replace: true });
     }
 
     const state = failure ? CAMERA_FAILURES[failure] : null;
@@ -270,11 +271,7 @@ function ScanPanel({
                 </div>
             )}
             <ScanProgress value={progress.value} frames={progress.frames} />
-            {notice ? (
-                <p role="status" className="text-t2 text-warn">
-                    {notice}
-                </p>
-            ) : null}
+            {notice ? <Notice tone="warn">{notice}</Notice> : null}
 
             {children}
 
@@ -311,7 +308,7 @@ function CancelPanel({ tx }: { tx: TxRecord }) {
     async function confirm() {
         setBusy(true);
         await cancelTx(tx.id, t("用户取消"));
-        await navigate("/history");
+        await navigate(txHref(tx.id), { replace: true });
     }
 
     async function sendReplacement() {
@@ -321,7 +318,7 @@ function CancelPanel({ tx }: { tx: TxRecord }) {
         setFailure("");
         try {
             const next = await replaceAndCancel(tx, { wallet, accounts, account });
-            await navigate(`/sign?id=${encodeURIComponent(next.id)}`);
+            await navigate(`/sign/${encodeURIComponent(next.id)}`);
         } catch (error) {
             setFailure(error instanceof TransferError ? translate(error.message) : t("无法生成替换交易。"));
             setBusy(false);
@@ -344,7 +341,7 @@ function CancelPanel({ tx }: { tx: TxRecord }) {
                         {t("取消只影响本地记录")}
                     </SectionTitle>
                     <p className="text-t2 text-text-2">{cancelNote(tx)}</p>
-                    {failure ? <Alert>{failure}</Alert> : null}
+                    {failure ? <Notice tone="danger">{failure}</Notice> : null}
                     <div className="flex flex-wrap justify-end gap-s2">
                         <Button onClick={() => setOpen(false)}>{t("继续签名")}</Button>
                         {replace ? (
@@ -377,7 +374,6 @@ function usePreview(tx: TxRecord): Review | null | undefined {
 }
 
 function SigningView({ tx }: { tx: TxRecord }) {
-    const navigate = useNavigate();
     const [qrError, setQrError] = useState("");
     const entry = lookupAsset(tx.network, tx.asset);
     const review = usePreview(tx);
@@ -385,13 +381,10 @@ function SigningView({ tx }: { tx: TxRecord }) {
 
     const onVerified = useCallback(
         (raw: string, hash: string) => {
-            // 扫描期间交易可能已经到期，这时页面会切到已结束的状态。
-            void markSigned(tx.id, { raw, hash }).then(
-                () => navigate(`/broadcast?id=${encodeURIComponent(tx.id)}`, { replace: true }),
-                () => undefined,
-            );
+            // 页面跟着状态走，下一步是广播。扫描期间交易可能已经到期，这时切到已结束的状态。
+            void markSigned(tx.id, { raw, hash }).catch(() => undefined);
         },
-        [navigate, tx.id],
+        [tx.id],
     );
 
     return (
@@ -406,10 +399,10 @@ function SigningView({ tx }: { tx: TxRecord }) {
                     ) : null}
                 </div>
                 {review?.alerts.map((alert) => (
-                    <Helper key={alert} tone="text-warn">
+                    <Notice key={alert} tone="warn">
                         {t("冷钱包会提示：")}
                         {alert}
-                    </Helper>
+                    </Notice>
                 ))}
             </div>
 
@@ -434,7 +427,7 @@ function SigningView({ tx }: { tx: TxRecord }) {
                             {t("待签名二维码")}
                         </SectionTitle>
                         {qrError ? (
-                            <Helper tone="text-danger">{qrError}</Helper>
+                            <Notice tone="danger">{qrError}</Notice>
                         ) : (
                             <AnimatedQr
                                 message={tx.request}
@@ -476,6 +469,44 @@ function SigningView({ tx }: { tx: TxRecord }) {
     );
 }
 
+/** 签名已经核验，等用户确认广播。广播后这笔才算发出去，页面落到交易详情。 */
+function SignedView({ tx }: { tx: TxRecord }) {
+    const [busy, setBusy] = useState(false);
+
+    async function send() {
+        setBusy(true);
+        await broadcastTx(tx.id).catch(() => undefined);
+        setBusy(false);
+    }
+
+    const fee = feeFact(tx);
+    return (
+        <>
+            <PageTitle>{t("广播")}</PageTitle>
+            <Section aria-labelledby="h-send" className="gap-s4">
+                <SectionTitle id="h-send">{t("核验通过")}</SectionTitle>
+                <dl aria-label={t("交易摘要")} className="flex flex-col text-t2">
+                    <Fact label={t("发送")}>{amountText(tx)}</Fact>
+                    <Fact label={t("收款")}>
+                        <FullAddress address={tx.to} className="justify-end" />
+                    </Fact>
+                    <Fact label={fee.label} mono={fee.mono}>
+                        {fee.value}
+                    </Fact>
+                </dl>
+                <div className="flex justify-end gap-s2">
+                    <Button disabled={busy} onClick={() => void cancelTx(tx.id, t("用户取消，签名仍然有效"))}>
+                        {t("放弃")}
+                    </Button>
+                    <Button variant="primary" disabled={busy} onClick={() => void send()}>
+                        {t("广播交易")}
+                    </Button>
+                </div>
+            </Section>
+        </>
+    );
+}
+
 function ClosedView({ tx }: { tx: TxRecord }) {
     const expired = tx.timeline.at(-1)?.note === "手续费报价已过期" || tx.timeline.at(-1)?.note === "超过有效期";
     return (
@@ -508,15 +539,8 @@ function ClosedView({ tx }: { tx: TxRecord }) {
 }
 
 export default function Sign() {
-    const { wallet } = useApp();
-    const [params] = useSearchParams();
-    const id = params.get("id");
-    const tx = useLive(async () => {
-        if (id) return (await db.txs.get(id)) ?? null;
-        if (!wallet) return null;
-        const rows = await db.txs.where("walletId").equals(wallet.id).toArray();
-        return rows.filter((row) => row.state === "signing").at(-1) ?? null;
-    }, [id, wallet]);
+    const { id } = useParams();
+    const tx = useLive(async () => (id ? ((await db.txs.get(id)) ?? null) : null), [id]);
 
     if (tx === undefined) {
         return (
@@ -530,20 +554,14 @@ export default function Sign() {
         return (
             <>
                 <PageTitle>{t("冷钱包签名")}</PageTitle>
-                <Empty
-                    icon="qr"
-                    action={
-                        <LinkButton variant="primary" to="/send">
-                            {t("发起转账")}
-                        </LinkButton>
-                    }
-                >
-                    {t("还没有待签名的交易。")}
+                <Empty icon="qr" action={<LinkButton to="/history">{t("查看记录")}</LinkButton>}>
+                    {t("没有找到这笔交易。")}
                 </Empty>
             </>
         );
     }
     if (tx.state === "signing") return <SigningView key={tx.id} tx={tx} />;
-    if (tx.state === "abandoned" || tx.state === "expired") return <ClosedView tx={tx} />;
-    return <Navigate to={`/broadcast?id=${encodeURIComponent(tx.id)}`} replace />;
+    if (tx.state === "signed") return <SignedView key={tx.id} tx={tx} />;
+    if ((tx.state === "abandoned" && !tx.raw) || tx.state === "expired") return <ClosedView tx={tx} />;
+    return <Navigate to={txHref(tx.id)} replace />;
 }

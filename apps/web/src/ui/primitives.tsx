@@ -9,6 +9,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Link, type LinkProps } from "react-router";
+import { t } from "../core/i18n";
 import { groupAddress } from "../core/text";
 import { Icon, type IconName } from "./Icon";
 
@@ -101,13 +102,41 @@ export function Empty({ icon, children, action }: { icon: IconName; children: Re
 /** 标题放进外壳的标题行，和网络切换、连接状态同一行。 */
 export const TitleSlot = createContext<HTMLElement | null>(null);
 
-export function PageTitle({ children }: { children: ReactNode }) {
+export function PageTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
     const slot = use(TitleSlot);
     if (!slot) return null;
     return createPortal(
-        <h1 key={String(children)} className="fade-in truncate text-t5 font-semibold nav:text-t6">
-            {children}
-        </h1>,
+        <>
+            <h1 key={String(children)} className="fade-in min-w-0 truncate text-t5 font-semibold nav:text-t6">
+                {children}
+            </h1>
+            {aside}
+        </>,
+        slot,
+    );
+}
+
+/** 子页面的标题：父级链接加当前对象，导航的选中态留在父级。 */
+export function ChildTitle({ parent, children }: { parent: { to: string; label: string }; children: ReactNode }) {
+    const slot = use(TitleSlot);
+    if (!slot) return null;
+    return createPortal(
+        <nav
+            aria-label={t("页面层级")}
+            className="fade-in flex min-h-11 min-w-0 items-center gap-s2 text-t2 nav:min-h-8"
+        >
+            <Link
+                to={parent.to}
+                className="press flex shrink-0 items-center gap-s1 text-text-3 no-underline hover:text-text"
+            >
+                <Icon name="caret" size={14} className="rotate-180" />
+                {parent.label}
+            </Link>
+            <span aria-hidden="true" className="text-line-strong">
+                /
+            </span>
+            <h1 className="truncate font-medium text-text-2">{children}</h1>
+        </nav>,
         slot,
     );
 }
@@ -128,24 +157,36 @@ export function SectionTitle({
     );
 }
 
+/** 字段或区块标题的一句说明，紧贴它说明的东西。独立成段要提醒用户的话用 Notice。 */
 export function Helper({ children, tone = "text-text-3" }: { children: ReactNode; tone?: string }) {
     return <p className={`text-t2 ${tone}`}>{children}</p>;
 }
 
-/** 错误和警告，读屏会立刻念出来。 */
-export function Alert({
-    children,
-    tone = "text-danger",
+const NOTICE_TONES = {
+    info: { block: "bg-surface-2 text-text-2", icon: "unknown" },
+    warn: { block: "bg-warn-soft text-warn", icon: "alert" },
+    danger: { block: "bg-danger-soft text-danger", icon: "alert" },
+} as const;
+
+/** 告示：用户要停下来看的事。贴着它说明的内容，放在区块标题下面或操作按钮上面。警告和错误读屏会立刻念出来。 */
+export function Notice({
+    tone = "info",
     className = "",
+    children,
 }: {
-    children: ReactNode;
-    tone?: string;
+    tone?: keyof typeof NOTICE_TONES;
     className?: string;
+    children: ReactNode;
 }) {
+    const { block, icon } = NOTICE_TONES[tone];
     return (
-        <p role="alert" className={`text-t2 ${tone} ${className}`}>
-            {children}
-        </p>
+        <div
+            role={tone === "info" ? "status" : "alert"}
+            className={`rise flex items-start gap-s2 rounded-r2 px-s3 py-s2 text-t2 ${block} ${className}`}
+        >
+            <Icon name={icon} size={16} className="mt-0.5 shrink-0" />
+            <div className="min-w-0 [overflow-wrap:anywhere]">{children}</div>
+        </div>
     );
 }
 

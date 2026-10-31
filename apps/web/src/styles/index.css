@@ -107,6 +107,8 @@
     --page-width: 1200px;
     --topbar: 64px;
     --tabbar: 56px;
+    /* 手机上父级链接要 44 的触控区，所有页面都按这个高度留。 */
+    --page-title: 44px;
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     --focus: var(--accent-text);
 }
@@ -114,6 +116,7 @@
 @media (width >= 60rem) {
     :root {
         --page-x: max(var(--s6), var(--safe-x));
+        --page-title: var(--s8);
     }
 }
 
@@ -189,6 +192,9 @@
         /* 主屏幕模式下页面延伸到状态栏后面。 */
         padding-top: var(--safe-top);
     }
+    .app-main[data-focus] {
+        padding-bottom: calc(var(--safe-bottom) + var(--s8));
+    }
     .app-main {
         display: flex;
         min-width: 0;
@@ -203,16 +209,17 @@
         margin-inline: auto;
         padding-inline: var(--page-x);
     }
+    /* 页头在所有页面一样高，首个区块从同一条线开始，切换导航时内容不跳。 */
     .page-head {
         display: flex;
-        min-height: var(--s10);
         align-items: center;
-        padding-block: var(--s5) var(--s4);
+        padding-block: var(--s2);
     }
-    /* 首页没有可见标题，这一行只留上边距。 */
-    .page-head:has(> .page-title-slot:empty) {
-        min-height: 0;
-        padding-block: var(--s5) 0;
+    .page-title-slot {
+        display: flex;
+        min-height: var(--page-title);
+        align-items: center;
+        gap: var(--s3);
     }
     .page {
         display: flex;
@@ -222,6 +229,9 @@
     }
 
     @media (width >= 60rem) {
+        .page-head {
+            padding-block: var(--s5) var(--s4);
+        }
         .app-main {
             padding-bottom: var(--s12);
         }
@@ -362,6 +372,62 @@
     .tint {
         --fill: var(--surface);
         --fill-hover: var(--surface-3);
+    }
+
+    /* 浮层：宽屏居中，手机上从底部升起。内容自成容器，里面的栅格按浮层宽度切换。 */
+    .sheet {
+        --sheet-x: 0;
+        --sheet-y: 0;
+        position: fixed;
+        z-index: 30;
+        inset-inline: 0;
+        bottom: var(--keyboard, 0px);
+        display: flex;
+        max-height: calc(100dvh - var(--safe-top) - var(--s8) - var(--keyboard, 0px));
+        flex-direction: column;
+        gap: var(--s4);
+        overflow-y: auto;
+        border-radius: var(--r4) var(--r4) 0 0;
+        background: var(--popup);
+        box-shadow: var(--elevation-3);
+        /* 底部的内边距在操作区里，内容不会从操作区下面漏出来。 */
+        padding: var(--s4) var(--page-x) 0;
+        container-type: inline-size;
+        outline: none;
+    }
+    .sheet .card {
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        padding: 0;
+    }
+    @media (width >= 60rem) {
+        .sheet {
+            --sheet-x: -50%;
+            --sheet-y: -50%;
+            inset: 50% auto auto 50%;
+            width: min(var(--sheet-width), calc(100vw - 2 * var(--s8)));
+            max-height: calc(100dvh - 2 * var(--s8));
+            border-radius: var(--r4);
+            padding: var(--s6) var(--s6) 0;
+            transform: translate(var(--sheet-x), var(--sheet-y));
+        }
+    }
+    .sheet-actions {
+        position: sticky;
+        bottom: 0;
+        z-index: 1;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: var(--s2);
+        background: var(--popup);
+        padding-block: var(--s2) calc(var(--s4) + var(--safe-bottom));
+    }
+    @media (width >= 60rem) {
+        .sheet-actions {
+            padding-bottom: var(--s6);
+        }
     }
 
     /* 文字链接没有内边距，右边缘能贴着边线。下划线是渐变出来的。 */

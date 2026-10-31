@@ -34,7 +34,6 @@ const PATHS = {
     camera: "M4 8h3l2-3h6l2 3h3v11H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
     scan: "M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10",
     chevron: "M6 9l6 6 6-6",
-    more: "M4 7h16M4 12h16M4 17h16",
     caret: "M9 6l6 6-6 6",
 } as const;
 
@@ -46,6 +45,26 @@ interface IconProps {
     className?: string;
     /** 完成时描线。 */
     draw?: boolean;
+}
+
+/** 下载中：箭头往托盘里落，循环。加载不用转圈，见 docs/06-ui.md 第 5 节。 */
+export function DownloadingIcon({ size = 16 }: { size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path d="M12 4v11M7 10l5 5 5-5" className="icon-drop" />
+            <path d="M5 20h14" />
+        </svg>
+    );
 }
 
 export function Icon({ name, size = 18, className, draw }: IconProps) {

@@ -77,6 +77,31 @@ export function timeLabel(time: number, now = Date.now()): string {
     return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${clock}`;
 }
 
+/** 本地日期 YYYY-MM-DD。 */
+export function dateLabel(time: number): string {
+    const date = new Date(time);
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** 列表里按天分组的标题。今年的不写年份。 */
+export function dayLabel(time: number, now = Date.now()): string {
+    const date = new Date(time);
+    const today = new Date(now);
+    if (date.toDateString() === today.toDateString()) return t("今天");
+    const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) return t("昨天");
+    const full = dateLabel(time);
+    return date.getFullYear() === today.getFullYear() ? full.slice(5) : full;
+}
+
+/** 列表里的时分。 */
+export function minuteLabel(time: number): string {
+    const date = new Date(time);
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 export function clockLabel(time: number): string {
     return new Date(time).toLocaleTimeString("zh-CN", { hour12: false });
 }

@@ -40,7 +40,7 @@ export function Picker({ id, value, items, onPick, look = "field", label, empty 
                 <Icon name="chevron" size={16} className="flip shrink-0 text-text-3" />
             </Menu.Trigger>
             <Menu.Portal>
-                <Menu.Positioner sideOffset={8} align={look === "field" ? "start" : "end"} className="z-20">
+                <Menu.Positioner sideOffset={8} align={look === "field" ? "start" : "end"} className="z-40">
                     <Menu.Popup className="popup max-h-96 min-w-[max(var(--anchor-width),16rem)] overflow-y-auto">
                         {items.length === 0 ? (
                             <div className="px-s3 py-s4 text-center text-t3 text-text-2">{empty}</div>

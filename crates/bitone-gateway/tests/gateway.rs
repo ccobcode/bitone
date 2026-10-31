@@ -1024,7 +1024,15 @@ async fn websocket_handshake_has_security_headers() {
 #[tokio::test]
 async fn spa_routes_fall_back_to_index() {
     let gateway = hosted("spa", "").await;
-    for path in ["/", "/index.html", "/wallet", "/wallet/settings/", "/tx/123"] {
+    // /assets/usdt 是资产详情，和静态资源目录同名，刷新时也要回到页面。
+    for path in [
+        "/",
+        "/index.html",
+        "/wallet",
+        "/wallet/settings/",
+        "/tx/123",
+        "/assets/usdt",
+    ] {
         let response = gateway.get(path).await;
         assert_eq!(response.status(), StatusCode::OK, "{path}");
         let content_type = response.headers()["content-type"].to_str().unwrap().to_string();

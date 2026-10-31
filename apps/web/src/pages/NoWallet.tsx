@@ -1,6 +1,7 @@
 import { useApp } from "../data/app";
 import { modeLabel } from "../ui/labels";
 import { Empty, LinkButton } from "../ui/primitives";
+import { overlayLink } from "../ui/Sheet";
 import { t } from "../core/i18n";
 
 /** 另一个网络已有钱包，当前网络还没有。 */
@@ -10,7 +11,7 @@ export function NoWallet() {
         <Empty
             icon="wallet"
             action={
-                <LinkButton variant="primary" to="/pair">
+                <LinkButton variant="primary" {...overlayLink("?connect=1")}>
                     {t("配对新钱包")}
                 </LinkButton>
             }

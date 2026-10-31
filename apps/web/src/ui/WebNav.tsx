@@ -6,23 +6,23 @@ import { BrandMark } from "./BrandMark";
 import { Icon, type IconName } from "./Icon";
 import { modeLabel } from "./labels";
 import { Chip } from "./primitives";
+import { overlayLink } from "./Sheet";
 import { WebTop } from "./WebTop";
 import { t } from "../core/i18n";
 
-/** match 里的页面都算这一项，转账流程走到签名和广播时选中态留在「转账」。 */
-const ITEMS: { to: string; label: string; icon: IconName; match: string[] }[] = [
-    { to: "/", label: t("资产"), icon: "assets", match: ["/", "/receive"] },
-    { to: "/send", label: t("转账"), icon: "send", match: ["/send", "/sign", "/broadcast"] },
-    { to: "/history", label: t("交易记录"), icon: "history", match: ["/history"] },
-    { to: "/contacts", label: t("地址簿"), icon: "contacts", match: ["/contacts"] },
-    { to: "/device", label: t("冷钱包"), icon: "device", match: ["/device", "/pair"] },
-    { to: "/settings", label: t("设置"), icon: "settings", match: ["/settings"] },
+/** 主导航只放能停留的页面。转账和收款是动作，子页面的选中态留在父级。 */
+const ITEMS: { to: string; label: string; icon: IconName; on(pathname: string): boolean }[] = [
+    { to: "/", label: t("资产"), icon: "assets", on: (path) => path === "/" || path.startsWith("/assets/") },
+    { to: "/history", label: t("交易记录"), icon: "history", on: (path) => path.startsWith("/history") },
+    { to: "/contacts", label: t("地址簿"), icon: "contacts", on: (path) => path === "/contacts" },
+    { to: "/device", label: t("冷钱包"), icon: "device", on: (path) => path === "/device" },
 ];
 
 function WalletMenu() {
     const { wallets, wallet, mode, selectWallet } = useApp();
     const navigate = useNavigate();
     const inMode = wallets.filter((w) => w.mode === mode);
+    const connect = overlayLink("?connect=1");
     return (
         <Menu.Root>
             <Menu.Trigger className="press flex h-11 max-w-44 min-w-0 items-center gap-s2 rounded-r2 bg-fill px-s3 text-left hover:bg-fill-hover data-[popup-open]:bg-fill-hover">
@@ -52,10 +52,14 @@ function WalletMenu() {
                             </Menu.Item>
                         ))}
                         <Menu.Item
-                            onClick={() => void navigate("/pair")}
+                            onClick={() => void navigate(connect.to, { state: connect.state })}
                             className="popup-item cursor-pointer font-medium text-accent-text"
                         >
                             {t("配对新钱包")}
+                        </Menu.Item>
+                        <Menu.Separator className="my-s1 border-t border-line" />
+                        <Menu.Item onClick={() => void navigate("/settings")} className="popup-item cursor-pointer">
+                            {t("设置")}
                         </Menu.Item>
                     </Menu.Popup>
                 </Menu.Positioner>
@@ -89,7 +93,7 @@ function NetworkTag() {
 /** 桌面端的顶部导航。窄屏时导航在底部标签栏，这里只留标志和钱包。 */
 export function WebNav() {
     const { pathname } = useLocation();
-    const active = ITEMS.findIndex((item) => item.match.includes(pathname));
+    const active = ITEMS.findIndex((item) => item.on(pathname));
     return (
         <header className="topbar">
             <div className="page-frame flex h-full items-center gap-s6">
@@ -129,54 +133,26 @@ export function WebNav() {
     );
 }
 
-/** 手机底部标签栏。放不下的两项收进「更多」。 */
-const TABS = ITEMS.slice(0, 4);
-const MORE = ITEMS.slice(4);
-
+/** 手机底部标签栏，和桌面的主导航是同样四项。 */
 export function TabBar() {
     const { pathname } = useLocation();
-    const navigate = useNavigate();
-    const tab = TABS.findIndex((item) => item.match.includes(pathname));
-    const inMore = MORE.some((item) => item.match.includes(pathname));
-    const index = inMore ? TABS.length : tab;
-    const vars = { "--n": TABS.length + 1, "--i": index } as CSSProperties;
+    const index = ITEMS.findIndex((item) => item.on(pathname));
+    const vars = { "--n": ITEMS.length, "--i": index } as CSSProperties;
     return (
         <nav aria-label={t("底部导航")} className="tabbar nav:hidden" style={vars}>
             {index >= 0 ? <span aria-hidden="true" className="tabbar-mark" /> : null}
-            {TABS.map((item, i) => (
+            {ITEMS.map((item, i) => (
                 <Link
                     key={item.to}
                     to={item.to}
                     aria-current={item.to === pathname ? "page" : undefined}
-                    data-on={i === tab ? "" : undefined}
+                    data-on={i === index ? "" : undefined}
                     className="tabbar-item press"
                 >
                     <Icon name={item.icon} />
                     {item.label}
                 </Link>
             ))}
-            <Menu.Root>
-                <Menu.Trigger data-on={inMore ? "" : undefined} className="tabbar-item press">
-                    <Icon name="more" />
-                    {t("更多")}
-                </Menu.Trigger>
-                <Menu.Portal>
-                    <Menu.Positioner side="top" sideOffset={8} align="end" className="z-20">
-                        <Menu.Popup className="popup min-w-40">
-                            {MORE.map((item) => (
-                                <Menu.Item
-                                    key={item.to}
-                                    onClick={() => void navigate(item.to)}
-                                    className="popup-item cursor-pointer gap-s3"
-                                >
-                                    <Icon name={item.icon} />
-                                    {item.label}
-                                </Menu.Item>
-                            ))}
-                        </Menu.Popup>
-                    </Menu.Positioner>
-                </Menu.Portal>
-            </Menu.Root>
         </nav>
     );
 }

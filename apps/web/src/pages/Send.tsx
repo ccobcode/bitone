@@ -11,6 +11,7 @@ import { TransferError, createSolanaNonce, createTransfer } from "../data/transf
 import { reservationsOf } from "../data/txs";
 import { buildRows, pendingAmount, type AssetRow } from "../gateway/assets";
 import { GatewayError, addressKey, type FeeTier } from "../gateway/client";
+import { txHref } from "../gateway/history";
 import { useGateway } from "../gateway/provider";
 import { useQuote } from "../gateway/quote";
 import { GatewayDown } from "../ui/GatewayDown";
@@ -18,7 +19,6 @@ import { Icon } from "../ui/Icon";
 import { accountIcon, accountKind, accountTitle, tierLabel } from "../ui/labels";
 import { Picker } from "../ui/Picker";
 import {
-    Alert,
     Button,
     Chip,
     Collapse,
@@ -27,6 +27,7 @@ import {
     Fact,
     Helper,
     LABEL,
+    Notice,
     PageTitle,
     Section,
     SectionTitle,
@@ -262,7 +263,7 @@ function SendForm({ wallet, rows, first }: FormProps) {
         setForbidden(null);
         try {
             const tx = await work();
-            await navigate(`/sign?id=${encodeURIComponent(tx.id)}`);
+            await navigate(`/sign/${encodeURIComponent(tx.id)}`);
         } catch (error) {
             if (error instanceof TransferError && error.code === "forbidden" && error.review) {
                 setForbidden(error.review);
@@ -614,14 +615,16 @@ function SendForm({ wallet, rows, first }: FormProps) {
                     </Section>
 
                     {quote.nonceBusy ? (
-                        <Helper tone="text-warn">{t("上一笔 Solana 交易还没有结束，完成后才能转账。")}</Helper>
+                        <Notice tone="warn">{t("上一笔 Solana 交易还没有结束，完成后才能转账。")}</Notice>
                     ) : null}
                     {quote.held ? (
-                        <Link to={`/broadcast?id=${encodeURIComponent(quote.held.id)}`} className="text-t2 text-warn">
-                            {t("交易")} {quote.held.id} {t("已取消但签名仍然有效，先发替换交易。")}
-                        </Link>
+                        <Notice tone="warn">
+                            <Link to={txHref(quote.held.id)} className="text-warn">
+                                {t("交易")} {quote.held.id} {t("已取消但签名仍然有效，先发替换交易。")}
+                            </Link>
+                        </Notice>
                     ) : null}
-                    {failure ? <Alert>{failure}</Alert> : null}
+                    {failure ? <Notice tone="danger">{failure}</Notice> : null}
                     <Button
                         variant="primary"
                         size="lg"

@@ -5,7 +5,6 @@ import {
     CONFLICT_SPACING,
     EXPIRY_GRACE,
     IllegalTransition,
-    STATE_GROUPS,
     REPLACED_WATCH,
     STATE_LABELS,
     TRANSITIONS,
@@ -131,13 +130,9 @@ describe("状态图", () => {
         }
     });
 
-    it("每个状态都有文案和分组", () => {
-        for (const state of STATES) {
-            expect(STATE_LABELS[state]).toBeTruthy();
-            expect(STATE_GROUPS[state]).toBeTruthy();
-        }
+    it("每个状态都有文案", () => {
+        for (const state of STATES) expect(STATE_LABELS[state]).toBeTruthy();
         expect(STATE_LABELS.failed).toBe("链上失败");
-        expect(STATE_GROUPS.failed).toBe("未完成");
     });
 });
 

@@ -205,19 +205,3 @@ export const STATE_LABELS: Record<TxState, string> = {
     confirmed: t("已确认"),
     failed: t("链上失败"),
 };
-
-export type StateGroup = "待处理" | "进行中" | "已完成" | "未完成";
-
-export const STATE_GROUPS: Record<TxState, StateGroup> = {
-    signing: "待处理",
-    signed: "待处理",
-    uncertain: "待处理",
-    broadcasting: "进行中",
-    broadcast: "进行中",
-    confirming: "进行中",
-    confirmed: "已完成",
-    replaced: "未完成",
-    failed: "未完成",
-    expired: "未完成",
-    abandoned: "未完成",
-};

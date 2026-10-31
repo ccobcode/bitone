@@ -13,15 +13,14 @@ import {
 import { db, type Contact } from "../data/db";
 import { accountIcon, accountTitle } from "../ui/labels";
 import {
-    Alert,
     Button,
     Collapse,
     Empty,
     FullAddress,
-    Helper,
     LABEL,
     LinkButton,
     ListHead,
+    Notice,
     PageTitle,
     Section,
     SectionTitle,
@@ -49,11 +48,11 @@ interface EditorState {
 
 function SimilarWarning({ name }: { name: string }) {
     return (
-        <Alert tone="text-warn">
+        <Notice tone="warn">
             {t("与「")}
             {name}
             {t("」首尾相同，中间不同，可能是投毒地址。")}
-        </Alert>
+        </Notice>
     );
 }
 
@@ -120,7 +119,7 @@ function Editor({ value, contacts, onClose }: { value: EditorState; contacts: Co
                 />
             </div>
             {similar ? <SimilarWarning name={similar.name} /> : null}
-            {failure ? <Alert>{failure}</Alert> : null}
+            {failure ? <Notice tone="danger">{failure}</Notice> : null}
             <div className="flex justify-end gap-s2">
                 <Button onClick={onClose}>{t("取消")}</Button>
                 <Button variant="primary" onClick={() => void save()}>
@@ -197,11 +196,8 @@ export default function Contacts() {
 
     return (
         <>
-            <PageTitle>{t("地址簿")}</PageTitle>
-            {/* 折叠块和这一行放在一组，收起时不会多占一段间距。 */}
-            <div className="flex flex-col">
-                <div className="flex flex-wrap items-center justify-between gap-s4">
-                    <Helper>{t("不统计转账次数，名称和历史都不是可信依据。")}</Helper>
+            <PageTitle
+                aside={
                     <Button
                         variant="primary"
                         className="ml-auto"
@@ -209,10 +205,15 @@ export default function Contacts() {
                     >
                         {t("添加地址")}
                     </Button>
-                </div>
+                }
+            >
+                {t("地址簿")}
+            </PageTitle>
+            {/* 折叠块和这一行放在一组，收起时不会多占一段间距。 */}
+            <div className="flex flex-col">
                 <Collapse open={open}>
                     {editing ? (
-                        <div className="pt-s4">
+                        <div className="pb-s4">
                             <Editor
                                 key={revision}
                                 value={editing}

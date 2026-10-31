@@ -1,8 +1,9 @@
-import { Link } from "react-router";
-import { useApp, useLive } from "../data/app";
-import { db } from "../data/db";
+import { Menu } from "@base-ui/react/menu";
+import { useNavigate } from "react-router";
+import { useAttention } from "../gateway/feed";
 import { useGateway } from "../gateway/provider";
 import { Chip } from "./primitives";
+import { TokenIcon, networkIcon } from "./TokenIcon";
 import { t } from "../core/i18n";
 
 /** 连接状态和延迟。正常时只有圆点和延迟，出问题才显示文字和颜色。窄屏时不显示文字，放不下时也不显示延迟。延迟宽度固定，数字变化时不推动旁边的内容。 */
@@ -26,26 +27,50 @@ function LiveState() {
     );
 }
 
-/** 需要处理的交易：结果不明、链上失败都不能只留在交易记录里。 */
-function AttentionChip() {
-    const { wallet } = useApp();
-    const seenAt = useLive(async () => (await db.settings.get("historySeenAt"))?.value, []);
-    const rows = useLive(async () => (wallet ? db.txs.where("walletId").equals(wallet.id).toArray() : []), [wallet]);
-    const since = typeof seenAt === "number" ? seenAt : 0;
-    const uncertain = (rows ?? []).filter((tx) => tx.state === "uncertain").length;
-    const failed = (rows ?? []).filter((tx) => tx.state === "failed" && tx.updatedAt > since).length;
-    if (uncertain === 0 && failed === 0) return null;
-    const label = failed > 0 ? t("链上失败") : t("结果不明");
-    const count = failed > 0 ? failed : uncertain;
+/** 等着用户动手的事。平时不出现，有事时才占顶栏的位置。 */
+function Inbox() {
+    const rows = useAttention();
+    const navigate = useNavigate();
+    if (rows.length === 0) return null;
+    const tone = rows.some((row) => row.tone === "danger")
+        ? "danger"
+        : rows.some((row) => row.tone === "warn")
+          ? "warn"
+          : "accent";
     return (
-        <Link to="/history" aria-label={t("{0} {1} 笔", label, count)} className="rise no-underline">
-            {/* 手机上只留数字，钱包切换不被挤窄。 */}
-            <Chip tone={failed > 0 ? "danger" : "warn"}>
-                <span className="hidden nav:inline">{label} </span>
-                {count}
-                <span className="hidden nav:inline"> {t("笔")}</span>
-            </Chip>
-        </Link>
+        <Menu.Root>
+            <Menu.Trigger aria-label={t("{0} 项待处理", rows.length)} className="press rise flex min-h-11 items-center">
+                {/* 手机上只留数字，钱包切换不被挤窄。 */}
+                <Chip tone={tone}>
+                    {rows.length}
+                    <span className="hidden nav:inline"> {t("待处理")}</span>
+                </Chip>
+            </Menu.Trigger>
+            <Menu.Portal>
+                <Menu.Positioner sideOffset={8} align="end" className="z-20">
+                    <Menu.Popup className="popup w-[min(22rem,calc(100vw-2*var(--page-x)))]">
+                        {rows.map((row) => (
+                            <Menu.Item
+                                key={row.key}
+                                onClick={() => void navigate(row.href)}
+                                className="popup-item cursor-pointer"
+                            >
+                                <TokenIcon
+                                    asset={row.entry}
+                                    chain={row.entry && !row.entry.native ? networkIcon(row.network) : undefined}
+                                    size={28}
+                                />
+                                <span className="flex min-w-0 flex-1 flex-col">
+                                    <span className="truncate font-medium">{row.title}</span>
+                                    <span className="truncate text-t1 text-text-3">{row.party}</span>
+                                </span>
+                                <Chip tone={row.tone}>{row.status}</Chip>
+                            </Menu.Item>
+                        ))}
+                    </Menu.Popup>
+                </Menu.Positioner>
+            </Menu.Portal>
+        </Menu.Root>
     );
 }
 
@@ -53,7 +78,7 @@ function AttentionChip() {
 export function WebTop() {
     return (
         <div className="flex shrink-0 items-center gap-s3">
-            <AttentionChip />
+            <Inbox />
             <LiveState />
         </div>
     );

@@ -7,9 +7,10 @@ import { requestPersist, savePairing, selectableAccounts, walletId } from "../da
 import { Camera, type CameraFailure } from "../ui/Camera";
 import { CAMERA_FAILURES } from "../ui/cameraFailures";
 import { accountIcon, accountKind, accountTitle } from "../ui/labels";
-import { Alert, Button, Chip, Helper, LABEL, LinkButton, PageTitle, Section, SectionTitle } from "../ui/primitives";
+import { Button, Chip, LABEL, Notice } from "../ui/primitives";
 import { Icon } from "../ui/Icon";
 import { ScanProgress } from "../ui/ScanProgress";
+import { Sheet, SheetActions } from "../ui/Sheet";
 import { StateCard } from "../ui/StateCard";
 import { TokenIcon } from "../ui/TokenIcon";
 import { t, translate } from "../core/i18n";
@@ -19,7 +20,8 @@ function shortKey(key: Uint8Array): string {
     return `${hex.slice(0, 6)}…${hex.slice(-6)}`;
 }
 
-export default function Pair() {
+/** 连接冷钱包：扫码，选账户。保存后接着核对第一个收款地址，见 docs/04-security.md 第 4 节。 */
+export default function PairDialog() {
     const { mode, wallet, wallets, selectWallet, refreshPersisted } = useApp();
     const navigate = useNavigate();
 
@@ -42,7 +44,7 @@ export default function Pair() {
 
     // 等全局状态读到新钱包再跳转。否则首次配对时路由守卫看到的还是没有钱包。
     useEffect(() => {
-        if (savedId && wallet?.id === savedId) void navigate("/receive", { replace: true });
+        if (savedId && wallet?.id === savedId) void navigate("/?receive=&verify=1", { replace: true });
     }, [savedId, wallet, navigate]);
 
     const reset = useCallback(() => {
@@ -132,11 +134,132 @@ export default function Pair() {
     const picked = accounts.filter((account) => paths.has(account.path)).length;
     const state = failure ? CAMERA_FAILURES[failure] : null;
 
-    return (
+    const scanStep = (
         <>
-            <PageTitle>{t("连接冷钱包")}</PageTitle>
-            <Helper>{t("公钥只保存在这个浏览器。")}</Helper>
+            {state ? (
+                <StateCard
+                    tone="warn"
+                    icon="cameraOff"
+                    title={state.title}
+                    body={state.body}
+                    facts={state.facts}
+                    actions={
+                        <>
+                            <Button onClick={() => upload.current?.click()}>{t("上传图片")}</Button>
+                            <Button variant="primary" onClick={() => setAttempt(attempt + 1)}>
+                                {state.retry}
+                            </Button>
+                        </>
+                    }
+                />
+            ) : (
+                <>
+                    {devices.length > 1 ? (
+                        <div className="flex flex-col gap-s2">
+                            <label htmlFor="camera" className={LABEL}>
+                                {t("摄像头")}
+                            </label>
+                            <select
+                                id="camera"
+                                value={deviceId}
+                                onChange={(event) => setDeviceId(event.target.value)}
+                                className="field text-t3"
+                            >
+                                <option value="">{t("默认摄像头")}</option>
+                                {devices.map((device, i) => (
+                                    <option key={device.deviceId} value={device.deviceId}>
+                                        {device.label || t("摄像头 {0}", i + 1)}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    ) : null}
+                    <Camera
+                        key={attempt}
+                        active={!pairing}
+                        deviceId={deviceId}
+                        onText={feed}
+                        onFailure={setFailure}
+                        onDevices={setDevices}
+                    />
+                </>
+            )}
+            <ScanProgress value={progress.value} frames={progress.frames} />
+            {notice ? <Notice tone="warn">{notice}</Notice> : null}
+            <SheetActions>
+                {progress.frames > 0 ? <Button onClick={reset}>{t("重新扫描")}</Button> : null}
+                {state ? null : <Button onClick={() => upload.current?.click()}>{t("上传图片")}</Button>}
+            </SheetActions>
+        </>
+    );
 
+    const chooseStep = (
+        <>
+            <div className="flex items-center gap-s3 text-t2">
+                <span className="text-text-3">{t("主密钥指纹")}</span>
+                <span className="font-mono">{pairing?.fingerprint}</span>
+                <span className="ml-auto">
+                    <Chip tone="ok">{t("解析完成")}</Chip>
+                </span>
+            </div>
+            <ul className="stagger">
+                {accounts.map((account) => (
+                    <li key={account.path}>
+                        <label className="row flex min-h-row items-center gap-s3 py-s2">
+                            <input
+                                type="checkbox"
+                                checked={paths.has(account.path)}
+                                onChange={() => toggle(account.path)}
+                                className="peer sr-only"
+                            />
+                            <span
+                                aria-hidden="true"
+                                className="flex size-5 shrink-0 items-center justify-center rounded-r1 bg-surface-3 text-on-accent transition-colors peer-checked:bg-accent peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent-text"
+                            >
+                                {paths.has(account.path) ? <Icon name="check" size={14} draw /> : null}
+                            </span>
+                            <TokenIcon network={accountIcon(account)} size={32} />
+                            <span className="flex min-w-0 flex-1 flex-col">
+                                <span className="truncate text-t3 font-medium">{accountTitle(account)}</span>
+                                <span className="truncate text-t1 text-text-3">{accountKind(account)}</span>
+                            </span>
+                            <span className="hidden flex-col items-end whitespace-nowrap @split:flex">
+                                <span className="text-t1 text-text-3">
+                                    {account.chain === "bitcoin" ? t("扩展公钥") : t("账户公钥")}
+                                </span>
+                                <span className="font-mono text-t1 text-text-2">{shortKey(account.key)}</span>
+                            </span>
+                        </label>
+                    </li>
+                ))}
+            </ul>
+            <div className="flex min-w-0 flex-col gap-s2">
+                <label htmlFor="wallet-name" className={LABEL}>
+                    {t("钱包名称")}
+                </label>
+                <input
+                    id="wallet-name"
+                    type="text"
+                    maxLength={32}
+                    value={name}
+                    disabled={existing}
+                    onChange={(event) => setName(event.target.value)}
+                    className="field text-t3"
+                />
+            </div>
+            {existing ? <Notice>{t("这个钱包已配对，导入后只补缺的账户。")}</Notice> : null}
+            {saveError ? <Notice tone="danger">{saveError}</Notice> : null}
+            <SheetActions>
+                <Button onClick={reset}>{t("重新扫描")}</Button>
+                <Button variant="primary" disabled={picked === 0 || saving} onClick={() => void submit()}>
+                    {t("导入")}
+                </Button>
+            </SheetActions>
+        </>
+    );
+
+    return (
+        <Sheet title={pairing ? t("选择账户") : t("连接冷钱包")}>
             <input
                 ref={upload}
                 type="file"
@@ -149,166 +272,7 @@ export default function Pair() {
                     event.target.value = "";
                 }}
             />
-
-            <div className="grid grid-cols-12 items-start gap-s4 @split:gap-s5">
-                <div className="col-span-12 flex min-w-0 flex-col gap-s4 @split:col-span-5">
-                    {state ? (
-                        <StateCard
-                            tone="warn"
-                            icon="cameraOff"
-                            title={state.title}
-                            body={state.body}
-                            facts={state.facts}
-                            actions={
-                                <>
-                                    <Button onClick={() => upload.current?.click()}>{t("上传图片")}</Button>
-                                    <Button variant="primary" onClick={() => setAttempt(attempt + 1)}>
-                                        {state.retry}
-                                    </Button>
-                                </>
-                            }
-                        />
-                    ) : null}
-
-                    <Section aria-labelledby="h-scan" className={state && !progress.frames && !notice ? "hidden" : ""}>
-                        <SectionTitle id="h-scan">{t("扫描冷钱包")}</SectionTitle>
-                        {state ? null : (
-                            <>
-                                {devices.length > 1 ? (
-                                    <div className="flex flex-col gap-s2">
-                                        <label htmlFor="camera" className={LABEL}>
-                                            {t("摄像头")}
-                                        </label>
-                                        <select
-                                            id="camera"
-                                            value={deviceId}
-                                            onChange={(event) => setDeviceId(event.target.value)}
-                                            className="field text-t3"
-                                        >
-                                            <option value="">{t("默认摄像头")}</option>
-                                            {devices.map((device, i) => (
-                                                <option key={device.deviceId} value={device.deviceId}>
-                                                    {device.label || t("摄像头 {0}", i + 1)}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                ) : null}
-                                <Camera
-                                    key={attempt}
-                                    active={!pairing}
-                                    deviceId={deviceId}
-                                    onText={feed}
-                                    onFailure={setFailure}
-                                    onDevices={setDevices}
-                                />
-                            </>
-                        )}
-                        <ScanProgress value={progress.value} frames={progress.frames} />
-                        {notice ? (
-                            <p role="status" className="text-t2 text-warn">
-                                {notice}
-                            </p>
-                        ) : null}
-                        {pairing ? (
-                            <div className="rise flex items-center gap-s3 text-t2">
-                                <span className="text-text-3">{t("主密钥指纹")}</span>
-                                <span className="font-mono">{pairing.fingerprint}</span>
-                                <span className="ml-auto">
-                                    <Chip tone="ok">{t("解析完成")}</Chip>
-                                </span>
-                            </div>
-                        ) : null}
-                        {progress.frames > 0 || pairing ? (
-                            <div className="flex justify-end">
-                                <Button onClick={reset}>{t("重新扫描")}</Button>
-                            </div>
-                        ) : null}
-                    </Section>
-                </div>
-
-                <Section aria-labelledby="h-acc" className="col-span-12 @split:col-span-7">
-                    <div className="flex items-center justify-between gap-s3">
-                        <SectionTitle id="h-acc">{t("选择账户")}</SectionTitle>
-                        {pairing ? (
-                            <Chip tone="accent">
-                                {t("已选")} {picked} {t("项")}
-                            </Chip>
-                        ) : null}
-                    </div>
-
-                    {pairing ? (
-                        <ul className="stagger">
-                            {accounts.map((account) => (
-                                <li key={account.path}>
-                                    <label className="row flex min-h-row items-center gap-s3 py-s2">
-                                        <input
-                                            type="checkbox"
-                                            checked={paths.has(account.path)}
-                                            onChange={() => toggle(account.path)}
-                                            className="peer sr-only"
-                                        />
-                                        <span
-                                            aria-hidden="true"
-                                            className="flex size-5 shrink-0 items-center justify-center rounded-r1 bg-surface-3 text-on-accent transition-colors peer-checked:bg-accent peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent-text"
-                                        >
-                                            {paths.has(account.path) ? <Icon name="check" size={14} draw /> : null}
-                                        </span>
-                                        <TokenIcon network={accountIcon(account)} size={32} />
-                                        <span className="flex min-w-0 flex-1 flex-col">
-                                            <span className="truncate text-t3 font-medium">
-                                                {accountTitle(account)}
-                                            </span>
-                                            <span className="truncate text-t1 text-text-3">{accountKind(account)}</span>
-                                        </span>
-                                        <span className="hidden flex-col items-end whitespace-nowrap @split:flex">
-                                            <span className="text-t1 text-text-3">
-                                                {account.chain === "bitcoin" ? t("扩展公钥") : t("账户公钥")}
-                                            </span>
-                                            <span className="font-mono text-t1 text-text-2">
-                                                {shortKey(account.key)}
-                                            </span>
-                                        </span>
-                                    </label>
-                                </li>
-                            ))}
-                        </ul>
-                    ) : (
-                        <div className="flex min-h-40 items-center justify-center rounded-r3 bg-surface-2 text-t2 text-text-3">
-                            {t("扫码完成后在这里选择账户。")}
-                        </div>
-                    )}
-
-                    <div className="flex min-w-0 flex-col gap-s2">
-                        <label htmlFor="wallet-name" className={LABEL}>
-                            {t("钱包名称")}
-                        </label>
-                        <input
-                            id="wallet-name"
-                            type="text"
-                            maxLength={32}
-                            value={name}
-                            disabled={!pairing || existing}
-                            onChange={(event) => setName(event.target.value)}
-                            className="field text-t3"
-                        />
-                    </div>
-
-                    {existing ? <Helper>{t("这个钱包已配对，导入后只补缺的账户。")}</Helper> : null}
-                    {saveError ? <Alert>{saveError}</Alert> : null}
-
-                    <div className="flex justify-end gap-s2">
-                        <LinkButton to="/">{t("取消")}</LinkButton>
-                        <Button
-                            variant="primary"
-                            disabled={!pairing || picked === 0 || saving}
-                            onClick={() => void submit()}
-                        >
-                            {t("导入")}
-                        </Button>
-                    </div>
-                </Section>
-            </div>
-        </>
+            {pairing ? chooseStep : scanStep}
+        </Sheet>
     );
 }

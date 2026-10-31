@@ -89,6 +89,12 @@
         opacity: 0;
     }
 }
+@keyframes sheet-in {
+    from {
+        opacity: 0;
+        transform: translate(var(--sheet-x), var(--sheet-y)) translateY(var(--rise)) scale(var(--pop-scale));
+    }
+}
 @keyframes rise {
     from {
         opacity: 0;
@@ -103,6 +109,20 @@
 @keyframes shimmer {
     to {
         background-position: -200% 0;
+    }
+}
+@keyframes drop {
+    from {
+        opacity: 0;
+        transform: translateY(calc(var(--s1) * -1));
+    }
+    40%,
+    70% {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+        transform: translateY(var(--s1));
     }
 }
 @keyframes breathe {
@@ -402,25 +422,12 @@
         cursor: not-allowed;
         opacity: 0.5;
     }
-    .dialog {
-        border-radius: var(--r4);
-        background: var(--popup);
-        box-shadow: var(--elevation-3);
-        padding: var(--s6);
-        transition:
-            opacity var(--dur-normal) var(--ease-emphasized),
-            transform var(--dur-normal) var(--ease-emphasized);
-    }
-    .dialog[data-starting-style],
-    .dialog[data-ending-style] {
-        opacity: 0;
-        transform: scale(var(--pop-scale));
-    }
-    .dialog[data-ending-style] {
-        transition-duration: var(--dur-fast);
-        transition-timing-function: var(--ease-exit);
+    /* 浮层由网址打开，挂载时已经是打开的，进场用关键帧。 */
+    .sheet {
+        animation: sheet-in var(--dur-normal) var(--ease-emphasized) both;
     }
     .scrim {
+        animation: fade-in var(--dur-normal) var(--ease-standard) both;
         background: color-mix(in srgb, var(--camera) 45%, transparent);
         transition: opacity var(--dur-normal) var(--ease-standard);
     }
@@ -469,6 +476,10 @@
     .meter-fill {
         transition: width var(--dur-slow) var(--ease-standard);
     }
+    /* 下载中的箭头往下落，循环。 */
+    .icon-drop {
+        animation: drop calc(var(--dur-slow) * 4) var(--ease-standard) infinite;
+    }
     /* 进行中的那一段慢慢呼吸，说明还在等链上。 */
     .meter-live {
         animation: breathe calc(var(--dur-slow) * 4) var(--ease-standard) infinite;
@@ -503,6 +514,9 @@
     }
     .meter-live {
         animation: none;
+    }
+    .icon-drop {
+        animation: breathe calc(var(--dur-slow) * 4) var(--ease-standard) infinite;
     }
     .skeleton {
         background: var(--surface-2);
