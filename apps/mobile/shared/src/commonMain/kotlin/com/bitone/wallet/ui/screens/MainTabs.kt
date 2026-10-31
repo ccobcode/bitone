@@ -73,8 +73,8 @@ fun MainTabs(flow: WalletFlow, brightness: Brightness) {
         MainNav(flow, NavItem.entries[Tabs.indexOf(tab)])
         AccountSheet(picking, flow) { picking = false }
         WipeSheet(
+            flow,
             confirming,
-            flow.busy,
             onCancel = { confirming = false },
             onConfirm = {
                 confirming = false

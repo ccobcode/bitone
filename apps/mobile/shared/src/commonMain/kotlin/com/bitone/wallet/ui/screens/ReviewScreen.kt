@@ -24,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import com.bitone.wallet.flow.Network
@@ -42,11 +41,11 @@ import com.bitone.wallet.platform.Risk
 import com.bitone.wallet.ui.components.ActionArea
 import com.bitone.wallet.ui.components.AddressCard
 import com.bitone.wallet.ui.components.AssetIcon
+import com.bitone.wallet.ui.components.Card
 import com.bitone.wallet.ui.components.Chip
 import com.bitone.wallet.ui.components.HoldButton
 import com.bitone.wallet.ui.components.Icons
 import com.bitone.wallet.ui.components.LineIcon
-import com.bitone.wallet.ui.components.ListGroup
 import com.bitone.wallet.ui.components.ListRow
 import com.bitone.wallet.ui.components.Medium
 import com.bitone.wallet.ui.components.Page
@@ -61,6 +60,7 @@ import com.bitone.wallet.ui.components.rememberLatest
 import com.bitone.wallet.ui.components.stateSpec
 import com.bitone.wallet.ui.theme.BitOneTheme
 import com.bitone.wallet.ui.theme.FontSize
+import com.bitone.wallet.ui.theme.LineHeight
 import com.bitone.wallet.ui.theme.Radius
 import com.bitone.wallet.ui.theme.Space
 
@@ -94,11 +94,11 @@ fun ReviewScreen(flow: WalletFlow) {
         Banner(review, style)
         when (style) {
             ReviewStyle.Plain -> {
-                AmountBlock(review, network?.icon, emphasis = FontSize.t8, kind = kindLabel(review))
+                AmountBlock(review, network?.icon, kind = kindLabel(review))
                 Counterparty(review)
             }
             ReviewStyle.Approval -> {
-                AmountBlock(review, network?.icon, emphasis = FontSize.t8, kind = "授权", danger = true)
+                AmountBlock(review, network?.icon, kind = "授权", danger = true)
                 Counterparty(review)
             }
             ReviewStyle.Unknown -> {
@@ -158,9 +158,6 @@ private fun Banner(review: ReviewResult, style: ReviewStyle) {
             val symbol = review.amount?.symbol
             val unlimited = review.amount?.unlimited == true
             RiskBanner(
-                tone = c.danger,
-                background = c.dangerSoft,
-                icon = Icons.Alert,
                 title = if (unlimited) "无限额度授权" else "授权交易",
                 lines =
                     listOf(
@@ -175,25 +172,17 @@ private fun Banner(review: ReviewResult, style: ReviewStyle) {
         }
         ReviewStyle.Unknown ->
             RiskBanner(
-                tone = c.warn,
-                background = c.warnSoft,
-                icon = Icons.Help,
+                warn = true,
                 title = "本机无法解析这笔交易",
                 lines = listOf("只在确认来源可信时签名。", FROM_WEB) + review.alerts,
             )
         ReviewStyle.Permission ->
             RiskBanner(
-                tone = c.danger,
-                background = c.dangerSoft,
-                icon = Icons.Alert,
                 title = "账户控制权将被改变",
                 lines = listOf("签名后，新控制方可以动用这个账户的全部资产。", FROM_WEB) + review.alerts,
             )
         ReviewStyle.HighRisk ->
             RiskBanner(
-                tone = c.danger,
-                background = c.dangerSoft,
-                icon = Icons.Alert,
                 title = "发现高风险项",
                 lines = review.alerts,
             )
@@ -201,12 +190,16 @@ private fun Banner(review: ReviewResult, style: ReviewStyle) {
 }
 
 @Composable
-private fun RiskBanner(tone: Color, background: Color, icon: String, title: String, lines: List<String>) {
+private fun RiskBanner(title: String, lines: List<String>, warn: Boolean = false) {
+    val c = BitOneTheme.colors
+    val tone = if (warn) c.warn else c.danger
     Row(
-        Modifier.fillMaxWidth().background(background, RoundedCornerShape(Radius.r3)).padding(Space.s4),
+        Modifier.fillMaxWidth()
+            .background(if (warn) c.warnSoft else c.dangerSoft, RoundedCornerShape(Radius.r3))
+            .padding(Space.s4),
         horizontalArrangement = Arrangement.spacedBy(Space.s3),
     ) {
-        LineIcon(icon, 20.dp, tone)
+        LineIcon(if (warn) Icons.Unknown else Icons.Alert, 20.dp, tone)
         Column(verticalArrangement = Arrangement.spacedBy(Space.s1)) {
             Txt(title, weight = SemiBold, color = tone)
             lines.forEach { Txt(it, size = FontSize.t2) }
@@ -219,7 +212,6 @@ private fun RiskBanner(tone: Color, background: Color, icon: String, title: Stri
 private fun AmountBlock(
     review: ReviewResult,
     network: Network?,
-    emphasis: TextUnit,
     kind: String?,
     danger: Boolean = false,
 ) {
@@ -238,7 +230,7 @@ private fun AmountBlock(
                 AssetIcon(amount.icon, network, 40.dp)
                 if (kind != null) KindChip(kind, danger)
             }
-            AmountText(amount, emphasis, danger)
+            AmountText(amount, FontSize.t8, danger)
             if (amount.asset == null) Chip("不在内置清单", c.warnSoft, c.warn)
         }
     }
@@ -358,7 +350,7 @@ private fun Actions(review: ReviewResult, style: ReviewStyle): List<ReviewRow> {
 private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
         Txt(title, size = FontSize.t2, color = BitOneTheme.colors.text3)
-        ListGroup {
+        Card {
             Column(Modifier.padding(Space.s4), verticalArrangement = Arrangement.spacedBy(Space.s5), content = content)
         }
     }
@@ -411,10 +403,10 @@ private fun Disclosure(title: String, initiallyOpen: Boolean, content: @Composab
     val c = BitOneTheme.colors
     var open by remember { mutableStateOf(initiallyOpen) }
     val turn by animateFloatAsState(if (open) 180f else 0f, stateSpec(), label = "chevron")
-    ListGroup {
+    Card {
         ListRow(onClick = { open = !open }) {
             Txt(title, Modifier.weight(1f))
-            LineIcon(Icons.Down, 18.dp, c.text3, Modifier.rotate(turn), strokeWidth = 2f)
+            LineIcon(Icons.Chevron, 16.dp, c.text3, Modifier.rotate(turn))
         }
         AnimatedVisibility(
             open,
@@ -441,18 +433,14 @@ private fun RawData(lines: List<RawLine>, initiallyOpen: Boolean) {
             Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
                 Txt(index.toString().padStart(2, '0'), Modifier.width(20.dp), size = FontSize.t1, color = c.text3)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
-                    Txt(line.text, size = FontSize.t1, color = c.text2, mono = true, lineHeight = 1.6f)
-                    line.note?.let { note -> RawNote(note) }
+                    Txt(line.text, size = FontSize.t1, color = c.text2, mono = true, lineHeight = LineHeight.t2)
+                    line.note?.let { note ->
+                        if (note == "大额数值") Chip(note, c.warnSoft, c.warn) else Chip(note, c.accentSoft, c.accentText)
+                    }
                 }
             }
         }
     }
-}
-
-@Composable
-private fun RawNote(note: String) {
-    val c = BitOneTheme.colors
-    if (note == "大额数值") Chip(note, c.warnSoft, c.warn) else Chip(note, c.accentSoft, c.accentText)
 }
 
 /** 普通交易的主按钮是确认，拒绝是文字按钮。高风险时拒绝是主按钮，长按放在下面。 */
@@ -480,7 +468,7 @@ private fun ReviewActions(flow: WalletFlow, review: ReviewResult) {
 internal fun SignSummary(review: ReviewResult) {
     val c = BitOneTheme.colors
     val amount = review.amount
-    ListGroup {
+    Card {
         ListRow {
             AssetIcon(amount?.icon, networkInfo(review.network)?.icon, 32.dp)
             Column(Modifier.weight(1f)) {

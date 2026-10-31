@@ -1,11 +1,35 @@
 //! 网络定义，见 docs/03-system.md 第 5 节。
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+use minicbor::{Decode, Encode};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
+#[cbor(index_only)]
 pub enum Chain {
+    #[n(0)]
     Bitcoin,
+    #[n(1)]
     Evm,
+    #[n(2)]
     Tron,
+    #[n(3)]
     Solana,
+}
+
+impl Chain {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Bitcoin => "bitcoin",
+            Self::Evm => "evm",
+            Self::Tron => "tron",
+            Self::Solana => "solana",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        [Self::Bitcoin, Self::Evm, Self::Tron, Self::Solana]
+            .into_iter()
+            .find(|chain| chain.id() == id)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

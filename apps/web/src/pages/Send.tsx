@@ -2,14 +2,14 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { networkName, validateAddress, type Review } from "../core";
 import { formatUnits, formatUsd, parseUnits, toInput, usdCents } from "../core/amount";
-import { lookupAsset, priceKey, type AssetEntry } from "../core/manifest";
+import { lookupAsset, priceKey } from "../core/manifest";
 import { cleanText, shortAddress } from "../core/text";
 import { useApp, useLive } from "../data/app";
 import { checkRecipient, usableContacts } from "../data/contacts";
 import { db, type Account, type Wallet } from "../data/db";
 import { TransferError, createSolanaNonce, createTransfer } from "../data/transfer";
 import { reservationsOf } from "../data/txs";
-import { buildRows, pendingAmount, type AssetRow } from "../gateway/assets";
+import { buildRows, inManifest, pendingAmount, type AssetRow, type ManifestRow } from "../gateway/assets";
 import { GatewayError, addressKey, type FeeTier } from "../gateway/client";
 import { txHref } from "../gateway/history";
 import { useGateway } from "../gateway/provider";
@@ -20,6 +20,7 @@ import { accountIcon, accountKind, accountTitle, tierLabel } from "../ui/labels"
 import { Picker } from "../ui/Picker";
 import {
     Button,
+    ChildTitle,
     Chip,
     Collapse,
     Disclosure,
@@ -28,14 +29,13 @@ import {
     Helper,
     LABEL,
     Notice,
-    PageTitle,
     Section,
     SectionTitle,
     Segmented,
     SkeletonRows,
 } from "../ui/primitives";
 import { StateCard } from "../ui/StateCard";
-import { TokenIcon, networkIcon } from "../ui/TokenIcon";
+import { AssetIcon, TokenIcon, networkIcon } from "../ui/TokenIcon";
 import { NoWallet } from "./NoWallet";
 import { t, translate } from "../core/i18n";
 
@@ -46,11 +46,6 @@ function failureText(error: unknown): string {
     if (error instanceof TransferError) return translate(error.message);
     if (error instanceof GatewayError) return translate(error.detail) || t("暂时无法生成交易，请稍后重试。");
     return error instanceof Error ? translate(error.message) : t("生成失败，没有写入任何记录。");
-}
-
-function RowIcon({ row, size }: { row: AssetRow; size: number }) {
-    const { entry, network } = row;
-    return <TokenIcon asset={entry} chain={entry && !entry.native ? networkIcon(network) : undefined} size={size} />;
 }
 
 function AccountValue({ account, address }: { account: Account; address: string }) {
@@ -68,10 +63,10 @@ function AccountValue({ account, address }: { account: Account; address: string 
 }
 
 /** 金额旁边的资产胶囊。 */
-function AssetPill({ row }: { row: SendableRow }) {
+function AssetPill({ row }: { row: ManifestRow }) {
     return (
         <>
-            <RowIcon row={row} size={32} />
+            <AssetIcon entry={row.entry} network={row.network} size={32} />
             <span className="flex min-w-0 flex-col">
                 <span className="truncate text-t3 leading-5 font-medium">{row.entry.symbol}</span>
                 <span className="truncate text-t1 text-text-3">{networkName(row.network)}</span>
@@ -80,10 +75,10 @@ function AssetPill({ row }: { row: SendableRow }) {
     );
 }
 
-function AssetValue({ row, available }: { row: SendableRow; available: string }) {
+function AssetValue({ row, available }: { row: ManifestRow; available: string }) {
     return (
         <>
-            <RowIcon row={row} size={28} />
+            <AssetIcon entry={row.entry} network={row.network} size={28} />
             <span className="flex min-w-0 flex-1 flex-col">
                 <span className="flex items-center gap-s2">
                     <span className="text-t3 font-medium">{row.entry.symbol}</span>
@@ -99,16 +94,10 @@ function AssetValue({ row, available }: { row: SendableRow; available: string })
     );
 }
 
-type SendableRow = AssetRow & { entry: AssetEntry };
-
-function isSendable(row: AssetRow): row is SendableRow {
-    return row.entry !== null;
-}
-
 interface FormProps {
     wallet: Wallet;
-    rows: SendableRow[];
-    first: SendableRow;
+    rows: ManifestRow[];
+    first: ManifestRow;
 }
 
 function SendForm({ wallet, rows, first }: FormProps) {
@@ -184,10 +173,7 @@ function SendForm({ wallet, rows, first }: FormProps) {
     const amount = parseUnits(amountText, entry.decimals);
 
     const own = useMemo(() => addresses.map((item) => item.address), [addresses]);
-    const sameChain = useMemo(
-        () => (contacts ?? []).filter((contact) => contact.chain === chain && contact.mode === mode),
-        [contacts, chain, mode],
-    );
+    const sameChain = (contacts ?? []).filter((contact) => contact.chain === chain && contact.mode === mode);
     const check = canonical ? checkRecipient(canonical, sameChain, txs ?? [], own) : null;
 
     const nativeRow = rows.find(
@@ -198,17 +184,11 @@ function SendForm({ wallet, rows, first }: FormProps) {
     const gasOverride = gasText?.trim() ? parseUnits(gasText, 0) : null;
     const limitOverride = limitText?.trim() ? parseUnits(limitText, 0) : null;
 
+    const base = { wallet, accounts, account, from: row.address, network, asset, entry, tier };
     const quote = useQuote({
-        wallet,
-        accounts,
-        account,
-        from: row.address,
-        network,
-        asset,
-        entry,
+        ...base,
         to: canonical,
         amount,
-        tier,
         gasOverride,
         feeLimitOverride: limitOverride,
         balance: spendable(row),
@@ -226,7 +206,7 @@ function SendForm({ wallet, rows, first }: FormProps) {
         return cents === null ? "" : `≈ ${formatUsd(cents)}`;
     }, [prices, network, asset, amount, entry.decimals]);
 
-    const shortAmount = (value: bigint, target: SendableRow) =>
+    const shortAmount = (value: bigint, target: ManifestRow) =>
         formatUnits(value, target.entry.decimals, { min: target.entry.minFraction, max: PICKER_FRACTION });
     const available = quote.available === null ? "—" : shortAmount(quote.available, row);
     const blocked =
@@ -242,16 +222,9 @@ function SendForm({ wallet, rows, first }: FormProps) {
 
     function draft() {
         return {
-            wallet,
-            accounts,
-            account,
-            from: row.address,
-            network,
-            asset,
-            entry,
+            ...base,
             to: canonical ?? "",
             amount: amount ?? 0n,
-            tier,
             ...(gasOverride !== null ? { gasLimit: gasOverride } : {}),
             ...(limitOverride !== null ? { feeLimit: limitOverride } : {}),
         };
@@ -276,14 +249,7 @@ function SendForm({ wallet, rows, first }: FormProps) {
         }
     }
 
-    const accountItems = useMemo(() => {
-        const seen = new Set<string>();
-        return rows.filter((item) => {
-            if (seen.has(item.account.id)) return false;
-            seen.add(item.account.id);
-            return true;
-        });
-    }, [rows]);
+    const accountItems = [...new Map(rows.map((item) => [item.account.id, item])).values()];
 
     const selected = quote.tiers?.find((item) => item.tier === tier);
 
@@ -565,11 +531,7 @@ function SendForm({ wallet, rows, first }: FormProps) {
                             <Button
                                 variant="primary"
                                 disabled={busy}
-                                onClick={() =>
-                                    void run(() =>
-                                        createSolanaNonce({ wallet, accounts, account, from: row.address, network }),
-                                    )
-                                }
+                                onClick={() => void run(() => createSolanaNonce(base))}
                             >
                                 {t("创建账户")}
                             </Button>
@@ -619,7 +581,7 @@ function SendForm({ wallet, rows, first }: FormProps) {
                     ) : null}
                     {quote.held ? (
                         <Notice tone="warn">
-                            <Link to={txHref(quote.held.id)} className="text-warn">
+                            <Link to={txHref(quote.held)} className="text-warn">
                                 {t("交易")} {quote.held.id} {t("已取消但签名仍然有效，先发替换交易。")}
                             </Link>
                         </Notice>
@@ -652,12 +614,12 @@ function SendForm({ wallet, rows, first }: FormProps) {
 export default function Send() {
     const { wallet, accounts, addresses, mode } = useApp();
     const gateway = useGateway();
-    const rows = buildRows(accounts, addresses, mode, gateway.supported, gateway.balances).filter(isSendable);
+    const rows = buildRows(accounts, addresses, mode, gateway.supported, gateway.balances).filter(inManifest);
     const [first] = rows;
 
     return (
         <>
-            <PageTitle>{t("发起转账")}</PageTitle>
+            <ChildTitle parent={{ to: "/", label: t("资产") }}>{t("发起转账")}</ChildTitle>
             {gateway.down ? <GatewayDown /> : null}
             {!wallet ? (
                 <NoWallet />

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import { useAttention } from "../gateway/feed";
 import { useGateway } from "../gateway/provider";
 import { Chip } from "./primitives";
-import { TokenIcon, networkIcon } from "./TokenIcon";
+import { AssetIcon } from "./TokenIcon";
 import { t } from "../core/i18n";
 
 /** 连接状态和延迟。正常时只有圆点和延迟，出问题才显示文字和颜色。窄屏时不显示文字，放不下时也不显示延迟。延迟宽度固定，数字变化时不推动旁边的内容。 */
@@ -55,11 +55,7 @@ function Inbox() {
                                 onClick={() => void navigate(row.href)}
                                 className="popup-item cursor-pointer"
                             >
-                                <TokenIcon
-                                    asset={row.entry}
-                                    chain={row.entry && !row.entry.native ? networkIcon(row.network) : undefined}
-                                    size={28}
-                                />
+                                <AssetIcon entry={row.entry} network={row.network} size={28} />
                                 <span className="flex min-w-0 flex-1 flex-col">
                                     <span className="truncate font-medium">{row.title}</span>
                                     <span className="truncate text-t1 text-text-3">{row.party}</span>

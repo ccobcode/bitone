@@ -11,9 +11,9 @@ import { incomingNotices, missedNotice, publish } from "../data/notify";
 import { historyStreams, type HistoryStream } from "./history";
 import { onSync } from "../data/sync";
 import { sweepExpired } from "../data/txs";
-import { accountNetworks, buildTargets, type Target } from "./assets";
+import { accountNetworks, buildTargets } from "./assets";
 import { addressKey, fetchPrices, fetchVersion, parsePrices, parseUpdate, type Balance, type PriceMap } from "./client";
-import { BalanceSocket, type SocketStatus } from "./socket";
+import { BalanceSocket, batchKey, type SocketStatus } from "./socket";
 import { applyPush, pollOpenTxs, watchedTxs } from "./tracker";
 import { t } from "../core/i18n";
 
@@ -33,7 +33,6 @@ const TICK_INTERVAL = 5000;
 interface GatewayState {
     /** 网关配置了上游的网络。 */
     supported: string[];
-    targets: Target[];
     balances: Map<string, Balance[]>;
     failures: FeedFailure[];
     /** 全部查询都还没有结果。 */
@@ -76,10 +75,6 @@ async function timedVersion() {
 
 /** 手续费、nonce 这类随链变化的查询。地址发现不在内，重连时重跑发现会写入地址，又引发一轮查询。 */
 const chainData = { queryKey: ["chain"] };
-
-function batchKey({ network, addresses }: HistoryStream): string {
-    return `${network}|${addresses[0]}`;
-}
 
 export function GatewayProvider({ children }: { children: ReactNode }) {
     const { accounts, addresses, mode } = useApp();
@@ -341,7 +336,6 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
 
     const value: GatewayState = {
         supported,
-        targets,
         balances,
         failures,
         loading: version.isPending || (feed.updatedAt === 0 && (stored ?? []).length === 0),

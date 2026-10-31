@@ -6,10 +6,6 @@ export function parseAmount(value: unknown): bigint | null {
     return BigInt(value);
 }
 
-function group(integer: string): string {
-    return integer.replace(/\B(?=(\d{3})+$)/g, ",");
-}
-
 export interface FormatOptions {
     /** 至少显示的小数位。 */
     min?: number;
@@ -23,7 +19,8 @@ export function formatUnits(raw: bigint, decimals: number, { min = 0, max = deci
     const fraction = (raw % base).toString().padStart(decimals, "0");
     const shown = fraction.slice(0, max);
     const trimmed = shown.replace(/0+$/, "").padEnd(Math.min(min, shown.length), "0");
-    const text = trimmed ? `${group(integer.toString())}.${trimmed}` : group(integer.toString());
+    const whole = integer.toLocaleString("en-US");
+    const text = trimmed ? `${whole}.${trimmed}` : whole;
     if (raw > 0n && integer === 0n && !/[1-9]/.test(shown)) {
         return `<0.${"0".repeat(Math.max(max - 1, 0))}1`;
     }

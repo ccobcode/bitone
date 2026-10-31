@@ -3,6 +3,7 @@ package com.bitone.wallet.flow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import com.bitone.wallet.i18n.I18n
 import com.bitone.wallet.i18n.Lang
 import com.bitone.wallet.platform.AddressReview
@@ -21,17 +22,18 @@ import com.bitone.wallet.platform.UnlockedWallet
 import com.bitone.wallet.platform.WalletCoreException
 import com.bitone.wallet.platform.WalletDraft
 import com.bitone.wallet.platform.WalletMeta
+import com.bitone.wallet.ui.theme.Motion
+import com.bitone.wallet.ui.theme.Qr
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val QUIZ_ROUNDS = 3
 private const val SUGGESTION_LIMIT = 2
-private const val FRAME_INTERVAL_MS = 250L
-private const val NOTICE_MS = 2_000L
 
 /** 长按 3 秒，每 50 毫秒更新一次进度。 */
 private const val HOLD_TICKS = 60
@@ -127,6 +129,10 @@ class WalletFlow(
         private set
 
     var notice by mutableStateOf<String?>(null)
+        private set
+
+    /** 这条提示是失败，显示告警图标。 */
+    var noticeFailed by mutableStateOf(false)
         private set
 
     private var noticeSerial = 0
@@ -234,6 +240,14 @@ class WalletFlow(
 
     val importComplete: Boolean
         get() = importedWords.size >= wordCount
+
+    /** 正在改的那个词。点已填的词回去改，不用删掉后面的词。 */
+    var importEditing by mutableStateOf<Int?>(null)
+        private set
+
+    /** 正在输入的序号。 */
+    val importCurrent: Int
+        get() = importEditing ?: importedWords.size
 
     // A2c
 
@@ -474,8 +488,23 @@ class WalletFlow(
 
     // 返回键
 
+    /** 页面上打开的弹层和全屏二维码。返回键先关最后打开的那个，都关了才离开页面。 */
+    private val layers = mutableListOf<() -> Unit>()
+
+    fun openLayer(close: () -> Unit) {
+        layers += close
+    }
+
+    fun closeLayer(close: () -> Unit) {
+        layers -= close
+    }
+
     /** 返回 false 表示已到栈底，由平台退出应用。 */
     fun back(): Boolean {
+        layers.lastOrNull()?.let {
+            it()
+            return true
+        }
         if (busy) return true
         when (screen) {
             Screen.Backup -> leaveCreate()
@@ -606,13 +635,14 @@ class WalletFlow(
         if (busy || count == wordCount) return
         wordCount = count
         importedWords = importedWords.take(count)
+        importEditing = null
         importBuffer = ""
         suggestions = emptyList()
         refreshChecksum()
     }
 
     fun importLetter(letter: Char) {
-        if (busy || importComplete) return
+        if (busy || (importComplete && importEditing == null)) return
         importBuffer += letter
         suggestions = core.wordSuggestions(importBuffer, SUGGESTION_LIMIT)
     }
@@ -624,6 +654,11 @@ class WalletFlow(
                 importBuffer = importBuffer.dropLast(1)
                 suggestions = core.wordSuggestions(importBuffer, SUGGESTION_LIMIT)
             }
+            // 改词时删空了再按一次是放弃修改，原来的词还在。
+            importEditing != null -> {
+                importEditing = null
+                refreshChecksum()
+            }
             importedWords.isNotEmpty() -> {
                 importedWords = importedWords.dropLast(1)
                 refreshChecksum()
@@ -631,9 +666,29 @@ class WalletFlow(
         }
     }
 
+    /** 回去改已经填好的词。这个词放回输入区，其余的词不动。再点一次放弃修改。 */
+    fun importEdit(index: Int) {
+        if (busy || index !in importedWords.indices) return
+        importBuffer = ""
+        suggestions = emptyList()
+        if (importEditing == index) {
+            importEditing = null
+            refreshChecksum()
+            return
+        }
+        importEditing = index
+        importBuffer = importedWords[index]
+        suggestions = core.wordSuggestions(importBuffer, SUGGESTION_LIMIT)
+        replaceDraft(null, wordCount)
+        checksum = ChecksumState.Incomplete
+    }
+
     fun importPick(word: String) {
-        if (busy || importComplete || !core.isValidWord(word)) return
-        importedWords = importedWords + word
+        val editing = importEditing
+        if (busy || (importComplete && editing == null) || !core.isValidWord(word)) return
+        importedWords =
+            if (editing != null) importedWords.toMutableList().also { it[editing] = word } else importedWords + word
+        importEditing = null
         importBuffer = ""
         suggestions = emptyList()
         refreshChecksum()
@@ -667,6 +722,7 @@ class WalletFlow(
     private fun resetImport() {
         replaceDraft(null, 12)
         importedWords = emptyList()
+        importEditing = null
         importBuffer = ""
         suggestions = emptyList()
         checksum = ChecksumState.Incomplete
@@ -791,11 +847,12 @@ class WalletFlow(
         if (meta != null) stack = listOf(Screen.Settings)
     }
 
-    fun showNotice(text: String) {
+    fun showNotice(text: String, failed: Boolean = false) {
         notice = text
+        noticeFailed = failed
         val serial = ++noticeSerial
         scope.launch {
-            delay(NOTICE_MS)
+            delay(Motion.toast.toLong())
             if (serial == noticeSerial) notice = null
         }
     }
@@ -864,12 +921,13 @@ class WalletFlow(
         }
     }
 
-    /** 序号只增不减，每次都是没有发放过的地址。 */
+    /** 序号只增不减，每次都是没有发放过的地址。从地址列表发起，发完回到收款页显示新地址。 */
     fun nextReceiveAddress() {
         val account = receiveAccount?.takeIf { receiveHasNext } ?: return
         guarded {
             withContext(work) { store.writeReceiveIndex(account.path, store.readReceiveIndex(account.path) + 1u) }
             loadReceive()
+            if (screen == Screen.ReceiveAddresses) stack = stack.dropLast(1)
         }
     }
 
@@ -883,7 +941,7 @@ class WalletFlow(
             receiveQr = withContext(work) { core.qrText(address) }
             receiveAddress = address
         } catch (_: WalletCoreException) {
-            showNotice("地址生成失败")
+            showNotice("地址生成失败", failed = true)
         }
         if (screen == Screen.ReceiveAddresses) stack = stack.dropLast(1)
     }
@@ -910,7 +968,7 @@ class WalletFlow(
             receiveAddress = history.first()
             receiveQr = qr
         } catch (_: WalletCoreException) {
-            showNotice("地址生成失败")
+            showNotice("地址生成失败", failed = true)
         }
     }
 
@@ -971,11 +1029,14 @@ class WalletFlow(
         val current = receiver ?: return
         if (busy || screen != Screen.Scan || part == lastPart) return
         lastPart = part
+        // 已经开始收帧后，镜头里混进别的码不算失败，继续等下一帧，收到的进度不作废。
+        val type = current.urType
+        if (type != null && !part.lowercase().startsWith("ur:$type/")) return
         guarded {
             try {
                 val progress = withContext(work) { current.receive(part) }
-                val type = current.urType
-                if (type !in SCANNABLE) {
+                val received = current.urType
+                if (received !in SCANNABLE) {
                     failScan("这个二维码不是给冷钱包扫的")
                     return@guarded
                 }
@@ -986,7 +1047,7 @@ class WalletFlow(
                     val message = withContext(work) { current.message() }
                     receiver = null
                     current.close()
-                    scanned = Scanned(type.orEmpty(), message)
+                    scanned = Scanned(received.orEmpty(), message)
                     evaluateScanned()
                 }
             } catch (e: WalletCoreException) {
@@ -1438,7 +1499,23 @@ class WalletFlow(
 
     // A4
 
-    /** 循环取帧，约 4 帧每秒。由 A4 的协程驱动，离开页面时取消。 取帧在后台线程，所以结束时由这里关闭，不能在主线程直接关掉正在用的对象。 */
+    /** 轮播暂停。喷泉码后面的帧也能用，恢复后接着发新帧。 */
+    var framesPaused by mutableStateOf(false)
+        private set
+
+    /** [Qr.intervals] 的下标，0 是默认速度。 */
+    var frameSpeed by mutableStateOf(0)
+        private set
+
+    fun togglePaused() {
+        framesPaused = !framesPaused
+    }
+
+    fun nextSpeed() {
+        frameSpeed = (frameSpeed + 1) % Qr.intervals.size
+    }
+
+    /** 循环取帧，间隔见 [Qr.intervals]。由 A4 的协程驱动，离开页面时取消。 取帧在后台线程，所以结束时由这里关闭，不能在主线程直接关掉正在用的对象。 */
     suspend fun playFrames() {
         val stream = frames ?: return
         val total = frameTotal
@@ -1450,13 +1527,14 @@ class WalletFlow(
                     try {
                         withContext(work) { core.qrMatrix(stream.nextPart()) }
                     } catch (_: WalletCoreException) {
-                        showNotice("二维码生成失败")
+                        showNotice("二维码生成失败", failed = true)
                         break
                     }
                 frame = next
                 frameIndex = sent % total + 1
                 sent++
-                delay(FRAME_INTERVAL_MS)
+                delay(Qr.intervals[frameSpeed].toLong())
+                snapshotFlow { framesPaused }.first { !it }
             }
         } finally {
             playing = false
@@ -1470,6 +1548,8 @@ class WalletFlow(
         frame = null
         frameIndex = 1
         frameTotal = stream.fragmentCount.coerceAtLeast(1)
+        framesPaused = false
+        frameSpeed = 0
     }
 
     private fun disposeFrames() {

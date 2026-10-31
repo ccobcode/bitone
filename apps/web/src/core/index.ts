@@ -4,7 +4,7 @@ import init, {
     FrameSender,
     accountAddress,
     accountSpecs,
-    addressFrame as wasmAddressFrame,
+    addressFrame,
     bitcoinAddress,
     bitcoinFeeInfo as wasmBitcoinFeeInfo,
     bitcoinReplacement as wasmBitcoinReplacement,
@@ -102,11 +102,7 @@ export function networkName(id: string): string {
     }
 }
 
-export interface AccountSpec {
-    chain: Chain;
-    kind: AccountKind;
-    path: string;
-}
+export type AccountSpec = Pick<PairingAccount, "chain" | "kind" | "path">;
 
 /** 这个模式下白名单里的账户，含旧路径账户。 */
 export function accountSpecList(mode: Mode): AccountSpec[] {
@@ -137,18 +133,6 @@ export function deriveAddress(
         return bitcoinAddress(account.key, account.kind, change === 1, index, network);
     }
     return accountAddress(account.chain, account.key);
-}
-
-export interface AddressCheck {
-    fingerprint: string;
-    network: string;
-    path: string;
-    address: string;
-}
-
-/** 地址核对二维码，编码在核心库里。 */
-export function addressFrame({ fingerprint, network, path, address }: AddressCheck): string {
-    return wasmAddressFrame(fingerprint, network, path, address);
 }
 
 export function qrMatrix(part: string): QrMatrix {
@@ -217,19 +201,14 @@ export class PairingReceiver extends UrReceiver {
     }
 }
 
-export { FrameSender, evmTransferData, solanaNonceAddress };
+export { FrameSender, addressFrame, evmTransferData, solanaNonceAddress };
 
 /** 校验收款地址属于这个网络，返回规范写法。格式错误时抛错。 */
 export function validateAddress(network: string, text: string): string {
     return wasmValidateAddress(network, text.trim());
 }
 
-export interface KeyEntry {
-    chain: Chain;
-    kind: AccountKind;
-    path: string;
-    key: Uint8Array;
-}
+export type KeyEntry = Pick<PairingAccount, "chain" | "kind" | "path" | "key">;
 
 /** 核心库需要的账户公钥列表。 */
 export function accountKeyList(accounts: readonly KeyEntry[]): KeyEntry[] {
@@ -363,47 +342,21 @@ export function manifestPackageVersion(bytes: Uint8Array): number {
 
 export type Risk = "transfer" | "recognized" | "unknown" | "approval" | "permission-change" | "forbidden";
 
-export interface ReviewRow {
-    label: string;
-    value: string;
-    mono: boolean;
-}
-
 export interface Review {
     risk: Risk;
     confirm: "tap" | "hold" | "refuse";
-    network: string;
     title: string;
     amount?: { text: string; symbol?: string; asset?: string; unlimited: boolean } | null;
-    counterpartyLabel?: string | null;
     counterparty?: string | null;
     alerts: string[];
-    actions: { risk: Risk; title: string; rows: ReviewRow[] }[];
-    rows: ReviewRow[];
-    raw: { text: string; note?: string | null }[];
-    forbidden?: string | null;
-    changeIndex?: number | null;
+    actions: { title: string }[];
+    raw: { text: string }[];
 }
 
 /** 用和冷钱包相同的代码预览。结果只用于提示，判断以冷钱包屏幕为准。 */
 export function previewRequest(request: Uint8Array, keys: KeyEntry[]): Review {
     const review = wasmPreview(request, keys) as Review;
-    const rows = (list: ReviewRow[]) =>
-        list.map((row) => ({ ...row, label: translate(row.label), value: translate(row.value) }));
-    return {
-        ...review,
-        title: translate(review.title),
-        counterpartyLabel: review.counterpartyLabel ? translate(review.counterpartyLabel) : review.counterpartyLabel,
-        alerts: review.alerts.map(translate),
-        actions: review.actions.map((action) => ({
-            ...action,
-            title: translate(action.title),
-            rows: rows(action.rows),
-        })),
-        rows: rows(review.rows),
-        raw: review.raw.map((item) => ({ ...item, note: item.note ? translate(item.note) : item.note })),
-        forbidden: review.forbidden ? translate(review.forbidden) : review.forbidden,
-    };
+    return { ...review, title: translate(review.title), alerts: review.alerts.map(translate) };
 }
 
 export interface Verified {

@@ -14,16 +14,11 @@ export function walletId(fingerprint: string, mode: Mode): string {
 }
 
 export function addressRows(account: Account, mode: Mode): Address[] {
-    const row = (change: 0 | 1, index: number): Address => ({
-        accountId: account.id,
-        change,
-        index,
-        address: deriveAddress(account, mode, change, index),
-        verified: false,
-    });
-    if (account.chain !== "bitcoin") return [row(0, 0)];
+    if (account.chain !== "bitcoin") return [newAddress(account, mode, 0, 0)];
     const rows: Address[] = [];
-    for (let index = 0; index < GAP_LIMIT; index++) rows.push(row(0, index), row(1, index));
+    for (let index = 0; index < GAP_LIMIT; index++) {
+        rows.push(newAddress(account, mode, index, 0), newAddress(account, mode, index, 1));
+    }
     return rows;
 }
 
@@ -126,17 +121,9 @@ export function addressPath(account: Account, address: Pick<Address, "change" | 
 
 /** 首次写入后申请持久化。被拒绝时不阻断，W6 的本地数据区显示未持久化。 */
 export async function requestPersist(): Promise<boolean> {
-    try {
-        return (await navigator.storage?.persist?.()) ?? false;
-    } catch {
-        return false;
-    }
+    return (await navigator.storage?.persist?.().catch(() => false)) ?? false;
 }
 
 export async function isPersisted(): Promise<boolean> {
-    try {
-        return (await navigator.storage?.persisted?.()) ?? false;
-    } catch {
-        return false;
-    }
+    return (await navigator.storage?.persisted?.().catch(() => false)) ?? false;
 }

@@ -3,6 +3,7 @@
 use crate::manifest::Manifest;
 use crate::review::{ActionView, AmountView, Risk, Row};
 use crate::units::{decimal_from_be, format_units};
+use bitcoin::hex::DisplayHex;
 
 pub type Word = [u8; 32];
 
@@ -285,10 +286,9 @@ fn approval(
 }
 
 fn unknown(contract: &str, data: &[u8]) -> Classified {
-    let selector = data.get(..4).map_or_else(
-        || "无".to_string(),
-        |s| format!("0x{}", s.iter().map(|b| format!("{b:02x}")).collect::<String>()),
-    );
+    let selector = data
+        .get(..4)
+        .map_or_else(|| "无".to_string(), |s| format!("0x{}", s.to_lower_hex_string()));
     Classified {
         risk: Risk::Unknown,
         title: Risk::Unknown.label().to_string(),
@@ -423,8 +423,7 @@ fn classify_at(style: &Style, contract: &[u8; 20], data: &[u8], has_value: bool,
 }
 
 fn selector_hex(data: &[u8]) -> String {
-    data.get(..4)
-        .map_or_else(String::new, |s| s.iter().map(|b| format!("{b:02x}")).collect())
+    data.get(..4).map_or_else(String::new, |s| s.to_lower_hex_string())
 }
 
 #[cfg(test)]

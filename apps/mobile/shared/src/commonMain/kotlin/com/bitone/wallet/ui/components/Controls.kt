@@ -49,9 +49,11 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -102,6 +104,7 @@ private fun ActionButton(
     tone: Tone,
     enabled: Boolean,
     modifier: Modifier,
+    fill: Color = BitOneTheme.colors.surface,
     onClick: () -> Unit,
 ) {
     val c = BitOneTheme.colors
@@ -112,9 +115,9 @@ private fun ActionButton(
             when {
                 !enabled -> c.surface3
                 tone == Tone.Primary -> if (pressed) c.accentHover else c.accent
-                tone == Tone.Danger -> c.danger
-                // 次级按钮大多放在 bg 上，surface-2 和 bg 太接近，看不出是按钮。
-                else -> if (pressed) c.surface2 else c.surface
+                tone == Tone.Danger -> c.dangerSoft
+                // 次级按钮比所在的底色亮一层。放在 bg 上时是 surface，弹层里换成 surface-3。
+                else -> if (pressed) c.surface2 else fill
             },
             stateSpec(Motion.fast),
             label = "button",
@@ -123,7 +126,7 @@ private fun ActionButton(
         when {
             !enabled -> c.text3
             tone == Tone.Primary -> c.onAccent
-            tone == Tone.Danger -> c.bg
+            tone == Tone.Danger -> c.danger
             else -> c.text
         }
     Box(
@@ -138,20 +141,17 @@ private fun ActionButton(
 }
 
 @Composable
-fun PrimaryButton(
-    text: String,
-    modifier: Modifier = Modifier.fillMaxWidth(),
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) = ActionButton(text, Tone.Primary, enabled, modifier, onClick)
+fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> Unit) =
+    ActionButton(text, Tone.Primary, enabled, Modifier.fillMaxWidth(), onClick = onClick)
 
 @Composable
 fun SecondaryButton(
     text: String,
     modifier: Modifier = Modifier.fillMaxWidth(),
     enabled: Boolean = true,
+    fill: Color = BitOneTheme.colors.surface,
     onClick: () -> Unit,
-) = ActionButton(text, Tone.Secondary, enabled, modifier, onClick)
+) = ActionButton(text, Tone.Secondary, enabled, modifier, fill, onClick)
 
 @Composable
 fun DangerButton(
@@ -159,18 +159,45 @@ fun DangerButton(
     modifier: Modifier = Modifier.fillMaxWidth(),
     enabled: Boolean = true,
     onClick: () -> Unit,
-) = ActionButton(text, Tone.Danger, enabled, modifier, onClick)
+) = ActionButton(text, Tone.Danger, enabled, modifier, onClick = onClick)
+
+private val SmallHeight = 44.dp
+
+/** 小按钮，高 44，和网页端手机上的 sm 尺寸相同。 */
+@Composable
+fun SmallButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
+    val c = BitOneTheme.colors
+    Box(
+        Modifier.tap(enabled, onClick = onClick)
+            .height(SmallHeight)
+            .background(if (enabled) c.surface else c.surface3, RoundedCornerShape(Radius.r2))
+            .padding(horizontal = Space.s3),
+        contentAlignment = Alignment.Center,
+    ) {
+        Txt(text, size = FontSize.t2, weight = Medium, color = if (enabled) c.text else c.text3)
+    }
+}
+
+/** 只有图标的小按钮，边长 44。 */
+@Composable
+fun SmallIconButton(label: String, icon: String, onClick: () -> Unit) {
+    val c = BitOneTheme.colors
+    Box(
+        Modifier.semantics { contentDescription = translate(label) }
+            .tap(onClick = onClick)
+            .size(SmallHeight)
+            .background(c.surface, RoundedCornerShape(Radius.r2)),
+        contentAlignment = Alignment.Center,
+    ) {
+        LineIcon(icon, 16.dp, c.text)
+    }
+}
 
 /** 次要操作用文字按钮，和主按钮同宽，触控区 44。 */
 @Composable
-fun TextButton(
-    text: String,
-    modifier: Modifier = Modifier.fillMaxWidth(),
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
+fun TextButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     val c = BitOneTheme.colors
-    Box(modifier.tap(enabled, onClick = onClick).height(44.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth().tap(enabled, onClick = onClick).height(44.dp), contentAlignment = Alignment.Center) {
         Txt(text, weight = Medium, color = if (enabled) c.text2 else c.text3)
     }
 }
@@ -187,7 +214,6 @@ fun HoldButton(
     enabled: Boolean,
     onPress: () -> Unit,
     onRelease: () -> Unit,
-    modifier: Modifier = Modifier.fillMaxWidth(),
 ) {
     val c = BitOneTheme.colors
     val haptic = LocalHapticFeedback.current
@@ -214,7 +240,7 @@ fun HoldButton(
         }
     }
     Box(
-        modifier
+        Modifier.fillMaxWidth()
             .pressScale(pressed)
             .height(Size.hBtn)
             .clip(shape)
@@ -257,49 +283,73 @@ fun ActionArea(content: @Composable ColumnScope.() -> Unit) {
     )
 }
 
+enum class NoticeTone {
+    Info,
+    Warn,
+    Danger,
+}
+
+/** 告示：用户要停下来看的事，和网页端的 Notice 同一规格。警告和错误读屏会立刻念出来。 */
+@Composable
+fun Notice(text: String, tone: NoticeTone = NoticeTone.Info) {
+    val c = BitOneTheme.colors
+    val (plate, foreground, icon) =
+        when (tone) {
+            NoticeTone.Info -> Triple(c.surface2, c.text2, Icons.Unknown)
+            NoticeTone.Warn -> Triple(c.warnSoft, c.warn, Icons.Alert)
+            NoticeTone.Danger -> Triple(c.dangerSoft, c.danger, Icons.Alert)
+        }
+    Row(
+        Modifier.fillMaxWidth()
+            .background(plate, RoundedCornerShape(Radius.r2))
+            .padding(horizontal = Space.s3, vertical = Space.s2)
+            .semantics {
+                liveRegion = if (tone == NoticeTone.Info) LiveRegionMode.Polite else LiveRegionMode.Assertive
+            },
+        horizontalArrangement = Arrangement.spacedBy(Space.s2),
+    ) {
+        LineIcon(icon, 16.dp, foreground, Modifier.padding(top = 2.dp))
+        Txt(text, size = FontSize.t2, color = foreground)
+    }
+}
+
 /** 高 24 的徽章。 */
 @Composable
-fun Chip(text: String, background: Color, foreground: Color, mono: Boolean = false, icon: String? = null) {
+fun Chip(text: String, background: Color, foreground: Color, icon: String? = null) {
     Row(
-        Modifier.height(24.dp)
+        Modifier.heightIn(min = 24.dp)
             .clip(RoundedCornerShape(Radius.rf))
             .background(background)
             .padding(horizontal = Space.s2),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s1),
     ) {
-        if (icon != null) LineIcon(icon, 12.dp, foreground, strokeWidth = 2.2f)
-        Txt(text, size = FontSize.t1, weight = Medium, color = foreground, mono = mono)
+        if (icon != null) LineIcon(icon, 12.dp, foreground)
+        Txt(text, size = FontSize.t1, weight = Medium, color = foreground)
     }
 }
 
+/** 卡片和列表组，无边框，靠明度分层。列表组内部没有分隔线。 */
 @Composable
-private fun Surface(radius: Dp, color: Color, modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
-    val shape = RoundedCornerShape(radius)
+fun Card(
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    color: Color = BitOneTheme.colors.surface,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val shape = RoundedCornerShape(Radius.r3)
     Column(
         modifier.elevation(BitOneTheme.elevation.elevation1, shape).clip(shape).background(color),
         content = content,
     )
 }
 
-/** 卡片，无边框。浅色靠柔和的阴影，深色靠明度。 */
-@Composable
-fun Card(
-    modifier: Modifier = Modifier.fillMaxWidth(),
-    color: Color = BitOneTheme.colors.surface,
-    content: @Composable ColumnScope.() -> Unit,
-) = Surface(Radius.r4, color, modifier, content)
-
-/** 列表组，内部没有分隔线。 */
-@Composable
-fun ListGroup(modifier: Modifier = Modifier.fillMaxWidth(), content: @Composable ColumnScope.() -> Unit) =
-    Surface(Radius.r3, BitOneTheme.colors.surface, modifier, content)
-
-/** 列表行，行高 56。可点时按下显示底色。 */
+/** 列表行，行高 56。可点时按下显示底色，选中时是 `accent-soft`。[inset] 让底色和弹层边缘留出距离，文字不动。 */
 @Composable
 fun ListRow(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    selected: Boolean = false,
+    inset: Dp = 0.dp,
     content: @Composable RowScope.() -> Unit,
 ) {
     val c = BitOneTheme.colors
@@ -307,7 +357,11 @@ fun ListRow(
     val pressed by source.collectIsPressedAsState()
     val plate by
         animateColorAsState(
-            if (pressed) c.surface2 else c.surface2.copy(alpha = 0f),
+            when {
+                selected -> c.accentSoft
+                pressed -> c.surface2
+                else -> c.surface2.copy(alpha = 0f)
+            },
             stateSpec(Motion.fast),
             label = "row",
         )
@@ -315,18 +369,17 @@ fun ListRow(
     Row(
         base
             .fillMaxWidth()
+            .padding(horizontal = inset)
             .heightIn(min = Size.hRow)
-            .background(plate)
-            .padding(horizontal = Space.s4, vertical = Space.s1),
+            .background(plate, RoundedCornerShape(Radius.r2))
+            .padding(horizontal = Space.s4 - inset, vertical = Space.s1),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s3),
         content = content,
     )
 }
 
-private val TrackWidth = 48.dp
-private val TrackHeight = 28.dp
-private val ThumbSize = 20.dp
+private val SwitchPad = 2.dp
 
 /** 开关，圆点滑动，轨道变色。 */
 @Composable
@@ -334,14 +387,18 @@ fun SwitchTrack(on: Boolean) {
     val c = BitOneTheme.colors
     val track by animateColorAsState(if (on) c.accent else c.lineStrong, stateSpec(), label = "switch")
     val travel by
-        animateDpAsState(if (on) TrackWidth - ThumbSize - Space.s1 * 2 else 0.dp, stateSpec(), label = "thumb")
+        animateDpAsState(if (on) Size.switchW - Size.switchDot - SwitchPad * 2 else 0.dp, stateSpec(), label = "thumb")
     Box(
-        Modifier.width(TrackWidth)
-            .height(TrackHeight)
+        Modifier.width(Size.switchW)
+            .height(Size.switchH)
             .background(track, RoundedCornerShape(Radius.rf))
-            .padding(Space.s1)
+            .padding(SwitchPad)
     ) {
-        Box(Modifier.offset { IntOffset(travel.roundToPx(), 0) }.size(ThumbSize).background(c.onAccent, CircleShape))
+        Box(
+            Modifier.offset { IntOffset(travel.roundToPx(), 0) }
+                .size(Size.switchDot)
+                .background(c.onAccent, CircleShape)
+        )
     }
 }
 
@@ -350,16 +407,14 @@ fun SwitchTrack(on: Boolean) {
 fun SwitchRow(
     on: Boolean,
     onToggle: () -> Unit,
-    modifier: Modifier = Modifier,
     content: @Composable RowScope.() -> Unit,
 ) {
     Row(
-        modifier
-            .semantics { stateDescription = translate(if (on) "已开启" else "已关闭") }
+        Modifier.semantics { stateDescription = translate(if (on) "已开启" else "已关闭") }
             .tap(role = Role.Switch, onClick = onToggle)
             .fillMaxWidth()
             .heightIn(min = Size.hRow)
-            .padding(horizontal = Space.s4),
+            .padding(horizontal = Space.s4, vertical = Space.s2),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s3),
     ) {
@@ -387,7 +442,7 @@ internal fun SlidingTrack(
 
 /** 助记词长度切换。 */
 @Composable
-fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
+fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
     val c = BitOneTheme.colors
     val inner = RoundedCornerShape(Radius.r1)
     // 选中块要比轨道亮。浅色里是 surface，深色里 surface 比轨道暗，换成 surface-3。
@@ -396,8 +451,7 @@ fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> 
         count = options.size,
         selected = options.indexOfFirst { it.first == selected }.coerceAtLeast(0),
         modifier =
-            modifier
-                .fillMaxWidth()
+            Modifier.fillMaxWidth()
                 .height(Size.hInput)
                 .background(c.surface2, RoundedCornerShape(Radius.r2))
                 .padding(Space.s1),
@@ -451,27 +505,77 @@ fun BackButton(onClick: () -> Unit, icon: String = Icons.Back, tint: Color = Bit
     }
 }
 
-/** 标题栏右边的图标按钮。触控区 44，图标的可见右边缘落在边线上。 */
+/** 弹层标题右边的关闭按钮。触控区 44，图标的可见右边缘落在边线上。 */
 @Composable
-fun HeaderIconButton(label: String, icon: String, onClick: () -> Unit) {
-    val (_, right) = glyphEdges(icon)
+fun CloseButton(onClick: () -> Unit) {
+    val (_, right) = glyphEdges(Icons.Close)
     Box(
         Modifier.offset(x = (BackTouch + BackIcon) / 2 - right)
             .semantics {
                 role = Role.Button
-                contentDescription = label
+                contentDescription = translate("关闭")
             }
             .tap(onClick = onClick)
             .size(BackTouch),
         contentAlignment = Alignment.Center,
     ) {
-        LineIcon(icon, BackIcon, BitOneTheme.colors.text)
+        LineIcon(Icons.Close, BackIcon, BitOneTheme.colors.text)
     }
 }
 
-/** 流程步骤标记，如 1/3。 */
+private val StepDot = Space.s5
+private const val STEP_COUNT = 3
+
+/**
+ * 流程步骤：数字圆点加短连线，走过的换成对勾，和网页端的转账步骤同一规格。放在标题栏右侧，步骤名就是页面标题。
+ *
+ * 进入这一步时，通向它的连线填上去。
+ */
 @Composable
-fun StepChip(text: String) {
+fun Steps(current: Int) {
     val c = BitOneTheme.colors
-    Chip(text, c.accentSoft, c.accentText)
+    Row(
+        Modifier.semantics { contentDescription = translate("第 $current 步，共 $STEP_COUNT 步") },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.s2),
+    ) {
+        for (step in 1..STEP_COUNT) {
+            if (step > 1) StepLine(reached = step <= current, fresh = step == current)
+            val done = step < current
+            Box(
+                Modifier.size(StepDot)
+                    .background(
+                        when {
+                            step == current -> c.accent
+                            done -> c.accentSoft
+                            else -> c.surface3
+                        },
+                        CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (done) {
+                    LineIcon(Icons.Check, 12.dp, c.accentText)
+                } else {
+                    Txt(
+                        step.toString(),
+                        size = FontSize.t1,
+                        weight = Medium,
+                        color = if (step == current) c.onAccent else c.text3,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StepLine(reached: Boolean, fresh: Boolean) {
+    val c = BitOneTheme.colors
+    val fill = remember { Animatable(if (reached && !fresh) 1f else 0f) }
+    LaunchedEffect(reached) { if (reached) fill.animateTo(1f, tween(Motion.slow, easing = Motion.emphasizedEasing)) }
+    val shape = RoundedCornerShape(Radius.rf)
+    Box(Modifier.width(Space.s4).height(2.dp).clip(shape).background(c.surface3)) {
+        Box(Modifier.fillMaxHeight().fillMaxWidth(fill.value).background(c.accent, shape))
+    }
 }

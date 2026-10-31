@@ -10,9 +10,9 @@ import { overlayLink } from "./Sheet";
 import { WebTop } from "./WebTop";
 import { t } from "../core/i18n";
 
-/** 主导航只放能停留的页面。转账和收款是动作，子页面的选中态留在父级。 */
+/** 主导航只放能停留的页面。转账和收款是动作，子页面的选中态留在父级，转账从资产发起。 */
 const ITEMS: { to: string; label: string; icon: IconName; on(pathname: string): boolean }[] = [
-    { to: "/", label: t("资产"), icon: "assets", on: (path) => path === "/" || path.startsWith("/assets/") },
+    { to: "/", label: t("资产"), icon: "assets", on: (path) => /^\/($|assets\/|send$|sign\/)/.test(path) },
     { to: "/history", label: t("交易记录"), icon: "history", on: (path) => path.startsWith("/history") },
     { to: "/contacts", label: t("地址簿"), icon: "contacts", on: (path) => path === "/contacts" },
     { to: "/device", label: t("冷钱包"), icon: "device", on: (path) => path === "/device" },

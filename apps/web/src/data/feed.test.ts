@@ -95,7 +95,7 @@ describe("syncFeed", () => {
         expect(await hashes()).toEqual(["a"]);
         expect(history).not.toHaveBeenCalled();
         const [cursor] = await db.feedCursors.toArray();
-        expect(cursor).toMatchObject({ addresses: ["0xa"], done: false, older: "p2", checkpoint: "100" });
+        expect(cursor).toMatchObject({ addresses: ["0xa"], older: "p2", checkpoint: "100" });
     });
 
     it("再次打开带上水位，只写入新的", async () => {
@@ -254,7 +254,7 @@ describe("loadOlder", () => {
         await loadOlder(WALLET, [STREAM]);
         expect(history).toHaveBeenCalledWith("ethereum", ["0xa"], "p2");
         expect(await hashes()).toEqual(["a", "b"]);
-        expect((await db.feedCursors.toArray())[0]).toMatchObject({ older: null, done: true });
+        expect((await db.feedCursors.toArray())[0]).toMatchObject({ older: null });
 
         history.mockClear();
         await loadOlder(WALLET, [STREAM]);

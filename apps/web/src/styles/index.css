@@ -45,7 +45,7 @@
     --spacing-s16: var(--s16);
     --spacing-input: var(--h-input);
     --spacing-row: var(--h-row);
-    --spacing-btn: var(--h-btn-web);
+    --spacing-btn: var(--h-btn);
 
     --radius-r1: var(--r1);
     --radius-r2: var(--r2);
@@ -68,16 +68,16 @@
 
 /* 字号自带行高，24 及以上字距收紧 1%。窄屏时导航折到上方。栅格按内容宽度切换，不看窗口宽度。 */
 @theme {
-    --text-t1--line-height: 16px;
-    --text-t2--line-height: 20px;
-    --text-t3--line-height: 24px;
-    --text-t4--line-height: 24px;
-    --text-t5--line-height: 28px;
-    --text-t6--line-height: 32px;
+    --text-t1--line-height: var(--lh-t1);
+    --text-t2--line-height: var(--lh-t2);
+    --text-t3--line-height: var(--lh-t3);
+    --text-t4--line-height: var(--lh-t4);
+    --text-t5--line-height: var(--lh-t5);
+    --text-t6--line-height: var(--lh-t6);
     --text-t6--letter-spacing: -0.01em;
-    --text-t7--line-height: 40px;
+    --text-t7--line-height: var(--lh-t7);
     --text-t7--letter-spacing: -0.01em;
-    --text-t8--line-height: 48px;
+    --text-t8--line-height: var(--lh-t8);
     --text-t8--letter-spacing: -0.01em;
 
     --breakpoint-nav: 60rem;
@@ -106,7 +106,7 @@
     --page-x: max(var(--gutter), var(--safe-x));
     --page-width: 1200px;
     --topbar: 64px;
-    --tabbar: 56px;
+    --tabbar: var(--h-row);
     /* 手机上父级链接要 44 的触控区，所有页面都按这个高度留。 */
     --page-title: 44px;
     --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -117,13 +117,12 @@
     :root {
         --page-x: max(var(--s6), var(--safe-x));
         --page-title: var(--s8);
+        --h-btn: var(--h-btn-web);
     }
 }
 
-/* 手机上的触控目标不小于 44。 */
 @media (width < 60rem) {
     :root {
-        --h-btn-web: 44px;
         --topbar: 56px;
     }
 }
@@ -192,15 +191,13 @@
         /* 主屏幕模式下页面延伸到状态栏后面。 */
         padding-top: var(--safe-top);
     }
-    .app-main[data-focus] {
-        padding-bottom: calc(var(--safe-bottom) + var(--s8));
-    }
     .app-main {
         display: flex;
         min-width: 0;
         flex: 1;
         flex-direction: column;
-        padding-bottom: calc(var(--tabbar) + var(--safe-bottom) + var(--s4));
+        /* 悬浮标签栏占的高度，内容滚到底时不会被盖住。 */
+        padding-bottom: calc(var(--tabbar) + var(--safe-bottom) + var(--s2) + var(--s6));
     }
     .page-frame {
         box-sizing: content-box;
@@ -240,13 +237,12 @@
         }
     }
 
-    /* 卡片：一层，不嵌套。边界来自细线和页面底色。 */
+    /* 卡片：一层，不嵌套，不画边框，边界来自和页面底色的明度差。 */
     .card {
         display: flex;
         min-width: 0;
         flex-direction: column;
         gap: var(--s4);
-        border: 1px solid var(--line);
         border-radius: var(--r3);
         background: var(--surface);
         padding: var(--s4);
@@ -257,14 +253,14 @@
         }
     }
     .card .card {
-        border: 0;
         border-radius: 0;
         background: transparent;
         padding: 0;
     }
 
-    /* 设置行：左边标题和说明，右边值或操作，行间一条细线。两端都贴卡片内边距。 */
+    /* 设置行：左边标题和说明，右边值或操作，行间没有分隔线。两端都贴卡片内边距。 */
     .setting {
+        position: relative;
         display: flex;
         min-height: var(--h-row);
         flex-wrap: wrap;
@@ -272,9 +268,6 @@
         justify-content: space-between;
         gap: var(--s2) var(--s6);
         padding-block: var(--s3);
-    }
-    .setting + .setting {
-        border-top: 1px solid var(--line);
     }
     .setting-main {
         display: flex;
@@ -346,13 +339,21 @@
         color: var(--text-2);
     }
 
-    /* 列表行没有横线。文字贴着卡片内边距，悬停底色向两侧各伸出 12。 */
+    /* 列表行没有横线。文字贴着卡片内边距，悬停底色向两侧各伸出 12。按下时显示底色并缩放。 */
     .row {
         position: relative;
         margin-inline: calc(var(--s3) * -1);
         border-radius: var(--r2);
         padding-inline: var(--s3);
-        transition: background-color var(--dur-fast) var(--ease-standard);
+        transition:
+            background-color var(--dur-fast) var(--ease-standard),
+            transform var(--dur-normal) var(--ease-emphasized);
+    }
+    .row:has(> a:active) {
+        background: var(--surface-2);
+        transform: scale(var(--press-scale));
+        transition-duration: var(--dur-fast);
+        transition-timing-function: var(--ease-standard);
     }
     @media (hover: hover) {
         .row:hover {
@@ -396,7 +397,6 @@
         outline: none;
     }
     .sheet .card {
-        border: 0;
         border-radius: 0;
         background: transparent;
         padding: 0;
@@ -423,6 +423,12 @@
         gap: var(--s2);
         background: var(--popup);
         padding-block: var(--s2) calc(var(--s4) + var(--safe-bottom));
+    }
+    /* 手机上按钮等分，放弃在左，确认在右，和冷钱包的弹层相同。 */
+    @media (width < 60rem) {
+        .sheet-actions > * {
+            flex: 1 1 0;
+        }
     }
     @media (width >= 60rem) {
         .sheet-actions {

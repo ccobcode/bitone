@@ -99,19 +99,20 @@ describe("地址核对二维码", () => {
         address: "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
     };
 
+    const frame = (c: typeof check) => addressFrame(c.fingerprint, c.network, c.path, c.address);
+
     it("核心库的帧解码器能收下，大写后也一样", () => {
-        for (const part of [addressFrame(check), addressFrame(check).toUpperCase()]) {
+        for (const part of [frame(check), frame(check).toUpperCase()]) {
             const receiver = new FrameReceiver();
             expect(receiver.receive(part)).toBe(1);
             expect(receiver.complete()).toBe(true);
-            expect(receiver.urType()).toBe("bitone-address");
             receiver.free();
         }
     });
 
     it("路径与网络冲突时拒绝生成", () => {
-        expect(() => addressFrame({ ...check, network: "solana-devnet" })).toThrow();
-        expect(() => addressFrame({ ...check, fingerprint: "xyz" })).toThrow();
+        expect(() => frame({ ...check, network: "solana-devnet" })).toThrow();
+        expect(() => frame({ ...check, fingerprint: "xyz" })).toThrow();
     });
 
     it("收款二维码保留地址的大小写", () => {
@@ -119,7 +120,7 @@ describe("地址核对二维码", () => {
     });
 
     it("能画成二维码", () => {
-        const matrix = qrMatrix(addressFrame(check));
+        const matrix = qrMatrix(frame(check));
         expect(matrix.modules).toHaveLength(matrix.size * matrix.size);
     });
 });

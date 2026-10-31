@@ -27,7 +27,13 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildTypes {
-        release { vcsInfo.include = false }
+        release {
+            vcsInfo.include = false
+            // 只裁剪不混淆，规则见 proguard-rules.pro。发布包小一半，冷启动少加载一半代码。
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
     }
     buildFeatures { buildConfig = false }
     packaging {
@@ -40,6 +46,9 @@ android {
         includeInBundle = false
     }
 }
+
+// 这个映射文件只用来还原混淆后的 Compose 堆栈。这里不混淆，也就不用多下载一个依赖。
+composeCompiler { includeComposeMappingFile = false }
 
 dependencies {
     implementation(project(":shared"))

@@ -516,9 +516,9 @@ class GuardedActionsTest {
     fun accountsComeFromTheCore() {
         val rows =
             listOf(
-                AccountAddress("bitcoin", "Native SegWit", "m/84'/0'/0'", "a"),
-                AccountAddress("evm", "单地址", "m/44'/60'/0'/0/0", "b"),
-                AccountAddress("bitcoin", "Legacy", "m/44'/0'/0'", "c"),
+                AccountAddress("Native SegWit", "m/84'/0'/0'", "a"),
+                AccountAddress("单地址", "m/44'/60'/0'/0/0", "b"),
+                AccountAddress("Legacy", "m/44'/0'/0'", "c"),
             )
         assertEquals(
             listOf("Bitcoin SegWit", "Ethereum", "BNB Smart Chain", "Polygon", "Bitcoin Legacy"),

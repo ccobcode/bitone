@@ -12,6 +12,7 @@ use crate::tx::{ReviewContext, Verified, check_signature, raw_lines, signer_path
 use crate::units::{decimal_from_be, format_units};
 use crate::{Error, Network};
 use alloy_rlp::{Encodable, Header};
+use bitcoin::hex::DisplayHex;
 use serde_json::Value;
 use sha3::{Digest, Keccak256};
 
@@ -551,8 +552,6 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
     let tx = UnsignedTx::decode(&request.payload).map_err(|_| Error::InvalidParams)?;
     check_signature(&keccak(&tx.encode()), signature, signer)?;
     let raw = tx.assemble(signature);
-    let hash = keccak(&raw)
-        .iter()
-        .fold(String::from("0x"), |s, b| s + &format!("{b:02x}"));
+    let hash = format!("0x{}", keccak(&raw).to_lower_hex_string());
     Ok(Verified { raw, hash })
 }

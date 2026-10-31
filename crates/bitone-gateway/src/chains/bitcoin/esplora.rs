@@ -30,8 +30,9 @@ fn newer_than(tx: &Value, since: Option<u64>) -> bool {
 impl Esplora {
     async fn tip(&self) -> Result<u64, Failed> {
         self.http
-            .get_text("/blocks/tip/height")
+            .find_text("/blocks/tip/height")
             .await?
+            .ok_or(Failed)?
             .trim()
             .parse()
             .map_err(|_| Failed)

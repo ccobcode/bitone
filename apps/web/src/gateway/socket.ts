@@ -1,5 +1,5 @@
 // 余额、交易和价格的订阅。订阅只存在于当前连接，断线后退避重连，重连后重新订阅并让上层用 HTTP 补一次。
-import { MAX_ADDRESSES } from "./client";
+import { MAX_ADDRESSES, chunks } from "./client";
 import type { Target } from "./assets";
 
 /** 单连接的地址上限，超出的地址靠 HTTP 刷新。和网关一致。 */
@@ -49,7 +49,7 @@ type Topic =
     | { kind: "tx"; network: string; hash: string }
     | { kind: "prices" };
 
-function batchKey({ network, addresses }: { network: string; addresses: readonly string[] }): string {
+export function batchKey({ network, addresses }: { network: string; addresses: readonly string[] }): string {
     return `${network}|${addresses[0]}`;
 }
 
@@ -240,8 +240,7 @@ export class BalanceSocket {
     }
 
     #subscribeAddresses(socket: WebSocket, { network, addresses }: Target): void {
-        for (let i = 0; i < addresses.length; i += MAX_ADDRESSES) {
-            const chunk = addresses.slice(i, i + MAX_ADDRESSES);
+        for (const chunk of chunks(addresses, MAX_ADDRESSES)) {
             this.#request(
                 socket,
                 { kind: "addresses", network, addresses: chunk },

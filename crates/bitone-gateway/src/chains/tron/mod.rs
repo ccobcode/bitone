@@ -15,6 +15,7 @@ use axum::{Json, Router};
 use bitcoin::base58;
 use bitcoin::hashes::{Hash, sha256};
 use bitcoin::hex::DisplayHex;
+use bitone_core::tx::tron::read_varint;
 use bitone_core::{Chain, Network};
 use futures_util::future::BoxFuture;
 use reqwest::Client;
@@ -68,18 +69,6 @@ async fn ref_block(networks: Shared, Path(network): Path<String>) -> Reply {
     Ok(Json(pool.anchor.get(query).await?))
 }
 
-/// protobuf 的变长整数，返回值和剩余字节。
-fn varint(bytes: &[u8]) -> Option<(usize, &[u8])> {
-    let mut value = 0usize;
-    for (index, byte) in bytes.iter().enumerate().take(5) {
-        value |= usize::from(byte & 0x7f) << (7 * index);
-        if byte & 0x80 == 0 {
-            return Some((value, &bytes[index + 1..]));
-        }
-    }
-    None
-}
-
 impl ChainSpec for Spec {
     fn is_valid_address(&self, _network: Network, address: &str) -> bool {
         base58::decode_check(address).is_ok_and(|p| p.len() == 21 && p[0] == 0x41)
@@ -91,11 +80,11 @@ impl ChainSpec for Spec {
 
     /// 交易 ID 是 raw_data 的 SHA-256。raw_data 是 Transaction 消息的第 1 个字段。
     fn raw_hash(&self, bytes: &[u8]) -> Option<String> {
-        let (&tag, rest) = bytes.split_first()?;
+        let (&tag, mut rest) = bytes.split_first()?;
         if tag != 0x0a {
             return None;
         }
-        let (length, rest) = varint(rest)?;
+        let length = usize::try_from(read_varint(&mut rest).ok()?).ok()?;
         let raw_data = rest.get(..length)?;
         Some(sha256::Hash::hash(raw_data).to_byte_array().to_lower_hex_string())
     }

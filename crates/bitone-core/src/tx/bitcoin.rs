@@ -15,6 +15,7 @@ use bitcoin::address::NetworkUnchecked;
 use bitcoin::bip32::{ChildNumber, DerivationPath as BipPath, Fingerprint, KeySource};
 use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::hashes::Hash;
+use bitcoin::hex::DisplayHex;
 use bitcoin::key::{CompressedPublicKey, TapTweak};
 use bitcoin::psbt::{Input, Output, Psbt};
 use bitcoin::script::{Builder, PushBytesBuf};
@@ -25,6 +26,7 @@ use bitcoin::{
     Address, Amount, OutPoint, Script, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness, absolute, ecdsa,
     taproot, transaction,
 };
+use serde::Serialize;
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 
@@ -36,12 +38,13 @@ const INPUT_WEIGHT: u64 = 41 * 4;
 const PAYMENT_WEIGHT: u64 = 43 * 4;
 
 /// 一个可花费的输出。`prev_tx` 是前序交易的原始字节，只有全 Taproot 的交易可以不带。
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Utxo {
     pub txid: String,
     pub vout: u32,
     pub amount: u64,
     pub path: String,
+    #[serde(skip)]
     pub prev_tx: Option<Vec<u8>>,
 }
 
@@ -51,7 +54,7 @@ pub struct Payment {
     pub amount: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Selection {
     pub inputs: Vec<Utxo>,
     pub fee: u64,
@@ -595,7 +598,7 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
                 if text.is_none() {
                     builder.alerts.push("有输出不是标准地址，请核对原始脚本".to_string());
                 }
-                let shown = text.unwrap_or_else(|| hex(out.script_pubkey.as_bytes()));
+                let shown = text.unwrap_or_else(|| out.script_pubkey.as_bytes().to_lower_hex_string());
                 external.push(ActionView {
                     risk: Risk::Transfer,
                     title: Risk::Transfer.label().to_string(),
@@ -661,15 +664,11 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
     builder.raw = serialize(tx)
         .chunks(32)
         .map(|c| RawLine {
-            text: hex(c),
+            text: c.to_lower_hex_string(),
             note: None,
         })
         .collect();
     Ok(builder.finish(network.id()))
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn output_weight(kind: AccountKind) -> Result<u64, Error> {
@@ -752,7 +751,7 @@ pub fn select_coins(utxos: &[Utxo], amount: u64, fee_rate: u64, change_kind: Acc
 }
 
 /// 替换交易的金额分配。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct Replacement {
     pub fee: u64,
     pub change: u64,
@@ -1094,7 +1093,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            hex(&digest),
+            digest.to_lower_hex_string(),
             "c37af31116d1b27caf68aae9e3ac82f1477929014d5b917657d0eb49478cb670"
         );
     }
@@ -1128,7 +1127,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            hex(&digest),
+            digest.to_lower_hex_string(),
             "64f3b0f4dd2bb3aa1ce8566d220cc74dda9df97d8490cc81d89d735c92e59fb6"
         );
     }
@@ -1223,7 +1222,7 @@ mod tests {
             let code = &prevouts[index].script_pubkey;
             let digest =
                 signature_hash(&tx, index, &prevouts, AccountKind::Taproot, code, Sighash::Taproot(ty)).unwrap();
-            assert_eq!(hex(&digest), expected, "输入 {index}");
+            assert_eq!(digest.to_lower_hex_string(), expected, "输入 {index}");
         }
     }
 
@@ -1236,7 +1235,10 @@ mod tests {
         .unwrap();
         let key = PublicKey::from_x_only_public_key(internal, Parity::Even);
         assert_eq!(
-            hex(script_for(AccountKind::Taproot, &key).unwrap().as_bytes()),
+            script_for(AccountKind::Taproot, &key)
+                .unwrap()
+                .as_bytes()
+                .to_lower_hex_string(),
             "512053a1f6e454df1aa2776a2814a721372d6258050de330b3c6d10ee8f4e0dda343"
         );
     }

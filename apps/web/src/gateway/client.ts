@@ -1,5 +1,5 @@
 // 网关 HTTP 接口，格式见 docs/09-gateway-api.md。网关的数据都不可信，进来先校验。
-import { cleanText } from "../core/text";
+import { addressKey, cleanText, isRecord } from "../core/text";
 import { parseAmount } from "../core/amount";
 import type { ChainObservation, ChainStatus } from "../data/machine";
 import { t } from "../core/i18n";
@@ -65,10 +65,6 @@ function get(network: string, path: string): Promise<unknown> {
     return request(`/v1/${encodeURIComponent(network)}/${path}`);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null;
-}
-
 /** 响应不完整时算查询失败，不能当成 0 或空。 */
 function malformed(): GatewayError {
     return new GatewayError("unreachable");
@@ -97,14 +93,13 @@ function requireText(value: unknown, max: number): string {
     return text;
 }
 
-function chunks<T>(list: readonly T[], size: number): T[][] {
+export function chunks<T>(list: readonly T[], size: number): T[][] {
     const result: T[][] = [];
     for (let i = 0; i < list.length; i += size) result.push(list.slice(i, i + size));
     return result;
 }
 
 export interface GatewayVersion {
-    version: string;
     networks: string[];
     /** 没有配置索引服务的网络，查不到链上历史。 */
     noHistory: string[];
@@ -114,16 +109,12 @@ export async function fetchVersion(): Promise<GatewayVersion> {
     const body = (await request("/v1/version")) as Partial<GatewayVersion> | null;
     if (!body || !Array.isArray(body.networks)) throw new GatewayError("unreachable");
     return {
-        version: typeof body.version === "string" ? cleanText(body.version, 32) : "",
         networks: body.networks.filter((n): n is string => typeof n === "string"),
         noHistory: (body.noHistory ?? []).filter((n): n is string => typeof n === "string"),
     };
 }
 
-/** EVM 地址可能以不同大小写返回，其余地址区分大小写。 */
-export function addressKey(address: string): string {
-    return address.startsWith("0x") ? address.toLowerCase() : address;
-}
+export { addressKey };
 
 /**
  * 只留下请求过的地址和合法金额，同一地址同一资产以最后一条为准。

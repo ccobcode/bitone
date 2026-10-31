@@ -7,7 +7,7 @@ import { useFeed } from "../gateway/feed";
 import { failedNames, type FeedRow, type HistoryStream } from "../gateway/history";
 import { useGateway } from "../gateway/provider";
 import { networkList } from "../core";
-import { FeedItem } from "../ui/FeedList";
+import { FeedItem } from "../ui/FeedItem";
 import { DownloadingIcon, Icon } from "../ui/Icon";
 import { dayLabel } from "../ui/labels";
 import { Button, ChildTitle, Empty, Notice, PageTitle, Section, SectionTitle, Segmented } from "../ui/primitives";
@@ -165,7 +165,7 @@ export default function History() {
             </div>
 
             {moving.length > 0 ? (
-                <Section aria-labelledby="h-moving" className="gap-s1">
+                <Section aria-labelledby="h-moving" className="gap-s2">
                     <SectionTitle id="h-moving">{t("进行中")}</SectionTitle>
                     <ul className="stagger">
                         {moving.map((row) => (
@@ -179,7 +179,7 @@ export default function History() {
                 <Section aria-label={t("交易列表")} className="relative min-h-40 gap-s4">
                     {visible.length > 0 ? (
                         byDay(visible).map(({ day, rows }) => (
-                            <section key={day} aria-label={day} className="flex flex-col gap-s1">
+                            <section key={day} aria-label={day} className="flex flex-col gap-s2">
                                 <h2 className="text-t2 text-text-3">{day}</h2>
                                 <ul key={`${network}-${direction}`} className="stagger">
                                     {rows.map((row) => (

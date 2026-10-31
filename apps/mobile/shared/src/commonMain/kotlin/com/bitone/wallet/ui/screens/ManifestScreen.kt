@@ -17,15 +17,15 @@ import com.bitone.wallet.platform.ManifestEntry
 import com.bitone.wallet.platform.NATIVE_CONTRACT
 import com.bitone.wallet.ui.components.ActionArea
 import com.bitone.wallet.ui.components.AssetIcon
+import com.bitone.wallet.ui.components.Card
 import com.bitone.wallet.ui.components.Chip
-import com.bitone.wallet.ui.components.ListGroup
 import com.bitone.wallet.ui.components.ListRow
 import com.bitone.wallet.ui.components.Medium
-import com.bitone.wallet.ui.components.NoticePill
 import com.bitone.wallet.ui.components.Page
 import com.bitone.wallet.ui.components.PrimaryButton
 import com.bitone.wallet.ui.components.SemiBold
 import com.bitone.wallet.ui.components.TitleBar
+import com.bitone.wallet.ui.components.Toast
 import com.bitone.wallet.ui.components.Txt
 import com.bitone.wallet.ui.theme.BitOneTheme
 import com.bitone.wallet.ui.theme.FontSize
@@ -51,7 +51,7 @@ fun ManifestScreen(flow: WalletFlow) {
                 }
             }
         },
-        overlay = { NoticePill(flow.notice) },
+        overlay = { Toast(flow) },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
             flow.manifestVersion?.let { Txt(manifestLabel(it), size = FontSize.t6, weight = SemiBold) }
@@ -62,7 +62,7 @@ fun ManifestScreen(flow: WalletFlow) {
             .forEach { (label, entries) ->
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
                     Txt(label, size = FontSize.t2, color = c.text3)
-                    ListGroup { entries.forEach { EntryRow(it) } }
+                    Card { entries.forEach { EntryRow(it) } }
                 }
             }
     }

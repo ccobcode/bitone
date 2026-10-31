@@ -1,16 +1,24 @@
 package com.bitone.wallet.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -20,41 +28,58 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
+import com.bitone.wallet.flow.WalletFlow
+import com.bitone.wallet.i18n.translate
 import com.bitone.wallet.platform.QrMatrix
 import com.bitone.wallet.ui.theme.BitOneTheme
 import com.bitone.wallet.ui.theme.FontSize
 import com.bitone.wallet.ui.theme.LightColors
+import com.bitone.wallet.ui.theme.Motion
+import com.bitone.wallet.ui.theme.Qr
 import com.bitone.wallet.ui.theme.Radius
+import com.bitone.wallet.ui.theme.Size as TokenSize
 import com.bitone.wallet.ui.theme.Space
 
-/** 四周静区的码元数，见界面规范 §4.5，真机扫码测试后再定。 */
-private const val QUIET_MODULES = 2
+/** 屏幕高度里留给标题、帧进度和吸底按钮的部分。横屏时二维码按剩下的高度收窄，一屏看得全。 */
+private val QrChrome = TokenSize.hRow * 3 + Space.s8
+
+/** 全屏时只有帧进度和播放控制。 */
+private val FullscreenChrome = TokenSize.hRow * 2
 
 /**
  * 动态二维码。任何主题下都是白底深色码点，所以固定用浅色令牌。
  *
- * 外框永远铺满可用宽度，版本不同的码切换时页面不跳。码元取整数像素保证码点清晰，放不满的部分是白边。
+ * 外框铺满可用宽度，版本不同的码切换时页面不跳。码元取整数像素保证码点清晰，放不满的部分是白边。
  *
- * 换帧不做任何过渡，半透明的中间帧扫不出来，帧序号和进度也跟着硬切。[total] 为 0 时是静态码，不显示帧进度。
+ * 换帧不做任何过渡，半透明的中间帧扫不出来，帧序号和进度也跟着硬切。[total] 不超过 1 时是静态码，不显示帧进度。
  */
 @Composable
-fun QrView(matrix: QrMatrix?, frame: Int, total: Int, label: String, modifier: Modifier = Modifier) {
+fun QrView(
+    matrix: QrMatrix?,
+    frame: Int,
+    total: Int,
+    label: String,
+    chrome: Dp = QrChrome,
+) {
     val c = BitOneTheme.colors
-    BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+    BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         val density = LocalDensity.current
-        val sidePx = constraints.maxWidth
+        val windowPx = LocalWindowInfo.current.containerSize.height
+        val sidePx = minOf(constraints.maxWidth, windowPx - with(density) { chrome.roundToPx() })
         val side = with(density) { sidePx.toDp() }
         val shape = RoundedCornerShape(Radius.r3)
-        val bar = RoundedCornerShape(Radius.rf)
         Column(Modifier.width(side), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
             if (matrix == null) {
                 Skeleton(Modifier.size(side))
             } else {
-                val modulePx = sidePx / (matrix.size + QUIET_MODULES * 2)
+                val modulePx = sidePx / (matrix.size + Qr.quiet * 2)
                 val inset = (sidePx - modulePx * matrix.size) / 2
-                Canvas(Modifier.size(side).clip(shape).semantics { contentDescription = label }) {
+                val description = translate(label)
+                Canvas(Modifier.size(side).clip(shape).semantics { contentDescription = description }) {
                     drawRect(LightColors.surface)
                     val module = Size(modulePx.toFloat(), modulePx.toFloat())
                     for (y in 0 until matrix.size) {
@@ -71,18 +96,88 @@ fun QrView(matrix: QrMatrix?, frame: Int, total: Int, label: String, modifier: M
                     }
                 }
             }
-            if (total > 0) {
+            if (total > 1) {
                 Row(
                     Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.s3),
                 ) {
-                    Box(Modifier.weight(1f).height(Space.s1).clip(bar).background(c.lineStrong)) {
-                        Box(Modifier.fillMaxHeight().fillMaxWidth(frame.toFloat() / total).background(c.accent))
-                    }
+                    FrameBar(frame, total, Modifier.weight(1f))
                     Txt("$frame/$total", size = FontSize.t2, color = c.text2)
                 }
             }
+        }
+    }
+}
+
+/** 帧数不多时每帧一段，当前帧是主色。太多了画不下，换成一条连续的进度条。 */
+@Composable
+private fun FrameBar(frame: Int, total: Int, modifier: Modifier) {
+    val c = BitOneTheme.colors
+    val bar = RoundedCornerShape(Radius.rf)
+    if (total > Qr.maxSegments) {
+        Box(modifier.height(Space.s1).clip(bar).background(c.lineStrong)) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(frame.toFloat() / total).background(c.accent))
+        }
+    } else {
+        Row(modifier, horizontalArrangement = Arrangement.spacedBy(Space.s1)) {
+            for (segment in 1..total) {
+                Box(
+                    Modifier.weight(1f)
+                        .height(Space.s1)
+                        .background(if (segment == frame) c.accent else c.lineStrong, bar)
+                )
+            }
+        }
+    }
+}
+
+/** 动态二维码加播放控制，可暂停、调速、全屏，和网页端的 AnimatedQr 同一套。只有一帧时暂停和调速没有意义。 */
+@Composable
+fun QrPlayer(flow: WalletFlow, label: String, fullscreen: Boolean, onFullscreen: (Boolean) -> Unit) {
+    val single = flow.frameTotal <= 1
+    Column(
+        Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Space.s4),
+    ) {
+        QrView(
+            flow.frame,
+            flow.frameIndex,
+            flow.frameTotal,
+            label,
+            chrome = if (fullscreen) FullscreenChrome else QrChrome,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+            SmallButton(if (flow.framesPaused) "播放" else "暂停", enabled = !single, onClick = flow::togglePaused)
+            SmallButton("速度 ${SPEEDS[flow.frameSpeed]}", enabled = !single, onClick = flow::nextSpeed)
+            SmallIconButton(if (fullscreen) "退出全屏" else "全屏显示二维码", Icons.Expand) { onFullscreen(!fullscreen) }
+        }
+    }
+}
+
+/** 顺序和令牌里的间隔一一对应。 */
+private val SPEEDS = listOf("标准", "慢", "快")
+
+/** 全屏显示二维码，盖住页面上其他内容，返回键先退出全屏。 */
+@Composable
+fun BoxScope.QrFullscreen(flow: WalletFlow, label: String, open: Boolean, onFullscreen: (Boolean) -> Unit) {
+    CloseOnBack(flow, open) { onFullscreen(false) }
+    AnimatedVisibility(
+        open,
+        Modifier.matchParentSize(),
+        enter = fadeIn(stateSpec()),
+        exit = fadeOut(exitSpec(Motion.fast)),
+    ) {
+        Box(
+            Modifier.fillMaxSize()
+                .background(BitOneTheme.colors.bg)
+                .clickable(interactionSource = null, indication = null) {}
+                .statusBarsPadding()
+                .padding(horizontal = TokenSize.gutter),
+            contentAlignment = Alignment.Center,
+        ) {
+            QrPlayer(flow, label, fullscreen = true, onFullscreen)
         }
     }
 }

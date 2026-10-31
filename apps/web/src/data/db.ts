@@ -92,12 +92,7 @@ export interface BitcoinPlan {
 
 export interface TronPlan {
     chain: "tron";
-    expirationMs: number;
     feeLimit: number;
-    energy: string;
-    bandwidth: string;
-    activationFee: string;
-    burn: string;
 }
 
 export interface SolanaPlan {
@@ -108,7 +103,6 @@ export interface SolanaPlan {
     priority: number;
     computeUnits: number;
     createAta: boolean;
-    rent: string;
 }
 
 export type TxPlan = EvmPlan | BitcoinPlan | TronPlan | SolanaPlan;
@@ -217,8 +211,6 @@ export interface FeedCursor {
     checkpoint: string;
     /** 往前翻页的游标。 */
     older: string | null;
-    /** 已经翻到最早一条。 */
-    done: boolean;
 }
 
 /** 余额的本地缓存。`height` 是取到它时的高度，只有不低于它的结果才能覆盖。 */

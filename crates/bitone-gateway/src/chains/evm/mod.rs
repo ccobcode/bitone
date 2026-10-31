@@ -16,12 +16,12 @@ use axum::http::{HeaderMap, HeaderValue};
 use axum::routing::post;
 use axum::{Json, Router};
 use bitcoin::hex::DisplayHex;
+use bitone_core::tx::evm::keccak;
 use bitone_core::{Chain, Network};
 use futures_util::future::BoxFuture;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sha3::{Digest, Keccak256};
 use std::sync::Arc;
 
 pub struct Spec;
@@ -79,7 +79,7 @@ impl ChainSpec for Spec {
     /// 交易类型字节在 0x01 到 0x7f 之间，旧式交易是 RLP 列表，首字节至少 0xc0。
     fn raw_hash(&self, bytes: &[u8]) -> Option<String> {
         match bytes.first()? {
-            0x01..=0x7f | 0xc0.. => Some(format!("0x{}", Keccak256::digest(bytes).to_lower_hex_string())),
+            0x01..=0x7f | 0xc0.. => Some(format!("0x{}", keccak(bytes).to_lower_hex_string())),
             _ => None,
         }
     }

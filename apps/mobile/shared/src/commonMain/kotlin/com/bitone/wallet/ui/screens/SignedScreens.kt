@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -19,32 +22,32 @@ import com.bitone.wallet.flow.shortAddress
 import com.bitone.wallet.platform.Brightness
 import com.bitone.wallet.ui.components.ActionArea
 import com.bitone.wallet.ui.components.AddressCard
-import com.bitone.wallet.ui.components.Chip
 import com.bitone.wallet.ui.components.DrawnCheck
 import com.bitone.wallet.ui.components.Icons
 import com.bitone.wallet.ui.components.LineIcon
 import com.bitone.wallet.ui.components.NetworkIcon
-import com.bitone.wallet.ui.components.NoticePill
 import com.bitone.wallet.ui.components.Page
 import com.bitone.wallet.ui.components.PrimaryButton
-import com.bitone.wallet.ui.components.QrView
+import com.bitone.wallet.ui.components.QrFullscreen
+import com.bitone.wallet.ui.components.QrPlayer
 import com.bitone.wallet.ui.components.SemiBold
 import com.bitone.wallet.ui.components.TitleBar
+import com.bitone.wallet.ui.components.Toast
 import com.bitone.wallet.ui.components.Txt
 import com.bitone.wallet.ui.components.rememberLatest
 import com.bitone.wallet.ui.theme.BitOneTheme
 import com.bitone.wallet.ui.theme.FontSize
 import com.bitone.wallet.ui.theme.Space
 
+private const val LABEL = "已签名交易二维码"
+
 /** A8 已签名。帧里只有签名，种子已经清除。 */
 @Composable
 fun SignedScreen(flow: WalletFlow, brightness: Brightness) {
     val review = rememberLatest(flow.review) ?: return
     val c = BitOneTheme.colors
-    DisposableEffect(Unit) {
-        if (flow.autoBrightness) brightness.maximize()
-        onDispose { brightness.restore() }
-    }
+    var fullscreen by remember { mutableStateOf(false) }
+    ShowingQr(flow, brightness)
     LaunchedEffect(Unit) { flow.playFrames() }
     Page(
         header = {
@@ -58,10 +61,12 @@ fun SignedScreen(flow: WalletFlow, brightness: Brightness) {
         contentAlignment = Alignment.CenterHorizontally,
         contentGap = Space.s4,
         bottom = { ActionArea { PrimaryButton("完成", onClick = flow::finishSigned) } },
-        overlay = { NoticePill(flow.notice) },
+        overlay = {
+            Toast(flow)
+            QrFullscreen(flow, LABEL, fullscreen) { fullscreen = it }
+        },
     ) {
-        QrView(flow.frame, flow.frameIndex, flow.frameTotal, "已签名交易二维码")
-        Chip("已调到最高亮度", c.surface2, c.text2, icon = Icons.Sun)
+        QrPlayer(flow, LABEL, fullscreen) { fullscreen = it }
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
             amountLine(review).takeIf { it.isNotEmpty() }?.let { DetailRow("金额", it) }
             review.counterparty?.let { DetailRow(review.counterpartyLabel.orEmpty(), shortAddress(it), mono = true) }
@@ -87,10 +92,10 @@ fun AddressScreen(flow: WalletFlow) {
     ) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
             if (result.belongs) {
-                DrawnCheck(48.dp, c.surface, tone, strokeWidth = 2.4f)
+                DrawnCheck(48.dp, c.surface, tone, ring = tone, strokeWidth = 2.4f)
             } else {
                 Box(Modifier.size(48.dp).background(tone, CircleShape), contentAlignment = Alignment.Center) {
-                    LineIcon(Icons.Close, 28.dp, c.surface, strokeWidth = 2.4f)
+                    LineIcon(Icons.Close, 28.dp, c.surface)
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(Space.s1)) {

@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { EVM_ADDRESS, PEER_EVM, USDT, initCore } from "../testing";
 import type { FeedCursor, Note, TxRecord } from "../data/db";
 import { addressKey, type HistoryItem } from "./client";
-import { attentionRows, historyStreams, ledgerRows, txHref, unsentRows, type RemoteItem } from "./history";
+import { attentionRows, historyStreams, ledgerRows, recordHref, txHref, unsentRows, type RemoteItem } from "./history";
 
 beforeAll(initCore);
 afterEach(() => vi.unstubAllGlobals());
@@ -68,7 +68,7 @@ describe("historyStreams", () => {
     it("新地址另成一批，已同步的批次不动，这样水位和翻页游标都不失效", () => {
         const synced = addresses.slice(0, 2);
         const cursor = (id: string, network: string) =>
-            ({ id, network, addresses: synced, checkpoint: "1", older: null, done: true }) as FeedCursor;
+            ({ id, network, addresses: synced, checkpoint: "1", older: null }) as FeedCursor;
         const cursors = [cursor("w:bitcoin:bc1q0", "bitcoin"), cursor("other:bitcoin:x", "bitcoin")];
         const target = { network: "bitcoin", addresses: ["bc1q9", ...synced] };
         expect(historyStreams("w", [target], cursors)).toEqual([
@@ -115,10 +115,22 @@ describe("ledgerRows", () => {
     });
 
     it("每一行都进同一个详情页，本地和链上都不跳外链", () => {
-        expect(ledgerRows([local()], [], own, [])[0]?.href).toBe("/history/TX-1");
-        const id = remote().id;
-        expect(ledgerRows([], [remote()], own, [])[0]?.href).toBe(txHref(id));
-        expect(txHref(id)).toBe("/history/ethereum%3A0x1%3Anative");
+        expect(ledgerRows([local()], [], own, [])[0]?.href).toBe("/history/ethereum/0x1");
+        expect(ledgerRows([], [remote()], own, [])[0]?.href).toBe("/history/ethereum/0x1");
+    });
+
+    it("链接按交易标识规范化，十六进制不分大小写，Solana 区分", () => {
+        expect(recordHref("ethereum", "0xABC")).toBe("/history/ethereum/0xabc");
+        expect(recordHref("solana", "AbC")).toBe("/history/solana/AbC");
+    });
+
+    it("没上链的请求还用编号", () => {
+        const href = (state: TxRecord["state"]) => txHref({ id: "TX-1", state, network: "ethereum", hash: "0x1" });
+        for (const state of ["signing", "signed", "abandoned", "expired", "replaced"] as const) {
+            expect(href(state), state).toBe("/history/TX-1");
+        }
+        expect(href("confirmed")).toBe("/history/ethereum/0x1");
+        expect(txHref({ id: "TX-1", state: "broadcasting", network: "ethereum" })).toBe("/history/TX-1");
     });
 
     it("零金额转入不进列表，投毒者常用这个手法", () => {
@@ -228,7 +240,11 @@ describe("attentionRows", () => {
         const rows = (state: TxRecord["state"]) => attentionRows([local({ state })], 0, NOW);
         expect(rows("signing")[0]).toMatchObject({ status: "待签名", action: "继续", href: "/sign/TX-1" });
         expect(rows("signed")[0]).toMatchObject({ status: "已签名", action: "广播", href: "/sign/TX-1" });
-        expect(rows("uncertain")[0]).toMatchObject({ status: "结果不明", action: "处理", href: "/history/TX-1" });
+        expect(rows("uncertain")[0]).toMatchObject({
+            status: "结果不明",
+            action: "处理",
+            href: "/history/ethereum/0x1",
+        });
     });
 
     it("等得太久的交易要提示加速，刚广播的不用", () => {
@@ -239,7 +255,7 @@ describe("attentionRows", () => {
 
     it("链上失败看过之后不再提示", () => {
         const failed = local({ state: "failed", updatedAt: 100 });
-        expect(attentionRows([failed], 50, NOW)[0]).toMatchObject({ tone: "danger", href: "/history/TX-1" });
+        expect(attentionRows([failed], 50, NOW)[0]).toMatchObject({ tone: "danger", href: "/history/ethereum/0x1" });
         expect(attentionRows([failed], 100, NOW)).toEqual([]);
     });
 

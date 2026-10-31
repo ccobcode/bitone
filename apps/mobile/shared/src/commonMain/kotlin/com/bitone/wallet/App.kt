@@ -73,7 +73,7 @@ fun App(flow: WalletFlow, brightness: Brightness, fonts: BitOneFonts = BitOneFon
                     Screen.ReceiveAddresses -> ReceiveAddressesScreen(flow)
                     Screen.Unlock -> UnlockScreen(flow)
                     Screen.Export -> ExportScreen(flow, brightness)
-                    Screen.Scan -> ScanScreen(flow)
+                    Screen.Scan -> ScanScreen(flow, brightness)
                     Screen.Review -> ReviewScreen(flow)
                     Screen.Signed -> SignedScreen(flow, brightness)
                     Screen.CheckAddress -> AddressScreen(flow)

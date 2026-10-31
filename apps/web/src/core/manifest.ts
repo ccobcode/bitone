@@ -1,45 +1,25 @@
 // 内置清单。符号、小数位、图标只按「网络加合约地址」取，见 docs/04-security.md 第 2.8 节。
 // 这里没有按符号查找的入口。清单只有核心库这一个来源，网页端和冷钱包用同一份。
 import { formatUnits } from "./amount";
-import { translate } from "./i18n";
 import { assets, networks } from "./pkg/bitone_wasm";
+import { addressKey } from "./text";
 import { t } from "./i18n";
 
 export type IconName = "btc" | "eth" | "bnb" | "pol" | "trx" | "sol" | "usdt" | "usdc";
 
-interface ManifestAsset {
-    network: string;
-    contract: string;
-    symbol: string;
-    name: string;
-    decimals: number;
-    icon: IconName;
-    standard: string;
-    minFraction: number;
-}
-
 export interface AssetEntry {
     symbol: string;
-    name: string;
     decimals: number;
     icon: IconName;
-    /** 表格里的类型说明。 */
-    standard: string;
     /** 至少显示的小数位。 */
     minFraction: number;
     native: boolean;
 }
 
-/**
- * EVM 地址的大小写只是校验和，统一转小写比较。网关可能返回全小写，docs/09 的示例也不是标准大小写。
- * Base58 区分大小写，不能转换。
- */
-function normalize(asset: string): string {
-    return asset.startsWith("0x") ? asset.toLowerCase() : asset;
-}
+type ManifestAsset = Omit<AssetEntry, "native"> & { network: string; contract: string };
 
 function key(network: string, asset: string): string {
-    return `${network}:${normalize(asset)}`;
+    return `${network}:${addressKey(asset)}`;
 }
 
 let manifest: Map<string, AssetEntry> | undefined;
@@ -48,7 +28,7 @@ function entries(): Map<string, AssetEntry> {
     manifest ??= new Map(
         (assets() as ManifestAsset[]).map(({ network, contract, ...entry }) => [
             key(network, contract),
-            { ...entry, standard: translate(entry.standard), native: contract === "native" },
+            { ...entry, native: contract === "native" },
         ]),
     );
     return manifest;

@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { isLegacyKind, networkName } from "../core";
 import { formatUnits, formatUsd } from "../core/amount";
 import { shortAddress } from "../core/text";
 import { saveSetting, useApp, useLive } from "../data/app";
 import { db } from "../data/db";
+import { firstAddress } from "../data/pairing";
 import {
     assetShares,
     buildRows,
@@ -18,7 +19,7 @@ import {
 } from "../gateway/assets";
 import { useAttention, useFeed, useWalletTxs } from "../gateway/feed";
 import { useGateway } from "../gateway/provider";
-import { FeedItem } from "../ui/FeedList";
+import { FeedItem } from "../ui/FeedItem";
 import { GatewayDown } from "../ui/GatewayDown";
 import { Icon } from "../ui/Icon";
 import { dateLabel } from "../ui/labels";
@@ -28,6 +29,7 @@ import {
     Disclosure,
     Empty,
     LinkButton,
+    ListRow,
     Notice,
     PageTitle,
     Section,
@@ -36,7 +38,7 @@ import {
     SkeletonRows,
 } from "../ui/primitives";
 import { overlayLink, receiveLink } from "../ui/Sheet";
-import { TokenIcon, networkIcon } from "../ui/TokenIcon";
+import { AssetIcon, TokenIcon } from "../ui/TokenIcon";
 import { NoWallet } from "./NoWallet";
 import { t } from "../core/i18n";
 
@@ -81,70 +83,71 @@ function whereLabel(group: AssetGroup): string {
 function Row({ group, pending, loading }: { group: AssetGroup; pending: bigint; loading: boolean }) {
     const { entry } = group;
     const top = largestRow(group);
-    const receivable = !isLegacyKind(top.account.kind);
     return (
-        <li className="row relative flex min-h-row items-center gap-s3 py-s3">
-            <Link
-                to={`/assets/${group.key}`}
-                aria-label={t("查看 {0}", entry.symbol)}
-                className="absolute inset-0 rounded-r2"
-            />
-            <TokenIcon asset={entry} size={36} />
-            <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-t3 font-semibold">{entry.symbol}</span>
-                <span className="truncate text-t2 text-text-3">{whereLabel(group)}</span>
-            </span>
-            <span className="row-actions relative hidden shrink-0 gap-s1 @split:flex">
-                {receivable ? (
-                    <LinkButton
-                        {...receiveLink(top.account.id, { asset: group.key })}
-                        variant="ghost"
-                        size="sm"
-                        aria-label={t("收款 {0}", entry.symbol)}
-                    >
-                        {t("收款")}
-                    </LinkButton>
-                ) : null}
-                {group.amount > 0n ? (
-                    <LinkButton to={sendLink(top)} variant="ghost" size="sm" aria-label={t("转账 {0}", entry.symbol)}>
-                        {t("转账")}
-                    </LinkButton>
-                ) : null}
-            </span>
-            <span className="flex min-w-0 flex-col items-end text-right">
-                <span className="text-t3 font-medium">
-                    <GroupAmount group={group} loading={loading} />
-                </span>
-                {pending > 0n ? (
-                    <span className="text-t2 text-warn">
-                        {t("待转出")} {formatUnits(pending, group.decimals, { min: entry.minFraction })}
+        <ListRow
+            link={{ to: `/assets/${group.key}` }}
+            label={t("查看 {0}", entry.symbol)}
+            icon={<TokenIcon asset={entry} size={32} />}
+            title={entry.symbol}
+            sub={whereLabel(group)}
+            actions={
+                <>
+                    {isLegacyKind(top.account.kind) ? null : (
+                        <LinkButton
+                            {...receiveLink(top.account.id, { asset: group.key })}
+                            variant="ghost"
+                            size="sm"
+                            aria-label={t("收款 {0}", entry.symbol)}
+                        >
+                            {t("收款")}
+                        </LinkButton>
+                    )}
+                    {group.amount > 0n ? (
+                        <LinkButton
+                            to={sendLink(top)}
+                            variant="ghost"
+                            size="sm"
+                            aria-label={t("转账 {0}", entry.symbol)}
+                        >
+                            {t("转账")}
+                        </LinkButton>
+                    ) : null}
+                </>
+            }
+            value={
+                <>
+                    <span className="text-t3 font-medium">
+                        <GroupAmount group={group} loading={loading} />
                     </span>
-                ) : group.cents !== null ? (
-                    <span className="text-t2 text-text-3">{formatUsd(group.cents)}</span>
-                ) : !group.loaded && loading ? (
-                    <Skeleton className="my-1 h-3 w-16" />
-                ) : null}
-            </span>
-            <Icon name="caret" size={16} className="shrink-0 text-text-3" />
-        </li>
+                    {pending > 0n ? (
+                        <span className="text-t1 text-warn">
+                            {t("待转出")}{" "}
+                            {formatUnits(pending, group.decimals, { min: entry.minFraction, max: TABLE_FRACTION })}
+                        </span>
+                    ) : group.cents !== null ? (
+                        <span className="text-t1 text-text-3">{formatUsd(group.cents)}</span>
+                    ) : !group.loaded && loading ? (
+                        <Skeleton className="my-0.5 h-3 w-16" />
+                    ) : null}
+                </>
+            }
+        />
     );
 }
 
 /** 清单外的代币。没有可信的符号和小数位，只显示原始整数，也没有详情可进。 */
 function UnknownRow({ row }: { row: AssetRow }) {
     return (
-        <li className="row flex min-h-row items-center gap-s3 py-s3">
-            <TokenIcon asset={null} size={36} />
-            <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-t3 font-semibold text-warn">{t("未知代币")}</span>
-                <span className="truncate text-t2 text-text-3">
-                    {networkName(row.network)} <span className="font-mono text-t1">{shortAddress(row.asset)}</span>
-                </span>
-            </span>
-            <span className="min-w-0 text-right text-t3 font-medium [overflow-wrap:anywhere]">
-                {row.amount.toString()}
-            </span>
-        </li>
+        <ListRow
+            icon={<TokenIcon asset={null} size={32} />}
+            title={<span className="text-warn">{t("未知代币")}</span>}
+            sub={
+                <>
+                    {networkName(row.network)} <span className="font-mono">{shortAddress(row.asset)}</span>
+                </>
+            }
+            value={<span className="text-t3 font-medium [overflow-wrap:anywhere]">{row.amount.toString()}</span>}
+        />
     );
 }
 
@@ -228,11 +231,7 @@ function TodoStrip() {
             <ul>
                 {rows.map((row) => (
                     <li key={row.key} className="flex min-h-row items-center gap-s3 py-s1">
-                        <TokenIcon
-                            asset={row.entry}
-                            chain={row.entry && !row.entry.native ? networkIcon(row.network) : undefined}
-                            size={32}
-                        />
+                        <AssetIcon entry={row.entry} network={row.network} size={32} />
                         <span className="flex min-w-0 flex-1 flex-col">
                             <span className="truncate text-t3 font-medium">{row.title}</span>
                             <span className="hidden truncate text-t1 text-text-3 @split:block">{row.party}</span>
@@ -252,27 +251,14 @@ function TodoStrip() {
     );
 }
 
-/** 收起的一组。展开后仍然排在持仓后面，不和有余额的混在一起。 */
-function Folded({ label, children }: { label: string; children: ReactNode }) {
-    const [open, setOpen] = useState(false);
-    return (
-        <div className="flex flex-col">
-            <Disclosure open={open} onToggle={() => setOpen(!open)}>
-                {label}
-            </Disclosure>
-            <Collapse open={open}>{children}</Collapse>
-        </div>
-    );
-}
-
-/** 零余额的展开状态存在本地，下次打开保持原样。 */
-function ZeroBalances({ children }: { children: ReactNode }) {
-    const saved = useLive(async () => (await db.settings.get("showZeroBalances"))?.value, []);
+/** 收起的一组，展开状态记在 setting 里。展开后仍然排在持仓后面，不和有余额的混在一起。 */
+function Folded({ setting, label, children }: { setting: string; label: string; children: ReactNode }) {
+    const saved = useLive(async () => (await db.settings.get(setting))?.value, [setting]);
     const open = saved === true;
     return (
         <div className="flex flex-col">
-            <Disclosure open={open} onToggle={() => void saveSetting("showZeroBalances", !open)}>
-                {open ? t("收起") : t("展开所有")}
+            <Disclosure open={open} onToggle={() => void saveSetting(setting, !open)}>
+                {open ? t("收起") : label}
             </Disclosure>
             <Collapse open={open}>{children}</Collapse>
         </div>
@@ -282,8 +268,8 @@ function ZeroBalances({ children }: { children: ReactNode }) {
 function Recent() {
     const { ledger } = useFeed();
     return (
-        <Section aria-labelledby="h-recent" className="gap-s1">
-            <div className="flex items-center justify-between gap-s3 pb-s1">
+        <Section aria-labelledby="h-recent" className="gap-s2">
+            <div className="flex items-center justify-between gap-s3">
                 <SectionTitle id="h-recent">{t("最近记录")}</SectionTitle>
                 <Link to="/history" className="link">
                     {t("全部记录")}
@@ -319,16 +305,10 @@ function WalletStatus() {
     const { accounts, addresses, persisted } = useApp();
     const last = useLive(async () => (await db.settings.get("lastBackup"))?.value, []);
     const list = accounts.filter((account) => !isLegacyKind(account.kind));
-    const verified = list.filter((account) =>
-        addresses.some(
-            (item) => item.accountId === account.id && item.change === 0 && item.index === 0 && item.verified,
-        ),
-    ).length;
+    const verified = list.filter((account) => firstAddress(addresses, account.id)?.verified).length;
     return (
-        <Section aria-labelledby="h-status" className="gap-s1">
-            <SectionTitle id="h-status" className="pb-s1">
-                {t("钱包状态")}
-            </SectionTitle>
+        <Section aria-labelledby="h-status" className="gap-s2">
+            <SectionTitle id="h-status">{t("钱包状态")}</SectionTitle>
             <StatusRow to="/device" label={t("账户核对")}>
                 <Chip tone={verified === list.length ? "ok" : "warn"}>
                     {verified} / {list.length}
@@ -380,10 +360,8 @@ export default function Assets() {
             <TodoStrip />
 
             <div className="grid grid-cols-12 items-start gap-s4 @split:gap-s5">
-                <section aria-labelledby="h-held" className="card col-span-12 gap-s1 @4xl:col-span-8">
-                    <SectionTitle id="h-held" className="pb-s1">
-                        {t("持仓")}
-                    </SectionTitle>
+                <section aria-labelledby="h-held" className="card col-span-12 gap-s2 @4xl:col-span-8">
+                    <SectionTitle id="h-held">{t("持仓")}</SectionTitle>
                     {failed.length > 0 ? (
                         <Notice tone="warn">
                             {failed.join(t("、"))} {t("余额暂时不可用。")}
@@ -400,12 +378,12 @@ export default function Assets() {
                         </Empty>
                     )}
                     {zero.length > 0 && held.length > 0 ? (
-                        <ZeroBalances>
+                        <Folded setting="showZeroBalances" label={t("展开所有")}>
                             <ul>{zero.map(line)}</ul>
-                        </ZeroBalances>
+                        </Folded>
                     ) : null}
                     {unknown.length > 0 ? (
-                        <Folded label={t("{0} 个未识别代币", unknown.length)}>
+                        <Folded setting="showUnknownTokens" label={t("{0} 个未识别代币", unknown.length)}>
                             <Notice tone="warn">{t("不在内置清单里，不能转账，也不计入总资产。")}</Notice>
                             <ul>
                                 {unknown.map((row) => (

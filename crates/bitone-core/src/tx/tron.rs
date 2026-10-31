@@ -12,6 +12,7 @@ use crate::tx::evm::be_from_decimal;
 use crate::tx::{ReviewContext, Verified, check_signature, raw_lines, signer_path};
 use crate::units::format_units;
 use crate::{Chain, Error, Network};
+use bitcoin::hex::DisplayHex;
 use sha2::{Digest, Sha256};
 
 const ADDRESS_PREFIX: u8 = 0x41;
@@ -69,7 +70,8 @@ fn contract_info(kind: u64) -> Option<(&'static str, u64)> {
     })
 }
 
-fn read_varint(buf: &mut &[u8]) -> Result<u64, Forbid> {
+/// protobuf 的变长整数。多余的编码一律拒绝，同一笔交易不能有两种写法。
+pub fn read_varint(buf: &mut &[u8]) -> Result<u64, Forbid> {
     let mut value = 0u64;
     for shift in (0..70).step_by(7) {
         let (&byte, rest) = buf.split_first().ok_or(Forbid::ParseFailed)?;
@@ -476,10 +478,6 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
 /// 毫秒时间戳转成 UTC 时间，算法见 Howard Hinnant 的 civil_from_days。
 fn utc_time(ms: u64) -> String {
     let seconds = ms / 1000;
@@ -553,7 +551,7 @@ fn other_contract(kind: u64, name: &str, value: &[u8]) -> Result<abi::Classified
     for (number, field) in Fields::parse(value)?.0 {
         let text = match field {
             Value::Varint(value) => value.to_string(),
-            Value::Bytes(bytes) => hex(bytes),
+            Value::Bytes(bytes) => bytes.to_lower_hex_string(),
         };
         rows.push(Row::mono(&format!("字段 {number}"), text));
     }
@@ -764,7 +762,10 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
     let mut raw = Vec::new();
     put_bytes(&mut raw, 1, &raw_data);
     put_bytes(&mut raw, 2, signature);
-    Ok(Verified { raw, hash: hex(&hash) })
+    Ok(Verified {
+        raw,
+        hash: hash.to_lower_hex_string(),
+    })
 }
 
 #[cfg(test)]

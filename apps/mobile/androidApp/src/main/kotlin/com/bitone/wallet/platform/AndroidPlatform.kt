@@ -40,7 +40,15 @@ class AndroidScreenGuard(private val current: CurrentActivity) : ScreenGuard {
 }
 
 class AndroidBrightness(private val current: CurrentActivity) : Brightness {
-    override fun maximize() = apply(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL, keepOn = true)
+    override fun hold(maximize: Boolean) =
+        apply(
+            if (maximize) {
+                WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL
+            } else {
+                WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            },
+            keepOn = true,
+        )
 
     override fun restore() = apply(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE, keepOn = false)
 

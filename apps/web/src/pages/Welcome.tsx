@@ -7,7 +7,8 @@ import { Overlays } from "../ui/Overlays";
 import { overlayLink } from "../ui/Sheet";
 import { t } from "../core/i18n";
 
-const ENTRY = "press group flex min-h-20 items-center gap-s4 rounded-r3 px-s5 text-t4 font-semibold no-underline";
+const ENTRY =
+    "press group flex min-h-12 items-center gap-s3 rounded-r3 px-s4 text-t3 font-semibold no-underline nav:min-h-20 nav:gap-s4 nav:px-s5 nav:text-t4";
 
 function EntryArrow() {
     return (

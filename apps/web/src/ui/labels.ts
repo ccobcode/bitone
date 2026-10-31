@@ -48,6 +48,11 @@ export function accountKind({ chain, kind }: AccountLike): string {
     return chain === "bitcoin" ? "" : SINGLE_LABELS[chain];
 }
 
+/** 列表里的账户名称。Bitcoin 有多种账户，要带上类型。 */
+export function accountName(account: AccountLike): string {
+    return account.chain === "bitcoin" ? `${accountTitle(account)} ${accountKind(account)}` : accountTitle(account);
+}
+
 /** 这个账户可用的全部网络名称。 */
 export function accountNetworks(chain: Chain, mode: Mode): string {
     return networksFor(chain, mode)
@@ -65,22 +70,16 @@ export function tierLabel(tier: keyof typeof TIER_LABELS): string {
     return TIER_LABELS[tier];
 }
 
+const pad = (value: number) => String(value).padStart(2, "0");
+
 /** 时间线和列表里的时间。 */
 export function timeLabel(time: number, now = Date.now()): string {
-    const date = new Date(time);
-    const pad = (value: number) => String(value).padStart(2, "0");
-    const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-    const today = new Date(now);
-    if (date.toDateString() === today.toDateString()) return t("今天 {0}", clock);
-    const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
-    if (date.toDateString() === yesterday.toDateString()) return t("昨天 {0}", clock);
-    return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${clock}`;
+    return `${dayLabel(time, now)} ${minuteLabel(time)}`;
 }
 
 /** 本地日期 YYYY-MM-DD。 */
 export function dateLabel(time: number): string {
     const date = new Date(time);
-    const pad = (value: number) => String(value).padStart(2, "0");
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
@@ -98,7 +97,6 @@ export function dayLabel(time: number, now = Date.now()): string {
 /** 列表里的时分。 */
 export function minuteLabel(time: number): string {
     const date = new Date(time);
-    const pad = (value: number) => String(value).padStart(2, "0");
     return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 

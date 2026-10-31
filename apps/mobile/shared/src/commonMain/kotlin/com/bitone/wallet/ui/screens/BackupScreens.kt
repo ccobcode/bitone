@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,9 +16,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.bitone.wallet.flow.VerifyState
 import com.bitone.wallet.flow.WalletFlow
@@ -27,17 +23,17 @@ import com.bitone.wallet.platform.QuizItem
 import com.bitone.wallet.ui.components.ActionArea
 import com.bitone.wallet.ui.components.Card
 import com.bitone.wallet.ui.components.Medium
+import com.bitone.wallet.ui.components.Notice
+import com.bitone.wallet.ui.components.NoticeTone
 import com.bitone.wallet.ui.components.Page
 import com.bitone.wallet.ui.components.PrimaryButton
 import com.bitone.wallet.ui.components.Segmented
-import com.bitone.wallet.ui.components.SemiBold
-import com.bitone.wallet.ui.components.StepChip
+import com.bitone.wallet.ui.components.Steps
 import com.bitone.wallet.ui.components.TitleBar
 import com.bitone.wallet.ui.components.Txt
 import com.bitone.wallet.ui.components.stateSpec
 import com.bitone.wallet.ui.components.tap
 import com.bitone.wallet.ui.theme.BitOneTheme
-import com.bitone.wallet.ui.theme.FontSize
 import com.bitone.wallet.ui.theme.Motion
 import com.bitone.wallet.ui.theme.Radius
 import com.bitone.wallet.ui.theme.Size
@@ -48,11 +44,10 @@ internal val WordCountOptions = listOf(12 to "12 词", 24 to "24 词")
 /** A2 备份助记词。 */
 @Composable
 fun BackupScreen(flow: WalletFlow) {
-    val c = BitOneTheme.colors
     val rowHeight = if (flow.wordCount == 12) 40.dp else 32.dp
     val loading = flow.backupWords.isEmpty()
     Page(
-        header = { TitleBar("备份助记词", onBack = { flow.back() }) { StepChip("1/3") } },
+        header = { TitleBar("备份助记词", onBack = { flow.back() }) { Steps(1) } },
         contentGap = Space.s4,
         bottom = {
             ActionArea {
@@ -65,7 +60,7 @@ fun BackupScreen(flow: WalletFlow) {
         },
     ) {
         Segmented(WordCountOptions, flow.wordCount, flow::setBackupWordCount)
-        Txt("只抄在纸上", size = FontSize.t2, color = c.text3)
+        Notice("只抄在纸上", NoticeTone.Warn)
         WordGrid(if (loading) List(flow.wordCount) { "" } else flow.backupWords, rowHeight, loading)
         PassphraseSwitch(flow.passphraseEnabled, flow::togglePassphrase)
     }
@@ -74,9 +69,8 @@ fun BackupScreen(flow: WalletFlow) {
 /** A2b 验证助记词。全部答完才判定，判错后只能回 A2。 */
 @Composable
 fun VerifyScreen(flow: WalletFlow) {
-    val c = BitOneTheme.colors
     Page(
-        header = { TitleBar("验证助记词", onBack = { flow.back() }) { StepChip("2/3") } },
+        header = { TitleBar("验证助记词", onBack = { flow.back() }) { Steps(2) } },
         contentGap = Space.s4,
         bottom = {
             ActionArea {
@@ -88,7 +82,7 @@ fun VerifyScreen(flow: WalletFlow) {
             }
         },
     ) {
-        Txt("对照纸上的备份，选出对应序号的词", size = FontSize.t2, color = c.text3)
+        Notice("对照纸上的备份，选出对应序号的词")
         flow.quiz.forEach { item ->
             QuizCard(item, flow.picks[item.index], flow.verifyState != VerifyState.Failed) { flow.pick(item.index, it) }
         }
@@ -96,16 +90,7 @@ fun VerifyScreen(flow: WalletFlow) {
             flow.verifyState == VerifyState.Failed,
             enter = fadeIn(stateSpec()) + expandVertically(stateSpec()),
         ) {
-            Column(
-                Modifier.fillMaxWidth()
-                    .background(c.dangerSoft, RoundedCornerShape(Radius.r3))
-                    .padding(Space.s4)
-                    .semantics { liveRegion = LiveRegionMode.Assertive },
-                verticalArrangement = Arrangement.spacedBy(Space.s1),
-            ) {
-                Txt("有词选错了", weight = SemiBold, color = c.danger)
-                Txt("回到上一步重新核对备份。", size = FontSize.t2)
-            }
+            Notice("有词选错了，回到上一步重新核对备份。", NoticeTone.Danger)
         }
     }
 }

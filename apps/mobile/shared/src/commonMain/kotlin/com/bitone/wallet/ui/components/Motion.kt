@@ -9,14 +9,12 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -27,12 +25,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.dp
 import com.bitone.wallet.ui.theme.BitOneTheme
 import com.bitone.wallet.ui.theme.Motion
 import com.bitone.wallet.ui.theme.Radius
@@ -40,12 +41,9 @@ import com.bitone.wallet.ui.theme.Radius
 // 动效只用 docs/06 §5 的令牌。系统关闭动画时 Compose 直接跳到终点，这里的一切都不等动画结束，流程不受影响。
 // 金额和地址不走这里的任何数值动画，用户看到的始终是真实值。
 
-private val PageEnterOffset = 24.dp
-private val PageExitOffset = 8.dp
-private val ListEnterOffset = 8.dp
-private const val LIST_MAX_STAGGERED = 8
-private const val PRESS_RELEASE_DAMPING = 0.55f
-private const val PRESS_RELEASE_STIFFNESS = 900f
+private const val SHIMMER_FROM = 0.3f
+private const val SHIMMER_PEAK = 0.5f
+private const val SHIMMER_TO = 0.7f
 
 /** 进入。 */
 fun <T> enterSpec(duration: Int = Motion.normal, delay: Int = 0): FiniteAnimationSpec<T> =
@@ -64,8 +62,8 @@ fun <T> exitSpec(duration: Int = Motion.normal): FiniteAnimationSpec<T> = tween(
  * 旧页先淡出，新页稍后淡入，两页的文字不会叠在一起。
  */
 fun pageTransition(back: Boolean, density: Density): ContentTransform {
-    val near = with(density) { PageEnterOffset.roundToPx() }
-    val far = with(density) { PageExitOffset.roundToPx() }
+    val near = with(density) { Motion.pageIn.roundToPx() }
+    val far = with(density) { Motion.pageOut.roundToPx() }
     val handover = Motion.fast / 2
     val enter =
         slideInHorizontally(enterSpec()) { if (back) -far else near } +
@@ -93,16 +91,12 @@ fun <T : Any> rememberLatest(value: T?): T? {
     return latest
 }
 
-/** 按下缩到 0.97，松手回弹。 */
+/** 按下缩到 0.97，松开回到原位，和网页端的曲线相同。 */
 fun Modifier.pressScale(pressed: Boolean): Modifier = composed {
     val scale by
         animateFloatAsState(
             if (pressed) Motion.pressScale else 1f,
-            if (pressed) {
-                stateSpec(Motion.fast)
-            } else {
-                spring(PRESS_RELEASE_DAMPING, PRESS_RELEASE_STIFFNESS)
-            },
+            if (pressed) stateSpec(Motion.fast) else enterSpec(),
             label = "press",
         )
     graphicsLayer {
@@ -115,26 +109,41 @@ fun Modifier.pressScale(pressed: Boolean): Modifier = composed {
 fun Modifier.staggerIn(index: Int): Modifier = composed {
     val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        val delay = minOf(index, LIST_MAX_STAGGERED) * Motion.stagger
+        val delay = minOf(index, Motion.staggerMax) * Motion.stagger
         progress.animateTo(1f, enterSpec(delay = delay))
     }
     graphicsLayer {
         alpha = progress.value
-        translationY = (1f - progress.value) * ListEnterOffset.toPx()
+        translationY = (1f - progress.value) * Motion.rise.toPx()
     }
 }
 
-/** 骨架屏微光，不用转圈。 */
+/** 骨架屏微光，一条光带匀速扫过，周期和网页端相同。不用转圈。 */
 @Composable
 fun Skeleton(modifier: Modifier = Modifier) {
     val c = BitOneTheme.colors
-    val light by
+    val sweep by
         rememberInfiniteTransition(label = "skeleton")
             .animateFloat(
                 initialValue = 0f,
                 targetValue = 1f,
-                animationSpec = infiniteRepeatable(tween(Motion.slow * 2, easing = LinearEasing), RepeatMode.Reverse),
-                label = "light",
+                animationSpec = infiniteRepeatable(tween(Motion.slow * 4, easing = LinearEasing), RepeatMode.Restart),
+                label = "sweep",
             )
-    Box(modifier.background(lerp(c.surface2, c.surface3, light), RoundedCornerShape(Radius.r1)))
+    Box(
+        modifier.clip(RoundedCornerShape(Radius.r1)).drawBehind {
+            val tile = size.width * 2
+            val start = tile * sweep
+            drawRect(
+                Brush.linearGradient(
+                    SHIMMER_FROM to c.surface2,
+                    SHIMMER_PEAK to c.surface3,
+                    SHIMMER_TO to c.surface2,
+                    start = Offset(start, 0f),
+                    end = Offset(start + tile, 0f),
+                    tileMode = TileMode.Repeated,
+                )
+            )
+        }
+    )
 }

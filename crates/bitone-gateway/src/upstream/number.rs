@@ -1,6 +1,9 @@
 //! 上游返回的数字。
 
 use super::Failed;
+use bitcoin::hex::{DisplayHex, FromHex};
+use bitone_core::tx::evm::be_from_decimal;
+use bitone_core::units::decimal_from_be;
 use serde_json::Value;
 
 /// `0x` 开头的十六进制转十进制字符串。ERC-20 余额是 uint256，放不进任何原生整数。
@@ -12,51 +15,15 @@ pub fn hex_to_decimal(hex: &str) -> Option<String> {
     if hex.len() > 64 {
         return None;
     }
-    // 十进制各位，低位在前。每读一位十六进制就整体乘 16 再加上它。
-    let mut digits = vec![0u8];
-    for c in hex.chars() {
-        let mut carry = c.to_digit(16)?;
-        for digit in &mut digits {
-            let value = u32::from(*digit) * 16 + carry;
-            *digit = (value % 10) as u8;
-            carry = value / 10;
-        }
-        while carry > 0 {
-            digits.push((carry % 10) as u8);
-            carry /= 10;
-        }
-    }
-    Some(digits.iter().rev().map(|d| char::from(b'0' + d)).collect())
+    let even = format!("{hex:0>width$}", width = hex.len().next_multiple_of(2));
+    Some(decimal_from_be(&Vec::from_hex(&even).ok()?))
 }
 
 /// 十进制字符串转 `0x` 开头的十六进制，上限 uint256。
 pub fn decimal_to_hex(decimal: &str) -> Option<String> {
-    if decimal.is_empty() {
-        return None;
-    }
-    // 十六进制各位，低位在前。每读一位十进制就整体乘 10 再加上它。
-    let mut digits = vec![0u32];
-    for c in decimal.chars() {
-        let mut carry = c.to_digit(10)?;
-        for digit in &mut digits {
-            let value = *digit * 10 + carry;
-            *digit = value % 16;
-            carry = value / 16;
-        }
-        while carry > 0 {
-            digits.push(carry % 16);
-            carry /= 16;
-        }
-    }
-    if digits.len() > 64 {
-        return None;
-    }
-    let hex: String = digits
-        .iter()
-        .rev()
-        .map(|d| char::from_digit(*d, 16).unwrap_or('0'))
-        .collect();
-    Some(format!("0x{hex}"))
+    let hex = be_from_decimal(decimal).ok()?.to_lower_hex_string();
+    let digits = hex.trim_start_matches('0');
+    Some(format!("0x{}", if digits.is_empty() { "0" } else { digits }))
 }
 
 pub fn hex_u64(value: &Value) -> Result<u64, Failed> {

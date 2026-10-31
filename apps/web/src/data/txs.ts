@@ -1,11 +1,13 @@
 // 交易和占用的存储。状态变化、释放占用都在同一个事务里完成，多标签页不会看到中间状态。
 import type { Verified } from "../core";
-import { db, type Reservation, type ReservationType, type TxPlan, type TxRecord } from "./db";
+import { db, txKey, type Reservation, type ReservationType, type TxPlan, type TxRecord } from "./db";
+import { entry } from "./feed";
 import {
     CONFLICT_ROUNDS,
     CONFLICT_SPACING,
     EXPIRY_GRACE,
     holdsReservation,
+    isWatched,
     observe,
     transition,
     type ChainObservation,
@@ -17,7 +19,7 @@ import { t } from "../core/i18n";
 /** 超过这个时间还在广播中，多半是页面中途关闭了，按超时处理。比网关请求的时限长。 */
 export const BROADCAST_STALE = 60_000;
 
-const scope = () => [db.txs, db.reservations, db.addresses];
+const scope = () => [db.txs, db.reservations, db.addresses, db.chainTxs];
 
 /**
  * 按账户加锁，见 docs/03-system.md 第 3 节。多个标签页同时构建时排队，
@@ -52,12 +54,6 @@ export interface Claim {
     value: string;
 }
 
-export class ReservationConflict extends Error {
-    constructor() {
-        super(t("序号已被占用"));
-    }
-}
-
 export type NewTx = Pick<
     TxRecord,
     | "walletId"
@@ -88,7 +84,7 @@ export async function insertTx(
         const id = await nextId(now);
         const row = (claim: Claim) => reservationId(fields.accountId, fields.network, claim.type, claim.value);
         for (const claim of claims) {
-            if (await db.reservations.get(row(claim))) throw new ReservationConflict();
+            if (await db.reservations.get(row(claim))) throw new Error(t("序号已被占用"));
             await db.reservations.add({
                 id: row(claim),
                 accountId: fields.accountId,
@@ -154,6 +150,23 @@ async function markChangeUsed(tx: TxRecord): Promise<void> {
     await db.addresses.update([tx.accountId, 1, plan.changeIndex], { used: true });
 }
 
+/** 有了结果的交易存一条标准记录，和网关同步的是同一种格式、同一个标识，后到的直接覆盖。 */
+async function saveRecord(tx: TxRecord, now: number): Promise<void> {
+    if (!tx.hash) return;
+    const status = tx.state === "failed" ? "failed" : "finalized";
+    const time = Math.floor(now / 1000);
+    const item = {
+        hash: tx.hash,
+        time,
+        from: tx.from,
+        to: tx.to,
+        asset: tx.asset,
+        amount: BigInt(tx.amount),
+        status,
+    } as const;
+    await db.chainTxs.put(entry(tx.walletId, `local:${tx.walletId}`, tx.network, item));
+}
+
 /** 状态变化后处理占用。上链要等到最终状态才释放，确认中的交易可能被重组退回来。 */
 async function settle(before: TxRecord, after: TxRecord, now: number): Promise<void> {
     if (before.state === after.state) return;
@@ -163,6 +176,7 @@ async function settle(before: TxRecord, after: TxRecord, now: number): Promise<v
     if (after.state === "confirmed" || after.state === "failed") {
         await db.reservations.bulkDelete(rows.map((row) => row.id));
         await markChangeUsed(after);
+        await saveRecord(after, now);
         return;
     }
     if (landed || holdsReservation(after)) return;
@@ -335,6 +349,37 @@ export function abandonedHolder(
         if (owners.length > 0 && owners.every((tx) => tx.state === "abandoned")) return owners[0] ?? null;
     }
     return null;
+}
+
+const CLOSED: ReadonlySet<TxRecord["state"]> = new Set<TxRecord["state"]>(["abandoned", "expired", "replaced"]);
+
+/**
+ * 没上链就结束、也不再占序号的请求可以删。签名仍然有效的还占着序号，删了就看不到它，
+ * 序号也可能被复用。刚被替换的还在观察期，链上可能反转。held 是它占着的序号数。
+ */
+export function isDeletable(tx: TxRecord, held: number, now: number): boolean {
+    return CLOSED.has(tx.state) && held === 0 && !isWatched(tx, now);
+}
+
+/** 按网络和哈希找本地交易。十六进制哈希不分大小写，Solana 的区分，所以最后按交易标识比较。 */
+export function findTx(network: string, hash: string): Promise<TxRecord | undefined> {
+    const key = txKey(network, hash);
+    return db.txs
+        .where("hash")
+        .equalsIgnoreCase(hash)
+        .filter((tx) => tx.network === network && tx.hash !== undefined && txKey(tx.network, tx.hash) === key)
+        .first();
+}
+
+export async function deleteRequest(id: string, now = Date.now()): Promise<void> {
+    await db.transaction("rw", scope(), async () => {
+        const tx = await db.txs.get(id);
+        if (!tx) return;
+        const held = await db.reservations.where("txIds").equals(id).count();
+        if (!isDeletable(tx, held, now)) throw new Error(t("这笔请求现在不能删除"));
+        await db.txs.delete(id);
+    });
+    announce();
 }
 
 export function planOf<C extends TxPlan["chain"]>(tx: TxRecord, chain: C): Extract<TxPlan, { chain: C }> {

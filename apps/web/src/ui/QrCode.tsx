@@ -1,11 +1,13 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { qrMatrix, qrText } from "../core";
+import tokens from "../core/tokens.gen.json";
 
 /** 四周的静区，单位是码元，见 docs/06-ui.md 第 4.5 节。 */
-const QUIET = 2;
+const QUIET = tokens.qr.quiet;
 
 /** 帧数太多时分段画不下，改成一条连续的进度条。 */
-const MAX_SEGMENTS = 40;
+const MAX_SEGMENTS = tokens.qr["max-segments"];
 
 function modulesPath(size: number, modules: boolean[]): string {
     let path = "";
@@ -26,7 +28,7 @@ function modulesPath(size: number, modules: boolean[]): string {
 
 interface QrCodeProps {
     value: string;
-    /** 外框边长，窄屏时缩到可用宽度。码元取整数像素，放不满的部分是白边。 */
+    /** 宽屏的外框边长。手机上铺满可用宽度，和冷钱包相同。码元取整数像素，放不满的部分是白边。 */
     size: number;
     label: string;
     /** 内容是普通文本，不是 UR 帧。 */
@@ -45,17 +47,19 @@ export function QrCode({ value, size, label, plain = false, frame = 1, total = 1
     useLayoutEffect(() => {
         const element = box.current;
         if (!element) return;
+        setAvailable(element.clientWidth);
         const observer = new ResizeObserver(() => setAvailable(element.clientWidth));
         observer.observe(element);
         return () => observer.disconnect();
     }, []);
 
-    const side = Math.min(size, available);
+    // 横屏时按屏幕高度收窄，一屏看得全。
+    const side = Math.min(available, window.innerHeight - tokens.qrChrome);
     const module = Math.max(Math.floor(side / (matrix.size + QUIET * 2)), 1);
     const offset = Math.floor((side - matrix.size * module) / 2);
 
     return (
-        <div ref={box} className="w-full" style={{ maxWidth: size }}>
+        <div ref={box} className="qr-box w-full" style={{ "--qr": `${size}px` } as CSSProperties}>
             <div className="flex flex-col gap-s3" style={{ width: side }}>
                 <svg
                     width={side}

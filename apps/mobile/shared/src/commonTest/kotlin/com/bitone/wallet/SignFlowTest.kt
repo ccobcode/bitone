@@ -63,6 +63,30 @@ class SignFlowTest {
         return rig
     }
 
+    @Test
+    fun aStrayCodeMidScanKeepsTheProgress() = runTest {
+        val rig = ready()
+        openScan(rig.flow)
+        val parts = frames(REQUEST)
+        feed(rig.flow, parts.take(1))
+        val progress = rig.flow.scanProgress
+
+        feed(rig.flow, listOf("https://example.com", "ur:bitone-pairing/abc"))
+        assertEquals(Screen.Scan, rig.flow.screen)
+        assertEquals(progress, rig.flow.scanProgress)
+
+        feed(rig.flow, parts.drop(1))
+        assertEquals(Screen.Review, rig.flow.screen)
+    }
+
+    @Test
+    fun aStrayCodeBeforeAnyFrameIsReported() = runTest {
+        val rig = ready()
+        openScan(rig.flow)
+        feed(rig.flow, listOf("https://example.com"))
+        assertEquals(Screen.ParseFailed, rig.flow.screen)
+    }
+
     private fun TestScope.openScan(flow: WalletFlow) {
         flow.openScan()
         advanceUntilIdle()
@@ -310,14 +334,6 @@ class SignFlowTest {
         val rig = ready()
         openScan(rig.flow)
         feed(rig.flow, frames("bitone-response", 1))
-        assertEquals(Screen.ParseFailed, rig.flow.screen)
-    }
-
-    @Test
-    fun mixedFramesAreRejected() = runTest {
-        val rig = ready()
-        openScan(rig.flow)
-        feed(rig.flow, listOf(frames(REQUEST, 3)[0], frames(ADDRESS, 3)[1]))
         assertEquals(Screen.ParseFailed, rig.flow.screen)
     }
 
@@ -581,7 +597,7 @@ class SignFlowTest {
 
     @Test
     fun changeIndexIsNotWrittenBeforeSigning() = runTest {
-        val rig = ready { it.core.review = reviewOf(changeIndex = 5u) }
+        val rig = ready()
         toPin(rig)
         submit(rig.flow, BAD_PIN)
         assertEquals(0u, rig.store.highestChange)

@@ -1,7 +1,7 @@
 //! 待签名请求和签名结果，见 docs/03-system.md 第 6 节。
 
 use crate::Error;
-use crate::protocol::{FrameEncoder, UR_REQUEST, UR_RESPONSE, VERSION, check_limits};
+use crate::protocol::{FrameEncoder, UR_RESPONSE, VERSION, check_limits};
 use minicbor::bytes::ByteVec;
 use minicbor::{Decode, Encode};
 
@@ -46,10 +46,6 @@ impl SignRequest {
             return Err(Error::UnsupportedVersion);
         }
         Ok(request)
-    }
-
-    pub fn frames(&self, fragment_bytes: usize) -> Result<FrameEncoder, Error> {
-        FrameEncoder::new(&self.encode(), UR_REQUEST, fragment_bytes)
     }
 }
 

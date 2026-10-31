@@ -18,7 +18,7 @@ mod tron;
 impl Wallet {
     /// 全部账户的公钥，写入本机后不用解锁也能核对。
     pub fn public_keys(&self, imported: bool) -> Result<Vec<u8>, Error> {
-        Ok(PublicKeys::encode(&[self.export(imported)?]))
+        Ok(PublicKeys::encode(&self.export(imported)?))
     }
 
     /// 核对后签名。`Review` 不可签名时返回 `Refused`，不接触私钥。

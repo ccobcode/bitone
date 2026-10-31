@@ -14,21 +14,21 @@ import { groupAddress } from "../core/text";
 import { Icon, type IconName } from "./Icon";
 
 const BUTTON_BASE =
-    "press inline-flex shrink-0 items-center justify-center gap-s2 rounded-r2 font-medium whitespace-nowrap no-underline disabled:cursor-not-allowed disabled:opacity-50";
+    "press inline-flex shrink-0 items-center justify-center gap-s2 rounded-r2 font-medium whitespace-nowrap no-underline disabled:cursor-not-allowed disabled:text-text-3";
 
 // 尺寸不能靠外部类名覆盖，Tailwind 的先后顺序和类名的书写顺序无关。
 const BUTTON_SIZES = {
-    sm: "h-11 px-s3 text-t2 nav:h-8",
+    sm: "h-11 px-s3 text-t2 nav:h-8 nav:rounded-r1",
     md: "h-btn px-s4 text-t3",
-    lg: "h-12 px-s5 text-t3",
-    iconSm: "size-11 nav:size-8",
+    lg: "h-btn px-s5 text-t3 nav:h-12",
+    iconSm: "size-11 nav:size-8 nav:rounded-r1",
 };
 
 const BUTTON_VARIANTS = {
-    primary: "bg-accent text-on-accent hover:bg-accent-hover disabled:hover:bg-accent",
+    primary: "bg-accent text-on-accent hover:bg-accent-hover disabled:bg-surface-3 disabled:hover:bg-surface-3",
     secondary: "bg-fill text-text hover:bg-fill-hover disabled:hover:bg-fill",
     ghost: "bg-transparent text-text-2 hover:bg-fill hover:text-text disabled:hover:bg-transparent",
-    danger: "bg-danger-soft text-danger hover:bg-[color-mix(in_srgb,var(--danger)_14%,var(--danger-soft))]",
+    danger: "bg-danger-soft text-danger hover:bg-[color-mix(in_srgb,var(--danger)_14%,var(--danger-soft))] disabled:bg-surface-3 disabled:hover:bg-surface-3",
 };
 
 export type ButtonVariant = keyof typeof BUTTON_VARIANTS;
@@ -107,7 +107,7 @@ export function PageTitle({ children, aside }: { children: ReactNode; aside?: Re
     if (!slot) return null;
     return createPortal(
         <>
-            <h1 key={String(children)} className="fade-in min-w-0 truncate text-t5 font-semibold nav:text-t6">
+            <h1 key={String(children)} className="fade-in min-w-0 truncate text-t6 font-semibold">
                 {children}
             </h1>
             {aside}
@@ -116,26 +116,28 @@ export function PageTitle({ children, aside }: { children: ReactNode; aside?: Re
     );
 }
 
-/** 子页面的标题：父级链接加当前对象，导航的选中态留在父级。 */
+/** 子页面的标题：父级链接加当前对象，导航的选中态留在父级。手机上是返回按钮加标题，和冷钱包的标题栏相同。 */
 export function ChildTitle({ parent, children }: { parent: { to: string; label: string }; children: ReactNode }) {
     const slot = use(TitleSlot);
     if (!slot) return null;
     return createPortal(
         <nav
             aria-label={t("页面层级")}
-            className="fade-in flex min-h-11 min-w-0 items-center gap-s2 text-t2 nav:min-h-8"
+            className="fade-in flex min-h-11 min-w-0 items-center gap-s2 text-t4 nav:min-h-8 nav:text-t2"
         >
             <Link
                 to={parent.to}
-                className="press flex shrink-0 items-center gap-s1 text-text-3 no-underline hover:text-text"
+                aria-label={parent.label}
+                className="press -ml-3 flex size-11 shrink-0 items-center justify-center gap-s1 text-text no-underline hover:text-text nav:ml-0 nav:size-auto nav:text-text-3"
             >
-                <Icon name="caret" size={14} className="rotate-180" />
-                {parent.label}
+                <Icon name="back" size={24} className="nav:hidden" />
+                <Icon name="back" size={14} className="hidden nav:block" />
+                <span className="hidden nav:inline">{parent.label}</span>
             </Link>
-            <span aria-hidden="true" className="text-line-strong">
+            <span aria-hidden="true" className="hidden text-line-strong nav:inline">
                 /
             </span>
-            <h1 className="truncate font-medium text-text-2">{children}</h1>
+            <h1 className="truncate font-semibold nav:font-medium nav:text-text-2">{children}</h1>
         </nav>,
         slot,
     );
@@ -193,9 +195,43 @@ export function Notice({
 /** 表单标签。 */
 export const LABEL = "text-t2 text-text-3";
 
-/** 表格的列标题和行。文字贴着边线，悬停底色向两侧伸出。 */
-export function ListHead({ grid, children }: { grid: string; children: ReactNode }) {
-    return <div className={`${grid} row hidden h-8 items-center text-t2 text-text-3 @split:grid`}>{children}</div>;
+interface ListRowProps {
+    icon: ReactNode;
+    title: ReactNode;
+    sub?: ReactNode;
+    /** 标题和值之间的标签，窄屏不显示。 */
+    badge?: ReactNode;
+    /** 行内操作。宽屏悬停才出现。窄屏放不下时不显示，整行可点或者右边有值都算放不下。 */
+    actions?: ReactNode;
+    /** 右侧的值，右对齐。 */
+    value?: ReactNode;
+    /** 整行的链接，带箭头。 */
+    link?: LinkProps;
+    label?: string;
+}
+
+/** 列表的一行，全站一个规格。文字贴着卡片内边距，悬停底色向两侧伸出。 */
+export function ListRow({ icon, title, sub, badge, actions, value, link, label }: ListRowProps) {
+    return (
+        <li className="row relative flex min-h-row items-center gap-s3 py-s1">
+            {link ? <Link {...link} aria-label={label} className="absolute inset-0 rounded-r2" /> : null}
+            {icon}
+            <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-t3 font-medium">{title}</span>
+                {sub ? <span className="block min-w-0 truncate text-t2 text-text-3">{sub}</span> : null}
+            </span>
+            {badge ? <span className="hidden shrink-0 @split:block">{badge}</span> : null}
+            {actions ? (
+                <span
+                    className={`row-actions relative shrink-0 gap-s1 ${link || value ? "hidden @split:flex" : "flex"}`}
+                >
+                    {actions}
+                </span>
+            ) : null}
+            {value ? <span className="flex min-w-0 shrink-0 flex-col items-end text-right">{value}</span> : null}
+            {link ? <Icon name="caret" size={16} className="shrink-0 text-text-3" /> : null}
+        </li>
+    );
 }
 
 export function Skeleton({ className = "" }: { className?: string }) {
@@ -267,44 +303,36 @@ export function Segmented<T extends string>({
     );
 }
 
-/** 开关：圆点滑动，轨道变色。 */
+/** 开关：圆点滑动，轨道变色。放在设置行里时整行都能点，和冷钱包相同。 */
 export function Switch({
     checked,
     onChange,
-    children,
+    label,
 }: {
     checked: boolean;
     onChange(value: boolean): void;
-    children: ReactNode;
+    label: string;
 }) {
     return (
         <button
             type="button"
             role="switch"
             aria-checked={checked}
+            aria-label={label}
             onClick={() => onChange(!checked)}
-            className="flex h-8 items-center gap-s2 text-t2 text-text-2"
+            className="switch-button flex min-h-8 items-center"
         >
             <span aria-hidden="true" className="switch">
                 <span className="switch-dot" />
             </span>
-            {children}
         </button>
     );
 }
 
 /** 竖向单选列表，选中块滑到新位置。文字贴着边线，选中块向两侧伸出。 */
-export function SelectList({
-    selected,
-    className = "",
-    children,
-}: {
-    selected: number;
-    className?: string;
-    children: ReactNode;
-}) {
+export function SelectList({ selected, children }: { selected: number; children: ReactNode }) {
     return (
-        <div className={`select-rail -mx-s3 ${className}`} style={{ "--i": selected } as CSSProperties}>
+        <div className="select-rail -mx-s3" style={{ "--i": selected } as CSSProperties}>
             {selected >= 0 ? <span aria-hidden="true" className="select-thumb" /> : null}
             <ul className="relative">{children}</ul>
         </div>
@@ -334,17 +362,17 @@ export function SelectRow({
     );
 }
 
-/** 折叠区的开关，内容放在后面的 Collapse 里。 */
+/** 折叠区的开关，内容放在后面的 Collapse 里。整行可点，箭头在右边翻转，和冷钱包相同。 */
 export function Disclosure({ open, onToggle, children }: { open: boolean; onToggle(): void; children: ReactNode }) {
     return (
         <button
             type="button"
             aria-expanded={open}
             onClick={onToggle}
-            className="-mx-s3 flex h-btn items-center gap-s2 rounded-r2 px-s3 text-t2 text-text-2 transition-colors hover:bg-surface-2"
+            className="press -mx-s3 flex h-11 items-center justify-between gap-s2 rounded-r2 px-s3 text-t2 text-text-2 hover:bg-surface-2 nav:h-btn"
         >
-            <Icon name="caret" size={16} className={`flip ${open ? "rotate-90" : ""}`} />
             {children}
+            <Icon name="chevron" size={16} className="flip shrink-0 text-text-3" />
         </button>
     );
 }

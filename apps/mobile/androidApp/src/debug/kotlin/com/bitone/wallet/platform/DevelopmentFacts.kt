@@ -22,19 +22,12 @@ internal fun softwareKeystoreAllowed(context: Context): Boolean = marked(context
 
 internal fun adjustFactsForDevelopment(context: Context, facts: DeviceFacts): DeviceFacts {
     if (!marked(context)) return facts
-    return DeviceFacts(
-        airplaneMode = facts.airplaneMode,
-        wifiOn = facts.wifiOn,
-        bluetoothOn = facts.bluetoothOn,
-        nfcOn = facts.nfcOn,
+    return facts.copy(
         rooted = false,
         bootloaderLocked = true,
         adbEnabled = false,
         usbDataConnected = false,
         keystore = if (facts.keystore == HardwareLevel.None) HardwareLevel.Tee else facts.keystore,
-        screenLockSet = facts.screenLockSet,
-        thirdPartyAccessibility = facts.thirdPartyAccessibility,
-        overlayApps = facts.overlayApps,
     )
 }
 

@@ -29,6 +29,7 @@ export function App() {
                     <Route path="history" element={<History />} />
                     <Route path="history/unsent" element={<Unsent />} />
                     <Route path="history/:id" element={<TxDetail />} />
+                    <Route path="history/:network/:hash" element={<TxDetail />} />
                     <Route path="contacts" element={<Contacts />} />
                     <Route path="device" element={<Device />} />
                     <Route path="settings" element={<Settings />} />

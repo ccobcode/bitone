@@ -530,7 +530,8 @@ describe("TRON 构建", () => {
         const tx = await createTransfer(draft());
         expect(tx.hardExpiry).toBe(true);
         expect(tx.expiresAt).toBe(timestamp + TRON_LIFETIME);
-        expect(planOf(tx, "tron")).toMatchObject({ expirationMs: timestamp + TRON_LIFETIME, feeLimit: 0 });
+        expect(tx.expiresAt).toBe(timestamp + TRON_LIFETIME);
+        expect(planOf(tx, "tron")).toMatchObject({ feeLimit: 0 });
     });
 
     it("TRC-20 写入 fee_limit，默认全靠燃烧再留 20%", async () => {
@@ -671,7 +672,7 @@ describe("Solana 构建", () => {
     it("收款方没有代币账户时带上创建指令和租金", async () => {
         solanaGateway(true, { "solana/estimate": () => ({ recipientTokenAccount: false, rent: "2039280" }) });
         const tx = await createTransfer(draft(USDC));
-        expect(planOf(tx, "solana")).toMatchObject({ createAta: true, rent: "2039280" });
+        expect(planOf(tx, "solana")).toMatchObject({ createAta: true });
     });
 
     it("不提供加速，取消只推进 nonce，冷钱包显示作废已签名的交易，要长按", async () => {
@@ -705,7 +706,7 @@ describe("Solana 构建", () => {
         const tx = await createTransfer(draft(USDC));
         const next = await createReplacement(tx, "cancel", side(PATHS.solana));
         expect(next).toMatchObject({ asset: "native", amount: "0" });
-        expect(planOf(next, "solana")).toMatchObject({ createAta: false, rent: "0" });
+        expect(planOf(next, "solana")).toMatchObject({ createAta: false });
     });
 
     it("重建还是同一笔转账，复用同一个 nonce 值", async () => {

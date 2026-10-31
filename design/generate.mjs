@@ -5,31 +5,38 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const tokens = JSON.parse(readFileSync(join(root, "design/tokens.json"), "utf8"));
+const icons = JSON.parse(readFileSync(join(root, "design/icons.json"), "utf8"));
 const header = "由 design/generate.mjs 生成，不要手改。";
 
-/** `web` 是网页端专用的圆角、尺寸和图表颜色，只进 CSS，不影响冷钱包的 Kotlin 令牌。 */
+/** `web` 是网页端专用的桌面按钮高度和图表颜色，只进 CSS，不影响冷钱包的 Kotlin 令牌。 */
 function css() {
     const web = tokens.web;
     const colors = (mode) =>
         Object.entries({ ...tokens.color, ...tokens.elevation, ...web.chart })
             .map(([k, v]) => `  --${k}: ${v[mode]};`)
             .join("\n");
-    const px = (group) =>
+    const px = (group, prefix = "") =>
         Object.entries(group)
-            .map(([k, v]) => `  --${k}: ${v}px;`)
+            .map(([k, v]) => `  --${prefix}${k}: ${v}px;`)
             .join("\n");
     const { duration, easing } = tokens.motion;
     const motion = [
         ...Object.entries(duration).map(([k, v]) => `  --dur-${k}: ${v}ms;`),
         ...Object.entries(easing).map(([k, v]) => `  --ease-${k}: cubic-bezier(${v.join(", ")});`),
         `  --press-scale: ${tokens.motion["press-scale"]};`,
+        `  --pop-scale: ${tokens.motion["pop-scale"]};`,
+        `  --scrim: ${tokens.motion.scrim * 100}%;`,
+        `  --page-in: ${tokens.motion["page-in"]}px;`,
+        `  --page-out: ${tokens.motion["page-out"]}px;`,
+        `  --rise: ${tokens.motion.rise}px;`,
     ].join("\n");
     return `/* ${header} */
 :root {
 ${colors("light")}
 ${px(tokens.space)}
-${px({ ...tokens.radius, ...web.radius })}
+${px(tokens.radius)}
 ${px(tokens.fontSize)}
+${px(tokens.lineHeight, "lh-")}
 ${px({ ...tokens.size, ...web.size })}
 ${motion}
   --font: ${tokens.font.sans};
@@ -105,10 +112,6 @@ ${Object.keys(tokens.elevation)
     .join("\n")}
 )
 
-val LightElevation = ElevationTokens(
-${elevation("light")}
-)
-
 val DarkElevation = ElevationTokens(
 ${elevation("dark")}
 )
@@ -125,6 +128,10 @@ object FontSize {
 ${dp(tokens.fontSize, "sp")}
 }
 
+object LineHeight {
+${dp(tokens.lineHeight, "sp")}
+}
+
 object Size {
 ${dp(tokens.size, "dp")}
 }
@@ -138,6 +145,33 @@ ${Object.entries(tokens.motion.easing)
     .map(([k, v]) => `    val ${k}Easing = CubicBezierEasing(${v.map((n) => n + "f").join(", ")})`)
     .join("\n")}
     const val pressScale = ${tokens.motion["press-scale"]}f
+    const val popScale = ${tokens.motion["pop-scale"]}f
+    const val scrim = ${tokens.motion.scrim}f
+    const val staggerMax = ${tokens.motion["stagger-max"]}
+    val pageIn = ${tokens.motion["page-in"]}.dp
+    val pageOut = ${tokens.motion["page-out"]}.dp
+    val rise = ${tokens.motion.rise}.dp
+}
+
+/** 二维码的静区、分段上限和轮播间隔，两端相同。间隔单位是毫秒，第一项是默认速度。 */
+object Qr {
+    const val quiet = ${tokens.qr.quiet}
+    const val maxSegments = ${tokens.qr["max-segments"]}
+    val intervals = listOf(${Object.values(tokens.qr.interval).join(", ")})
+}
+`;
+}
+
+/** 线性图标的路径。网页端按名字查，冷钱包是常量，名字首字母大写。 */
+function kotlinIcons() {
+    const rows = Object.entries(icons).map(
+        ([name, path]) => `    const val ${name[0].toUpperCase()}${name.slice(1)} = ${JSON.stringify(path)}`,
+    );
+    return `// ${header}
+package com.bitone.wallet.ui.components
+
+object Icons {
+${rows.join("\n")}
 }
 `;
 }
@@ -165,6 +199,12 @@ const outputs = [
     ["apps/mobile/shared/src/commonMain/kotlin/com/bitone/wallet/i18n/Translations.kt", translations()],
     ["apps/web/src/styles/tokens.css", css()],
     ["apps/mobile/shared/src/commonMain/kotlin/com/bitone/wallet/ui/theme/Tokens.kt", kotlin()],
+    ["apps/mobile/shared/src/commonMain/kotlin/com/bitone/wallet/ui/components/IconPaths.kt", kotlinIcons()],
+    ["apps/web/src/ui/icons.gen.json", `${JSON.stringify(icons, null, 4)}\n`],
+    [
+        "apps/web/src/core/tokens.gen.json",
+        `${JSON.stringify({ qr: tokens.qr, qrChrome: tokens.size["h-row"] * 3 + tokens.space.s8, toast: tokens.motion.duration.toast }, null, 4)}\n`,
+    ],
 ];
 
 let stale = false;

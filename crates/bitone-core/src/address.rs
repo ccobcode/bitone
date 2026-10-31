@@ -3,6 +3,7 @@
 use crate::{AccountKind, Chain, Error, Network};
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::bip32::{ChildNumber, Xpub};
+use bitcoin::hex::DisplayHex;
 use bitcoin::secp256k1::{PublicKey, Secp256k1};
 use bitcoin::{Address, CompressedPublicKey, KnownHrp, NetworkKind};
 use sha3::{Digest, Keccak256};
@@ -76,7 +77,8 @@ pub fn bitcoin_address_from_key(compressed: &[u8], kind: AccountKind, network: N
     Ok(address.to_string())
 }
 
-fn eth_hash(compressed: &[u8]) -> Result<[u8; 20], Error> {
+/// 公钥对应的 20 字节地址，EVM 和 TRON 相同。
+pub fn eth_address_bytes(compressed: &[u8]) -> Result<[u8; 20], Error> {
     let key = PublicKey::from_slice(compressed).map_err(|_| Error::InvalidKey)?;
     let digest = Keccak256::digest(&key.serialize_uncompressed()[1..]);
     Ok(digest[12..].try_into().expect("20 字节"))
@@ -84,16 +86,11 @@ fn eth_hash(compressed: &[u8]) -> Result<[u8; 20], Error> {
 
 /// EVM 地址，带 EIP-55 校验大小写。
 pub fn evm_address(compressed: &[u8]) -> Result<String, Error> {
-    Ok(evm_text(&eth_hash(compressed)?))
-}
-
-/// 公钥对应的 20 字节地址，EVM 和 TRON 相同。
-pub fn eth_address_bytes(compressed: &[u8]) -> Result<[u8; 20], Error> {
-    eth_hash(compressed)
+    Ok(evm_text(&eth_address_bytes(compressed)?))
 }
 
 pub fn evm_text(address: &[u8; 20]) -> String {
-    let hex: String = address.iter().map(|b| format!("{b:02x}")).collect();
+    let hex = address.to_lower_hex_string();
     let digest = Keccak256::digest(hex.as_bytes());
     let mut out = String::from("0x");
     for (i, c) in hex.chars().enumerate() {
@@ -121,7 +118,7 @@ pub fn parse_evm_address(text: &str) -> Result<[u8; 20], Error> {
 }
 
 pub fn tron_address(compressed: &[u8]) -> Result<String, Error> {
-    Ok(tron_text(&eth_hash(compressed)?))
+    Ok(tron_text(&eth_address_bytes(compressed)?))
 }
 
 pub fn tron_text(address: &[u8; 20]) -> String {

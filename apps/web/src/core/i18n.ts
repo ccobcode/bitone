@@ -44,9 +44,13 @@ export function t(text: string, ...values: (string | number)[]): string {
 
 let patterns: { regex: RegExp; english: string }[] | undefined;
 
+const literal = (key: string) => key.replace(/\{\d+\}/g, "").length;
+
 function compiled() {
     patterns ??= Object.keys(dictionary)
         .filter((key) => /\{\d+\}/.test(key))
+        // 固定文字多的模板排在前面，「已输入 {0} 位」不能被「{0} 位」抢先匹配。
+        .sort((a, b) => literal(b) - literal(a))
         .map((key) => ({
             regex: new RegExp(
                 `^${key

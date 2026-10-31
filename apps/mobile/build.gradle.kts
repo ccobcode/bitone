@@ -12,7 +12,7 @@ spotless {
     val ktfmtVersion = libs.versions.ktfmt.get()
     kotlin {
         target("**/*.kt")
-        targetExclude("**/build/**", "**/uniffi/**", "**/Tokens.kt", "**/Translations.kt")
+        targetExclude("**/build/**", "**/uniffi/**", "**/Tokens.kt", "**/Translations.kt", "**/IconPaths.kt")
         ktfmt(ktfmtVersion).kotlinlangStyle().configure { it.setMaxWidth(120) }
     }
     kotlinGradle {

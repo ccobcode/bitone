@@ -1,4 +1,3 @@
-import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
@@ -12,8 +11,8 @@ import { Icon } from "../ui/Icon";
 import { dateLabel } from "../ui/labels";
 import { LanguageSwitch } from "../ui/LanguageSwitch";
 import { requestBackground, useNoticeSettings } from "../ui/Notices";
-import { Button, Chip, LinkButton, PageTitle, SectionTitle, Switch, buttonClass } from "../ui/primitives";
-import { SheetActions, overlayLink, sheetWidth } from "../ui/Sheet";
+import { Button, Chip, LinkButton, PageTitle, SectionTitle, Switch } from "../ui/primitives";
+import { Confirm, overlayLink } from "../ui/Sheet";
 import { t } from "../core/i18n";
 
 const SOCKET_LABELS: Record<SocketStatus, string> = {
@@ -103,24 +102,19 @@ function ClearData() {
     }
 
     return (
-        <AlertDialog.Root>
-            <AlertDialog.Trigger className={buttonClass("danger")}>{t("清除")}</AlertDialog.Trigger>
-            <AlertDialog.Portal>
-                <AlertDialog.Backdrop className="scrim fixed inset-0 z-30" />
-                <AlertDialog.Popup className="sheet" style={sheetWidth(440)}>
-                    <AlertDialog.Title className="text-t5 font-semibold">{t("确认清除本地数据")}</AlertDialog.Title>
-                    <AlertDialog.Description className="text-t3 text-text-2">
-                        {t("这个浏览器里的钱包、交易记录和地址簿都会删除。")}
-                    </AlertDialog.Description>
-                    <SheetActions>
-                        <AlertDialog.Close className={buttonClass("secondary")}>{t("取消")}</AlertDialog.Close>
-                        <Button variant="danger" disabled={busy} onClick={() => void clear()}>
-                            {t("确认清除")}
-                        </Button>
-                    </SheetActions>
-                </AlertDialog.Popup>
-            </AlertDialog.Portal>
-        </AlertDialog.Root>
+        <Confirm
+            trigger={t("清除")}
+            variant="danger"
+            title={t("确认清除本地数据")}
+            cancel={t("取消")}
+            actions={
+                <Button variant="danger" disabled={busy} onClick={() => void clear()}>
+                    {t("确认清除")}
+                </Button>
+            }
+        >
+            {t("这个浏览器里的钱包、交易记录和地址簿都会删除。")}
+        </Confirm>
     );
 }
 
@@ -161,31 +155,34 @@ function NoticeGroup() {
         <Group id="h-notice" title={t("通知")}>
             <Setting label={t("提示音")} hint={t("收到转账和交易有结果时响一声，测试网不响")}>
                 <Switch
+                    label={t("提示音")}
                     checked={sound}
                     onChange={(value) => {
                         if (value) unlockChime();
                         void saveSetting("notifySound", value);
                         if (value) playChime("incoming");
                     }}
-                >
-                    {sound ? t("已开启") : t("已关闭")}
-                </Switch>
+                />
             </Setting>
             {supported ? (
                 <Setting
                     label={t("后台提醒")}
                     hint={denied ? t("浏览器拒绝了通知权限，要在浏览器设置里开启") : t("页面在后台时用系统通知提醒")}
                 >
-                    <Switch checked={background} onChange={(value) => void setBackground(value)}>
-                        {background ? t("已开启") : t("已关闭")}
-                    </Switch>
+                    <Switch
+                        label={t("后台提醒")}
+                        checked={background}
+                        onChange={(value) => void setBackground(value)}
+                    />
                 </Setting>
             ) : null}
             {supported ? (
                 <Setting label={t("提醒里显示金额")} hint={t("系统通知可能出现在锁屏或屏幕共享里")}>
-                    <Switch checked={amount} onChange={(value) => void saveSetting("notifyAmount", value)}>
-                        {amount ? t("已开启") : t("已关闭")}
-                    </Switch>
+                    <Switch
+                        label={t("提醒里显示金额")}
+                        checked={amount}
+                        onChange={(value) => void saveSetting("notifyAmount", value)}
+                    />
                 </Setting>
             ) : null}
         </Group>

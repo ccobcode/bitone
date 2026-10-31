@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
@@ -24,10 +25,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -43,26 +44,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import com.bitone.wallet.flow.WalletFlow
 import com.bitone.wallet.ui.theme.BitOneTheme
 import com.bitone.wallet.ui.theme.FontSize
 import com.bitone.wallet.ui.theme.Motion
 import com.bitone.wallet.ui.theme.Radius
 import com.bitone.wallet.ui.theme.Size
 import com.bitone.wallet.ui.theme.Space
-
-/** 横屏和折叠屏时内容最大宽度，见界面规范 §7。 */
-private val MaxContentWidth = 560.dp
-
-/** 提示浮在吸底按钮和底部导航之上。 */
-private val NoticeLift = 84.dp
+import com.bitone.wallet.ui.theme.elevation
 
 /** 页面的内容列：限宽、避开左右挖孔。底部导航这类页面之外的元素也用它，才能和页面对齐。 */
 @Composable
 fun Modifier.contentColumn(): Modifier =
-    widthIn(max = MaxContentWidth)
+    widthIn(max = Size.contentMax)
         .fillMaxWidth()
         .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
 
@@ -75,22 +72,20 @@ fun Modifier.contentColumn(): Modifier =
  */
 @Composable
 fun Page(
-    modifier: Modifier = Modifier,
     header: @Composable (ColumnScope.() -> Unit)? = null,
     bottom: @Composable (ColumnScope.() -> Unit)? = null,
     floatingSpace: Dp = 0.dp,
     contentGap: Dp = Space.s5,
     contentAlignment: Alignment.Horizontal = Alignment.Start,
-    contentCentered: Boolean = false,
-    contentAtBottom: Boolean = false,
-    scroll: ScrollState = rememberScrollState(),
+    contentAnchor: Alignment.Vertical = Alignment.Top,
     overlay: @Composable (BoxScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val c = BitOneTheme.colors
+    val scroll = rememberScrollState()
     val navigationBar = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val floating = if (floatingSpace > 0.dp) floatingSpace + navigationBar else 0.dp
-    Box(modifier.fillMaxSize().background(c.bg), contentAlignment = Alignment.TopCenter) {
+    Box(Modifier.fillMaxSize().background(c.bg), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier.contentColumn()
                 .fillMaxHeight()
@@ -112,12 +107,7 @@ fun Page(
                             bottom = Space.s6 + floating,
                         ),
                     horizontalAlignment = contentAlignment,
-                    verticalArrangement =
-                        when {
-                            contentAtBottom -> Arrangement.spacedBy(contentGap, Alignment.Bottom)
-                            contentCentered -> Arrangement.spacedBy(contentGap, Alignment.CenterVertically)
-                            else -> Arrangement.spacedBy(contentGap)
-                        },
+                    verticalArrangement = Arrangement.spacedBy(contentGap, contentAnchor),
                     content = content,
                 )
                 if (bottom != null) BottomFade(scroll, Modifier.align(Alignment.BottomCenter))
@@ -150,58 +140,67 @@ fun TitleBar(
     title: String,
     onBack: (() -> Unit)?,
     backIcon: String = Icons.Back,
-    tint: Color = BitOneTheme.colors.text,
     leading: @Composable (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     Row(Modifier.fillMaxWidth().height(Size.hRow), verticalAlignment = Alignment.CenterVertically) {
-        if (onBack != null) BackButton(onBack, backIcon, tint)
+        if (onBack != null) BackButton(onBack, backIcon)
         if (leading != null) {
             leading()
             Spacer(Modifier.width(Space.s2))
         }
-        Txt(title, Modifier.weight(1f), size = FontSize.t4, weight = SemiBold, color = tint)
+        Txt(title, Modifier.weight(1f), size = FontSize.t4, weight = SemiBold)
         trailing?.invoke()
     }
 }
 
 /** 一级页面的大标题。 */
 @Composable
-fun LargeTitle(title: String, trailing: @Composable (() -> Unit)? = null) {
+fun LargeTitle(title: String) {
     Row(Modifier.fillMaxWidth().height(Size.hRow), verticalAlignment = Alignment.CenterVertically) {
-        Txt(title, Modifier.weight(1f), size = FontSize.t6, weight = SemiBold)
-        trailing?.invoke()
+        Txt(title, size = FontSize.t6, weight = SemiBold)
     }
 }
 
 /** 提示和倒计时变化时新值淡入，不做滚动。 */
 @Composable
-fun FadeText(text: String, color: Color, size: TextUnit = FontSize.t2) {
+fun FadeText(text: String, color: Color) {
     AnimatedContent(
         text,
         transitionSpec = { (fadeIn(stateSpec(Motion.fast)) togetherWith fadeOut(exitSpec(Motion.fast))).using(null) },
         label = "value",
     ) { value ->
-        Txt(value, size = size, color = color)
+        Txt(value, size = FontSize.t2, color = color)
     }
 }
 
-/** 悬浮提示，画在同一窗口里，不用系统 Toast。 */
+/** 提示，和网页端手机上的同一规格：贴着屏幕上方，从上方淡入上移。画在同一窗口里，不用系统 Toast。 */
 @Composable
-fun BoxScope.NoticePill(text: String?) {
+fun BoxScope.Toast(flow: WalletFlow) {
     val c = BitOneTheme.colors
-    val shown = rememberLatest(text)
+    val shown = rememberLatest(flow.notice)
+    val failed = flow.noticeFailed
+    val rise = with(LocalDensity.current) { Motion.rise.roundToPx() }
+    val shape = RoundedCornerShape(Radius.r3)
     AnimatedVisibility(
-        text != null,
-        Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = NoticeLift),
-        enter = fadeIn(enterSpec()),
+        flow.notice != null,
+        Modifier.align(Alignment.TopCenter)
+            .contentColumn()
+            .statusBarsPadding()
+            .padding(horizontal = Size.gutter, vertical = Space.s2),
+        enter = fadeIn(enterSpec()) + slideInVertically(enterSpec()) { rise },
         exit = fadeOut(exitSpec(Motion.fast)),
     ) {
-        Box(
-            Modifier.background(c.text, RoundedCornerShape(Radius.rf))
-                .padding(horizontal = Space.s4, vertical = Space.s2)
+        Row(
+            Modifier.fillMaxWidth()
+                .elevation(BitOneTheme.elevation.elevation2, shape)
+                .background(c.surface, shape)
+                .padding(horizontal = Space.s4, vertical = Space.s3),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.s2),
         ) {
-            Txt(shown.orEmpty(), size = FontSize.t2, weight = Medium, color = c.bg)
+            LineIcon(if (failed) Icons.Alert else Icons.Check, 16.dp, if (failed) c.danger else c.accent)
+            Txt(shown.orEmpty(), Modifier.weight(1f))
         }
     }
 }

@@ -4,14 +4,12 @@ import { PairingReceiver, type Pairing } from "../core";
 import { cleanText } from "../core/text";
 import { useApp } from "../data/app";
 import { requestPersist, savePairing, selectableAccounts, walletId } from "../data/pairing";
-import { Camera, type CameraFailure } from "../ui/Camera";
-import { CAMERA_FAILURES } from "../ui/cameraFailures";
+import { buzz, CameraPanel, useImageScan, type CameraFailure } from "../ui/Camera";
 import { accountIcon, accountKind, accountTitle } from "../ui/labels";
 import { Button, Chip, LABEL, Notice } from "../ui/primitives";
 import { Icon } from "../ui/Icon";
 import { ScanProgress } from "../ui/ScanProgress";
 import { Sheet, SheetActions } from "../ui/Sheet";
-import { StateCard } from "../ui/StateCard";
 import { TokenIcon } from "../ui/TokenIcon";
 import { t, translate } from "../core/i18n";
 
@@ -26,15 +24,11 @@ export default function PairDialog() {
     const navigate = useNavigate();
 
     const receiver = useRef<PairingReceiver | null>(null);
-    const upload = useRef<HTMLInputElement>(null);
     const [progress, setProgress] = useState({ value: 0, frames: 0 });
     const [notice, setNotice] = useState("");
     const [pairing, setPairing] = useState<Pairing | null>(null);
 
     const [failure, setFailure] = useState<CameraFailure | null>(null);
-    const [attempt, setAttempt] = useState(0);
-    const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-    const [deviceId, setDeviceId] = useState("");
 
     const [paths, setPaths] = useState(new Set<string>());
     const [name, setName] = useState("");
@@ -90,22 +84,12 @@ export default function PairDialog() {
             // 两个模式的账户都默认勾选，配对时切换网络不会丢。
             setPaths(new Set(selectableAccounts(decoded).map((account) => account.path)));
             setPairing(decoded);
+            buzz();
         },
         [mode, reset, wallets],
     );
 
-    async function readImages(files: File[]) {
-        try {
-            const { decodeQr } = await import("../scan/zxing");
-            for (const file of files) {
-                const [text] = await decodeQr(file);
-                if (text) feed(text);
-                else setNotice(t("图片里没有识别到二维码。"));
-            }
-        } catch {
-            setNotice(t("图片无法读取。"));
-        }
-    }
+    const images = useImageScan(t("上传图片"), feed, setNotice);
 
     async function submit() {
         if (!pairing) return;
@@ -132,63 +116,21 @@ export default function PairDialog() {
     const existing = pairing ? wallets.some((w) => w.id === walletId(pairing.fingerprint, mode)) : false;
     const accounts = pairing ? selectableAccounts(pairing, mode) : [];
     const picked = accounts.filter((account) => paths.has(account.path)).length;
-    const state = failure ? CAMERA_FAILURES[failure] : null;
 
     const scanStep = (
         <>
-            {state ? (
-                <StateCard
-                    tone="warn"
-                    icon="cameraOff"
-                    title={state.title}
-                    body={state.body}
-                    facts={state.facts}
-                    actions={
-                        <>
-                            <Button onClick={() => upload.current?.click()}>{t("上传图片")}</Button>
-                            <Button variant="primary" onClick={() => setAttempt(attempt + 1)}>
-                                {state.retry}
-                            </Button>
-                        </>
-                    }
-                />
-            ) : (
-                <>
-                    {devices.length > 1 ? (
-                        <div className="flex flex-col gap-s2">
-                            <label htmlFor="camera" className={LABEL}>
-                                {t("摄像头")}
-                            </label>
-                            <select
-                                id="camera"
-                                value={deviceId}
-                                onChange={(event) => setDeviceId(event.target.value)}
-                                className="field text-t3"
-                            >
-                                <option value="">{t("默认摄像头")}</option>
-                                {devices.map((device, i) => (
-                                    <option key={device.deviceId} value={device.deviceId}>
-                                        {device.label || t("摄像头 {0}", i + 1)}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    ) : null}
-                    <Camera
-                        key={attempt}
-                        active={!pairing}
-                        deviceId={deviceId}
-                        onText={feed}
-                        onFailure={setFailure}
-                        onDevices={setDevices}
-                    />
-                </>
-            )}
+            <CameraPanel
+                active={!pairing}
+                failure={failure}
+                onFailure={setFailure}
+                onText={feed}
+                onUpload={images.open}
+            />
             <ScanProgress value={progress.value} frames={progress.frames} />
             {notice ? <Notice tone="warn">{notice}</Notice> : null}
             <SheetActions>
                 {progress.frames > 0 ? <Button onClick={reset}>{t("重新扫描")}</Button> : null}
-                {state ? null : <Button onClick={() => upload.current?.click()}>{t("上传图片")}</Button>}
+                {failure ? null : <Button onClick={images.open}>{t("上传图片")}</Button>}
             </SheetActions>
         </>
     );
@@ -260,18 +202,7 @@ export default function PairDialog() {
 
     return (
         <Sheet title={pairing ? t("选择账户") : t("连接冷钱包")}>
-            <input
-                ref={upload}
-                type="file"
-                accept="image/*"
-                multiple
-                hidden
-                onChange={(event) => {
-                    // FileList 是实时的，清空 value 后就没有内容了，所以先拷出来。
-                    void readImages([...(event.target.files ?? [])]);
-                    event.target.value = "";
-                }}
-            />
+            {images.element}
             {pairing ? chooseStep : scanStep}
         </Sheet>
     );

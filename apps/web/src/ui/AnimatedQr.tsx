@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FrameSender } from "../core";
+import tokens from "../core/tokens.gen.json";
 import { Icon } from "./Icon";
 import { Button } from "./primitives";
 import { QrCode } from "./QrCode";
 import { t } from "../core/i18n";
 
 const SPEEDS = [
-    { label: t("标准"), interval: 500 },
-    { label: t("慢"), interval: 1000 },
-    { label: t("快"), interval: 250 },
+    { label: t("标准"), interval: tokens.qr.interval.normal },
+    { label: t("慢"), interval: tokens.qr.interval.slow },
+    { label: t("快"), interval: tokens.qr.interval.fast },
 ];
 
 interface AnimatedQrProps {
@@ -50,7 +51,7 @@ export function AnimatedQr({ message, type, size, label, onError }: AnimatedQrPr
         };
     }, [message, type]);
 
-    const interval = SPEEDS[speed]?.interval ?? 500;
+    const interval = SPEEDS[speed]?.interval ?? tokens.qr.interval.normal;
     const single = part?.total === 1;
     useEffect(() => {
         if (paused || single) return;
@@ -82,7 +83,7 @@ export function AnimatedQr({ message, type, size, label, onError }: AnimatedQrPr
             className={`flex flex-col gap-s4 ${fullscreen ? "h-full items-center justify-center bg-surface p-s6" : ""}`}
         >
             {part ? (
-                <div className={`flex w-full ${fullscreen ? "justify-center" : ""}`}>
+                <div className="flex w-full justify-center">
                     <QrCode
                         value={part.text}
                         size={shown}
@@ -92,12 +93,12 @@ export function AnimatedQr({ message, type, size, label, onError }: AnimatedQrPr
                     />
                 </div>
             ) : null}
-            <div className="flex flex-wrap gap-s2">
+            <div className="flex flex-wrap justify-center gap-s2">
                 <Button size="sm" disabled={single} onClick={() => setPaused(!paused)}>
                     {paused ? t("播放") : t("暂停")}
                 </Button>
                 <Button size="sm" disabled={single} onClick={() => setSpeed((speed + 1) % SPEEDS.length)}>
-                    {t("速度")} {SPEEDS[speed]?.label}
+                    {t("速度 {0}", SPEEDS[speed]?.label ?? "")}
                 </Button>
                 {/* iPhone 没有全屏接口。 */}
                 {document.fullscreenEnabled ? (

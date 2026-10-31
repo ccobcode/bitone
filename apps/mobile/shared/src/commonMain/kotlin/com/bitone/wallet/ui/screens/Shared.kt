@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -38,17 +39,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.bitone.wallet.flow.PIN_LENGTH
+import com.bitone.wallet.flow.WalletFlow
 import com.bitone.wallet.i18n.translate
+import com.bitone.wallet.platform.Brightness
 import com.bitone.wallet.ui.components.AddressChunks
 import com.bitone.wallet.ui.components.Card
 import com.bitone.wallet.ui.components.Chip
-import com.bitone.wallet.ui.components.ListGroup
 import com.bitone.wallet.ui.components.Skeleton
 import com.bitone.wallet.ui.components.SwitchRow
 import com.bitone.wallet.ui.components.Txt
 import com.bitone.wallet.ui.components.WordText
 import com.bitone.wallet.ui.components.exitSpec
 import com.bitone.wallet.ui.components.stateSpec
+import com.bitone.wallet.ui.components.tap
 import com.bitone.wallet.ui.theme.BitOneTheme
 import com.bitone.wallet.ui.theme.FontSize
 import com.bitone.wallet.ui.theme.Motion
@@ -63,6 +66,19 @@ private const val SHAKE_OFFSET = 8f
 
 /** 超过这个长度的等宽值标签和值分两行，右对齐的长地址折行后不好核对。 */
 private const val STACK_LENGTH = 26
+
+/** 展示二维码和扫码的页面保持常亮。[maximize] 只管亮度，关掉自动亮度后屏幕照样不灭。 */
+@Composable
+internal fun KeepScreenOn(brightness: Brightness, maximize: Boolean) {
+    DisposableEffect(maximize) {
+        brightness.hold(maximize)
+        onDispose { brightness.restore() }
+    }
+}
+
+/** 二维码页面用：常亮，并按设置调到最高亮度。 */
+@Composable
+internal fun ShowingQr(flow: WalletFlow, brightness: Brightness) = KeepScreenOn(brightness, flow.autoBrightness)
 
 /** PIN 圆点。填入时弹一下，[errors] 增加时左右抖动并短促震动。 */
 @Composable
@@ -137,11 +153,13 @@ internal fun WordCell(
     highlight: Color = Color.Transparent,
     wordColor: Color = BitOneTheme.colors.text,
     loading: Boolean = false,
+    onClick: (() -> Unit)? = null,
 ) {
     val c = BitOneTheme.colors
     val plate by animateColorAsState(highlight, stateSpec(Motion.fast), label = "cell")
+    val base = if (onClick != null) modifier.tap(onClick = onClick) else modifier
     Row(
-        modifier.height(height).background(plate, RoundedCornerShape(Radius.r1)).padding(horizontal = Space.s2),
+        base.height(height).background(plate, RoundedCornerShape(Radius.r1)).padding(horizontal = Space.s2),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s2),
     ) {
@@ -171,7 +189,7 @@ internal fun WordGrid(words: List<String>, rowHeight: Dp, loading: Boolean = fal
 internal fun PassphraseSwitch(on: Boolean, onToggle: () -> Unit) {
     val c = BitOneTheme.colors
     Column(Modifier.fillMaxWidth()) {
-        ListGroup {
+        Card {
             SwitchRow(on, onToggle) {
                 Txt("BIP39 密码", Modifier.weight(1f))
                 Chip("可选", c.surface2, c.text2)
@@ -210,7 +228,7 @@ internal fun DetailRow(label: String, value: String, mono: Boolean = false) {
             if (whole) {
                 AddressChunks(value, size = FontSize.t2)
             } else {
-                Txt(value, size = FontSize.t2, mono = true, lineHeight = 1.6f)
+                Txt(value, size = FontSize.t2, mono = true)
             }
         }
     } else {

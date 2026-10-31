@@ -8,6 +8,7 @@ use crate::request::SignRequest;
 use crate::review::{ActionView, AmountView, Forbid, Review, ReviewBuilder, Risk, Row};
 use crate::tx::ReviewContext;
 use crate::units::{decimal_from_be, format_units};
+use bitcoin::hex::FromHex;
 use serde_json::Value;
 use std::collections::BTreeSet;
 
@@ -82,12 +83,7 @@ fn uint_word(value: &Value) -> Result<[u8; 32], Forbid> {
 }
 
 fn hex_bytes(hex: &str) -> Result<Vec<u8>, Forbid> {
-    if !hex.len().is_multiple_of(2) || !hex.is_ascii() {
-        return Err(Forbid::ParseFailed);
-    }
-    (0..hex.len() / 2)
-        .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).map_err(|_| Forbid::ParseFailed))
-        .collect()
+    Vec::from_hex(hex).map_err(|_| Forbid::ParseFailed)
 }
 
 fn encode_value(types: &Value, kind: &str, value: &Value) -> Result<[u8; 32], Forbid> {
@@ -265,6 +261,7 @@ pub fn review(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bitcoin::hex::DisplayHex;
     use serde_json::json;
 
     /// EIP-712 规范里的 Mail 示例。
@@ -299,7 +296,9 @@ mod tests {
             }
         });
         let hash = typed_data_hash(&data).unwrap();
-        let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(hex, "be609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2");
+        assert_eq!(
+            hash.to_lower_hex_string(),
+            "be609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2"
+        );
     }
 }

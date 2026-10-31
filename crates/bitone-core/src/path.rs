@@ -3,6 +3,7 @@
 //! 路径决定链和网络，这是测试网签名不能花主网资金的依据。
 
 use crate::{Chain, Error, Mode, Network};
+use minicbor::{Decode, Encode};
 use std::fmt;
 
 const HARDENED: u32 = 0x8000_0000;
@@ -50,16 +51,46 @@ impl fmt::Display for DerivationPath {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
+#[cbor(index_only)]
 pub enum AccountKind {
+    #[n(0)]
     SegWit,
+    #[n(1)]
     Taproot,
     /// 只用于转出导入钱包的旧资产。
+    #[n(2)]
     NestedSegWit,
     /// 只用于转出导入钱包的旧资产。
+    #[n(3)]
     Legacy,
     /// EVM、TRON、Solana 的单地址账户。
+    #[n(4)]
     Single,
+}
+
+impl AccountKind {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::SegWit => "segwit",
+            Self::Taproot => "taproot",
+            Self::NestedSegWit => "nested-segwit",
+            Self::Legacy => "legacy",
+            Self::Single => "single",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        [
+            Self::SegWit,
+            Self::Taproot,
+            Self::NestedSegWit,
+            Self::Legacy,
+            Self::Single,
+        ]
+        .into_iter()
+        .find(|kind| kind.id() == id)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

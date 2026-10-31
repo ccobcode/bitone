@@ -41,9 +41,9 @@ pub struct AccountsExport {
 #[cbor(map)]
 pub struct ExportedAccount {
     #[n(0)]
-    pub chain: u8,
+    pub chain: Chain,
     #[n(1)]
-    pub kind: u8,
+    pub kind: AccountKind,
     #[n(2)]
     pub path: String,
     /// Bitcoin 是序列化的扩展公钥，其余是账户公钥。
@@ -74,9 +74,7 @@ impl AccountsExport {
         }
         let specs = all_account_specs(true);
         for (i, account) in self.accounts.iter().enumerate() {
-            let chain = chain_from_code(account.chain)?;
-            let kind = kind_from_code(account.kind)?;
-            let key_len = match chain {
+            let key_len = match account.chain {
                 Chain::Bitcoin => 78,
                 Chain::Evm | Chain::Tron => 33,
                 Chain::Solana => 32,
@@ -86,7 +84,7 @@ impl AccountsExport {
             }
             let listed = specs
                 .iter()
-                .any(|s| s.chain == chain && s.kind == kind && s.path == account.path);
+                .any(|s| s.chain == account.chain && s.kind == account.kind && s.path == account.path);
             let repeated = self.accounts[..i].iter().any(|a| a.path == account.path);
             if !listed || repeated {
                 return Err(Error::PathNotAllowed);
@@ -143,46 +141,6 @@ impl AddressCheck {
     /// 单帧二维码。内容是不区分大小写的 bytewords，所以 Base58 地址不会被大写破坏。
     pub fn frame(&self) -> Result<String, Error> {
         FrameEncoder::new(&self.encode(), UR_ADDRESS, MAX_PART_CHARS)?.next_part()
-    }
-}
-
-pub fn chain_code(chain: Chain) -> u8 {
-    match chain {
-        Chain::Bitcoin => 0,
-        Chain::Evm => 1,
-        Chain::Tron => 2,
-        Chain::Solana => 3,
-    }
-}
-
-pub fn chain_from_code(code: u8) -> Result<Chain, Error> {
-    match code {
-        0 => Ok(Chain::Bitcoin),
-        1 => Ok(Chain::Evm),
-        2 => Ok(Chain::Tron),
-        3 => Ok(Chain::Solana),
-        _ => Err(Error::Decode),
-    }
-}
-
-pub fn kind_code(kind: AccountKind) -> u8 {
-    match kind {
-        AccountKind::SegWit => 0,
-        AccountKind::Taproot => 1,
-        AccountKind::NestedSegWit => 2,
-        AccountKind::Legacy => 3,
-        AccountKind::Single => 4,
-    }
-}
-
-pub fn kind_from_code(code: u8) -> Result<AccountKind, Error> {
-    match code {
-        0 => Ok(AccountKind::SegWit),
-        1 => Ok(AccountKind::Taproot),
-        2 => Ok(AccountKind::NestedSegWit),
-        3 => Ok(AccountKind::Legacy),
-        4 => Ok(AccountKind::Single),
-        _ => Err(Error::Decode),
     }
 }
 
@@ -345,11 +303,12 @@ fn header(part: &str) -> Result<&str, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hex::DisplayHex;
 
     fn account(chain: Chain, kind: AccountKind, path: &str, key_len: usize) -> ExportedAccount {
         ExportedAccount {
-            chain: chain_code(chain),
-            kind: kind_code(kind),
+            chain,
+            kind,
             path: path.into(),
             key: vec![2; key_len],
         }
@@ -406,9 +365,8 @@ mod tests {
             "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
         )
         .unwrap();
-        let hex: String = check.encode().iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(
-            hex,
+            check.encode().to_lower_hex_string(),
             "a50001014473c5da0a026474726f6e03716d2f3434272f313935272f30272f302f300478225455455a53644b736f4448514d655a77696874646f42694e34367a78684757596448"
         );
     }

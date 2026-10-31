@@ -14,7 +14,7 @@ import {
     type Chain,
     type Mode,
 } from "../core";
-import { cleanText } from "../core/text";
+import { cleanText, isRecord } from "../core/text";
 import { addressKey } from "../gateway/client";
 import { MAX_CONTACT_NAME } from "./contacts";
 import { db, type Account, type Wallet } from "./db";
@@ -124,10 +124,6 @@ export async function exportBackup(passphrase: string): Promise<string> {
     const sealed = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: headerBytes(head) }, key, plain);
     const file: BackupFile = { ...head, data: toBase64(new Uint8Array(sealed)) };
     return JSON.stringify(file);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null;
 }
 
 function parseFile(text: string): BackupFile {

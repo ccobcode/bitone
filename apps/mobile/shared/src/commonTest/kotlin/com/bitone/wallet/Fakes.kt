@@ -91,7 +91,6 @@ fun reviewOf(
     alerts: List<String> = emptyList(),
     mismatch: Boolean = false,
     requestFingerprint: String? = null,
-    changeIndex: UInt? = null,
 ) =
     ReviewResult(
         risk = risk,
@@ -107,7 +106,6 @@ fun reviewOf(
         raw = emptyList(),
         fingerprintMismatch = mismatch,
         requestFingerprint = requestFingerprint,
-        changeIndex = changeIndex,
     )
 
 val Words12 = List(12) { "word$it" }
@@ -266,8 +264,7 @@ class FakeScanner : QrScanner {
         settingsOpened++
     }
 
-    @Composable
-    override fun Viewfinder(modifier: Modifier, torch: Boolean, onCode: (String) -> Unit, onFailure: () -> Unit) = Unit
+    @Composable override fun Viewfinder(modifier: Modifier, onCode: (String) -> Unit, onFailure: () -> Unit) = Unit
 }
 
 class FakeCore : WalletCore {
@@ -369,7 +366,7 @@ class FakeCore : WalletCore {
         if (unreadableKeys?.contentEquals(keys) == true) throw WalletCoreException.Other("公钥格式过旧")
         return Accounts.distinctBy { it.path }
             .map {
-                AccountAddress("chain", "kind", it.path, "${it.path}:${keys.decodeToString()}")
+                AccountAddress("kind", it.path, "${it.path}:${keys.decodeToString()}")
             }
     }
 
@@ -387,16 +384,15 @@ class FakeCore : WalletCore {
 
     override fun manifestEntries(bytes: ByteArray?) =
         listOf(
-            ManifestEntry("ethereum", "Ethereum", "ETH", "Ether", NATIVE_CONTRACT, "eth"),
+            ManifestEntry("ethereum", "Ethereum", "ETH", NATIVE_CONTRACT, "eth"),
             ManifestEntry(
                 "ethereum",
                 "Ethereum",
                 "USDT",
-                "Tether",
                 "0xdAC17F958D2ee523a2206206994597C13D831ec7",
                 "usdt",
             ),
-        ) + listOfNotNull(bytes?.let { ManifestEntry("tron", "TRON", it.decodeToString(), "", "T", "usdt") })
+        ) + listOfNotNull(bytes?.let { ManifestEntry("tron", "TRON", it.decodeToString(), "T", "usdt") })
 }
 
 class FakeHardwareKey : HardwareKey {
@@ -546,7 +542,7 @@ class FakeSelfCheck(var facts: DeviceFacts = GoodFacts) : SelfCheck {
 }
 
 class FakeBrightness : Brightness {
-    override fun maximize() {}
+    override fun hold(maximize: Boolean) {}
 
     override fun restore() {}
 }

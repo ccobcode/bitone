@@ -1,5 +1,6 @@
 package com.bitone.wallet
 
+import androidx.compose.runtime.snapshots.Snapshot
 import com.bitone.wallet.flow.ChecksumState
 import com.bitone.wallet.flow.MAX_PIN_FAILURES
 import com.bitone.wallet.flow.Screen
@@ -10,6 +11,8 @@ import com.bitone.wallet.flow.pinDelayMs
 import com.bitone.wallet.platform.HardwareLevel
 import com.bitone.wallet.platform.PinRecord
 import com.bitone.wallet.platform.WalletMeta
+import com.bitone.wallet.ui.theme.Motion
+import com.bitone.wallet.ui.theme.Qr
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -27,6 +30,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 private const val PIN = "123456"
@@ -396,6 +400,52 @@ class WalletFlowTest {
     }
 
     @Test
+    fun wrongWordCanBeFixedWithoutRetypingTheRest() = runTest {
+        val flow = boot(rig())
+        flow.startImport()
+        advanceUntilIdle()
+        (listOf("badword") + Words12.drop(1)).forEach {
+            flow.importPick(it)
+            advanceUntilIdle()
+        }
+        assertEquals(ChecksumState.Invalid, flow.checksum)
+
+        flow.importEdit(0)
+        assertEquals(0, flow.importCurrent)
+        assertEquals("badword", flow.importBuffer)
+        assertEquals(ChecksumState.Incomplete, flow.checksum)
+        flow.continueAfterImport()
+        assertEquals(Screen.ImportWords, flow.screen)
+
+        flow.importPick(Words12.first())
+        advanceUntilIdle()
+        assertEquals(Words12, flow.importedWords)
+        assertEquals(ChecksumState.Valid, flow.checksum)
+        assertNull(flow.importEditing)
+    }
+
+    @Test
+    fun deletingAnEditedWordEmptyCancelsTheEdit() = runTest {
+        val flow = boot(rig())
+        flow.startImport()
+        advanceUntilIdle()
+        Words12.forEach {
+            flow.importPick(it)
+            advanceUntilIdle()
+        }
+        flow.importEdit(11)
+        repeat(flow.importBuffer.length) { flow.importDelete() }
+        assertEquals("", flow.importBuffer)
+        assertEquals(11, flow.importEditing)
+
+        flow.importDelete()
+        advanceUntilIdle()
+        assertNull(flow.importEditing)
+        assertEquals(Words12, flow.importedWords)
+        assertEquals(ChecksumState.Valid, flow.checksum)
+    }
+
+    @Test
     fun unknownWordIsFlagged() = runTest {
         val flow = boot(rig())
         flow.startImport()
@@ -670,7 +720,38 @@ class WalletFlowTest {
     }
 
     @Test
-    fun framesLoopAtAboutFourPerSecondAndCloseOnFinish() = runTest {
+    fun framesCanBePausedAndChangeSpeed() = runTest {
+        val rig = ready()
+        val flow = rig.flow
+        openUnlock(flow)
+        tryPin(flow, PIN)
+        val stream = rig.core.lastStream!!
+        val player = launch { flow.playFrames() }
+        advanceTimeBy(600)
+
+        flow.togglePaused()
+        Snapshot.sendApplyNotifications()
+        advanceTimeBy(100)
+        val paused = stream.sent
+        advanceTimeBy(5_000)
+        assertEquals(paused, stream.sent)
+
+        flow.togglePaused()
+        Snapshot.sendApplyNotifications()
+        repeat(2) { flow.nextSpeed() }
+        assertEquals(Qr.intervals.last(), Qr.intervals[flow.frameSpeed])
+        runCurrent()
+        val resumed = stream.sent
+        advanceTimeBy(1_000)
+        assertTrue(stream.sent - resumed in 3..5, "最快的速度一秒发了 ${stream.sent - resumed} 帧")
+
+        flow.finishExport()
+        advanceTimeBy(1_000)
+        player.join()
+    }
+
+    @Test
+    fun framesLoopAtTheDefaultSpeedAndCloseOnFinish() = runTest {
         val rig = ready()
         val flow = rig.flow
         openUnlock(flow)
@@ -678,7 +759,7 @@ class WalletFlowTest {
         val stream = rig.core.lastStream!!
         val player = launch { flow.playFrames() }
         advanceTimeBy(1_000)
-        assertTrue(stream.sent in 4..5, "一秒发了 ${stream.sent} 帧")
+        assertTrue(stream.sent in 2..3, "一秒发了 ${stream.sent} 帧")
         assertEquals((stream.sent - 1) % 3 + 1, flow.frameIndex)
         assertFalse(stream.closed)
 
@@ -763,11 +844,35 @@ class WalletFlowTest {
     // 设置
 
     @Test
+    fun backClosesOpenLayersBeforeLeavingThePage() = runTest {
+        val rig = rig()
+        val flow = boot(rig)
+        flow.startImport()
+        advanceUntilIdle()
+        var closed = 0
+        val sheet = { closed += 1 }
+        val fullscreen = { closed += 10 }
+        flow.openLayer(sheet)
+        flow.openLayer(fullscreen)
+
+        assertTrue(flow.back())
+        assertEquals(10, closed)
+        flow.closeLayer(fullscreen)
+        assertTrue(flow.back())
+        assertEquals(11, closed)
+        flow.closeLayer(sheet)
+        assertEquals(Screen.ImportWords, flow.screen)
+
+        assertTrue(flow.back())
+        assertEquals(Screen.Welcome, flow.screen)
+    }
+
+    @Test
     fun noticeClearsItself() = runTest {
         val rig = ready()
         rig.flow.showNotice("已保存")
         assertEquals("已保存", rig.flow.notice)
-        advanceTimeBy(2_001)
+        advanceTimeBy(Motion.toast + 1L)
         assertNull(rig.flow.notice)
     }
 

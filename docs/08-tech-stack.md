@@ -114,11 +114,12 @@ design/
 
 ## 5. 依赖与构建
 
-- **锁定版本**：`Cargo.lock`、`pnpm-lock.yaml`、Gradle 版本目录和依赖校验都进仓库。
+- **锁定版本**：`Cargo.lock`、`pnpm-lock.yaml` 和 Gradle 版本目录都进仓库。
 - **审查**：Rust 用 `cargo audit` 和 `cargo deny`。新增依赖要写明理由。
 - **WASM**：`secp256k1` 要编译 C 代码，Apple clang 没有 wasm 目标，本机用 Homebrew 的 LLVM，发布用容器。
-- **工具链**：Homebrew 的 cargo 会绕过 `rust-toolchain.toml`，所以构建都走 Makefile。`make check` 跑全部检查。
+- **工具链**：Homebrew 的 cargo 会绕过 `rust-toolchain.toml`，所以构建都走 Makefile。`make test` 跑全部检查。
 - **Android 版本**：CMP 1.12 要求 compileSdk 至少 37。Gradle 9.8 超出 Kotlin 2.4 官方兼容表（到 9.7），实测通过，有问题就退回 9.7。
 - **发布**：推送 `v1.2.3` 这样的 tag，版本号要和 `Cargo.toml` 一致。CI 全部通过后发布 GitHub Release，包含 Linux x86_64 和 arm64 的网关加网页端、未签名的 APK 和 `SHA256SUMS`。发布构建不用缓存。
 - **APK 签名**：签名私钥不进 CI。Release 发布后在离线机器上签名，再用 `gh release upload` 上传。
-- **可复现构建**：发布版在固定的容器里构建。Kotlin 钱包的常见失败点是 dex 和 baseline profile 不一致，所以关闭 baseline profile，把依赖校验和构建版本写死。Rust 用 `--remap-path-prefix` 去掉本机路径。本机验证过：同一份代码从干净状态构建两次，换目录再构建一次，`.so` 和未签名 APK 的哈希都一致。跨机器和容器内构建还没验证。
+- **代码裁剪**：发布版开 R8，只裁剪和优化，不混淆，堆栈和发布包审计都看得懂。JNA、UniFFI 和 zxing-cpp 靠反射或原生回调，规则在 `proguard-rules.pro`。
+- **可复现构建**：发布版在固定的容器里构建。Kotlin 钱包的常见失败点是 dex 和 baseline profile 不一致，所以关闭 baseline profile，把构建版本写死。Rust 用 `--remap-path-prefix` 去掉本机路径。本机验证过：关掉 Gradle 构建缓存，换目录从干净状态构建两次，开启 R8 的未签名 APK 哈希一致。跨机器和容器内构建还没验证。

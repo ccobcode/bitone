@@ -49,7 +49,6 @@ class ReviewResult(
     val fingerprintMismatch: Boolean,
     /** 请求里声明的指纹。数据解析不出来时为空。 */
     val requestFingerprint: String?,
-    val changeIndex: UInt?,
 ) {
     val refused: Boolean
         get() = confirm == ConfirmMode.Refuse || risk == Risk.Forbidden

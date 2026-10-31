@@ -11,6 +11,7 @@ use crate::review::{ActionView, AmountView, Forbid, RawLine, Review, ReviewBuild
 use crate::tx::{ReviewContext, Verified, raw_lines, signer_path};
 use crate::units::format_units;
 use crate::{Chain, Error, Network};
+use bitcoin::hex::DisplayHex;
 use ed25519_dalek::{Signature, VerifyingKey};
 use sha2::{Digest, Sha256};
 
@@ -54,10 +55,6 @@ const MICRO_LAMPORTS_PER_LAMPORT: u128 = 1_000_000;
 
 fn base58(key: &[u8; 32]) -> String {
     bitcoin::base58::encode(key)
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn take<const N: usize>(buf: &mut &[u8]) -> Result<[u8; N], Forbid> {
@@ -479,7 +476,7 @@ impl Scan<'_> {
             rows.push(Row::mono(&label, self.shown(ix, position)));
         }
         rows.push(Row::text("数据长度", format!("{} 字节", ix.data.len())));
-        rows.push(Row::mono("数据", hex(&ix.data)));
+        rows.push(Row::mono("数据", ix.data.to_lower_hex_string()));
         rows
     }
 

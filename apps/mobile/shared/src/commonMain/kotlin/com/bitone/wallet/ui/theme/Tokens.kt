@@ -94,12 +94,6 @@ data class ElevationTokens(
     val elevation3: List<ShadowLayer>,
 )
 
-val LightElevation = ElevationTokens(
-    elevation1 = listOf(ShadowLayer(1.dp, 2.dp, Color(0x0A0F1115))),
-    elevation2 = listOf(ShadowLayer(2.dp, 6.dp, Color(0x0A0F1115)), ShadowLayer(12.dp, 32.dp, Color(0x0F0F1115))),
-    elevation3 = listOf(ShadowLayer(4.dp, 12.dp, Color(0x0F0F1115)), ShadowLayer(24.dp, 56.dp, Color(0x1F0F1115))),
-)
-
 val DarkElevation = ElevationTokens(
     elevation1 = listOf(),
     elevation2 = listOf(ShadowLayer(12.dp, 32.dp, Color(0x66000000))),
@@ -138,12 +132,29 @@ object FontSize {
     val t8 = 40.sp
 }
 
+object LineHeight {
+    val t1 = 16.sp
+    val t2 = 20.sp
+    val t3 = 24.sp
+    val t4 = 24.sp
+    val t5 = 28.sp
+    val t6 = 32.sp
+    val t7 = 40.sp
+    val t8 = 48.sp
+}
+
 object Size {
     val hBtn = 52.dp
-    val hBtnWeb = 40.dp
     val hInput = 48.dp
     val hRow = 56.dp
-    val gutter = 20.dp
+    val gutter = 16.dp
+    val contentMax = 560.dp
+    val switchW = 44.dp
+    val switchH = 24.dp
+    val switchDot = 20.dp
+    val scanFrame = 260.dp
+    val scanArm = 44.dp
+    val scanStroke = 4.dp
 }
 
 /** 动效令牌。时长单位是毫秒。 */
@@ -152,8 +163,22 @@ object Motion {
     const val normal = 220
     const val slow = 360
     const val stagger = 30
+    const val toast = 5000
     val standardEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
     val emphasizedEasing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
     val exitEasing = CubicBezierEasing(0.4f, 0f, 1f, 1f)
     const val pressScale = 0.97f
+    const val popScale = 0.96f
+    const val scrim = 0.45f
+    const val staggerMax = 8
+    val pageIn = 24.dp
+    val pageOut = 8.dp
+    val rise = 8.dp
+}
+
+/** 二维码的静区、分段上限和轮播间隔，两端相同。间隔单位是毫秒，第一项是默认速度。 */
+object Qr {
+    const val quiet = 2
+    const val maxSegments = 40
+    val intervals = listOf(500, 1000, 250)
 }

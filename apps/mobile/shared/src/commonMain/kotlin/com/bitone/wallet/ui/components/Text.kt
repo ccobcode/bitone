@@ -17,23 +17,35 @@ import androidx.compose.ui.unit.sp
 import com.bitone.wallet.i18n.translate
 import com.bitone.wallet.ui.theme.BitOneTheme
 import com.bitone.wallet.ui.theme.FontSize
+import com.bitone.wallet.ui.theme.LineHeight
 
 // 字重只用 400、500、600。标题 600，正文和标签 400，强调 500。
 val Medium = FontWeight.W500
 val SemiBold = FontWeight.W600
 
-private const val BODY_LINE = 1.4f
-private const val TITLE_LINE = 1.25f
 private val TightFrom = FontSize.t6
 
-/** 24 及以上字距收紧 1%。行高固定比例，文字在行内垂直居中。 */
+/** 字号自带行高，两端来自同一组令牌。 */
+internal fun lineHeightOf(size: TextUnit): TextUnit =
+    when (size) {
+        FontSize.t1 -> LineHeight.t1
+        FontSize.t2 -> LineHeight.t2
+        FontSize.t3 -> LineHeight.t3
+        FontSize.t4 -> LineHeight.t4
+        FontSize.t5 -> LineHeight.t5
+        FontSize.t6 -> LineHeight.t6
+        FontSize.t7 -> LineHeight.t7
+        else -> LineHeight.t8
+    }
+
+/** 24 及以上字距收紧 1%。文字在行内垂直居中。 */
 internal fun textStyle(
     size: TextUnit,
     weight: FontWeight,
     color: Color,
     family: FontFamily,
     align: TextAlign = TextAlign.Start,
-    lineHeight: Float? = null,
+    lineHeight: TextUnit? = null,
 ): TextStyle {
     val tight = size.value >= TightFrom.value
     return TextStyle(
@@ -43,7 +55,7 @@ internal fun textStyle(
         fontFamily = family,
         textAlign = align,
         letterSpacing = if (tight) (-0.01).em else TextUnit.Unspecified,
-        lineHeight = size * (lineHeight ?: if (tight) TITLE_LINE else BODY_LINE),
+        lineHeight = lineHeight ?: lineHeightOf(size),
         lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
     )
 }
@@ -58,7 +70,7 @@ fun Txt(
     color: Color = BitOneTheme.colors.text,
     mono: Boolean = false,
     align: TextAlign = TextAlign.Start,
-    lineHeight: Float? = null,
+    lineHeight: TextUnit? = null,
 ) {
     val fonts = BitOneTheme.fonts
     BasicText(

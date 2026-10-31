@@ -60,18 +60,12 @@ impl Http {
     }
 
     pub async fn get(&self, path: &str) -> Result<Value, Failed> {
-        let response = self.request(Method::GET, path).send().await?;
-        Ok(response.error_for_status()?.json().await?)
+        self.get_query(path, &[]).await
     }
 
     pub async fn get_query(&self, path: &str, query: &[(&str, &str)]) -> Result<Value, Failed> {
         let response = self.request(Method::GET, path).query(query).send().await?;
         Ok(response.error_for_status()?.json().await?)
-    }
-
-    pub async fn get_text(&self, path: &str) -> Result<String, Failed> {
-        let response = self.request(Method::GET, path).send().await?;
-        Ok(response.error_for_status()?.text().await?)
     }
 
     /// 404 表示上游没有这条记录，不算故障。

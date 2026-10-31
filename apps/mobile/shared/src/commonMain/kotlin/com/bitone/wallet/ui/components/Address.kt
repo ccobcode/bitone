@@ -16,18 +16,16 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.sp
 import com.bitone.wallet.flow.addressChunks
 import com.bitone.wallet.ui.theme.BitOneTheme
 import com.bitone.wallet.ui.theme.FontSize
 import com.bitone.wallet.ui.theme.Space
 
-private const val ADDRESS_LINE = 1.6f
-
 /** 完整地址，4 个字符一组。奇数组用 text，偶数组用 text-2，不加底色块。同一个文本节点，读屏时不会被拆开。 */
 @Composable
 fun AddressChunks(
     address: String,
-    modifier: Modifier = Modifier,
     size: TextUnit = FontSize.t4,
     minLines: Int = 1,
 ) {
@@ -45,8 +43,15 @@ fun AddressChunks(
         }
     BasicText(
         text,
-        modifier.fillMaxWidth(),
-        style = textStyle(size, FontWeight.Normal, odd, BitOneTheme.fonts.mono, lineHeight = ADDRESS_LINE),
+        Modifier.fillMaxWidth(),
+        style =
+            textStyle(
+                size,
+                FontWeight.Normal,
+                odd,
+                BitOneTheme.fonts.mono,
+                lineHeight = (lineHeightOf(size).value + Space.s1.value).sp,
+            ),
         minLines = minLines,
     )
 }

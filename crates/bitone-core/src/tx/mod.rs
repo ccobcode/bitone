@@ -9,6 +9,7 @@ pub mod evm;
 pub mod solana;
 pub mod tron;
 
+use crate::hex::DisplayHex;
 use crate::keys::PublicKeys;
 use crate::manifest::Manifest;
 use crate::path::{DerivationPath, validate_for_network};
@@ -155,7 +156,7 @@ pub(crate) fn check_signature(hash: &[u8; 32], signature: &[u8; 65], signer: &[u
 
 /// 原始数据分行：选择器一行，之后每 32 字节一行，标出疑似地址和大额数值。
 pub fn raw_lines(data: &[u8]) -> Vec<RawLine> {
-    let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let hex = |bytes: &[u8]| bytes.to_lower_hex_string();
     if data.len() < 4 {
         return vec![RawLine {
             text: hex(data),

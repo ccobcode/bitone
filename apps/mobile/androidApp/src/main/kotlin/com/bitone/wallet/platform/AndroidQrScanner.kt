@@ -10,7 +10,6 @@ import android.util.Size
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -74,7 +73,7 @@ class AndroidQrScanner(private val context: Context, private val current: Curren
     }
 
     @Composable
-    override fun Viewfinder(modifier: Modifier, torch: Boolean, onCode: (String) -> Unit, onFailure: () -> Unit) {
+    override fun Viewfinder(modifier: Modifier, onCode: (String) -> Unit, onFailure: () -> Unit) {
         val latestCode by rememberUpdatedState(onCode)
         val latestFailure by rememberUpdatedState(onFailure)
         val owner = current.activity as? LifecycleOwner
@@ -87,7 +86,6 @@ class AndroidQrScanner(private val context: Context, private val current: Curren
             }
         }
         var provider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
-        var camera by remember { mutableStateOf<Camera?>(null) }
         val analysisThread = remember { Executors.newSingleThreadExecutor() }
 
         DisposableEffect(Unit) {
@@ -128,23 +126,13 @@ class AndroidQrScanner(private val context: Context, private val current: Curren
                 }
                 val feed = Preview.Builder().build().also { it.surfaceProvider = preview.surfaceProvider }
                 cameras.unbindAll()
-                camera =
-                    cameras.bindToLifecycle(
-                        requireNotNull(owner),
-                        CameraSelector.DEFAULT_BACK_CAMERA,
-                        feed,
-                        analysis,
-                    )
+                cameras.bindToLifecycle(requireNotNull(owner), CameraSelector.DEFAULT_BACK_CAMERA, feed, analysis)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 // 没有后置摄像头、被别的应用占用、CameraX 初始化失败都走这里。
                 latestFailure()
             }
-        }
-        LaunchedEffect(camera, torch) {
-            val active = camera ?: return@LaunchedEffect
-            if (active.cameraInfo.hasFlashUnit()) active.cameraControl.enableTorch(torch)
         }
         LaunchedEffect(Unit) { feedDevelopmentFrames(context) { latestCode(it) } }
 

@@ -1,7 +1,7 @@
 package com.bitone.wallet.platform
 
 /** 平台只负责采集事实，判定规则在 [com.bitone.wallet.flow.evaluate]，对应 docs/04 §2.2。 */
-class DeviceFacts(
+data class DeviceFacts(
     val airplaneMode: Boolean,
     val wifiOn: Boolean,
     val bluetoothOn: Boolean,

@@ -1,9 +1,9 @@
 import { useRef, useState } from "react";
-import { Link } from "react-router";
 import { isLegacyKind, manifestPackageVersion } from "../core";
 import { cleanText, shortAddress } from "../core/text";
 import { useApp } from "../data/app";
-import { accountIcon, accountKind, accountTitle, dateLabel } from "../ui/labels";
+import { firstAddress } from "../data/pairing";
+import { accountIcon, accountName, accountTitle, dateLabel } from "../ui/labels";
 import { AnimatedQr } from "../ui/AnimatedQr";
 import {
     Button,
@@ -12,7 +12,7 @@ import {
     Empty,
     Fact,
     LinkButton,
-    ListHead,
+    ListRow,
     Notice,
     PageTitle,
     Section,
@@ -23,8 +23,6 @@ import {
 import { overlayLink, receiveLink } from "../ui/Sheet";
 import { TokenIcon } from "../ui/TokenIcon";
 import { t, translate } from "../core/i18n";
-
-const GRID = "grid grid-cols-[minmax(0,1fr)_auto] gap-x-s4 @split:grid-cols-12 @split:gap-x-s6";
 
 /** 与核心库的 MAX_MESSAGE_BYTES 一致，超限时二维码发不出去。 */
 const MAX_PACKAGE = 256 * 1024;
@@ -138,61 +136,29 @@ export default function Device() {
                 </SelectList>
             </Section>
 
-            <Section aria-labelledby="h-acc">
+            <Section aria-labelledby="h-acc" className="gap-s2">
                 <SectionTitle id="h-acc">{t("账户")}</SectionTitle>
                 {list.length > 0 ? (
-                    <div>
-                        <ListHead grid={GRID}>
-                            <span className="col-span-6">{t("账户")}</span>
-                            <span className="col-span-3">{t("类型")}</span>
-                            <span className="col-span-3 text-right">{t("核对")}</span>
-                        </ListHead>
-                        <ul className="stagger">
-                            {list.map((account) => {
-                                const first = addresses.find(
-                                    (a) => a.accountId === account.id && a.change === 0 && a.index === 0,
-                                );
-                                const open = receiveLink(account.id, { verify: !first?.verified });
-                                return (
-                                    <li key={account.id} className={`${GRID} row min-h-row items-center py-s2`}>
-                                        <span className="flex min-w-0 items-center gap-s3 @split:col-span-6">
-                                            <TokenIcon network={accountIcon(account)} size={32} />
-                                            <span className="flex min-w-0 flex-col">
-                                                <span className="truncate text-t3 font-medium">
-                                                    {accountTitle(account)}
-                                                </span>
-                                                <span className="truncate font-mono text-t1 text-text-3">
-                                                    {first ? shortAddress(first.address) : "—"}
-                                                </span>
-                                            </span>
-                                        </span>
-                                        <span className="hidden truncate text-t2 text-text-2 @split:col-span-3 @split:block">
-                                            {accountKind(account)}
-                                        </span>
-                                        <span className="flex items-center justify-end gap-s2 @split:col-span-3">
-                                            <LinkButton
-                                                {...open}
-                                                variant="ghost"
-                                                size="sm"
-                                                className="row-actions hidden @split:inline-flex"
-                                            >
-                                                {first?.verified ? t("收款") : t("核对")}
-                                            </LinkButton>
-                                            <Chip tone={first?.verified ? "ok" : "warn"}>
-                                                {first?.verified ? t("已核对") : t("未核对")}
-                                            </Chip>
-                                        </span>
-                                        {/* 窄屏没有操作列，点整行打开。 */}
-                                        <Link
-                                            {...open}
-                                            aria-label={t("核对 {0}", accountTitle(account))}
-                                            className="absolute inset-0 @split:hidden"
-                                        />
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    </div>
+                    <ul className="stagger">
+                        {list.map((account) => {
+                            const first = firstAddress(addresses, account.id);
+                            return (
+                                <ListRow
+                                    key={account.id}
+                                    link={receiveLink(account.id, { verify: !first?.verified })}
+                                    label={first?.verified ? t("收款") : t("核对 {0}", accountTitle(account))}
+                                    icon={<TokenIcon network={accountIcon(account)} size={32} />}
+                                    title={accountName(account)}
+                                    sub={<span className="font-mono">{first ? shortAddress(first.address) : "—"}</span>}
+                                    value={
+                                        <Chip tone={first?.verified ? "ok" : "warn"}>
+                                            {first?.verified ? t("已核对") : t("未核对")}
+                                        </Chip>
+                                    }
+                                />
+                            );
+                        })}
+                    </ul>
                 ) : (
                     <Empty icon="noAccount">{t("这个网络下还没有账户。")}</Empty>
                 )}

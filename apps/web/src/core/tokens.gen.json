@@ -1,0 +1,13 @@
+{
+    "qr": {
+        "quiet": 2,
+        "interval": {
+            "normal": 500,
+            "slow": 1000,
+            "fast": 250
+        },
+        "max-segments": 40
+    },
+    "qrChrome": 200,
+    "toast": 5000
+}

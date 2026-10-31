@@ -68,7 +68,7 @@ class UniffiWalletCore : WalletCore {
     }
 
     override fun accountRows(keys: ByteArray): List<AccountAddress> = mapped {
-        ffiAccountRows(keys).map { AccountAddress(it.chain, it.kind, it.path, it.address) }
+        ffiAccountRows(keys).map { AccountAddress(it.kind, it.path, it.address) }
     }
 
     override fun receiveAddress(keys: ByteArray, accountPath: String, index: UInt): String = mapped {
@@ -83,7 +83,7 @@ class UniffiWalletCore : WalletCore {
 
     override fun manifestEntries(bytes: ByteArray?): List<ManifestEntry> = mapped {
         ffiManifestEntries(bytes).map {
-            ManifestEntry(it.network, it.networkLabel, it.symbol, it.name, it.contract, it.icon)
+            ManifestEntry(it.network, it.networkLabel, it.symbol, it.contract, it.icon)
         }
     }
 }
@@ -110,7 +110,6 @@ private fun uniffi.bitone_ffi.ReviewResult.shared() =
         raw = raw.map { RawLine(it.text, it.note) },
         fingerprintMismatch = fingerprintMismatch,
         requestFingerprint = requestFingerprint,
-        changeIndex = changeIndex,
     )
 
 private fun uniffi.bitone_ffi.RiskLevel.shared() =

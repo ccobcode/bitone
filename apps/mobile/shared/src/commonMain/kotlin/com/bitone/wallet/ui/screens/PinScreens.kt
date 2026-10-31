@@ -20,17 +20,17 @@ import com.bitone.wallet.flow.MAX_PIN_FAILURES
 import com.bitone.wallet.flow.PIN_LENGTH
 import com.bitone.wallet.flow.UnlockPurpose
 import com.bitone.wallet.flow.WalletFlow
+import com.bitone.wallet.ui.components.Card
 import com.bitone.wallet.ui.components.Chip
 import com.bitone.wallet.ui.components.FadeText
 import com.bitone.wallet.ui.components.Icons
 import com.bitone.wallet.ui.components.LineIcon
-import com.bitone.wallet.ui.components.ListGroup
 import com.bitone.wallet.ui.components.ListRow
 import com.bitone.wallet.ui.components.Page
 import com.bitone.wallet.ui.components.PassphraseKeyboard
 import com.bitone.wallet.ui.components.PinPad
 import com.bitone.wallet.ui.components.SemiBold
-import com.bitone.wallet.ui.components.StepChip
+import com.bitone.wallet.ui.components.Steps
 import com.bitone.wallet.ui.components.TitleBar
 import com.bitone.wallet.ui.components.Txt
 import com.bitone.wallet.ui.components.rememberLatest
@@ -54,7 +54,7 @@ private fun PinPage(
     Page(
         header = header,
         contentAlignment = Alignment.CenterHorizontally,
-        contentAtBottom = true,
+        contentAnchor = Alignment.Bottom,
         contentGap = Space.s3,
         bottom = keyboard,
     ) {
@@ -94,7 +94,7 @@ fun SetPinScreen(flow: WalletFlow) {
         hintColor = noteColor,
         header = {
             TitleBar(if (flow.changingPin) "修改 PIN" else "设置 PIN", onBack = { flow.back() }) {
-                if (!flow.isImportFlow && !flow.changingPin) StepChip("3/3")
+                if (!flow.isImportFlow && !flow.changingPin) Steps(3)
             }
         },
         keyboard = {
@@ -133,7 +133,8 @@ fun UnlockScreen(flow: WalletFlow) {
     var editing by remember { mutableStateOf(false) }
     val waiting = flow.waitMs > 0
     val copy = unlockCopy(flow.unlockPurpose)
-    val review = rememberReview(flow)
+    // 只有签名时显示交易摘要。退场动画期间流程可能已经清掉请求，这时继续显示离开时的内容。
+    val review = rememberLatest(flow.review).takeIf { flow.unlockPurpose == UnlockPurpose.Sign }
 
     // 倒计时每秒重读单调时钟，界面只负责显示。
     LaunchedEffect(waiting) {
@@ -185,11 +186,6 @@ fun UnlockScreen(flow: WalletFlow) {
     )
 }
 
-/** 只有签名时显示交易摘要。退场动画期间流程可能已经清掉请求，这时继续显示离开时的内容。 */
-@Composable
-private fun rememberReview(flow: WalletFlow) =
-    rememberLatest(flow.review).takeIf { flow.unlockPurpose == UnlockPurpose.Sign }
-
 @Composable
 private fun failureHint(failures: Int, canWipe: Boolean): Pair<String, Color> {
     val c = BitOneTheme.colors
@@ -214,7 +210,7 @@ private fun waitText(ms: Long): String {
 @Composable
 private fun PassphraseField(value: String, editing: Boolean, onToggle: () -> Unit) {
     val c = BitOneTheme.colors
-    ListGroup {
+    Card {
         ListRow(onClick = onToggle) {
             Txt("BIP39 密码")
             Row(

@@ -20,10 +20,14 @@ object I18n {
 
 private val Slot = Regex("\\{(\\d+)\\}")
 
+/** 固定文字多的模板排在前面，「已输入 {0} 位」不能被「{0} 位」抢先匹配。 */
 private val Templates by lazy {
-    EN.filterKeys(Slot::containsMatchIn).map { (key, english) ->
-        Regex(key.split(Slot).joinToString("(.+?)", "^", "$") { Regex.escape(it) }) to english
-    }
+    EN.filterKeys(Slot::containsMatchIn)
+        .entries
+        .sortedByDescending { Slot.replace(it.key, "").length }
+        .map { (key, english) ->
+            Regex(key.split(Slot).joinToString("(.+?)", "^", "$") { Regex.escape(it) }) to english
+        }
 }
 
 private fun String.hasChinese() = any { it.code in 0x4E00..0x9FFF }

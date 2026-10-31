@@ -88,8 +88,8 @@ impl Wallet {
                     Mode::Mainnet
                 };
                 Ok(ExportedAccount {
-                    chain: protocol::chain_code(spec.chain),
-                    kind: protocol::kind_code(spec.kind),
+                    chain: spec.chain,
+                    kind: spec.kind,
                     path: spec.path.to_string(),
                     key: self.exported_key(spec, mode)?,
                 })
@@ -271,7 +271,7 @@ mod tests {
     fn export_contains_only_public_material() {
         let export = abandon().export(true).unwrap();
         for account in &export.accounts {
-            match bitone_core::protocol::chain_from_code(account.chain).unwrap() {
+            match account.chain {
                 Chain::Bitcoin => assert_eq!(account.key.len(), 78),
                 Chain::Evm | Chain::Tron => assert_eq!(account.key.len(), 33),
                 Chain::Solana => assert_eq!(account.key.len(), 32),
@@ -289,7 +289,7 @@ mod tests {
         assert_eq!(decoded, export);
         for account in decoded.accounts {
             let path = DerivationPath::parse(&account.path).unwrap();
-            if bitone_core::protocol::chain_from_code(account.chain).unwrap() != Chain::Bitcoin {
+            if account.chain != Chain::Bitcoin {
                 assert!(classify(&path).is_ok(), "{}", account.path);
             }
         }

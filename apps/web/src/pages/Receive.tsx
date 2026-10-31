@@ -5,8 +5,8 @@ import { symbolOf } from "../core/manifest";
 import { shortAddress } from "../core/text";
 import { saveSetting, useApp, useLive } from "../data/app";
 import { db, type Account, type Address, type Wallet } from "../data/db";
-import { addressPath, ensureAddress } from "../data/pairing";
-import { accountIcon, accountKind, accountNetworks, accountTitle } from "../ui/labels";
+import { addressPath, ensureAddress, firstAddress } from "../data/pairing";
+import { accountIcon, accountName, accountNetworks } from "../ui/labels";
 import { Picker } from "../ui/Picker";
 import { Button, Chip, Fact, FullAddress, LABEL, Notice, SelectList, SelectRow, SkeletonRows } from "../ui/primitives";
 import { QrCode } from "../ui/QrCode";
@@ -26,12 +26,8 @@ function useIssued(accountId: string) {
     return { indexKey, latest, issued };
 }
 
-function accountName(account: Account): string {
-    return account.chain === "bitcoin" ? `${accountTitle(account)} ${accountKind(account)}` : accountTitle(account);
-}
-
 function AccountLine({ account, addresses }: { account: Account; addresses: readonly Address[] }) {
-    const first = addresses.find((a) => a.accountId === account.id && a.change === 0 && a.index === 0);
+    const first = firstAddress(addresses, account.id);
     return (
         <>
             <TokenIcon network={accountIcon(account)} size={32} />
@@ -69,15 +65,7 @@ function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelPro
 
     const path = row ? addressPath(account, row) : "";
     const frame = useMemo(
-        () =>
-            row
-                ? addressFrame({
-                      fingerprint: wallet.fingerprint,
-                      network: account.network,
-                      path,
-                      address: row.address,
-                  })
-                : "",
+        () => (row ? addressFrame(wallet.fingerprint, account.network, path, row.address) : ""),
         [row, wallet.fingerprint, account.network, path],
     );
 
@@ -145,7 +133,7 @@ function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelPro
     const verifying = view === "verify";
     return (
         <div className="flex min-w-0 flex-col gap-s4">
-            <div className="mx-auto w-full max-w-[297px]">
+            <div className="mx-auto w-full nav:max-w-[297px]">
                 {verifying ? (
                     <QrCode value={frame} size={297} label={t("地址核对二维码")} />
                 ) : (
@@ -268,6 +256,7 @@ export default function ReceiveDialog() {
                                 items={list.map((item) => ({
                                     key: item.id,
                                     node: <AccountLine account={item} addresses={addresses} />,
+                                    selected: item.id === account.id,
                                 }))}
                                 onPick={pick}
                             />

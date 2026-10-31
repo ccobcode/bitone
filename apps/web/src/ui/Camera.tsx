@@ -1,5 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { t } from "../core/i18n";
+import { CAMERA_FAILURES } from "./cameraFailures";
+import { Button } from "./primitives";
+import { StateCard } from "./StateCard";
 
 export type CameraFailure = "denied" | "missing" | "failed";
 
@@ -41,6 +44,11 @@ interface CameraProps {
     onText(text: string): void;
     onFailure(failure: CameraFailure | null): void;
     onDevices(devices: MediaDeviceInfo[]): void;
+}
+
+/** 收齐时短促震动，和冷钱包相同。只有部分手机浏览器支持，其余什么都不做。 */
+export function buzz(): void {
+    navigator.vibrate?.(30);
 }
 
 /** 实时取景，逐帧识别。取景区域在任何主题下都是深色。 */
@@ -95,23 +103,121 @@ export function Camera({ active, deviceId, onText, onFailure, onDevices }: Camer
     return (
         <div className="relative flex aspect-[4/3] items-end justify-center overflow-hidden rounded-r3 bg-camera">
             <video ref={video} muted playsInline className="absolute inset-0 size-full object-cover" />
-            <span
-                aria-hidden="true"
-                className="absolute top-[16%] left-[22%] size-7 rounded-tl-r1 border-t-[3px] border-l-[3px] border-on-camera"
-            />
-            <span
-                aria-hidden="true"
-                className="absolute top-[16%] right-[22%] size-7 rounded-tr-r1 border-t-[3px] border-r-[3px] border-on-camera"
-            />
-            <span
-                aria-hidden="true"
-                className="absolute bottom-[16%] left-[22%] size-7 rounded-bl-r1 border-b-[3px] border-l-[3px] border-on-camera"
-            />
-            <span
-                aria-hidden="true"
-                className="absolute right-[22%] bottom-[16%] size-7 rounded-br-r1 border-r-[3px] border-b-[3px] border-on-camera"
-            />
+            <span aria-hidden="true" className="scan-frame">
+                <span className="scan-corner" />
+                <span className="scan-corner" />
+                <span className="scan-corner" />
+                <span className="scan-corner" />
+                {active ? <span className="scan-sweep" /> : null}
+            </span>
             <span className="relative mb-s3 text-t2 text-on-camera">{active ? t("对准冷钱包屏幕") : t("已收齐")}</span>
         </div>
     );
+}
+
+interface CameraPanelProps {
+    active: boolean;
+    failure: CameraFailure | null;
+    onFailure(failure: CameraFailure | null): void;
+    onText(text: string): void;
+    /** 摄像头打不开时的退路。 */
+    onUpload(): void;
+}
+
+/** 取景区域加摄像头选择。打不开时换成异常卡片，可以重试或者上传图片。 */
+export function CameraPanel({ active, failure, onFailure, onText, onUpload }: CameraPanelProps) {
+    const [attempt, setAttempt] = useState(0);
+    const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+    const [deviceId, setDeviceId] = useState("");
+
+    if (failure) {
+        const state = CAMERA_FAILURES[failure];
+        return (
+            <StateCard
+                tone="warn"
+                icon="cameraOff"
+                title={state.title}
+                body={state.body}
+                facts={state.facts}
+                actions={
+                    <>
+                        <Button onClick={onUpload}>{t("上传图片")}</Button>
+                        <Button
+                            variant="primary"
+                            onClick={() => {
+                                onFailure(null);
+                                setAttempt(attempt + 1);
+                            }}
+                        >
+                            {state.retry}
+                        </Button>
+                    </>
+                }
+            />
+        );
+    }
+    return (
+        <>
+            {devices.length > 1 ? (
+                <select
+                    aria-label={t("摄像头")}
+                    value={deviceId}
+                    onChange={(event) => setDeviceId(event.target.value)}
+                    className="field text-t3"
+                >
+                    <option value="">{t("默认摄像头")}</option>
+                    {devices.map((device, i) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                            {device.label || t("摄像头 {0}", i + 1)}
+                        </option>
+                    ))}
+                </select>
+            ) : null}
+            <Camera
+                key={attempt}
+                active={active}
+                deviceId={deviceId}
+                onText={onText}
+                onFailure={onFailure}
+                onDevices={setDevices}
+            />
+        </>
+    );
+}
+
+/** 从图片读二维码。隐藏的文件框放进页面，`open` 弹出选择。 */
+export function useImageScan(label: string, onText: (text: string) => void, onNotice: (text: string) => void) {
+    const input = useRef<HTMLInputElement>(null);
+
+    async function read(files: File[]) {
+        try {
+            const { decodeQr } = await import("../scan/zxing");
+            for (const file of files) {
+                const [text] = await decodeQr(file);
+                if (text) onText(text);
+                else onNotice(t("图片里没有识别到二维码。"));
+            }
+        } catch {
+            onNotice(t("图片无法读取。"));
+        }
+    }
+
+    return {
+        open: () => input.current?.click(),
+        element: (
+            <input
+                ref={input}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                aria-label={label}
+                onChange={(event) => {
+                    // FileList 是实时的，清空 value 后就没有内容了，所以先拷出来。
+                    void read([...(event.target.files ?? [])]);
+                    event.target.value = "";
+                }}
+            />
+        ),
+    };
 }

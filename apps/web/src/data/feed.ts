@@ -66,7 +66,6 @@ async function saveFirstPage(id: string, walletId: string, stream: HistoryStream
         addresses,
         checkpoint: page.checkpoint,
         older: page.cursor,
-        done: page.cursor === null,
     };
     await db.transaction("rw", db.chainTxs, db.feedCursors, async () => {
         await db.chainTxs.bulkPut(page.items.map((item) => entry(walletId, id, network, item)));
@@ -243,7 +242,7 @@ export async function loadOlder(walletId: string, streams: readonly HistoryStrea
                 const page = await fetchHistory(stream.network, stream.addresses, saved.older);
                 await db.transaction("rw", db.chainTxs, db.feedCursors, async () => {
                     await db.chainTxs.bulkPut(page.items.map((item) => entry(walletId, id, stream.network, item)));
-                    await db.feedCursors.update(id, { older: page.cursor, done: page.cursor === null });
+                    await db.feedCursors.update(id, { older: page.cursor });
                 });
             } catch (error) {
                 // 翻页游标过期时清掉，下次从最新一页重来，已有的记录不受影响。

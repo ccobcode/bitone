@@ -14,5 +14,5 @@ interface QrScanner {
     fun openSettings()
 
     /** 取景画面。每解出一个二维码调用一次 [onCode]，相机打不开时调用 [onFailure]，都在主线程。 页面离开时释放相机。 */
-    @Composable fun Viewfinder(modifier: Modifier, torch: Boolean, onCode: (String) -> Unit, onFailure: () -> Unit)
+    @Composable fun Viewfinder(modifier: Modifier, onCode: (String) -> Unit, onFailure: () -> Unit)
 }

@@ -37,13 +37,15 @@ import com.bitone.wallet.ui.theme.FontSize
 import com.bitone.wallet.ui.theme.Radius
 import com.bitone.wallet.ui.theme.Space
 
+/** 词格可以点回去改，高度按触控区算。 */
+private val CellHeight = 44.dp
+
 /** A1b 导入助记词。输入全部经过内置键盘。 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ImportScreen(flow: WalletFlow) {
     val c = BitOneTheme.colors
-    val current = flow.importedWords.size
-    val rowHeight = if (flow.wordCount == 12) 36.dp else 32.dp
+    val current = flow.importCurrent
     val requester = remember { BringIntoViewRequester() }
     LaunchedEffect(current) { requester.bringIntoView() }
     Page(
@@ -57,15 +59,16 @@ fun ImportScreen(flow: WalletFlow) {
                 ThreeColumns(List(flow.wordCount) { it }) { index, _, modifier ->
                     val active = index == current
                     val invalid = active && flow.bufferInvalid
+                    val filled = index < flow.importedWords.size
                     WordCell(
                         number = index + 1,
                         word =
                             when {
-                                index < current -> flow.importedWords[index]
                                 active -> flow.importBuffer
+                                filled -> flow.importedWords[index]
                                 else -> ""
                             },
-                        height = rowHeight,
+                        height = CellHeight,
                         modifier = if (active) modifier.bringIntoViewRequester(requester) else modifier,
                         highlight =
                             when {
@@ -74,6 +77,7 @@ fun ImportScreen(flow: WalletFlow) {
                                 else -> Color.Transparent
                             },
                         wordColor = if (invalid) c.danger else c.text,
+                        onClick = if (filled) ({ flow.importEdit(index) }) else null,
                     )
                 }
             }
@@ -87,11 +91,12 @@ private fun ImportPanel(flow: WalletFlow) {
     val c = BitOneTheme.colors
     val (status, color) =
         when {
-            flow.importComplete && flow.checksum == ChecksumState.Valid -> "校验和正确" to c.ok
-            flow.importComplete && flow.checksum == ChecksumState.Invalid -> "校验和错误，请检查助记词" to c.danger
-            flow.importComplete -> "校验中" to c.text3
             flow.bufferInvalid -> "不在词表中" to c.danger
-            else -> "第 ${flow.importedWords.size + 1} 个词" to c.text3
+            flow.importEditing != null -> "第 ${flow.importCurrent + 1} 个词" to c.text3
+            flow.importComplete && flow.checksum == ChecksumState.Valid -> "校验和正确" to c.ok
+            flow.importComplete && flow.checksum == ChecksumState.Invalid -> "校验和错误，点词可以修改" to c.danger
+            flow.importComplete -> "校验中" to c.text3
+            else -> "第 ${flow.importCurrent + 1} 个词" to c.text3
         }
     Column(Modifier.fillMaxWidth().padding(bottom = Space.s3), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
         Row(

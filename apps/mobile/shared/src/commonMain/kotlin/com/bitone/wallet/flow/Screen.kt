@@ -1,78 +1,54 @@
 package com.bitone.wallet.flow
 
 /** 页面编号与原型一致。 */
-sealed interface Screen {
+enum class Screen {
     /** 启动时等待第一次自检。 */
-    data object Booting : Screen
-
+    Booting,
     /** A1 */
-    data object Welcome : Screen
-
+    Welcome,
     /** A1b */
-    data object ImportWords : Screen
-
+    ImportWords,
     /** A2 */
-    data object Backup : Screen
-
+    Backup,
     /** A2b */
-    data object Verify : Screen
-
+    Verify,
     /** A2c */
-    data object SetPin : Screen
-
+    SetPin,
     /** A3 */
-    data object Home : Screen
-
+    Home,
     /** A7，按 [UnlockPurpose] 用于签名、导出、读公钥、查看助记词和修改 PIN。 */
-    data object Unlock : Screen
-
+    Unlock,
     /** A4 */
-    data object Export : Screen
-
+    Export,
     /** A5 */
-    data object Scan : Screen
-
+    Scan,
     /** A6 到 A6e，按 [reviewStyle] 切换样式。 */
-    data object Review : Screen
-
+    Review,
     /** A8 */
-    data object Signed : Screen
-
+    Signed,
     /** A9 */
-    data object CheckAddress : Screen
-
+    CheckAddress,
     /** A10 的查看助记词。 */
-    data object ViewWords : Screen
-
+    ViewWords,
     /** A10 */
-    data object Settings : Screen
-
+    Settings,
     /** A11 */
-    data object Receive : Screen
-
-    data object ReceiveAddresses : Screen
-
+    Receive,
+    ReceiveAddresses,
     /** A12 */
-    data object Manifest : Screen
-
+    Manifest,
     /** AS 自检失败 */
-    data object SelfCheckFailed : Screen
-
+    SelfCheckFailed,
     /** AS 指纹不匹配 */
-    data object FingerprintMismatch : Screen
-
+    FingerprintMismatch,
     /** AS 解析失败 */
-    data object ParseFailed : Screen
-
+    ParseFailed,
     /** AS 禁止签名 */
-    data object Forbidden : Screen
-
+    Forbidden,
     /** AS 摄像头被拒 */
-    data object CameraDenied : Screen
-
+    CameraDenied,
     /** AS 需恢复 */
-    data object NeedsRecovery : Screen
-
+    NeedsRecovery,
     /** 错误 10 次后 */
-    data object Wiped : Screen
+    Wiped,
 }

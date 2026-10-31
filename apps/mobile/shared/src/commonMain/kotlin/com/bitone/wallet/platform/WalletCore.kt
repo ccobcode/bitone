@@ -116,15 +116,14 @@ interface FrameReceiver {
     fun close()
 }
 
-/** 核心库给的一个主账户。[chain] 和 [kind] 决定怎么显示，见 [com.bitone.wallet.flow.accountsFor]。 */
-class AccountAddress(val chain: String, val kind: String, val path: String, val address: String)
+/** 核心库给的一个主账户。[kind] 决定怎么显示，见 [com.bitone.wallet.flow.accountsFor]。 */
+class AccountAddress(val kind: String, val path: String, val address: String)
 
 /** A12 的一行。原生币的 [contract] 是 [NATIVE_CONTRACT]。 */
 class ManifestEntry(
     val network: String,
     val networkLabel: String,
     val symbol: String,
-    val name: String,
     val contract: String,
     val icon: String,
 )

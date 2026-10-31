@@ -10,10 +10,10 @@ import { t, translate } from "../core/i18n";
 export interface TxFact {
     label: string;
     value: string;
-    mono: boolean;
+    mono?: boolean;
 }
 
-function nativeText(tx: Pick<TxRecord, "network">, raw: bigint): string {
+export function nativeText(tx: Pick<TxRecord, "network">, raw: bigint): string {
     const native = lookupAsset(tx.network, "native");
     return native ? `${formatUnits(raw, native.decimals)} ${native.symbol}` : raw.toString();
 }
@@ -30,17 +30,15 @@ export function feeFact(tx: TxRecord): TxFact {
             return {
                 label: t("手续费上限"),
                 value: nativeText(tx, BigInt(plan.gasLimit) * BigInt(plan.maxFee)),
-                mono: false,
             };
         case "bitcoin":
-            return { label: t("手续费"), value: nativeText(tx, BigInt(plan.fee)), mono: false };
+            return { label: t("手续费"), value: nativeText(tx, BigInt(plan.fee)) };
         case "tron":
-            return { label: "fee_limit", value: nativeText(tx, BigInt(plan.feeLimit)), mono: false };
+            return { label: "fee_limit", value: nativeText(tx, BigInt(plan.feeLimit)) };
         case "solana":
             return {
                 label: t("手续费"),
                 value: nativeText(tx, 5000n + solanaPriority(plan.priority, plan.computeUnits)),
-                mono: false,
             };
     }
 }
@@ -54,15 +52,14 @@ export function sequenceFact(tx: TxRecord): TxFact {
     const { plan } = tx;
     switch (plan.chain) {
         case "evm":
-            return { label: "Nonce", value: String(plan.nonce), mono: false };
+            return { label: "Nonce", value: String(plan.nonce) };
         case "bitcoin":
             return {
                 label: t("找零索引"),
                 value: plan.changeIndex === null ? t("无找零") : String(plan.changeIndex),
-                mono: false,
             };
         case "tron":
-            return { label: t("过期时间"), value: t("30 分钟"), mono: false };
+            return { label: t("过期时间"), value: t("30 分钟") };
         case "solana":
             return { label: t("nonce 账户"), value: shortAddress(plan.nonceAccount), mono: true };
     }
@@ -80,38 +77,37 @@ export function verifyChecks(tx: TxRecord): TxFact[] {
                 common,
                 signer,
                 { label: t("收款地址"), value: shortAddress(tx.to), mono: true },
-                { label: t("金额和数据"), value: amountText(tx), mono: false },
-                { label: "Nonce", value: String(plan.nonce), mono: false },
-                { label: "Gas Limit", value: plan.gasLimit.toLocaleString("en-US"), mono: false },
+                { label: t("金额和数据"), value: amountText(tx) },
+                { label: "Nonce", value: String(plan.nonce) },
+                { label: "Gas Limit", value: plan.gasLimit.toLocaleString("en-US") },
                 feeFact(tx),
-                { label: "Chain ID", value: String(chainId ?? "—"), mono: false },
+                { label: "Chain ID", value: String(chainId ?? "—") },
             ];
         }
         case "bitcoin":
             return [
                 common,
-                { label: t("输入"), value: t("{0} 个", plan.inputs.length), mono: false },
-                { label: t("输出"), value: t("{0} 个", plan.changePath && tx.kind !== "cancel" ? 2 : 1), mono: false },
+                { label: t("输入"), value: t("{0} 个", plan.inputs.length) },
+                { label: t("输出"), value: t("{0} 个", plan.changePath && tx.kind !== "cancel" ? 2 : 1) },
                 { label: t("找零路径"), value: plan.changePath ?? t("无找零"), mono: true },
             ];
         case "tron":
             return [
                 common,
                 signer,
-                { label: t("raw_data 字节"), value: t("完全一致"), mono: false },
+                { label: t("raw_data 字节"), value: t("完全一致") },
                 {
                     label: t("合约类型"),
                     value: tx.asset === "native" ? "TransferContract" : "TriggerSmartContract",
-                    mono: false,
                 },
-                { label: t("过期时间"), value: t("30 分钟"), mono: false },
+                { label: t("过期时间"), value: t("30 分钟") },
                 feeFact(tx),
             ];
         case "solana":
             return [
                 common,
                 signer,
-                { label: t("消息字节"), value: t("完全一致"), mono: false },
+                { label: t("消息字节"), value: t("完全一致") },
                 { label: t("nonce 账户"), value: shortAddress(plan.nonceAccount), mono: true },
             ];
     }
@@ -121,56 +117,53 @@ export function verifyChecks(tx: TxRecord): TxFact[] {
 export function detailFacts(tx: TxRecord): TxFact[] {
     const { plan } = tx;
     const rows: TxFact[] = [
-        { label: t("网络"), value: networkName(tx.network), mono: false },
+        { label: t("网络"), value: networkName(tx.network) },
         { label: t("发送方"), value: tx.from, mono: true },
         { label: t("接收方"), value: tx.to, mono: true },
-        { label: t("金额"), value: amountText(tx), mono: false },
+        { label: t("金额"), value: amountText(tx) },
     ];
     if (tx.asset !== "native") rows.push({ label: t("代币合约"), value: tx.asset, mono: true });
     switch (plan.chain) {
         case "evm": {
             const chainId = networkList().find((item) => item.id === tx.network)?.chainId;
             rows.push(
-                { label: "Chain ID", value: String(chainId ?? "—"), mono: false },
-                { label: "Nonce", value: String(plan.nonce), mono: false },
-                { label: t("Gas 上限"), value: plan.gasLimit.toLocaleString("en-US"), mono: false },
+                { label: "Chain ID", value: String(chainId ?? "—") },
+                { label: "Nonce", value: String(plan.nonce) },
+                { label: t("Gas 上限"), value: plan.gasLimit.toLocaleString("en-US") },
                 feeFact(tx),
                 {
                     label: t("实际手续费"),
                     value: tx.fee ? nativeText(tx, BigInt(tx.fee)) : t("打包后显示"),
-                    mono: false,
                 },
             );
             break;
         }
         case "bitcoin":
             rows.push(
-                { label: t("输入"), value: t("{0} 个", plan.inputs.length), mono: false },
+                { label: t("输入"), value: t("{0} 个", plan.inputs.length) },
                 { label: t("找零"), value: plan.changePath ?? t("无找零"), mono: true },
-                { label: t("手续费"), value: nativeText(tx, BigInt(plan.fee)), mono: false },
-                { label: t("费率"), value: `${plan.feeRate} sat/vB`, mono: false },
-                { label: "RBF", value: t("开启"), mono: false },
+                { label: t("手续费"), value: nativeText(tx, BigInt(plan.fee)) },
+                { label: t("费率"), value: `${plan.feeRate} sat/vB` },
+                { label: "RBF", value: t("开启") },
             );
             break;
         case "tron":
             rows.push(
-                { label: t("过期时间"), value: t("30 分钟"), mono: false },
-                { label: "fee_limit", value: nativeText(tx, BigInt(plan.feeLimit)), mono: false },
+                { label: t("过期时间"), value: t("30 分钟") },
+                { label: "fee_limit", value: nativeText(tx, BigInt(plan.feeLimit)) },
                 {
                     label: t("实际手续费"),
                     value: tx.fee ? nativeText(tx, BigInt(tx.fee)) : t("打包后显示"),
-                    mono: false,
                 },
             );
             break;
         case "solana":
             rows.push(
                 { label: t("nonce 账户"), value: plan.nonceAccount, mono: true },
-                { label: t("基础费"), value: nativeText(tx, 5000n), mono: false },
+                { label: t("基础费"), value: nativeText(tx, 5000n) },
                 {
                     label: t("优先费"),
                     value: nativeText(tx, solanaPriority(plan.priority, plan.computeUnits)),
-                    mono: false,
                 },
             );
             break;

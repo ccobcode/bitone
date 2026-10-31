@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Link, useLocation, useNavigate } from "react-router";
 import { playChime, unlockChime } from "../core/chime";
 import { t } from "../core/i18n";
+import tokens from "../core/tokens.gen.json";
 import { saveSetting, useLive } from "../data/app";
 import { db, type TxRecord, type TxState } from "../data/db";
 import { claimNotice, isTestnet, mergedNotice, onNotice, publish, type Notice } from "../data/notify";
@@ -10,7 +11,7 @@ import { Button } from "./primitives";
 
 /** 这段时间内连续的转入只响一次。 */
 const MERGE_WINDOW = 3000;
-const TOAST_LIFE = 5000;
+const TOAST_LIFE = tokens.toast;
 
 interface Toast {
     id: number;
@@ -108,7 +109,7 @@ function ToastCard({ toast, onClose, children }: { toast: Toast; onClose(): void
             onMouseLeave={() => setHeld(false)}
             onFocus={() => setHeld(true)}
             onBlur={() => setHeld(false)}
-            className="rise pointer-events-auto flex flex-col gap-s2 rounded-r3 border border-line bg-surface px-s4 py-s3 text-t3"
+            className="rise pointer-events-auto flex flex-col gap-s2 rounded-r3 bg-surface px-s4 py-s3 text-t3 shadow-2"
         >
             <div className="flex items-center gap-s2">
                 <Icon
@@ -235,7 +236,7 @@ export function Notices() {
 
     if (toasts.length === 0) return null;
     return (
-        <div className="pointer-events-none fixed inset-x-s4 top-s4 z-40 flex flex-col gap-s2 nav:inset-x-auto nav:top-auto nav:right-s6 nav:bottom-s6 nav:w-90">
+        <div className="pointer-events-none fixed inset-x-(--page-x) top-[calc(var(--safe-top)+var(--s2))] z-40 flex flex-col gap-s2 nav:inset-x-auto nav:top-auto nav:right-s6 nav:bottom-s6 nav:w-90">
             {toasts.map((toast) => (
                 <ToastCard key={toast.id} toast={toast} onClose={() => close(toast.id)}>
                     {toast.ask ? (

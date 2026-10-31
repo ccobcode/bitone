@@ -5,12 +5,6 @@ use crate::Network;
 /// 找零索引超过已签过的最高索引加这个数时按高风险处理。
 pub const CHANGE_GAP: u32 = 20;
 
-/// 无法识别的调用是否允许签名。
-pub const ALLOW_UNKNOWN_CALLS: bool = true;
-
-/// 权限变更是否允许签名。
-pub const ALLOW_PERMISSION_CHANGES: bool = true;
-
 /// 手续费上限，单位是最小单位。超过时进入高风险样式。
 pub fn fee_ceiling(network: Network) -> u128 {
     use Network::*;

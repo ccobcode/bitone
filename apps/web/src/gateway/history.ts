@@ -5,13 +5,10 @@ import { shortAddress } from "../core/text";
 import { txKey, type ChainEntry, type FeedCursor, type Note, type TxRecord, type TxState } from "../data/db";
 import { STATE_LABELS, failureNote, isOverdue, type ChainStatus } from "../data/machine";
 import type { Target } from "./assets";
-import { MAX_ADDRESSES, addressKey, type HistoryItem } from "./client";
+import { MAX_ADDRESSES, addressKey, chunks, type HistoryItem } from "./client";
 import { t } from "../core/i18n";
 
-export interface HistoryStream {
-    network: string;
-    addresses: string[];
-}
+export type HistoryStream = Target;
 
 /** 已同步过的批次保持不变，翻页游标绑定它们。没同步过的地址按单次上限分成新批次。 */
 export function historyStreams(
@@ -25,10 +22,7 @@ export function historyStreams(
             .map((cursor) => ({ network, addresses: cursor.addresses }));
         const synced = new Set(kept.flatMap((stream) => stream.addresses));
         const fresh = addresses.filter((address) => !synced.has(address));
-        for (let i = 0; i < fresh.length; i += MAX_ADDRESSES) {
-            kept.push({ network, addresses: fresh.slice(i, i + MAX_ADDRESSES) });
-        }
-        return kept;
+        return [...kept, ...chunks(fresh, MAX_ADDRESSES).map((batch) => ({ network, addresses: batch }))];
     });
 }
 
@@ -66,15 +60,21 @@ export interface FeedRow {
     href: string;
 }
 
-export function txHref(id: string): string {
-    return `/history/${encodeURIComponent(id)}`;
+/** 上链交易的详情页。本地发起的和网关同步的是同一个地址。 */
+export function recordHref(network: string, hash: string): string {
+    return `/history/${network}/${encodeURIComponent(txKey(network, hash).slice(network.length + 1))}`;
+}
+
+/** 本地交易的详情页。上过链的用记录的地址，其余还只是请求，用编号。 */
+export function txHref(tx: Pick<TxRecord, "id" | "state" | "network" | "hash">): string {
+    return tx.hash && LEDGER.has(tx.state) ? recordHref(tx.network, tx.hash) : `/history/${encodeURIComponent(tx.id)}`;
 }
 
 function signHref(id: string): string {
     return `/sign/${encodeURIComponent(id)}`;
 }
 
-const TONES: Record<TxState, FeedTone> = {
+export const TONES: Record<TxState, FeedTone> = {
     signing: "accent",
     signed: "accent",
     broadcasting: "neutral",
@@ -139,7 +139,7 @@ function localRow(tx: TxRecord, remark: string | null): FeedRow {
         time: tx.createdAt,
         ...localNote(tx),
         remark,
-        href: txHref(tx.id),
+        href: txHref(tx),
     };
 }
 
@@ -169,7 +169,7 @@ function remoteRow({ id, network, item }: RemoteItem, own: ReadonlySet<string>, 
         note: item.status === "failed" ? t("执行失败，手续费已扣除") : null,
         noteTone: item.status === "failed" ? "danger" : "muted",
         remark,
-        href: txHref(id),
+        href: recordHref(network, item.hash),
     };
 }
 
@@ -272,14 +272,14 @@ function attention(
         case "signed":
             return { status: label, tone: "accent", action: t("广播"), href: signHref(tx.id) };
         case "uncertain":
-            return { status: label, tone: "warn", action: t("处理"), href: txHref(tx.id) };
+            return { status: label, tone: "warn", action: t("处理"), href: txHref(tx) };
         case "broadcast":
             return isOverdue(tx, now)
-                ? { status: t("等待时间过长"), tone: "warn", action: t("处理"), href: txHref(tx.id) }
+                ? { status: t("等待时间过长"), tone: "warn", action: t("处理"), href: txHref(tx) }
                 : null;
         case "failed":
             return tx.updatedAt > seenAt
-                ? { status: label, tone: "danger", action: t("查看"), href: txHref(tx.id) }
+                ? { status: label, tone: "danger", action: t("查看"), href: txHref(tx) }
                 : null;
         default:
             return null;

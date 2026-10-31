@@ -1,8 +1,9 @@
 package com.bitone.wallet.platform
 
-/** 展示二维码时用最高亮度并保持常亮，离开后恢复。 */
+/** 展示二维码和扫码时屏幕常亮，离开后恢复。 */
 interface Brightness {
-    fun maximize()
+    /** 保持常亮。[maximize] 时同时调到最高亮度。 */
+    fun hold(maximize: Boolean)
 
     fun restore()
 }

@@ -4,7 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.bitone.wallet.ui.theme.BitOneTheme
+import com.bitone.wallet.ui.theme.FontSize
 import com.bitone.wallet.ui.theme.Motion
 import com.bitone.wallet.ui.theme.Radius
 import com.bitone.wallet.ui.theme.Size
@@ -27,23 +28,22 @@ import com.bitone.wallet.ui.theme.elevation
 enum class NavItem(val label: String, val icon: String) {
     Wallet("钱包", Icons.Wallet),
     Receive("收款", Icons.Receive),
-    Settings("设置", Icons.Sliders),
+    Settings("设置", Icons.Settings),
 }
 
 /** 悬浮胶囊，高度等于列表行高。 */
 val AppNavHeight = Size.hRow
 
-/** 底色块包住图标和文字，在项目之间滑动。未选中项也显示文字，切换时布局不跳动。 */
+/** 底色块包住图标和文字，在项目之间滑动，图标在上文字在下，和网页端的底部标签栏同一规格。 */
 @Composable
-fun AppNav(active: NavItem, onSelect: (NavItem) -> Unit, modifier: Modifier = Modifier) {
+fun AppNav(active: NavItem, onSelect: (NavItem) -> Unit) {
     val c = BitOneTheme.colors
     val shape = RoundedCornerShape(Radius.rf)
     SlidingTrack(
         count = NavItem.entries.size,
         selected = active.ordinal,
         modifier =
-            modifier
-                .fillMaxWidth()
+            Modifier.fillMaxWidth()
                 .height(AppNavHeight)
                 .elevation(BitOneTheme.elevation.elevation2, shape)
                 .background(c.surface, shape)
@@ -57,13 +57,13 @@ fun AppNav(active: NavItem, onSelect: (NavItem) -> Unit, modifier: Modifier = Mo
                     stateSpec(Motion.fast),
                     label = "nav",
                 )
-            Row(
+            Column(
                 Modifier.weight(1f).fillMaxHeight().tap(role = Role.Tab) { onSelect(item) },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.s2, Alignment.CenterHorizontally),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
             ) {
                 LineIcon(item.icon, 20.dp, foreground)
-                Txt(item.label, weight = Medium, color = foreground)
+                Txt(item.label, size = FontSize.t1, weight = Medium, color = foreground)
             }
         }
     }

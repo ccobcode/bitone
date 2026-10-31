@@ -15,11 +15,13 @@ import com.bitone.wallet.flow.SelfCheckReport
 import com.bitone.wallet.flow.WalletFlow
 import com.bitone.wallet.ui.components.ActionArea
 import com.bitone.wallet.ui.components.BrandMark
+import com.bitone.wallet.ui.components.Card
 import com.bitone.wallet.ui.components.Chip
 import com.bitone.wallet.ui.components.Icons
 import com.bitone.wallet.ui.components.LineIcon
-import com.bitone.wallet.ui.components.ListGroup
 import com.bitone.wallet.ui.components.Medium
+import com.bitone.wallet.ui.components.Notice
+import com.bitone.wallet.ui.components.NoticeTone
 import com.bitone.wallet.ui.components.Page
 import com.bitone.wallet.ui.components.PrimaryButton
 import com.bitone.wallet.ui.components.SecondaryButton
@@ -49,15 +51,10 @@ fun WelcomeScreen(flow: WalletFlow) {
                 Txt("BitOne", size = FontSize.t7, weight = SemiBold)
                 Txt("多链冷钱包", color = c.text3)
             }
-            Txt(
-                "BitOne 只在专用手机上运行：恢复出厂，不登录账号，只装本应用。",
-                size = FontSize.t2,
-                color = c.text2,
-                lineHeight = 1.6f,
-            )
+            Notice("BitOne 只在专用手机上运行：恢复出厂，不登录账号，只装本应用。")
         }
         flow.report?.let { SelfCheckList(it) }
-        Txt("移除屏幕锁后，钱包只能用助记词恢复。", size = FontSize.t2, color = c.text3)
+        Notice("移除屏幕锁后，钱包只能用助记词恢复。", NoticeTone.Warn)
     }
 }
 
@@ -74,7 +71,7 @@ private fun SelfCheckList(report: SelfCheckReport) {
             val warned = report.warned > 0
             Chip(report.summary, if (warned) c.warnSoft else c.okSoft, if (warned) c.warn else c.ok)
         }
-        ListGroup {
+        Card {
             Column(Modifier.padding(vertical = Space.s2)) {
                 report.items.forEachIndexed { index, item ->
                     val warn = item.state != CheckState.Pass
@@ -87,7 +84,6 @@ private fun SelfCheckList(report: SelfCheckReport) {
                             if (warn) Icons.Warn else Icons.Check,
                             18.dp,
                             if (warn) c.warn else c.ok,
-                            strokeWidth = 2.2f,
                         )
                         Txt(item.label, Modifier.weight(1f))
                         Txt(item.value, size = FontSize.t2, color = if (warn) c.warn else c.text3)

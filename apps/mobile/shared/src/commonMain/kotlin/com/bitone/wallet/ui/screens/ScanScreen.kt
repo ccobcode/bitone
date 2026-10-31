@@ -44,6 +44,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.bitone.wallet.flow.WalletFlow
+import com.bitone.wallet.platform.Brightness
 import com.bitone.wallet.ui.components.BackButton
 import com.bitone.wallet.ui.components.Icons
 import com.bitone.wallet.ui.components.Txt
@@ -56,19 +57,19 @@ import com.bitone.wallet.ui.theme.Radius
 import com.bitone.wallet.ui.theme.Size as TokenSize
 import com.bitone.wallet.ui.theme.Space
 
-private val FrameSide = 260.dp
-private val FrameArm = 44.dp
+private val SweepInset = 24.dp
 private const val HINT_ALPHA = 0.78f
 
-/** A5 扫描。全屏相机，永远是深色。只有关闭按钮、取景框和一句提示，收齐后短促震动并直接进入下一页。 */
+/** A5 扫描。全屏相机，永远是深色。只有关闭按钮、取景框和一句提示，收齐后短促震动并直接进入下一页。扫码时对着屏幕，常亮，不调亮度。 */
 @Composable
-fun ScanScreen(flow: WalletFlow) {
+fun ScanScreen(flow: WalletFlow, brightness: Brightness) {
+    KeepScreenOn(brightness, maximize = false)
     val c = BitOneTheme.colors
     val haptic = LocalHapticFeedback.current
     val done = flow.scanProgress >= 1f
     LaunchedEffect(done) { if (done) haptic.performHapticFeedback(HapticFeedbackType.Confirm) }
     Box(Modifier.fillMaxSize().background(c.camera)) {
-        flow.scanner.Viewfinder(Modifier.fillMaxSize(), false, flow::onScanned, flow::cameraFailed)
+        flow.scanner.Viewfinder(Modifier.fillMaxSize(), flow::onScanned, flow::cameraFailed)
         Column(
             Modifier.fillMaxSize()
                 .windowInsetsPadding(
@@ -107,9 +108,9 @@ private fun ScanFrame(done: Boolean) {
                 animationSpec = infiniteRepeatable(tween(Motion.slow * 6, easing = LinearEasing), RepeatMode.Reverse),
                 label = "sweep",
             )
-    Canvas(Modifier.size(FrameSide)) {
-        val stroke = 4.dp.toPx()
-        val arm = FrameArm.toPx()
+    Canvas(Modifier.size(TokenSize.scanFrame)) {
+        val stroke = TokenSize.scanStroke.toPx()
+        val arm = TokenSize.scanArm.toPx()
         val radius = CornerRadius(Radius.r3.toPx())
         val end = size.width - arm
         // 四个角：画一个圆角方形，用裁剪只留下角。
@@ -126,7 +127,7 @@ private fun ScanFrame(done: Boolean) {
             }
         }
         if (!done) {
-            val margin = 24.dp.toPx()
+            val margin = SweepInset.toPx()
             val y = margin + (size.height - margin * 2) * sweep
             drawLine(c.accent, Offset(margin, y), Offset(size.width - margin, y), strokeWidth = 2.dp.toPx())
         }
@@ -143,10 +144,10 @@ private fun ScanStatus(total: Int, progress: Float) {
         return
     }
     val got = (progress * total).toInt().coerceIn(0, total)
-    val fill by animateFloatAsState(progress, stateSpec(), label = "frames")
+    val fill by animateFloatAsState(progress, stateSpec(Motion.slow), label = "frames")
     val bar = RoundedCornerShape(Radius.rf)
     Row(
-        Modifier.width(FrameSide),
+        Modifier.width(TokenSize.scanFrame),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s3),
     ) {

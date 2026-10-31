@@ -2,8 +2,9 @@
 
 use crate::Error;
 use qrcode::{Color, EcLevel, QrCode};
+use serde::Serialize;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct QrMatrix {
     pub size: u32,
     /// 按行排列，`true` 是深色模块。

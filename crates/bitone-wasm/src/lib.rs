@@ -1,5 +1,6 @@
 //! 网页端的 WASM 绑定。这里不依赖 `bitone-signer`，构建产物里没有任何签名代码。
 
+use bitone_core::hex::{DisplayHex, FromHex};
 use bitone_core::keys::PublicKeys;
 use bitone_core::manifest::{Manifest, VENDOR_KEY};
 use bitone_core::path::account_specs;
@@ -25,33 +26,8 @@ fn network(id: &str) -> Result<Network, JsError> {
     Network::from_id(id).ok_or_else(|| JsError::new("未知网络"))
 }
 
-fn chain_name(chain: Chain) -> &'static str {
-    match chain {
-        Chain::Bitcoin => "bitcoin",
-        Chain::Evm => "evm",
-        Chain::Tron => "tron",
-        Chain::Solana => "solana",
-    }
-}
-
-fn kind_name(kind: AccountKind) -> &'static str {
-    match kind {
-        AccountKind::SegWit => "segwit",
-        AccountKind::Taproot => "taproot",
-        AccountKind::NestedSegWit => "nested-segwit",
-        AccountKind::Legacy => "legacy",
-        AccountKind::Single => "single",
-    }
-}
-
-fn kind_from_name(name: &str) -> Result<AccountKind, JsError> {
-    match name {
-        "segwit" => Ok(AccountKind::SegWit),
-        "taproot" => Ok(AccountKind::Taproot),
-        "nested-segwit" => Ok(AccountKind::NestedSegWit),
-        "legacy" => Ok(AccountKind::Legacy),
-        _ => Err(JsError::new("未知账户类型")),
-    }
+fn kind(id: &str) -> Result<AccountKind, JsError> {
+    AccountKind::from_id(id).ok_or_else(|| JsError::new("未知账户类型"))
 }
 
 #[derive(Serialize)]
@@ -70,7 +46,7 @@ pub fn networks() -> Result<JsValue, JsError> {
         .into_iter()
         .map(|n| NetworkInfo {
             id: n.id(),
-            chain: chain_name(n.chain()),
+            chain: n.chain().id(),
             testnet: n.mode() == Mode::Testnet,
             chain_id: n.evm_chain_id(),
         })
@@ -86,16 +62,8 @@ struct Account {
     path: String,
     /// 这个账户用在哪：`mainnet`、`testnet` 或两者都用的 `both`。网页端按它分开主网和测试网。
     scope: &'static str,
-    #[serde(with = "serde_bytes_array")]
+    #[serde(with = "serde_bytes")]
     key: Vec<u8>,
-}
-
-mod serde_bytes_array {
-    use serde::Serializer;
-
-    pub fn serialize<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_bytes(bytes)
-    }
 }
 
 #[derive(Serialize)]
@@ -115,24 +83,22 @@ fn scope_of(path: &str) -> &'static str {
     }
 }
 
-fn pairing(export: AccountsExport) -> Result<Pairing, bitone_core::Error> {
+fn pairing(export: AccountsExport) -> Pairing {
     let accounts = export
         .accounts
         .into_iter()
-        .map(|a| {
-            Ok(Account {
-                chain: chain_name(protocol::chain_from_code(a.chain)?),
-                kind: kind_name(protocol::kind_from_code(a.kind)?),
-                scope: scope_of(&a.path),
-                path: a.path,
-                key: a.key,
-            })
+        .map(|a| Account {
+            chain: a.chain.id(),
+            kind: a.kind.id(),
+            scope: scope_of(&a.path),
+            path: a.path,
+            key: a.key,
         })
-        .collect::<Result<Vec<_>, bitone_core::Error>>()?;
-    Ok(Pairing {
-        fingerprint: export.fingerprint.iter().map(|b| format!("{b:02X}")).collect(),
+        .collect();
+    Pairing {
+        fingerprint: export.fingerprint.to_upper_hex_string(),
         accounts,
-    })
+    }
 }
 
 /// 扫码接收器。每扫到一帧调用一次 `receive`，收齐后读取结果。
@@ -159,11 +125,6 @@ impl FrameReceiver {
         self.decoder.complete()
     }
 
-    #[wasm_bindgen(js_name = urType)]
-    pub fn ur_type(&self) -> Option<String> {
-        self.decoder.ur_type().map(String::from)
-    }
-
     /// 收齐后的原始消息。
     pub fn message(&self) -> Result<Vec<u8>, JsError> {
         self.decoder.message().map_err(js_error)
@@ -176,14 +137,14 @@ impl FrameReceiver {
         }
         let message = self.decoder.message().map_err(js_error)?;
         let export = AccountsExport::decode(&message).map_err(js_error)?;
-        to_js(&pairing(export).map_err(js_error)?)
+        to_js(&pairing(export))
     }
 }
 
 /// 从账户扩展公钥派生 Bitcoin 地址。
 #[wasm_bindgen(js_name = bitcoinAddress)]
 pub fn bitcoin_address(xpub: &[u8], kind: &str, change: bool, index: u32, network_id: &str) -> Result<String, JsError> {
-    address::bitcoin_address(xpub, kind_from_name(kind)?, change, index, network(network_id)?).map_err(js_error)
+    address::bitcoin_address(xpub, self::kind(kind)?, change, index, network(network_id)?).map_err(js_error)
 }
 
 /// EVM、TRON、Solana 账户公钥对应的地址。
@@ -212,8 +173,8 @@ pub fn specs(testnet: bool) -> Result<JsValue, JsError> {
     let list: Vec<Spec> = account_specs(mode, true)
         .into_iter()
         .map(|s| Spec {
-            chain: chain_name(s.chain),
-            kind: kind_name(s.kind),
+            chain: s.chain.id(),
+            kind: s.kind.id(),
             path: s.path,
         })
         .collect();
@@ -223,38 +184,21 @@ pub fn specs(testnet: bool) -> Result<JsValue, JsError> {
 /// 地址核对二维码。路径与网络冲突时报错。`fingerprint` 是 8 位十六进制。
 #[wasm_bindgen(js_name = addressFrame)]
 pub fn address_frame(fingerprint: &str, network_id: &str, path: &str, address: &str) -> Result<String, JsError> {
-    let digits = (fingerprint.len() == 8)
-        .then(|| u32::from_str_radix(fingerprint, 16).ok())
-        .flatten();
-    let fingerprint = digits.ok_or_else(|| JsError::new("指纹格式错误"))?.to_be_bytes();
-    AddressCheck::new(fingerprint, network(network_id)?, path, address)
+    AddressCheck::new(parse_fingerprint(fingerprint)?, network(network_id)?, path, address)
         .and_then(|check| check.frame())
         .map_err(js_error)
-}
-
-#[derive(Serialize)]
-struct Matrix {
-    size: u32,
-    modules: Vec<bool>,
-}
-
-fn matrix_to_js(matrix: qr::QrMatrix) -> Result<JsValue, JsError> {
-    to_js(&Matrix {
-        size: matrix.size,
-        modules: matrix.modules,
-    })
 }
 
 /// UR 帧的二维码模块矩阵，由页面自己画出来。
 #[wasm_bindgen(js_name = qrMatrix)]
 pub fn qr_matrix(part: &str) -> Result<JsValue, JsError> {
-    matrix_to_js(qr::matrix(part).map_err(js_error)?)
+    to_js(&qr::matrix(part).map_err(js_error)?)
 }
 
 /// 普通文本的二维码，比如给付款方扫的收款地址。
 #[wasm_bindgen(js_name = qrText)]
 pub fn qr_text(text: &str) -> Result<JsValue, JsError> {
-    matrix_to_js(qr::text_matrix(text).map_err(js_error)?)
+    to_js(&qr::text_matrix(text).map_err(js_error)?)
 }
 
 /// 内置清单。网页端和冷钱包用同一份，这里是唯一来源。
@@ -396,15 +340,8 @@ struct TronArgs {
     fee_limit: u64,
 }
 
-fn unhex<const N: usize>(text: &str) -> Result<[u8; N], JsError> {
-    let bytes = (0..text.len() / 2)
-        .map(|i| {
-            text.get(i * 2..i * 2 + 2)
-                .and_then(|pair| u8::from_str_radix(pair, 16).ok())
-        })
-        .collect::<Option<Vec<u8>>>()
-        .ok_or_else(|| JsError::new("十六进制格式错误"))?;
-    bytes.try_into().map_err(|_| JsError::new("十六进制长度错误"))
+fn unhex<T: FromHex>(text: &str) -> Result<T, JsError> {
+    T::from_hex(text).map_err(|_| JsError::new("十六进制格式错误"))
 }
 
 #[wasm_bindgen(js_name = buildTronTransfer)]
@@ -530,42 +467,12 @@ impl From<UtxoArgs> for bitcoin::Utxo {
     }
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SelectedUtxo {
-    txid: String,
-    vout: u32,
-    amount: u64,
-    path: String,
-}
-
-#[derive(Serialize)]
-struct Selected {
-    inputs: Vec<SelectedUtxo>,
-    fee: u64,
-    change: u64,
-}
-
 /// 选币。选出后页面要用 `raw-txs` 取回前序交易，再调用 `buildBitcoinTransfer`。
 #[wasm_bindgen(js_name = selectBitcoinCoins)]
 pub fn select_bitcoin_coins(utxos: JsValue, amount: u64, fee_rate: u64, change_kind: &str) -> Result<JsValue, JsError> {
     let list: Vec<UtxoArgs> = parse(utxos)?;
     let list: Vec<bitcoin::Utxo> = list.into_iter().map(Into::into).collect();
-    let selection = bitcoin::select_coins(&list, amount, fee_rate, kind_from_name(change_kind)?).map_err(js_error)?;
-    to_js(&Selected {
-        inputs: selection
-            .inputs
-            .into_iter()
-            .map(|u| SelectedUtxo {
-                txid: u.txid,
-                vout: u.vout,
-                amount: u.amount,
-                path: u.path,
-            })
-            .collect(),
-        fee: selection.fee,
-        change: selection.change,
-    })
+    to_js(&bitcoin::select_coins(&list, amount, fee_rate, kind(change_kind)?).map_err(js_error)?)
 }
 
 #[derive(Serialize)]
@@ -583,12 +490,6 @@ pub fn bitcoin_fee_info(request: &[u8]) -> Result<JsValue, JsError> {
     to_js(&FeeInfo { fee, vsize })
 }
 
-#[derive(Serialize)]
-struct Replaced {
-    fee: u64,
-    change: u64,
-}
-
 /// RBF 用同一组输入提高手续费。`amount` 为 0 表示取消。
 #[wasm_bindgen(js_name = bitcoinReplacement)]
 pub fn bitcoin_replacement(
@@ -599,12 +500,7 @@ pub fn bitcoin_replacement(
     fee_rate: u64,
     change_kind: &str,
 ) -> Result<JsValue, JsError> {
-    let result = bitcoin::replacement(total, amount, old_fee, vsize, fee_rate, kind_from_name(change_kind)?)
-        .map_err(js_error)?;
-    to_js(&Replaced {
-        fee: result.fee,
-        change: result.change,
-    })
+    to_js(&bitcoin::replacement(total, amount, old_fee, vsize, fee_rate, kind(change_kind)?).map_err(js_error)?)
 }
 
 /// ERC-20 的 transfer 调用数据，十六进制，用于估算 Gas。
@@ -613,10 +509,7 @@ pub fn evm_transfer_data(to: &str, amount: &str) -> Result<String, JsError> {
     let recipient = address::parse_evm_address(to).map_err(js_error)?;
     let amount = evm::be_from_decimal(amount).map_err(js_error)?;
     let data = evm::transfer_data(&recipient, &amount);
-    Ok(format!(
-        "0x{}",
-        data.iter().map(|b| format!("{b:02x}")).collect::<String>()
-    ))
+    Ok(format!("0x{}", data.to_lower_hex_string()))
 }
 
 /// 校验清单包，返回版本号。冷钱包导入时还会再校验一次。
@@ -643,31 +536,13 @@ struct KeyArgs {
     key: Vec<u8>,
 }
 
-fn chain_from_name(name: &str) -> Result<Chain, JsError> {
-    match name {
-        "bitcoin" => Ok(Chain::Bitcoin),
-        "evm" => Ok(Chain::Evm),
-        "tron" => Ok(Chain::Tron),
-        "solana" => Ok(Chain::Solana),
-        _ => Err(JsError::new("未知链")),
-    }
-}
-
-fn kind_from_any(name: &str) -> Result<AccountKind, JsError> {
-    if name == "single" {
-        Ok(AccountKind::Single)
-    } else {
-        kind_from_name(name)
-    }
-}
-
 fn public_keys(fingerprint: &str, keys: Vec<KeyArgs>) -> Result<PublicKeys, JsError> {
     let accounts = keys
         .into_iter()
         .map(|k| {
             Ok(ExportedAccount {
-                chain: protocol::chain_code(chain_from_name(&k.chain)?),
-                kind: protocol::kind_code(kind_from_any(&k.kind)?),
+                chain: Chain::from_id(&k.chain).ok_or_else(|| JsError::new("未知链"))?,
+                kind: kind(&k.kind)?,
                 path: k.path,
                 key: k.key,
             })
@@ -678,7 +553,7 @@ fn public_keys(fingerprint: &str, keys: Vec<KeyArgs>) -> Result<PublicKeys, JsEr
         fingerprint: parse_fingerprint(fingerprint)?,
         accounts,
     };
-    PublicKeys::new(&[export]).map_err(js_error)
+    Ok(PublicKeys::new(export))
 }
 
 #[derive(Deserialize)]
@@ -718,8 +593,7 @@ pub fn build_bitcoin_transfer(args: JsValue) -> Result<Vec<u8>, JsError> {
 #[wasm_bindgen(js_name = previewRequest)]
 pub fn preview_request(request: &[u8], keys: JsValue) -> Result<JsValue, JsError> {
     let request = SignRequest::decode(request).map_err(js_error)?;
-    let fingerprint: String = request.fingerprint.iter().map(|b| format!("{b:02X}")).collect();
-    let keys = public_keys(&fingerprint, parse(keys)?)?;
+    let keys = public_keys(&request.fingerprint.to_upper_hex_string(), parse(keys)?)?;
     let wide = u32::MAX / 2;
     let ctx = ReviewContext {
         keys: &keys,
@@ -745,7 +619,7 @@ pub fn verify_response(request: &[u8], response: &[u8], signer: &[u8]) -> Result
     let response = SignResponse::decode(response).map_err(js_error)?;
     let verified = tx::verify(&request, &response, signer).map_err(js_error)?;
     to_js(&Checked {
-        raw: verified.raw.iter().map(|b| format!("{b:02x}")).collect(),
+        raw: verified.raw.to_lower_hex_string(),
         hash: verified.hash,
     })
 }

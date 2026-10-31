@@ -1,8 +1,9 @@
+import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { Dialog } from "@base-ui/react/dialog";
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { Icon } from "./Icon";
-import { buttonClass } from "./primitives";
+import { buttonClass, type ButtonVariant } from "./primitives";
 import { t } from "../core/i18n";
 
 /** 打开浮层的链接属性。浮层进历史记录，浏览器的返回能关掉它。 */
@@ -28,8 +29,7 @@ export function useCloseOverlay(): () => void {
     };
 }
 
-/** 浮层宽屏时的宽度。确认框没有外框组件，也用这个。 */
-export function sheetWidth(width: number): CSSProperties {
+function sheetWidth(width: number): CSSProperties {
     return { "--sheet-width": `${width}px` } as CSSProperties;
 }
 
@@ -42,15 +42,14 @@ function useKeyboardInset() {
         const view = window.visualViewport;
         if (!view) return;
         const root = document.documentElement;
-        function update() {
-            if (!view) return;
+        const update = () => {
             const covered = Math.max(0, window.innerHeight - view.height - view.offsetTop);
             root.style.setProperty("--keyboard", `${Math.round(covered)}px`);
             // 浮层变矮后，正在输入的那一项可能被挤到可视区外。
             if (covered > 0 && document.activeElement instanceof HTMLElement) {
                 document.activeElement.scrollIntoView({ block: "nearest" });
             }
-        }
+        };
         update();
         view.addEventListener("resize", update);
         view.addEventListener("scroll", update);
@@ -101,5 +100,39 @@ export function Sheet({ title, width = 560, children }: SheetProps) {
                 </Dialog.Popup>
             </Dialog.Portal>
         </Dialog.Root>
+    );
+}
+
+interface ConfirmProps {
+    /** 打开确认框的按钮。 */
+    trigger: ReactNode;
+    variant?: ButtonVariant;
+    title: string;
+    /** 放弃这次操作的按钮文字。 */
+    cancel: string;
+    /** 确认的按钮，放在放弃按钮后面。 */
+    actions: ReactNode;
+    children: ReactNode;
+}
+
+/** 确认一个操作。全站一个写法，默认焦点在放弃按钮上。 */
+export function Confirm({ trigger, variant, title, cancel, actions, children }: ConfirmProps) {
+    return (
+        <AlertDialog.Root>
+            <AlertDialog.Trigger className={buttonClass(variant)}>{trigger}</AlertDialog.Trigger>
+            <AlertDialog.Portal>
+                <AlertDialog.Backdrop className="scrim fixed inset-0 z-30" />
+                <AlertDialog.Popup className="sheet" style={sheetWidth(480)}>
+                    <AlertDialog.Title className="text-t5 font-semibold">{title}</AlertDialog.Title>
+                    <AlertDialog.Description render={<div />} className="flex flex-col gap-s3 text-t3 text-text-2">
+                        {children}
+                    </AlertDialog.Description>
+                    <SheetActions>
+                        <AlertDialog.Close className={buttonClass("secondary")}>{cancel}</AlertDialog.Close>
+                        {actions}
+                    </SheetActions>
+                </AlertDialog.Popup>
+            </AlertDialog.Portal>
+        </AlertDialog.Root>
     );
 }

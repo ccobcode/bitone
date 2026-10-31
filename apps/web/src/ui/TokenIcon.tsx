@@ -49,6 +49,11 @@ interface TokenIconProps {
     size: number;
 }
 
+/** 资产图标。代币在非原生链上时带网络角标。 */
+export function AssetIcon({ entry, network, size }: { entry: AssetEntry | null; network: string; size: number }) {
+    return <TokenIcon asset={entry} chain={entry && !entry.native ? networkIcon(network) : undefined} size={size} />;
+}
+
 export function TokenIcon({ asset, network, chain, size }: TokenIconProps) {
     const src = asset ? ASSET_ICONS[asset.icon] : network ? NETWORK_ICONS[network] : null;
     const badge = chain ? NETWORK_ICONS[chain] : null;

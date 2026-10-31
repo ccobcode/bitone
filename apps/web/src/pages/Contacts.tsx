@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import type { Chain } from "../core";
 import { shortAddress } from "../core/text";
 import { useApp, useLive } from "../data/app";
@@ -11,25 +12,24 @@ import {
     similarContact,
 } from "../data/contacts";
 import { db, type Contact } from "../data/db";
-import { accountIcon, accountTitle } from "../ui/labels";
+import { accountIcon } from "../ui/labels";
 import {
     Button,
-    Collapse,
     Empty,
     FullAddress,
     LABEL,
     LinkButton,
-    ListHead,
+    ListRow,
     Notice,
     PageTitle,
     Section,
     SectionTitle,
     Segmented,
 } from "../ui/primitives";
+import { Sheet, SheetActions, overlayLink, useCloseOverlay } from "../ui/Sheet";
 import { TokenIcon } from "../ui/TokenIcon";
 import { t } from "../core/i18n";
 
-const GRID = "grid grid-cols-[minmax(0,1fr)_auto] gap-x-s4 @split:grid-cols-12 @split:gap-x-s6";
 const CHAINS: { value: Chain; label: string }[] = [
     { value: "bitcoin", label: "Bitcoin" },
     { value: "evm", label: "EVM" },
@@ -56,8 +56,9 @@ function SimilarWarning({ name }: { name: string }) {
     );
 }
 
-function Editor({ value, contacts, onClose }: { value: EditorState; contacts: Contact[]; onClose(): void }) {
+function Editor({ value, contacts }: { value: EditorState; contacts: Contact[] }) {
     const { mode } = useApp();
+    const close = useCloseOverlay();
     const [form, setForm] = useState(value);
     const [failure, setFailure] = useState("");
     const similar = similarContact(
@@ -69,40 +70,37 @@ function Editor({ value, contacts, onClose }: { value: EditorState; contacts: Co
         setFailure("");
         try {
             await saveContact({ ...form, mode });
-            onClose();
+            close();
         } catch (error) {
             setFailure(error instanceof ContactError ? error.message : t("保存失败，请重试。"));
         }
     }
 
     return (
-        <Section aria-labelledby="h-edit" className="flex flex-col gap-s4">
-            <SectionTitle id="h-edit">{form.id ? t("编辑地址") : t("添加地址")}</SectionTitle>
-            <div className="grid grid-cols-1 gap-s4 @split:grid-cols-2">
-                <div className="flex min-w-0 flex-col gap-s2">
-                    <label htmlFor="contact-name" className={LABEL}>
-                        {t("名称")}
-                    </label>
-                    <input
-                        id="contact-name"
-                        type="text"
-                        maxLength={MAX_CONTACT_NAME}
-                        value={form.name}
-                        onChange={(event) => setForm({ ...form, name: event.target.value })}
-                        className="field text-t3"
-                    />
-                </div>
-                <div className="flex min-w-0 flex-col gap-s2">
-                    <span className={LABEL}>{t("链")}</span>
-                    <Segmented
-                        label={t("链")}
-                        size="lg"
-                        stretch
-                        value={form.chain}
-                        onChange={(chain) => setForm({ ...form, chain })}
-                        options={CHAINS}
-                    />
-                </div>
+        <Sheet title={form.id ? t("编辑地址") : t("添加地址")}>
+            <div className="flex min-w-0 flex-col gap-s2">
+                <label htmlFor="contact-name" className={LABEL}>
+                    {t("名称")}
+                </label>
+                <input
+                    id="contact-name"
+                    type="text"
+                    maxLength={MAX_CONTACT_NAME}
+                    value={form.name}
+                    onChange={(event) => setForm({ ...form, name: event.target.value })}
+                    className="field text-t3"
+                />
+            </div>
+            <div className="flex min-w-0 flex-col gap-s2">
+                <span className={LABEL}>{t("链")}</span>
+                <Segmented
+                    label={t("链")}
+                    size="lg"
+                    stretch
+                    value={form.chain}
+                    onChange={(chain) => setForm({ ...form, chain })}
+                    options={CHAINS}
+                />
             </div>
             <div className="flex flex-col gap-s2">
                 <label htmlFor="contact-address" className={LABEL}>
@@ -120,33 +118,35 @@ function Editor({ value, contacts, onClose }: { value: EditorState; contacts: Co
             </div>
             {similar ? <SimilarWarning name={similar.name} /> : null}
             {failure ? <Notice tone="danger">{failure}</Notice> : null}
-            <div className="flex justify-end gap-s2">
-                <Button onClick={onClose}>{t("取消")}</Button>
+            <SheetActions>
+                <Button onClick={close}>{t("取消")}</Button>
                 <Button variant="primary" onClick={() => void save()}>
                     {t("保存")}
                 </Button>
-            </div>
-        </Section>
+            </SheetActions>
+        </Sheet>
     );
+}
+
+/** 添加和编辑联系人。`?edit=new` 是添加，其余是联系人 id。 */
+export function ContactDialog() {
+    const { mode } = useApp();
+    const [params] = useSearchParams();
+    const contacts = useLive(async () => (await db.contacts.toArray()).filter((row) => row.mode === mode), [mode]);
+    if (!contacts) return null;
+    const id = params.get("edit");
+    const contact = contacts.find((row) => row.id === id);
+    const value = contact
+        ? { id: contact.id, name: contact.name, chain: contact.chain, address: contact.address }
+        : { name: "", chain: "evm" as const, address: "" };
+    return <Editor key={id} value={value} contacts={contacts.filter((row) => !row.pending)} />;
 }
 
 function PendingSection({ list, confirmed }: { list: Contact[]; confirmed: Contact[] }) {
     return (
-        <section
-            aria-labelledby="h-pend"
-            className="tint rise flex flex-col gap-s4 rounded-r3 bg-warn-soft p-s4 @split:p-s6"
-        >
-            <div className="flex flex-col gap-s1">
-                <div className="flex items-baseline gap-s2">
-                    <SectionTitle id="h-pend" className="text-warn">
-                        {t("待确认")}
-                    </SectionTitle>
-                    <span className="text-t2 text-warn">
-                        {list.length} {t("个")}
-                    </span>
-                </div>
-                <p className="text-t2 text-text-2">{t("这些联系人来自备份，确认后才能用于转账。")}</p>
-            </div>
+        <Section aria-labelledby="h-pend" className="gap-s2">
+            <SectionTitle id="h-pend">{t("待确认")}</SectionTitle>
+            <Notice tone="warn">{t("这些联系人来自备份，确认后才能用于转账。")}</Notice>
             <ul className="stagger flex flex-col gap-s3">
                 {list.map((contact) => {
                     const similar = similarContact(
@@ -173,86 +173,41 @@ function PendingSection({ list, confirmed }: { list: Contact[]; confirmed: Conta
                     );
                 })}
             </ul>
-        </section>
+        </Section>
     );
 }
 
 export default function Contacts() {
     const { mode } = useApp();
     const contacts = useLive(async () => (await db.contacts.toArray()).filter((row) => row.mode === mode), [mode]);
-    // 收起时内容还在，高度才有东西可以过渡。revision 让每次打开都是新的表单。
-    const [editing, setEditing] = useState<EditorState | null>(null);
-    const [open, setOpen] = useState(false);
-    const [revision, setRevision] = useState(0);
     const list = contacts ?? [];
     const pending = list.filter((row) => row.pending);
     const confirmed = list.filter((row) => !row.pending);
-
-    function edit(value: EditorState) {
-        setEditing(value);
-        setRevision(revision + 1);
-        setOpen(true);
-    }
 
     return (
         <>
             <PageTitle
                 aside={
-                    <Button
-                        variant="primary"
-                        className="ml-auto"
-                        onClick={() => edit({ name: "", chain: "evm", address: "" })}
-                    >
+                    <LinkButton variant="primary" size="sm" className="ml-auto" {...overlayLink("?edit=new")}>
                         {t("添加地址")}
-                    </Button>
+                    </LinkButton>
                 }
             >
                 {t("地址簿")}
             </PageTitle>
-            {/* 折叠块和这一行放在一组，收起时不会多占一段间距。 */}
-            <div className="flex flex-col">
-                <Collapse open={open}>
-                    {editing ? (
-                        <div className="pb-s4">
-                            <Editor
-                                key={revision}
-                                value={editing}
-                                contacts={confirmed}
-                                onClose={() => setOpen(false)}
-                            />
-                        </div>
-                    ) : null}
-                </Collapse>
-            </div>
             {pending.length > 0 ? <PendingSection list={pending} confirmed={confirmed} /> : null}
 
             <Section aria-label={t("联系人")} className="gap-0">
                 {confirmed.length > 0 ? (
-                    <div>
-                        <ListHead grid={GRID}>
-                            <span className="col-span-6">{t("名称")}</span>
-                            <span className="col-span-3">{t("网络")}</span>
-                            <span className="col-span-3 text-right">{t("操作")}</span>
-                        </ListHead>
-                        <ul className="stagger">
-                            {confirmed.map((contact) => (
-                                <li key={contact.id} className={`${GRID} row min-h-row items-center py-s2`}>
-                                    <span className="flex min-w-0 items-center gap-s3 @split:col-span-6">
-                                        <TokenIcon network={accountIcon(chainView(contact.chain))} size={32} />
-                                        <span className="flex min-w-0 flex-col">
-                                            <span className="truncate text-t3 font-medium">{contact.name}</span>
-                                            <span
-                                                className="truncate font-mono text-t1 text-text-3"
-                                                title={contact.address}
-                                            >
-                                                {shortAddress(contact.address)}
-                                            </span>
-                                        </span>
-                                    </span>
-                                    <span className="hidden truncate text-t2 text-text-2 @split:col-span-3 @split:block">
-                                        {accountTitle(chainView(contact.chain))}
-                                    </span>
-                                    <span className="row-actions flex items-center justify-end gap-s1 @split:col-span-3">
+                    <ul className="stagger">
+                        {confirmed.map((contact) => (
+                            <ListRow
+                                key={contact.id}
+                                icon={<TokenIcon network={accountIcon(chainView(contact.chain))} size={32} />}
+                                title={contact.name}
+                                sub={<span className="font-mono">{shortAddress(contact.address)}</span>}
+                                actions={
+                                    <>
                                         <LinkButton
                                             to={`/send?contact=${encodeURIComponent(contact.id)}`}
                                             variant="ghost"
@@ -260,20 +215,13 @@ export default function Contacts() {
                                         >
                                             {t("转账")}
                                         </LinkButton>
-                                        <Button
+                                        <LinkButton
+                                            {...overlayLink(`?edit=${encodeURIComponent(contact.id)}`)}
                                             variant="ghost"
                                             size="sm"
-                                            onClick={() =>
-                                                edit({
-                                                    id: contact.id,
-                                                    name: contact.name,
-                                                    chain: contact.chain,
-                                                    address: contact.address,
-                                                })
-                                            }
                                         >
                                             {t("编辑")}
-                                        </Button>
+                                        </LinkButton>
                                         <Button
                                             variant="ghost"
                                             size="sm"
@@ -282,11 +230,11 @@ export default function Contacts() {
                                         >
                                             {t("删除")}
                                         </Button>
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
+                                    </>
+                                }
+                            />
+                        ))}
+                    </ul>
                 ) : (
                     <Empty icon="contacts">
                         {pending.length > 0 ? t("确认后的联系人显示在这里。") : t("地址簿还是空的。")}

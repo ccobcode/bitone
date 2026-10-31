@@ -1,5 +1,6 @@
 import { useSearchParams } from "react-router";
 import { ExportDialog, ImportDialog } from "../pages/Backup";
+import { ContactDialog } from "../pages/Contacts";
 import PairDialog from "../pages/Pair";
 import ReceiveDialog from "../pages/Receive";
 
@@ -10,5 +11,6 @@ export function Overlays() {
     if (params.has("import")) return <ImportDialog />;
     if (params.has("export")) return <ExportDialog />;
     if (params.has("receive")) return <ReceiveDialog />;
+    if (params.has("edit")) return <ContactDialog />;
     return null;
 }

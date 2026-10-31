@@ -16,11 +16,11 @@ import {
 import { useFeed } from "../gateway/feed";
 import type { PriceMap } from "../gateway/client";
 import { useGateway } from "../gateway/provider";
-import { FeedItem } from "../ui/FeedList";
+import { FeedItem } from "../ui/FeedItem";
 import { GatewayDown } from "../ui/GatewayDown";
 import { Icon } from "../ui/Icon";
 import { accountKind } from "../ui/labels";
-import { ChildTitle, Empty, LinkButton, Section, SectionTitle, SkeletonRows } from "../ui/primitives";
+import { ChildTitle, Empty, LinkButton, ListRow, Section, SectionTitle, SkeletonRows } from "../ui/primitives";
 import { receiveLink } from "../ui/Sheet";
 import { TokenIcon, networkIcon } from "../ui/TokenIcon";
 import { t } from "../core/i18n";
@@ -35,38 +35,45 @@ function Position({ row, group, prices }: { row: ManifestRow; group: AssetGroup;
     const { entry } = group;
     const cents = rowCents(row, prices);
     return (
-        <li className="row flex min-h-row flex-wrap items-center gap-x-s3 gap-y-s1 py-s2">
-            <TokenIcon network={networkIcon(row.network)} size={32} />
-            <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-t3 font-medium">{rowTitle(row)}</span>
-                <span className="truncate font-mono text-t1 text-text-3">{shortAddress(row.address)}</span>
-            </span>
-            <span className="flex min-w-0 flex-col items-end text-right">
-                <span className="text-t3">
-                    {row.loaded ? (
-                        formatUnits(row.amount, entry.decimals, { min: entry.minFraction })
-                    ) : (
-                        <span className="text-text-3">—</span>
+        <ListRow
+            icon={<TokenIcon network={networkIcon(row.network)} size={32} />}
+            title={rowTitle(row)}
+            sub={<span className="font-mono">{shortAddress(row.address)}</span>}
+            actions={
+                <>
+                    {isLegacyKind(row.account.kind) ? null : (
+                        <LinkButton
+                            {...receiveLink(row.account.id, { asset: group.key })}
+                            variant="ghost"
+                            size="sm"
+                            aria-label={t("从 {0} 收款", rowTitle(row))}
+                        >
+                            {t("收款")}
+                        </LinkButton>
                     )}
-                </span>
-                {cents === null ? null : <span className="text-t2 text-text-3">{formatUsd(cents)}</span>}
-            </span>
-            <span className="flex shrink-0 gap-s1">
-                {isLegacyKind(row.account.kind) ? null : (
                     <LinkButton
-                        {...receiveLink(row.account.id, { asset: group.key })}
+                        to={sendLink(row)}
                         variant="ghost"
                         size="sm"
-                        aria-label={t("从 {0} 收款", rowTitle(row))}
+                        aria-label={t("从 {0} 转账", rowTitle(row))}
                     >
-                        {t("收款")}
+                        {t("转账")}
                     </LinkButton>
-                )}
-                <LinkButton to={sendLink(row)} variant="ghost" size="sm" aria-label={t("从 {0} 转账", rowTitle(row))}>
-                    {t("转账")}
-                </LinkButton>
-            </span>
-        </li>
+                </>
+            }
+            value={
+                <>
+                    <span className="text-t3 font-medium">
+                        {row.loaded ? (
+                            formatUnits(row.amount, entry.decimals, { min: entry.minFraction })
+                        ) : (
+                            <span className="text-text-3">—</span>
+                        )}
+                    </span>
+                    {cents === null ? null : <span className="text-t1 text-text-3">{formatUsd(cents)}</span>}
+                </>
+            }
+        />
     );
 }
 
@@ -109,10 +116,8 @@ function Detail({ group, prices }: { group: AssetGroup; prices: PriceMap | null 
             </section>
 
             <div className="grid grid-cols-12 items-start gap-s4 @split:gap-s5">
-                <Section aria-labelledby="h-where" className="col-span-12 gap-s1 @4xl:col-span-7">
-                    <SectionTitle id="h-where" className="pb-s1">
-                        {t("分布")}
-                    </SectionTitle>
+                <Section aria-labelledby="h-where" className="col-span-12 gap-s2 @4xl:col-span-7">
+                    <SectionTitle id="h-where">{t("分布")}</SectionTitle>
                     {held.length > 0 ? (
                         <ul className="stagger">
                             {held.map((row) => (
@@ -123,8 +128,8 @@ function Detail({ group, prices }: { group: AssetGroup; prices: PriceMap | null 
                         <Empty icon="assets">{t("还没有余额。")}</Empty>
                     )}
                 </Section>
-                <Section aria-labelledby="h-records" className="col-span-12 gap-s1 @4xl:col-span-5">
-                    <div className="flex items-center justify-between gap-s3 pb-s1">
+                <Section aria-labelledby="h-records" className="col-span-12 gap-s2 @4xl:col-span-5">
+                    <div className="flex items-center justify-between gap-s3">
                         <SectionTitle id="h-records">{t("记录")}</SectionTitle>
                         <Link to="/history" className="link">
                             {t("全部记录")}

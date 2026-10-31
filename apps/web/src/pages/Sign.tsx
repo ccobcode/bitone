@@ -20,11 +20,11 @@ import { cancelTx, markSigned } from "../data/txs";
 import { shortAddress } from "../core/text";
 import { lookupAsset } from "../core/manifest";
 import { AnimatedQr } from "../ui/AnimatedQr";
-import { Camera, type CameraFailure } from "../ui/Camera";
-import { CAMERA_FAILURES } from "../ui/cameraFailures";
+import { buzz, CameraPanel, useImageScan, type CameraFailure } from "../ui/Camera";
 import { Icon } from "../ui/Icon";
 import {
     Button,
+    ChildTitle,
     Chip,
     Collapse,
     Disclosure,
@@ -33,15 +33,17 @@ import {
     FullAddress,
     LinkButton,
     Notice,
-    PageTitle,
     Section,
     SectionTitle,
     SkeletonRows,
 } from "../ui/primitives";
 import { ScanProgress } from "../ui/ScanProgress";
+import { Confirm } from "../ui/Sheet";
 import { StateCard } from "../ui/StateCard";
-import { TokenIcon, networkIcon } from "../ui/TokenIcon";
+import { AssetIcon } from "../ui/TokenIcon";
 import { t, translate } from "../core/i18n";
+
+const ASSETS = { to: "/", label: t("资产") };
 
 /** 561 是 33 的整数倍，见 docs/06-ui.md 第 4.5 节。 */
 const QR_SIZE = 561;
@@ -92,12 +94,8 @@ function ScanPanel({
     const { accounts } = useApp();
     const navigate = useNavigate();
     const receiver = useRef<UrReceiver | null>(null);
-    const upload = useRef<HTMLInputElement>(null);
     const [scanning, setScanning] = useState(false);
-    const [attempt, setAttempt] = useState(0);
     const [failure, setFailure] = useState<CameraFailure | null>(null);
-    const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-    const [deviceId, setDeviceId] = useState("");
     const [progress, setProgress] = useState({ value: 0, frames: 0 });
     const [notice, setNotice] = useState("");
     const [rejected, setRejected] = useState<{ item: string; recorded: string } | null>(null);
@@ -127,6 +125,7 @@ function ScanPanel({
                 const signer = tx.chain === "bitcoin" ? new Uint8Array() : account.key;
                 const verified = verifyResponse(tx.request, message, signer);
                 setScanning(false);
+                buzz();
                 onVerified(verified.raw, verified.hash);
             } catch (error) {
                 setScanning(false);
@@ -152,44 +151,17 @@ function ScanPanel({
         [finish, rejected],
     );
 
-    async function readImages(files: File[]) {
-        try {
-            const { decodeQr } = await import("../scan/zxing");
-            for (const file of files) {
-                const [text] = await decodeQr(file);
-                if (text) feed(text);
-                else setNotice(t("图片里没有识别到二维码。"));
-            }
-        } catch {
-            setNotice(t("图片无法读取。"));
-        }
-    }
+    const images = useImageScan(t("上传签名二维码图片"), feed, setNotice);
 
     async function abandon() {
         await cancelTx(tx.id, t("核验失败，用户放弃"));
-        await navigate(txHref(tx.id), { replace: true });
+        await navigate(txHref(tx), { replace: true });
     }
-
-    const state = failure ? CAMERA_FAILURES[failure] : null;
 
     return (
         <Section aria-labelledby="h-scan" className="col-span-12 @split:col-span-5">
-            <SectionTitle id="h-scan">
-                <span className="mr-s2 text-text-3">2</span>
-                {t("扫描签名结果")}
-            </SectionTitle>
-            <input
-                ref={upload}
-                type="file"
-                accept="image/*"
-                multiple
-                hidden
-                aria-label={t("上传签名二维码图片")}
-                onChange={(event) => {
-                    void readImages([...(event.target.files ?? [])]);
-                    event.target.value = "";
-                }}
-            />
+            <SectionTitle id="h-scan">{t("扫描签名结果")}</SectionTitle>
+            {images.element}
 
             {rejected ? (
                 <StateCard
@@ -210,48 +182,8 @@ function ScanPanel({
                         </>
                     }
                 />
-            ) : state ? (
-                <StateCard
-                    tone="warn"
-                    icon="cameraOff"
-                    title={state.title}
-                    body={state.body}
-                    facts={state.facts}
-                    actions={
-                        <>
-                            <Button onClick={() => upload.current?.click()}>{t("上传图片")}</Button>
-                            <Button variant="primary" onClick={() => setAttempt(attempt + 1)}>
-                                {state.retry}
-                            </Button>
-                        </>
-                    }
-                />
-            ) : scanning ? (
-                <>
-                    {devices.length > 1 ? (
-                        <select
-                            aria-label={t("摄像头")}
-                            value={deviceId}
-                            onChange={(event) => setDeviceId(event.target.value)}
-                            className="field text-t3"
-                        >
-                            <option value="">{t("默认摄像头")}</option>
-                            {devices.map((device, i) => (
-                                <option key={device.deviceId} value={device.deviceId}>
-                                    {device.label || t("摄像头 {0}", i + 1)}
-                                </option>
-                            ))}
-                        </select>
-                    ) : null}
-                    <Camera
-                        key={attempt}
-                        active
-                        deviceId={deviceId}
-                        onText={feed}
-                        onFailure={setFailure}
-                        onDevices={setDevices}
-                    />
-                </>
+            ) : scanning || failure ? (
+                <CameraPanel active failure={failure} onFailure={setFailure} onText={feed} onUpload={images.open} />
             ) : (
                 <div className="flex aspect-[4/3] flex-col items-center justify-center gap-s2 rounded-r3 bg-camera text-on-camera">
                     <Icon name="camera" size={24} />
@@ -259,9 +191,9 @@ function ScanPanel({
                 </div>
             )}
 
-            {rejected || state ? null : (
+            {rejected || failure ? null : (
                 <div className="flex flex-wrap justify-end gap-s2">
-                    <Button onClick={() => upload.current?.click()}>{t("上传图片")}</Button>
+                    <Button onClick={images.open}>{t("上传图片")}</Button>
                     {scanning ? null : (
                         <Button variant="primary" onClick={() => setScanning(true)}>
                             <Icon name="scan" />
@@ -300,7 +232,6 @@ function ScanPanel({
 function CancelPanel({ tx }: { tx: TxRecord }) {
     const { wallet, accounts } = useApp();
     const navigate = useNavigate();
-    const [open, setOpen] = useState(false);
     const [busy, setBusy] = useState(false);
     const [failure, setFailure] = useState("");
     const replace = replaceLabel(tx);
@@ -308,7 +239,7 @@ function CancelPanel({ tx }: { tx: TxRecord }) {
     async function confirm() {
         setBusy(true);
         await cancelTx(tx.id, t("用户取消"));
-        await navigate(txHref(tx.id), { replace: true });
+        await navigate(txHref(tx), { replace: true });
     }
 
     async function sendReplacement() {
@@ -326,24 +257,13 @@ function CancelPanel({ tx }: { tx: TxRecord }) {
     }
 
     return (
-        <div className="flex flex-col">
-            {open ? null : (
-                <div className="flex justify-end">
-                    <Button onClick={() => setOpen(true)}>{t("取消交易")}</Button>
-                </div>
-            )}
-            <Collapse open={open}>
-                <section
-                    aria-labelledby="h-cancel"
-                    className="tint flex flex-col gap-s3 rounded-r3 bg-warn-soft p-s4 @split:p-s6"
-                >
-                    <SectionTitle id="h-cancel" className="text-warn">
-                        {t("取消只影响本地记录")}
-                    </SectionTitle>
-                    <p className="text-t2 text-text-2">{cancelNote(tx)}</p>
-                    {failure ? <Notice tone="danger">{failure}</Notice> : null}
-                    <div className="flex flex-wrap justify-end gap-s2">
-                        <Button onClick={() => setOpen(false)}>{t("继续签名")}</Button>
+        <div className="flex justify-end">
+            <Confirm
+                trigger={t("取消交易")}
+                title={t("取消只影响本地记录")}
+                cancel={t("继续签名")}
+                actions={
+                    <>
                         {replace ? (
                             <Button disabled={busy} onClick={() => void sendReplacement()}>
                                 {replace}
@@ -352,9 +272,12 @@ function CancelPanel({ tx }: { tx: TxRecord }) {
                         <Button variant="danger" disabled={busy} onClick={() => void confirm()}>
                             {t("确认取消")}
                         </Button>
-                    </div>
-                </section>
-            </Collapse>
+                    </>
+                }
+            >
+                {cancelNote(tx)}
+                {failure ? <Notice tone="danger">{failure}</Notice> : null}
+            </Confirm>
         </div>
     );
 }
@@ -389,23 +312,7 @@ function SigningView({ tx }: { tx: TxRecord }) {
 
     return (
         <>
-            <PageTitle>{t("冷钱包签名")}</PageTitle>
-            <div className="flex flex-col gap-s2">
-                <div className="flex flex-wrap items-center gap-s2">
-                    <Chip tone="neutral">{tx.id}</Chip>
-                    <Countdown tx={tx} />
-                    {review && !refused ? (
-                        <Chip tone={review.confirm === "tap" ? "ok" : "warn"}>{review.title}</Chip>
-                    ) : null}
-                </div>
-                {review?.alerts.map((alert) => (
-                    <Notice key={alert} tone="warn">
-                        {t("冷钱包会提示：")}
-                        {alert}
-                    </Notice>
-                ))}
-            </div>
-
+            <ChildTitle parent={ASSETS}>{t("冷钱包签名")}</ChildTitle>
             <div className="grid grid-cols-12 items-start gap-s4 @split:gap-s5">
                 {refused ? (
                     <div className="col-span-12 min-w-0 @split:col-span-7">
@@ -422,10 +329,21 @@ function SigningView({ tx }: { tx: TxRecord }) {
                         aria-labelledby="h-qr"
                         className="col-span-12 flex min-w-0 flex-col gap-s4 @split:col-span-7"
                     >
-                        <SectionTitle id="h-qr">
-                            <span className="mr-s2 text-text-3">1</span>
-                            {t("待签名二维码")}
-                        </SectionTitle>
+                        <div className="flex flex-wrap items-center justify-between gap-s2">
+                            <SectionTitle id="h-qr">{t("待签名二维码")}</SectionTitle>
+                            <div className="flex flex-wrap items-center gap-s2">
+                                <Countdown tx={tx} />
+                                {review ? (
+                                    <Chip tone={review.confirm === "tap" ? "ok" : "warn"}>{review.title}</Chip>
+                                ) : null}
+                            </div>
+                        </div>
+                        {review?.alerts.map((alert) => (
+                            <Notice key={alert} tone="warn">
+                                {t("冷钱包会提示：")}
+                                {alert}
+                            </Notice>
+                        ))}
                         {qrError ? (
                             <Notice tone="danger">{qrError}</Notice>
                         ) : (
@@ -443,11 +361,7 @@ function SigningView({ tx }: { tx: TxRecord }) {
                     <dl aria-label={t("交易摘要")} className="flex flex-col text-t2">
                         <Fact label={t("发送")}>
                             <span className="inline-flex items-center gap-s2">
-                                <TokenIcon
-                                    asset={entry}
-                                    chain={entry && !entry.native ? networkIcon(tx.network) : undefined}
-                                    size={16}
-                                />
+                                <AssetIcon entry={entry} network={tx.network} size={16} />
                                 {amountText(tx)}
                             </span>
                         </Fact>
@@ -482,7 +396,7 @@ function SignedView({ tx }: { tx: TxRecord }) {
     const fee = feeFact(tx);
     return (
         <>
-            <PageTitle>{t("广播")}</PageTitle>
+            <ChildTitle parent={ASSETS}>{t("广播")}</ChildTitle>
             <Section aria-labelledby="h-send" className="gap-s4">
                 <SectionTitle id="h-send">{t("核验通过")}</SectionTitle>
                 <dl aria-label={t("交易摘要")} className="flex flex-col text-t2">
@@ -499,7 +413,7 @@ function SignedView({ tx }: { tx: TxRecord }) {
                         {t("放弃")}
                     </Button>
                     <Button variant="primary" disabled={busy} onClick={() => void send()}>
-                        {t("广播交易")}
+                        {busy ? t("广播中") : t("广播交易")}
                     </Button>
                 </div>
             </Section>
@@ -511,7 +425,7 @@ function ClosedView({ tx }: { tx: TxRecord }) {
     const expired = tx.timeline.at(-1)?.note === "手续费报价已过期" || tx.timeline.at(-1)?.note === "超过有效期";
     return (
         <>
-            <PageTitle>{t("冷钱包签名")}</PageTitle>
+            <ChildTitle parent={ASSETS}>{t("冷钱包签名")}</ChildTitle>
             <StateCard
                 tone="warn"
                 icon="clock"
@@ -545,7 +459,7 @@ export default function Sign() {
     if (tx === undefined) {
         return (
             <>
-                <PageTitle>{t("冷钱包签名")}</PageTitle>
+                <ChildTitle parent={ASSETS}>{t("冷钱包签名")}</ChildTitle>
                 <SkeletonRows />
             </>
         );
@@ -553,7 +467,7 @@ export default function Sign() {
     if (tx === null) {
         return (
             <>
-                <PageTitle>{t("冷钱包签名")}</PageTitle>
+                <ChildTitle parent={ASSETS}>{t("冷钱包签名")}</ChildTitle>
                 <Empty icon="qr" action={<LinkButton to="/history">{t("查看记录")}</LinkButton>}>
                     {t("没有找到这笔交易。")}
                 </Empty>
@@ -563,5 +477,5 @@ export default function Sign() {
     if (tx.state === "signing") return <SigningView key={tx.id} tx={tx} />;
     if (tx.state === "signed") return <SignedView key={tx.id} tx={tx} />;
     if ((tx.state === "abandoned" && !tx.raw) || tx.state === "expired") return <ClosedView tx={tx} />;
-    return <Navigate to={txHref(tx.id)} replace />;
+    return <Navigate to={txHref(tx)} replace />;
 }

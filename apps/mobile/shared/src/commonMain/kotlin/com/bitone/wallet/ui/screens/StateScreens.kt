@@ -18,9 +18,9 @@ import com.bitone.wallet.flow.CheckState
 import com.bitone.wallet.flow.WalletFlow
 import com.bitone.wallet.ui.components.ActionArea
 import com.bitone.wallet.ui.components.BrandMark
+import com.bitone.wallet.ui.components.Card
 import com.bitone.wallet.ui.components.Icons
 import com.bitone.wallet.ui.components.LineIcon
-import com.bitone.wallet.ui.components.ListGroup
 import com.bitone.wallet.ui.components.ListRow
 import com.bitone.wallet.ui.components.Page
 import com.bitone.wallet.ui.components.PrimaryButton
@@ -41,13 +41,12 @@ private fun StatePage(
     flow: WalletFlow,
     title: String,
     icon: String,
-    iconBackground: Color,
-    iconColor: Color,
     heading: String,
     body: String,
-    rows: List<StateRow>,
     action: String,
     onAction: () -> Unit,
+    warn: Boolean = false,
+    rows: List<StateRow> = emptyList(),
     secondary: String? = null,
     onSecondary: () -> Unit = {},
     notes: List<String> = emptyList(),
@@ -65,15 +64,17 @@ private fun StatePage(
         },
     ) {
         Box(
-            Modifier.padding(top = Space.s4).size(64.dp).background(iconBackground, CircleShape),
+            Modifier.padding(top = Space.s4)
+                .size(64.dp)
+                .background(if (warn) c.warnSoft else c.dangerSoft, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            LineIcon(icon, 32.dp, iconColor)
+            LineIcon(icon, 32.dp, if (warn) c.warn else c.danger)
         }
         Txt(heading, size = FontSize.t5, weight = SemiBold, align = TextAlign.Center)
-        Txt(body, color = c.text2, align = TextAlign.Center, lineHeight = 1.6f)
+        Txt(body, color = c.text2, align = TextAlign.Center)
         if (rows.isNotEmpty()) {
-            ListGroup {
+            Card {
                 rows.forEachIndexed { index, row ->
                     ListRow(Modifier.staggerIn(index)) {
                         Txt(row.label, Modifier.weight(1f), size = FontSize.t2, color = c.text3)
@@ -83,7 +84,7 @@ private fun StatePage(
             }
         }
         if (notes.isNotEmpty()) {
-            ListGroup {
+            Card {
                 Column(Modifier.padding(vertical = Space.s2)) {
                     notes.forEachIndexed { index, note ->
                         Box(
@@ -120,8 +121,6 @@ fun SelfCheckFailedScreen(flow: WalletFlow) {
         flow = flow,
         title = "离线自检",
         icon = Icons.Alert,
-        iconBackground = c.dangerSoft,
-        iconColor = c.danger,
         heading = "签名已锁定",
         body = "处理下面的问题后重新检测。",
         rows = rows,
@@ -139,8 +138,6 @@ fun FingerprintMismatchScreen(flow: WalletFlow) {
         flow = flow,
         title = "扫描",
         icon = Icons.Key,
-        iconBackground = c.dangerSoft,
-        iconColor = c.danger,
         heading = "这笔请求不属于本钱包",
         body = if (passphrase) "启用了 BIP39 密码时，请检查是否输错。" else "请在网页端换成本钱包再发起。",
         rows =
@@ -162,9 +159,8 @@ fun ParseFailedScreen(flow: WalletFlow) {
     StatePage(
         flow = flow,
         title = "扫描",
-        icon = Icons.Help,
-        iconBackground = c.warnSoft,
-        iconColor = c.warn,
+        icon = Icons.Unknown,
+        warn = true,
         heading = "无法解析这个二维码",
         body = "数据不完整，或格式不受支持。",
         rows = flow.scanFailure.takeIf { it.isNotEmpty() }?.let { listOf(StateRow("原因", it, c.warn)) }.orEmpty(),
@@ -193,8 +189,6 @@ fun ForbiddenScreen(flow: WalletFlow) {
         flow = flow,
         title = "核对交易",
         icon = Icons.Refused,
-        iconBackground = c.dangerSoft,
-        iconColor = c.danger,
         heading = "这笔请求不能签名",
         body = "触发以下任何一项时，冷钱包拒绝签名。",
         rows = listOf(StateRow("原因", flow.refusal, c.danger)),
@@ -213,11 +207,9 @@ fun CameraDeniedScreen(flow: WalletFlow) {
         flow = flow,
         title = "扫描",
         icon = Icons.CameraOff,
-        iconBackground = c.warnSoft,
-        iconColor = c.warn,
+        warn = true,
         heading = if (broken) "摄像头打不开" else "需要摄像头权限",
         body = "扫码是这台手机唯一的输入方式。",
-        rows = emptyList(),
         action = if (broken) "重新打开" else "打开设置",
         onAction = if (broken) flow::rescan else flow::openCameraSettings,
         secondary = "退出",
@@ -233,8 +225,6 @@ fun NeedsRecoveryScreen(flow: WalletFlow) {
         flow = flow,
         title = "钱包",
         icon = Icons.Key,
-        iconBackground = c.dangerSoft,
-        iconColor = c.danger,
         heading = "钱包需要恢复",
         body = "屏幕锁被移除后，硬件密钥已失效。",
         rows =
@@ -255,11 +245,8 @@ fun WipedScreen(flow: WalletFlow) {
         flow = flow,
         title = "钱包",
         icon = Icons.Alert,
-        iconBackground = c.dangerSoft,
-        iconColor = c.danger,
         heading = "钱包已抹除",
         body = "PIN 错误达到 10 次，可用助记词恢复。",
-        rows = emptyList(),
         action = "重新开始",
         onAction = flow::restartAfterWipe,
     )
@@ -271,7 +258,7 @@ fun BootScreen(flow: WalletFlow) {
     val c = BitOneTheme.colors
     Page(
         contentAlignment = Alignment.CenterHorizontally,
-        contentCentered = true,
+        contentAnchor = Alignment.CenterVertically,
         contentGap = Space.s4,
     ) {
         BrandMark(56.dp)

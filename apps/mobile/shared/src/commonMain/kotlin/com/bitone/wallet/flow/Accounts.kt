@@ -60,6 +60,9 @@ private val Networks =
 
 fun networkInfo(id: String): NetworkInfo? = Networks.firstOrNull { it.id == id }
 
+/** 主网的名字。 */
+fun networkName(network: Network): String = Networks.first { it.icon == network }.name
+
 /** 列表里的短地址，如 0x7a3F…9C21。 */
 fun shortAddress(address: String): String {
     val head = if (address.startsWith("0x") || address.startsWith("bc1") || address.startsWith("tb1")) 6 else 4

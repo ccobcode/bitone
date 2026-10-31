@@ -8,7 +8,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.shadow.Shadow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 
@@ -19,16 +21,16 @@ class BitOneFonts(
     val mono: FontFamily = FontFamily.Monospace,
 )
 
-private val LocalColors = staticCompositionLocalOf { LightColors }
-private val LocalElevation = staticCompositionLocalOf { LightElevation }
+/** 系统字号再大也按这个倍数算，再往上按钮和底部导航放不下。 */
+private const val MAX_FONT_SCALE = 1.3f
+
 private val LocalFonts = staticCompositionLocalOf { BitOneFonts() }
 
 object BitOneTheme {
-    val colors: ColorTokens
-        @Composable get() = LocalColors.current
+    /** 只有深色。二维码固定用浅色令牌，见 [com.bitone.wallet.ui.components.QrView]。 */
+    val colors = DarkColors
 
-    val elevation: ElevationTokens
-        @Composable get() = LocalElevation.current
+    val elevation = DarkElevation
 
     val fonts: BitOneFonts
         @Composable get() = LocalFonts.current
@@ -40,12 +42,11 @@ fun Modifier.elevation(layers: List<ShadowLayer>, shape: Shape): Modifier =
         modifier.dropShadow(shape, Shadow(radius = layer.blur, color = layer.color, offset = DpOffset(0.dp, layer.y)))
     }
 
-/** 只有深色。二维码固定用浅色令牌，见 [com.bitone.wallet.ui.components.QrView]。 */
 @Composable
 fun BitOneTheme(fonts: BitOneFonts = BitOneFonts(), content: @Composable () -> Unit) {
+    val density = LocalDensity.current
     CompositionLocalProvider(
-        LocalColors provides DarkColors,
-        LocalElevation provides DarkElevation,
+        LocalDensity provides Density(density.density, minOf(density.fontScale, MAX_FONT_SCALE)),
         LocalFonts provides fonts,
         content = content,
     )

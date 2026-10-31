@@ -98,10 +98,7 @@ export function buildRows(
     }
     // 原生币在前，清单内的代币其次，清单外的放最后。
     const weight = (row: AssetRow) => (row.entry?.native ? 0 : row.entry ? 1 : 2);
-    return rows
-        .map((row, order) => ({ row, order }))
-        .sort((a, b) => weight(a.row) - weight(b.row) || a.order - b.order)
-        .map(({ row }) => row);
+    return rows.sort((a, b) => weight(a) - weight(b));
 }
 
 /** 这一行的美元估值，单位是分。价格只来自网关，只用于展示。 */
@@ -113,7 +110,7 @@ export function rowCents(row: AssetRow, prices: PriceMap | null): bigint | null 
 
 export type ManifestRow = AssetRow & { entry: AssetEntry };
 
-function inManifest(row: AssetRow): row is ManifestRow {
+export function inManifest(row: AssetRow): row is ManifestRow {
     return row.entry !== null;
 }
 
@@ -170,15 +167,7 @@ export function groupRows(rows: readonly AssetRow[], prices: PriceMap | null): A
         };
     });
     const weight = (group: AssetGroup) => (group.amount > 0n ? 0 : group.empty ? 2 : 1);
-    return groups
-        .map((group, order) => ({ group, order }))
-        .sort(
-            (a, b) =>
-                weight(a.group) - weight(b.group) ||
-                byAmount(a.group.cents ?? -1n, b.group.cents ?? -1n) ||
-                a.order - b.order,
-        )
-        .map(({ group }) => group);
+    return groups.sort((a, b) => weight(a) - weight(b) || byAmount(a.cents ?? -1n, b.cents ?? -1n));
 }
 
 /** 带着这一行进转账页。 */

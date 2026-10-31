@@ -8,7 +8,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -22,17 +21,19 @@ private const val FULL =
 
 /** 品牌标志的深色主版，160 网格。图标不随主题变化。 */
 @Composable
-fun BrandMark(size: Dp, modifier: Modifier = Modifier) {
+fun BrandMark(size: Dp) {
     val brackets = remember { PathParser().parsePathString(FULL).toPath() }
-    Canvas(modifier.size(size)) {
+    Canvas(Modifier.size(size)) {
         val ratio = this.size.width / 160f
         scale(ratio, pivot = Offset.Zero) {
             drawRoundRect(DarkColors.bg, size = Size(160f, 160f), cornerRadius = CornerRadius(36f))
             drawPath(brackets, DarkColors.text, style = Stroke(12f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-            drawRoundRect(BrandBlue, topLeft = Offset(66f, 66f), size = Size(28f, 28f), cornerRadius = CornerRadius(7f))
+            drawRoundRect(
+                DarkColors.accent,
+                topLeft = Offset(66f, 66f),
+                size = Size(28f, 28f),
+                cornerRadius = CornerRadius(7f),
+            )
         }
     }
 }
-
-private val BrandBlue: Color
-    get() = DarkColors.accent

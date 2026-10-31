@@ -1,12 +1,13 @@
 //! 冷钱包的 UniFFI 绑定。助记词和种子都留在 Rust 对象里，Kotlin 和 Swift 只持有句柄。
 
+use bitone_core::hex::DisplayHex;
 use bitone_core::keys::PublicKeys;
 use bitone_core::manifest::{Manifest, VENDOR_KEY};
 use bitone_core::protocol::{AddressCheck, DEFAULT_FRAGMENT_BYTES, FrameDecoder, FrameEncoder, UR_ACCOUNTS};
 use bitone_core::request::SignRequest;
 use bitone_core::review::{Confirm, Forbid, Review, Risk};
 use bitone_core::tx::{self, HighestChange, ReviewContext};
-use bitone_core::{AccountKind, Chain, Mode, Network, qr};
+use bitone_core::{AccountKind, Mode, Network, qr};
 use bitone_signer::{keys::Wallet, mnemonic, vault};
 use std::sync::Mutex;
 use zeroize::Zeroizing;
@@ -126,7 +127,6 @@ pub struct ReviewResult {
     pub fingerprint_mismatch: bool,
     /// 请求里的主密钥指纹。解析失败时为空。
     pub request_fingerprint: Option<String>,
-    pub change_index: Option<u32>,
 }
 
 fn risk_level(risk: Risk) -> RiskLevel {
@@ -194,12 +194,7 @@ fn review_result(review: Review, manifest: &Manifest, request_fingerprint: Optio
             .collect(),
         fingerprint_mismatch: review.forbidden == Some(Forbid::FingerprintMismatch),
         request_fingerprint,
-        change_index: review.change_index,
     }
-}
-
-fn hex_upper(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02X}")).collect()
 }
 
 fn kind_name(kind: AccountKind) -> &'static str {
@@ -209,15 +204,6 @@ fn kind_name(kind: AccountKind) -> &'static str {
         AccountKind::NestedSegWit => "Nested SegWit",
         AccountKind::Legacy => "Legacy",
         AccountKind::Single => "单地址",
-    }
-}
-
-fn chain_name(chain: Chain) -> &'static str {
-    match chain {
-        Chain::Bitcoin => "bitcoin",
-        Chain::Evm => "evm",
-        Chain::Tron => "tron",
-        Chain::Solana => "solana",
     }
 }
 
@@ -239,7 +225,6 @@ pub struct AddressReview {
 /// A3 的一行账户。
 #[derive(uniffi::Record)]
 pub struct AccountRow {
-    pub chain: String,
     pub kind: String,
     pub path: String,
     pub address: String,
@@ -490,7 +475,7 @@ pub fn review_request(
         manifest: &manifest,
         highest_change: highest_change.into(),
     };
-    let fingerprint = hex_upper(&request.fingerprint);
+    let fingerprint = request.fingerprint.to_upper_hex_string();
     Ok(review_result(tx::review(&request, &ctx), &manifest, Some(fingerprint)))
 }
 
@@ -502,7 +487,6 @@ pub fn account_rows(public_keys: Vec<u8>) -> Result<Vec<AccountRow>, WalletError
         .addresses()?
         .into_iter()
         .map(|a| AccountRow {
-            chain: chain_name(a.chain).to_string(),
             kind: kind_name(a.kind).to_string(),
             path: a.path,
             address: a.address,
@@ -522,7 +506,7 @@ pub fn review_address(message: Vec<u8>, public_keys: Vec<u8>) -> Result<AddressR
         derived: String::new(),
         kind: String::new(),
         fingerprint_mismatch,
-        request_fingerprint: hex_upper(&check.fingerprint),
+        request_fingerprint: check.fingerprint.to_upper_hex_string(),
     };
     match tx::check_address(&check, &keys) {
         Ok(result) => Ok(AddressReview {
@@ -533,7 +517,7 @@ pub fn review_address(message: Vec<u8>, public_keys: Vec<u8>) -> Result<AddressR
             derived: result.derived,
             kind: kind_name(result.kind).to_string(),
             fingerprint_mismatch: false,
-            request_fingerprint: hex_upper(&check.fingerprint),
+            request_fingerprint: check.fingerprint.to_upper_hex_string(),
         }),
         Err(Forbid::FingerprintMismatch) => Ok(refused(true)),
         Err(reason) => Err(WalletError::Other {
@@ -592,10 +576,8 @@ pub struct ManifestEntry {
     pub network: String,
     pub network_label: String,
     pub symbol: String,
-    pub name: String,
     pub contract: String,
     pub icon: String,
-    pub standard: String,
 }
 
 /// 内置清单的全部代币，用于 A12 展示。原生币也在里面。
@@ -610,10 +592,8 @@ pub fn manifest_entries(package: Option<Vec<u8>>) -> Result<Vec<ManifestEntry>, 
             network_label: bitone_core::Network::from_id(&asset.network)
                 .map_or_else(|| asset.network.clone(), |n| n.label().to_string()),
             symbol: asset.symbol.clone(),
-            name: asset.name.clone(),
             contract: asset.contract.clone(),
             icon: asset.icon.clone(),
-            standard: asset.standard.clone(),
         })
         .collect())
 }

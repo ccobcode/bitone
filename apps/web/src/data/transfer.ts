@@ -35,7 +35,6 @@ import {
     fetchNonces,
     fetchRawTxs,
     fetchRefBlock,
-    fetchResources,
     fetchUtxos,
     type EvmTierFee,
     type FeeTier,
@@ -485,18 +484,13 @@ async function buildTron(draft: TransferDraft): Promise<TxRecord> {
     if (fees.kind !== "tron") throw new TransferError("invalid", t("手续费数据异常，请稍后重试。"));
     const token = asset !== "native";
     const call = token ? { from, to, contract: asset, data: tronCallData(draft) } : { from, to };
-    const [estimate, resources, block] = await Promise.all([
-        estimateTron(network, call),
-        fetchResources(network, from),
-        fetchRefBlock(network),
-    ]);
+    const [estimate, block] = await Promise.all([estimateTron(network, call), fetchRefBlock(network)]);
     if (Math.abs(block.timestamp - Date.now()) > REF_BLOCK_DRIFT) {
         throw new TransferError("invalid", t("引用区块的时间异常，已停止构建。"));
     }
     const feeLimit = token ? (draft.feeLimit ?? tronFeeLimit(estimate.energy, fees.energyPrice)) : 0n;
     // 过期时间从区块时间算，不依赖本机时钟。
     const expirationMs = block.timestamp + TRON_LIFETIME;
-    const cost = tronCost(estimate, resources, fees.energyPrice, fees.bandwidthPrice);
     const head = header(draft.wallet, network);
     const request = buildTronTransfer({
         ...head,
@@ -512,15 +506,7 @@ async function buildTron(draft: TransferDraft): Promise<TxRecord> {
         feeLimit: Number(feeLimit),
     });
     reviewRequest(request, draft.accounts);
-    const plan: TxPlan = {
-        chain: "tron",
-        expirationMs,
-        feeLimit: Number(feeLimit),
-        energy: estimate.energy.toString(),
-        bandwidth: estimate.bandwidth.toString(),
-        activationFee: estimate.activationFee.toString(),
-        burn: cost.total.toString(),
-    };
+    const plan: TxPlan = { chain: "tron", feeLimit: Number(feeLimit) };
     // TRON 没有序号可以占用，防重放靠过期时间和交易哈希。
     return insertTx(
         requestFields(draft, head.id, request, plan, amount.toString(), "transfer", expirationMs, true),
@@ -575,7 +561,6 @@ async function createSolana(draft: TransferDraft): Promise<TxRecord> {
             priority,
             computeUnits,
             createAta,
-            rent: estimate.rent.toString(),
         };
         // 不过期，直到 nonce 推进。
         const fields = requestFields(draft, head.id, request, plan, amount.toString(), "transfer", null, false);
@@ -604,7 +589,6 @@ export function createSolanaNonce(draft: NonceDraft): Promise<TxRecord> {
             priority: 0,
             computeUnits: 0,
             createAta: false,
-            rent: NONCE_RENT.toString(),
         };
         const fields = requestFields(
             { ...draft, asset: "native", to: nonceAccount },
@@ -776,7 +760,7 @@ async function replaceSolana(tx: TxRecord, mode: ReplaceMode, draft: ReplaceDraf
     if (mode === "cancel" || tx.kind === "cancel") {
         const request = buildSolanaAdvanceNonce({ ...head, path, from: tx.from, nonceValue });
         reviewRequest(request, draft.accounts);
-        const next: TxPlan = { ...plan, priority: 0, computeUnits: 0, createAta: false, rent: "0" };
+        const next: TxPlan = { ...plan, priority: 0, computeUnits: 0, createAta: false };
         const target = { ...place, asset: "native", to: tx.from };
         const fields = requestFields(target, head.id, request, next, "0", "cancel", null, false);
         return insertTx({ ...fields, replaces: tx.id }, [], claims);

@@ -14,6 +14,7 @@ pub mod review;
 pub mod tx;
 pub mod units;
 
+pub use bitcoin::hex;
 pub use error::Error;
 pub use network::{Chain, Mode, Network};
 pub use path::{AccountKind, DerivationPath};

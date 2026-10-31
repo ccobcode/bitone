@@ -37,6 +37,13 @@ class I18nTest {
     }
 
     @Test
+    fun theMostSpecificTemplateWins() {
+        I18n.lang = Lang.En
+        assertEquals("3 digits entered", translate("已输入 3 位"))
+        assertEquals("Warnings: 1", translate("1 项警告"))
+    }
+
+    @Test
     fun amountsAndAddressesAreNeverTouched() {
         I18n.lang = Lang.En
         assertEquals("1.5 ETH", translate("1.5 ETH"))

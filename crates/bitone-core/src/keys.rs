@@ -3,7 +3,6 @@
 
 use crate::path::DerivationPath;
 use crate::protocol::{AccountsExport, ExportedAccount};
-use crate::protocol::{chain_from_code, kind_from_code};
 use crate::review::Forbid;
 use crate::{AccountKind, Chain, Error, Mode, Network, address};
 use bitcoin::bip32::{ChildNumber, Xpub};
@@ -25,33 +24,23 @@ pub struct PublicKeys {
 }
 
 impl PublicKeys {
-    /// 可以传入多份导出，指纹必须相同。
-    pub fn new(exports: &[AccountsExport]) -> Result<Self, Error> {
-        let first = exports.first().ok_or(Error::Decode)?;
-        if exports.iter().any(|e| e.fingerprint != first.fingerprint) {
-            return Err(Error::Decode);
+    pub fn new(export: AccountsExport) -> Self {
+        Self {
+            fingerprint: export.fingerprint,
+            accounts: export.accounts,
         }
-        let mut accounts: Vec<ExportedAccount> = Vec::new();
-        for account in exports.iter().flat_map(|e| &e.accounts) {
-            if !accounts.iter().any(|a| a.path == account.path) {
-                accounts.push(account.clone());
-            }
-        }
-        Ok(Self {
-            fingerprint: first.fingerprint,
-            accounts,
-        })
     }
 
-    /// 序列化后写入本机，下次启动不用解锁也能核对。
-    pub fn encode(exports: &[AccountsExport]) -> Vec<u8> {
-        minicbor::to_vec(exports).expect("写入内存不会失败")
+    /// 序列化后写入本机，下次启动不用解锁也能核对。存的是只有一项的数组。
+    pub fn encode(export: &AccountsExport) -> Vec<u8> {
+        minicbor::to_vec([export]).expect("写入内存不会失败")
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         crate::protocol::check_limits(bytes)?;
         let exports: Vec<AccountsExport> = minicbor::decode(bytes).map_err(|_| Error::Decode)?;
-        Self::new(&exports)
+        let [export]: [AccountsExport; 1] = exports.try_into().map_err(|_| Error::Decode)?;
+        Ok(Self::new(export))
     }
 
     /// 首页的账户和地址。测试币账户不列出来，用到时请求里有路径。
@@ -62,17 +51,15 @@ impl PublicKeys {
             let Some(account) = self.accounts.iter().find(|a| a.path == spec.path) else {
                 continue;
             };
-            let chain = chain_from_code(account.chain)?;
-            let kind = kind_from_code(account.kind)?;
-            let text = match chain {
-                Chain::Bitcoin => address::bitcoin_address(&account.key, kind, false, 0, bitcoin_network)?,
+            let text = match account.chain {
+                Chain::Bitcoin => address::bitcoin_address(&account.key, account.kind, false, 0, bitcoin_network)?,
                 Chain::Evm => address::evm_address(&account.key)?,
                 Chain::Tron => address::tron_address(&account.key)?,
                 Chain::Solana => address::solana_address(&account.key)?,
             };
             list.push(AccountAddress {
-                chain,
-                kind,
+                chain: account.chain,
+                kind: account.kind,
                 path: account.path.clone(),
                 address: text,
             });
@@ -87,9 +74,7 @@ impl PublicKeys {
             .iter()
             .find(|a| a.path == account_path)
             .ok_or(Error::PathNotAllowed)?;
-        let chain = chain_from_code(account.chain)?;
-        let kind = kind_from_code(account.kind)?;
-        if chain != Chain::Bitcoin && index != 0 {
+        if account.chain != Chain::Bitcoin && index != 0 {
             return Err(Error::InvalidParams);
         }
         if index >= crate::path::MAX_ADDRESS_INDEX {
@@ -100,8 +85,8 @@ impl PublicKeys {
         } else {
             Network::Bitcoin
         };
-        match chain {
-            Chain::Bitcoin => address::bitcoin_address(&account.key, kind, false, index, bitcoin_network),
+        match account.chain {
+            Chain::Bitcoin => address::bitcoin_address(&account.key, account.kind, false, index, bitcoin_network),
             Chain::Evm => address::evm_address(&account.key),
             Chain::Tron => address::tron_address(&account.key),
             Chain::Solana => address::solana_address(&account.key),

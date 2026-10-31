@@ -1,6 +1,5 @@
 //! 核对结果。解析和分类都在核心库里完成，界面只负责画出来，所以 Android 和 iOS 的判断不会不一致。
 
-use crate::policy;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -72,8 +71,6 @@ pub enum Forbid {
     PrevTxMismatch,
     #[error("这类交易暂不支持")]
     Unsupported,
-    #[error("策略不允许签名这类交易")]
-    Policy,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -191,11 +188,6 @@ pub struct ReviewBuilder {
 impl ReviewBuilder {
     pub fn finish(self, network: &str) -> Review {
         let risk = self.actions.iter().map(|a| a.risk).max().unwrap_or(Risk::Unknown);
-        let blocked = (risk == Risk::Unknown && !policy::ALLOW_UNKNOWN_CALLS)
-            || (risk == Risk::PermissionChange && !policy::ALLOW_PERMISSION_CHANGES);
-        if blocked {
-            return Review::forbidden(network, Forbid::Policy);
-        }
         let confirm = match risk {
             Risk::Forbidden => Confirm::Refuse,
             Risk::Unknown | Risk::Approval | Risk::PermissionChange => Confirm::Hold,

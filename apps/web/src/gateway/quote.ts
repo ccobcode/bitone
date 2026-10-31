@@ -2,10 +2,11 @@
 // 这里只用于显示和预检查，真正构建时在账户锁里重新查询。
 import { useQuery } from "@tanstack/react-query";
 import { selectCoins, solanaNonceAddress } from "../core";
-import { formatUnits, parseAmount } from "../core/amount";
+import { formatUnits } from "../core/amount";
 import type { AssetEntry } from "../core/manifest";
 import { lookupAsset } from "../core/manifest";
 import { shortAddress } from "../core/text";
+import { nativeText } from "../data/txview";
 import type { Account, Reservation, TxRecord, Wallet } from "../data/db";
 import {
     SOLANA_BASE_FEE,
@@ -56,7 +57,6 @@ export interface AdvancedField {
 }
 
 export interface Quote {
-    loading: boolean;
     /** 网关查询失败，不能下结论。 */
     failed: boolean;
     feeTag: string;
@@ -104,11 +104,6 @@ export interface QuoteInput {
     nativeBalance: bigint | null;
     reservations: readonly Reservation[];
     txs: readonly TxRecord[];
-}
-
-function coin(raw: bigint, network: string): string {
-    const native = lookupAsset(network, "native");
-    return native ? `${formatUnits(raw, native.decimals)} ${native.symbol}` : raw.toString();
 }
 
 function gwei(raw: bigint): string {
@@ -167,7 +162,7 @@ export function useQuote(input: QuoteInput): Quote {
     });
     const gas = useQuery({
         queryKey: ["chain", network, "gas", from, to, asset, amount?.toString()],
-        queryFn: () => evmGasLimit({ ...input, to: to ?? "", amount: amount ?? 0n, gasLimit: undefined }).then(String),
+        queryFn: () => evmGasLimit({ ...input, to: to ?? "", amount: amount ?? 0n, gasLimit: undefined }),
         enabled: chain === "evm" && ready && input.gasOverride === null,
         retry: false,
     });
@@ -179,17 +174,15 @@ export function useQuote(input: QuoteInput): Quote {
     });
     const resources = useQuery({
         queryKey: ["chain", network, "resources", from],
-        queryFn: async () => {
-            const row = await fetchResources(network, from);
-            return { ...row, bandwidth: row.bandwidth.toString(), energy: row.energy.toString() };
-        },
+        queryFn: () => fetchResources(network, from),
         enabled: chain === "tron",
         retry: 1,
     });
     const tronEstimate = useQuery({
         queryKey: ["chain", network, "estimate", from, to, asset, amount?.toString()],
-        queryFn: async () => {
-            const call =
+        queryFn: () =>
+            estimateTron(
+                network,
                 asset === "native"
                     ? { from, to: to ?? "" }
                     : {
@@ -197,14 +190,8 @@ export function useQuote(input: QuoteInput): Quote {
                           to: to ?? "",
                           contract: asset,
                           data: tronCallData({ ...input, to: to ?? "", amount: amount ?? 0n }),
-                      };
-            const row = await estimateTron(network, call);
-            return {
-                energy: row.energy.toString(),
-                bandwidth: row.bandwidth.toString(),
-                activationFee: row.activationFee.toString(),
-            };
-        },
+                      },
+            ),
         enabled: chain === "tron" && ready,
         retry: false,
     });
@@ -217,10 +204,7 @@ export function useQuote(input: QuoteInput): Quote {
     });
     const solanaEstimate = useQuery({
         queryKey: ["chain", network, "estimate", to, asset],
-        queryFn: async () => {
-            const row = await estimateSolana(network, to ?? "", asset);
-            return { recipientTokenAccount: row.recipientTokenAccount, rent: row.rent.toString() };
-        },
+        queryFn: () => estimateSolana(network, to ?? "", asset),
         enabled: chain === "solana" && asset !== "native" && to !== null,
         retry: false,
     });
@@ -228,7 +212,6 @@ export function useQuote(input: QuoteInput): Quote {
     const native = lookupAsset(network, "native");
     const feeData = fees.data;
     const base: Quote = {
-        loading: fees.isPending,
         failed: fees.isError,
         feeTag: "",
         feeLabel: t("手续费"),
@@ -266,7 +249,7 @@ export function useQuote(input: QuoteInput): Quote {
     };
 
     if (chain === "evm") {
-        const gasLimit = input.gasOverride ?? (gas.data ? BigInt(gas.data) : asset === "native" ? 21_000n : 65_000n);
+        const gasLimit = input.gasOverride ?? gas.data ?? (asset === "native" ? 21_000n : 65_000n);
         const chainNonce = nonces.data?.get(from);
         const floor = chainNonce ? Math.max(chainNonce.latest, chainNonce.pending) : null;
         const nonce = floor === null ? null : firstFree(input.reservations, "nonce", floor);
@@ -274,7 +257,7 @@ export function useQuote(input: QuoteInput): Quote {
             feeData?.kind === "evm"
                 ? TIERS.map((item) => ({
                       tier: item,
-                      cost: coin(gasLimit * feeData[item].maxFee, network),
+                      cost: nativeText({ network }, gasLimit * feeData[item].maxFee),
                       rate: gwei(feeData[item].maxFee),
                       eta: null,
                   }))
@@ -285,7 +268,7 @@ export function useQuote(input: QuoteInput): Quote {
             failed: fees.isError || nonces.isError,
             feeTag: "EIP-1559",
             feeLabel: t("手续费上限"),
-            feeText: selected === null ? "—" : coin(selected, network),
+            feeText: selected === null ? "—" : nativeText({ network }, selected),
             tiers,
             fee: selected,
             problem: input.gasOverride === null ? errorText(gas.error) : null,
@@ -315,7 +298,7 @@ export function useQuote(input: QuoteInput): Quote {
                       const picked = quoteTier(item);
                       return {
                           tier: item,
-                          cost: picked ? coin(BigInt(picked.fee), network) : t("余额不足"),
+                          cost: picked ? nativeText({ network }, BigInt(picked.fee)) : t("余额不足"),
                           rate: `${feeData[item]} sat/vB`,
                           eta: BITCOIN_TARGETS[item],
                       };
@@ -326,10 +309,9 @@ export function useQuote(input: QuoteInput): Quote {
         const enough = !coins.data || !feeData ? null : chosen !== null;
         return {
             ...base,
-            loading: fees.isPending || coins.isPending,
             failed: fees.isError || coins.isError,
             feeTag: "sat/vB",
-            feeText: chosen ? coin(BigInt(chosen.fee), network) : "—",
+            feeText: chosen ? nativeText({ network }, BigInt(chosen.fee)) : "—",
             tiers,
             fee: chosen ? BigInt(chosen.fee) : null,
             available,
@@ -356,31 +338,20 @@ export function useQuote(input: QuoteInput): Quote {
         const prices = feeData?.kind === "tron" ? feeData : null;
         const cost =
             estimate && resource && prices
-                ? tronCost(
-                      {
-                          energy: BigInt(estimate.energy),
-                          bandwidth: BigInt(estimate.bandwidth),
-                          activationFee: BigInt(estimate.activationFee),
-                      },
-                      {
-                          energy: BigInt(resource.energy),
-                          bandwidth: BigInt(resource.bandwidth),
-                          activated: resource.activated,
-                      },
-                      prices.energyPrice,
-                      prices.bandwidthPrice,
-                  )
+                ? tronCost(estimate, resource, prices.energyPrice, prices.bandwidthPrice)
                 : null;
         const feeLimit =
-            input.feeLimitOverride ??
-            (estimate && prices ? tronFeeLimit(BigInt(estimate.energy), prices.energyPrice) : null);
+            input.feeLimitOverride ?? (estimate && prices ? tronFeeLimit(estimate.energy, prices.energyPrice) : null);
         const rows: QuoteRow[] = [
-            { label: t("带宽"), value: estimate?.bandwidth ?? "—" },
-            { label: t("能量"), value: estimate?.energy ?? "—" },
-            { label: t("不足时燃烧"), value: cost ? coin(cost.energyBurn + cost.bandwidthBurn, network) : "—" },
+            { label: t("带宽"), value: estimate?.bandwidth.toString() ?? "—" },
+            { label: t("能量"), value: estimate?.energy.toString() ?? "—" },
+            {
+                label: t("不足时燃烧"),
+                value: cost ? nativeText({ network }, cost.energyBurn + cost.bandwidthBurn) : "—",
+            },
             {
                 label: t("收款方激活费"),
-                value: cost ? (cost.activationFee > 0n ? coin(cost.activationFee, network) : t("无")) : "—",
+                value: cost ? (cost.activationFee > 0n ? nativeText({ network }, cost.activationFee) : t("无")) : "—",
             },
         ];
         const problem =
@@ -393,9 +364,9 @@ export function useQuote(input: QuoteInput): Quote {
             feeText: token
                 ? feeLimit === null
                     ? "—"
-                    : coin(feeLimit, network)
+                    : nativeText({ network }, feeLimit)
                 : cost
-                  ? coin(cost.total, network)
+                  ? nativeText({ network }, cost.total)
                   : "—",
             rows,
             fee: cost?.total ?? null,
@@ -424,22 +395,22 @@ export function useQuote(input: QuoteInput): Quote {
     const createAta = token && estimate !== undefined && !estimate.recipientTokenAccount;
     const units = BigInt(solanaComputeUnits(token, createAta));
     const priority = feeData?.kind === "solana" ? (feeData.medium * units + 999_999n) / 1_000_000n : null;
-    const rent = estimate ? (parseAmount(estimate.rent) ?? 0n) : 0n;
+    const rent = estimate?.rent ?? 0n;
     const fee = priority === null ? null : SOLANA_BASE_FEE + priority + rent;
     const missing = nonceInfo.data?.exists === false;
     return settle({
         ...base,
         failed: fees.isError || nonceInfo.isError,
         feeTag: t("基础费加优先费"),
-        feeText: fee === null ? "—" : coin(fee, network),
+        feeText: fee === null ? "—" : nativeText({ network }, fee),
         rows: [
-            { label: t("基础费"), value: coin(SOLANA_BASE_FEE, network) },
-            { label: t("优先费"), value: priority === null ? "—" : coin(priority, network) },
+            { label: t("基础费"), value: nativeText({ network }, SOLANA_BASE_FEE) },
+            { label: t("优先费"), value: priority === null ? "—" : nativeText({ network }, priority) },
             {
                 label: t("收款方代币账户"),
                 value: !token ? t("不需要") : estimate ? (createAta ? t("需要创建") : t("已存在")) : "—",
             },
-            { label: t("创建租金"), value: createAta ? coin(rent, network) : t("无") },
+            { label: t("创建租金"), value: createAta ? nativeText({ network }, rent) : t("无") },
         ],
         fee,
         problem: errorText(solanaEstimate.error),
@@ -449,7 +420,7 @@ export function useQuote(input: QuoteInput): Quote {
             {
                 id: "adv-prio",
                 label: t("优先费"),
-                value: priority === null ? "—" : coin(priority, network),
+                value: priority === null ? "—" : nativeText({ network }, priority),
                 editable: false,
             },
         ],
