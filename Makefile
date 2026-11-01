@@ -81,7 +81,7 @@ test-web: apps/web/node_modules wasm
 	pnpm -C apps/web build
 
 test-android: android-core
-	$(GRADLE) :androidApp:assembleDebug :androidApp:assembleRelease :shared:testAndroidHostTest \
+	$(GRADLE) :androidApp:assembleDebug :androidApp:assembleRelease :shared:testAndroidHostTest :shared:jvmTest \
 		:androidApp:testDebugUnitTest $(IOS_CHECK)
 
 test-punct:

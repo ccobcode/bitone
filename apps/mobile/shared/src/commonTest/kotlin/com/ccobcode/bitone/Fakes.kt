@@ -110,17 +110,21 @@ fun reviewOf(
     payer: String? = null,
     counterparty: String = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
     fields: List<FieldRow> = emptyList(),
+    network: String = "ethereum",
+    mainnet: Boolean = true,
+    amount: ReviewAmount? = ReviewAmount("1", "ETH", "ethereum:native", "eth", false),
+    counterpartyLabel: String = "收款地址",
 ) =
     ReviewResult(
         risk = risk,
         confirm = confirm,
-        network = "ethereum",
-        mainnet = true,
+        network = network,
+        mainnet = mainnet,
         summary =
             ReviewSummary(
                 title = "普通转账",
-                amount = ReviewAmount("1", "ETH", "ethereum:native", "eth", false),
-                counterpartyLabel = "收款地址",
+                amount = amount,
+                counterpartyLabel = counterpartyLabel,
                 counterparty = counterparty,
                 controllers = controllers,
                 parties = parties,
@@ -135,15 +139,21 @@ fun reviewOf(
 
 val REVIEW_DIGEST = "digest".encodeToByteArray()
 
-fun fieldOf(name: String, source: FieldSource = FieldSource.Signed, depth: UInt = 1u) =
+fun fieldOf(
+    name: String,
+    source: FieldSource = FieldSource.Signed,
+    depth: UInt = 1u,
+    label: String = name,
+    value: String = name,
+) =
     FieldRow(
         id = 0u,
         parent = null,
         depth = depth,
         name = name,
-        label = name,
+        label = label,
         kind = FieldKind.Text,
-        value = name,
+        value = value,
         source = source,
         offset = null,
         len = null,
