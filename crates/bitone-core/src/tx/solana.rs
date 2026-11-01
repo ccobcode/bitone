@@ -1355,9 +1355,9 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
             return signature_only(&request.payload, signature, signer);
         }
     };
-    // 还缺其他人的签名时,这笔交易不能广播.
+    // 还缺其他人的签名时,这笔交易不能广播,结果只有本机的签名.
     if message.required_signatures != 1 {
-        return Err(Error::InvalidParams);
+        return signature_only(&request.payload, signature, signer);
     }
     let signer: &[u8; 32] = signer.try_into().map_err(|_| Error::InvalidKey)?;
     if message.keys[0] != *signer {

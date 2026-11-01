@@ -90,9 +90,10 @@ pub struct Report {
     pub messages: usize,
 }
 
-const WALKER: EvmWalker = EvmWalker {
+const WALKER: EvmWalker<'static> = EvmWalker {
     coin: None,
     chain_id: None,
+    call: &[],
 };
 
 fn bytes(hex: &str) -> Result<Vec<u8>, String> {

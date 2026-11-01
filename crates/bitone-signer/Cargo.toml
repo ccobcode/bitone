@@ -22,5 +22,6 @@ sha2 = "0.11"
 [dev-dependencies]
 hex-literal = "1"
 p256 = { version = "0.14", features = ["ecdsa", "pkcs8"] }
+prost = { version = "=0.14.4", default-features = false, features = ["std"] }
 psbt-v2 = { version = "=0.3.0", default-features = false, features = ["std"] }
 serde_json = "1"

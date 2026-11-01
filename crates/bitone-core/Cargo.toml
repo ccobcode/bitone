@@ -8,13 +8,16 @@ publish.workspace = true
 
 [dependencies]
 alloy-consensus = { version = "=2.5.0", default-features = false, features = ["std"] }
+alloy-dyn-abi = { version = "=1.7.3", default-features = false, features = ["std", "eip712"] }
 alloy-eips = { version = "=2.5.0", default-features = false, features = ["std"] }
+alloy-json-abi = { version = "=1.7.3", default-features = false, features = ["std"] }
 alloy-primitives = { version = "=1.7.3", default-features = false, features = ["std"] }
 alloy-rlp = { version = "=0.3.17", default-features = false, features = ["std"] }
 bitcoin = { workspace = true, features = ["secp-recovery"] }
 ed25519-dalek = { version = "3", default-features = false, features = ["alloc"] }
 minicbor.workspace = true
 p256 = { version = "0.14", default-features = false, features = ["ecdsa", "pkcs8"] }
+prost = { version = "=0.14.4", default-features = false, features = ["derive", "std"] }
 psbt-v2 = { version = "=0.3.0", default-features = false, features = ["std"] }
 qrcode.workspace = true
 serde = { version = "1", features = ["derive"] }

@@ -1,0 +1,109 @@
+{
+    "personal": [
+        { "case": "文本", "text": "hello" },
+        { "case": "中文", "text": "你好,TRON" },
+        { "case": "空消息", "text": "" },
+        { "case": "字节", "hex": "fffe00" }
+    ],
+    "typed": [
+        {
+            "case": "TIP-712 规范的转账,含 trcToken",
+            "domain": {
+                "name": "TRON Mail",
+                "version": "1",
+                "chainId": 728126428,
+                "verifyingContract": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+            },
+            "types": {
+                "AssetTransfer": [
+                    { "name": "from", "type": "address" },
+                    { "name": "to", "type": "address" },
+                    { "name": "id", "type": "trcToken" },
+                    { "name": "amount", "type": "uint256" }
+                ]
+            },
+            "value": {
+                "from": "41c8599111f29c1e1e061265b4af93ea1f274ad78a",
+                "to": "41a2726afbecbd8e936000ed684cef5e2f5cf43008",
+                "id": "1000001",
+                "amount": 5
+            }
+        },
+        {
+            "case": "Mail,Base58 和 0x 地址",
+            "domain": {
+                "name": "Ether Mail",
+                "version": "1",
+                "chainId": "0x2b6653dc",
+                "verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
+            },
+            "types": {
+                "Mail": [
+                    { "name": "from", "type": "Person" },
+                    { "name": "to", "type": "Person" },
+                    { "name": "contents", "type": "string" }
+                ],
+                "Person": [
+                    { "name": "name", "type": "string" },
+                    { "name": "wallet", "type": "address" }
+                ]
+            },
+            "value": {
+                "from": { "name": "Cow", "wallet": "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH" },
+                "to": { "name": "Bob", "wallet": "0xa2726afbecbd8e936000ed684cef5e2f5cf43008" },
+                "contents": "Hello, Bob!"
+            }
+        },
+        {
+            "case": "Permit",
+            "domain": {
+                "name": "Tether",
+                "version": "1",
+                "chainId": 3448148188,
+                "verifyingContract": "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"
+            },
+            "types": {
+                "Permit": [
+                    { "name": "owner", "type": "address" },
+                    { "name": "spender", "type": "address" },
+                    { "name": "value", "type": "uint256" },
+                    { "name": "nonce", "type": "uint256" },
+                    { "name": "deadline", "type": "uint256" }
+                ]
+            },
+            "value": {
+                "owner": "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+                "spender": "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE",
+                "value": "1000000",
+                "nonce": 0,
+                "deadline": 1800000000
+            }
+        }
+    ],
+    "calls": [
+        {
+            "case": "transfer",
+            "name": "transfer",
+            "types": ["address", "uint256"],
+            "args": ["TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE", "1250000"]
+        },
+        {
+            "case": "approve",
+            "name": "approve",
+            "types": ["address", "uint256"],
+            "args": ["TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH", "7"]
+        },
+        {
+            "case": "transferFrom",
+            "name": "transferFrom",
+            "types": ["address", "address", "uint256"],
+            "args": ["TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH", "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE", "9"]
+        },
+        {
+            "case": "increaseApproval",
+            "name": "increaseApproval",
+            "types": ["address", "uint256"],
+            "args": ["TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE", "9"]
+        }
+    ]
+}

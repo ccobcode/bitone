@@ -78,7 +78,6 @@ import com.ccobcode.bitone.ui.theme.LineHeight
 import com.ccobcode.bitone.ui.theme.Radius
 import com.ccobcode.bitone.ui.theme.Space
 
-private const val FROM_WEB = "BitOne 网页端不会发起这类交易."
 private const val SCROLL_FIRST = "滚到底部后确认"
 private const val TARGET_CONTRACT = "目标合约"
 
@@ -249,7 +248,6 @@ private fun Banner(review: ReviewResult, style: ReviewStyle) {
                             unlimited -> "对方可随时转走你全部的这种资产."
                             else -> "对方可以动用授权额度内的资产."
                         },
-                        FROM_WEB,
                     ) + review.alerts,
             )
         }
@@ -258,12 +256,12 @@ private fun Banner(review: ReviewResult, style: ReviewStyle) {
                 warn = true,
                 icon = Icons.Unknown,
                 title = "本机无法解析这笔交易",
-                lines = listOf("只在确认来源可信时签名.", FROM_WEB) + review.alerts,
+                lines = listOf("只在确认来源可信时签名.") + review.alerts,
             )
         ReviewStyle.Permission ->
             RiskBanner(
                 title = "账户控制权将被改变",
-                lines = listOf("签名后,新控制方可以动用这个账户的全部资产.", FROM_WEB) + review.alerts,
+                lines = listOf("签名后,新控制方可以动用这个账户的全部资产.") + review.alerts,
             )
         ReviewStyle.HighRisk ->
             RiskBanner(

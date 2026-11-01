@@ -108,9 +108,20 @@ fn looks_like_solana(path: &str, payload: &[u8]) -> bool {
     by_path || by_payload
 }
 
+/// 路径的 coin type 是 `195'`,或者载荷就是一笔 TRON 交易.coin type `1'` 说明不了是哪条链,要看载荷.
+fn looks_like_tron(path: &str, payload: &[u8]) -> bool {
+    let by_path = DerivationPath::parse(path)
+        .ok()
+        .and_then(|path| classify(&path).ok())
+        .is_some_and(|info| info.chain == Chain::Tron && info.mode == Some(Mode::Mainnet));
+    by_path || tron::UnsignedTx::decode(payload).is_ok()
+}
+
 fn chain_of_path(path: &str, payload: &[u8]) -> Option<Chain> {
     if looks_like_evm(path, payload) {
         Some(Chain::Evm)
+    } else if looks_like_tron(path, payload) {
+        Some(Chain::Tron)
     } else if looks_like_solana(path, payload) {
         Some(Chain::Solana)
     } else {
@@ -142,13 +153,14 @@ fn try_review(request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forb
             Some(Chain::Bitcoin) => bitcoin::review(None, request, ctx),
             Some(Chain::Evm) => evm::review(None, request, ctx),
             Some(Chain::Solana) => solana::review(None, request, ctx),
-            Some(Chain::Tron) | None => Err(Forbid::UnknownNetwork),
+            Some(Chain::Tron) => tron::review(None, request, ctx),
+            None => Err(Forbid::UnknownNetwork),
         };
     };
     let review = match network.chain() {
         Chain::Bitcoin => bitcoin::review(Some(network), request, ctx),
         Chain::Evm => evm::review(Some(network), request, ctx),
-        Chain::Tron => tron::review(network, request, ctx),
+        Chain::Tron => tron::review(Some(network), request, ctx),
         Chain::Solana => solana::review(Some(network), request, ctx),
     }?;
     Ok(native_alert(review, network, ctx))
@@ -224,7 +236,8 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
         return match request_chain(request) {
             Some(Chain::Evm) => evm::verify(request, response, signer),
             Some(Chain::Solana) => solana::verify(request, response, signer),
-            Some(Chain::Bitcoin | Chain::Tron) | None => Err(Error::InvalidParams),
+            Some(Chain::Tron) => tron::verify(request, response, signer),
+            Some(Chain::Bitcoin) | None => Err(Error::InvalidParams),
         };
     };
     match network.chain() {
@@ -235,7 +248,7 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
     }
 }
 
-/// 单路径的请求(TRON,Solana)取出并校验路径.
+/// Solana 的请求取出并校验路径.
 pub(crate) fn signer_path(request: &SignRequest, network: Network) -> Result<DerivationPath, Forbid> {
     let [path] = request.paths.as_slice() else {
         return Err(Forbid::PathNotAllowed);

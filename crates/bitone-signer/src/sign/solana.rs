@@ -1660,16 +1660,15 @@ mod tests {
     }
 
     #[test]
-    fn verify_refuses_a_partly_signed_message() {
+    fn a_partly_signed_message_returns_only_the_signature() {
         let s = setup();
         let message = compose(payer(), &[STRANGER], &[advance(), transfer(1)]);
         let req = request(&s, message.encode());
         let (response, review) = sign(&s, &req);
         assert_eq!(review.confirm, Confirm::Hold);
-        assert_eq!(
-            tx::verify(&req, &response, &payer()).unwrap_err(),
-            bitone_core::Error::InvalidParams
-        );
+        let verified = tx::verify(&req, &response, &payer()).unwrap();
+        assert!(verified.signature_only);
+        assert_eq!(verified.raw.as_slice(), response.signatures[0].as_slice());
     }
 
     /// 第 1.1 节:路径不设白名单.公钥算不出来时解锁后用私钥核对.

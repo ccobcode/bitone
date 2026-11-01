@@ -190,6 +190,12 @@ fn the_exhaustiveness_scan_passes_plain_code() {
 }
 
 #[test]
+fn the_generated_dispatch_is_exhaustive() {
+    let text = fs::read_to_string(source().join("decode/generated/recode.rs")).unwrap();
+    assert!(exhaustiveness_holes(&text).is_empty());
+}
+
+#[test]
 fn decoders_are_exhaustive() {
     for (file, text) in decode_files() {
         let holes = exhaustiveness_holes(&text);

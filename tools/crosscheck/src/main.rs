@@ -7,6 +7,8 @@ mod evm_vectors;
 mod solana_vectors;
 #[cfg(test)]
 mod vote_interface;
+mod message_vectors;
+mod tron_vectors;
 
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -85,6 +87,16 @@ fn run() -> Result<(), String> {
         "Solana 向量:{} 个程序,{} 条指令,{} 条消息,{} 个字段,{} 个账户不足的消息被拒绝",
         report.programs, report.instructions, report.messages, report.fields, report.refused
     );
+    let report = tron_vectors::check(Path::new(VECTORS))?;
+    println!(
+        "TRON 向量:{} 笔交易,覆盖 {} 个合约类型,{} 个不合法载荷",
+        report.transactions, report.contracts, report.refused
+    );
+    let report = message_vectors::check(Path::new(VECTORS))?;
+    println!(
+        "调用和消息向量:{} 个调用,{} 个不合规调用,{} 条 EIP-712 和 TIP-712,{} 条 TIP-191",
+        report.calls, report.irregular, report.typed, report.personal
+    );
     Ok(())
 }
 
@@ -142,6 +154,19 @@ mod tests {
         let report = solana_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
         assert_eq!(report.programs, 9);
         assert!(report.instructions > 0 && report.fields > 0 && report.refused > 0);
+    }
+
+    #[test]
+    fn the_tron_vectors_hold() {
+        let report = tron_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
+        assert_eq!(report.contracts, 41);
+        assert!(report.transactions > report.contracts && report.refused > 0);
+    }
+
+    #[test]
+    fn the_message_vectors_hold() {
+        let report = message_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
+        assert!(report.calls > 0 && report.irregular > 0 && report.typed > 0 && report.personal > 0);
     }
 
     #[test]

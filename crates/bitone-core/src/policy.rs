@@ -2,9 +2,9 @@
 //!
 //! `assess` 只读树,不修改树,拿不到原始载荷.新内容默认是无法识别,可以签名,不会默认变成普通转账.
 //! 依赖方向由 `tests/architecture.rs` 检查.阈值是初始值,技术方案里校准.
-//! Bitcoin,EVM,Solana 的类别和告警都在规则表里,`assess_bitcoin`,`assess_evm`,`assess_solana` 只算出命中了哪些种类.
+//! Bitcoin,EVM,TRON,Solana 的类别和告警都在规则表里,`assess_bitcoin`,`assess_evm`,`assess_tron`,`assess_solana` 只算出命中了哪些种类.
 
-use crate::decode::{Decoded, NodeId, SourceKind, Value};
+use crate::decode::{Decoded, NodeId, SourceKind, Value, Visit, display};
 use crate::{Chain, Mode, Network};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -96,7 +96,8 @@ impl From<RuleClass> for Risk {
     }
 }
 
-/// `alert` 进入告警列表,要长按.`note` 只解释这一行.里面的 `{0}`,`{1}` 由信号的参数替换.
+/// `alert` 进入告警列表,要长按.`note` 只解释这一行.里面的 `{0}`,`{1}` 由信号的参数替换,
+/// 树里的动作只有 `{0}`,是这一行的显示值.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct Rule {
@@ -193,7 +194,7 @@ fn assess_with(decoded: &Decoded, rules: &Rules, signals: &[Signal]) -> Assessme
     let mut second = matches!(decoded.root().value, Value::Opaque(_));
     let actions = actions
         .into_iter()
-        .map(|(id, node, kind)| (id, kind, node.source.kind().is_evidence(), Vec::new()));
+        .map(|(id, node, kind)| (id, kind, node.source.kind().is_evidence(), vec![display(&node.value)]));
     let signals = signals
         .iter()
         .map(|signal| (signal.node, signal.kind, true, signal.args.clone()));
@@ -418,15 +419,40 @@ const PATH_ROW: &str = "derivation_path";
 const PATH_KIND: &str = "path-unusual";
 const SOLANA_FEE_ROW: &str = "priority_fee";
 
+/// 一次合约调用是怎么解开的.描述文件只决定展示,类别由这里和规则表决定.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum CallShape {
+    /// 没有描述,或者按没有描述处理.
+    #[default]
+    Undecoded,
+    /// 选择器是这个标准函数,参数不是规范编码.
+    Irregular(String),
+    /// 这个标准函数,里面是规范签名.
+    Standard(String),
+    /// 清单的描述文件.
+    Described,
+}
+
+/// 一次合约调用的事实.嵌入调用各有一条.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CallFact {
+    pub shape: CallShape,
+    pub contract: String,
+    /// 目标合约在清单里.
+    pub listed: bool,
+    /// 这次调用同时转了原生币.
+    pub has_value: bool,
+    pub unlimited: bool,
+}
+
 /// EVM 的事实.路径,合约调用和网络都由 `tx` 层算出,这里不碰密钥和载荷.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EvmFacts {
     pub signer: Option<String>,
     /// 这条派生路径不是本机导出的账户.
     pub unusual_path: Option<String>,
-    /// 合约调用的每个动作的类别.清单描述文件接入之前来自 `abi.rs`.
-    pub calls: Vec<Risk>,
-    pub call_alerts: Vec<String>,
+    /// 这笔交易的全部合约调用.
+    pub calls: Vec<CallFact>,
     /// 调用的方法和合约,显示在 `data` 这一行.
     pub call_note: Option<String>,
     pub fee_high: bool,
@@ -434,41 +460,81 @@ pub struct EvmFacts {
     pub renamed: Option<(String, String)>,
     /// 谁也不认识的 Chain ID 和请求里的网络名.
     pub unknown_chain: Option<(String, String)>,
+    pub permit: Option<PermitFact>,
 }
 
-fn call_kind(risk: Risk) -> &'static str {
-    match risk {
-        Risk::Transfer => "call-transfer",
-        Risk::Recognized => "call-recognized",
-        Risk::Approval => "call-approval",
-        Risk::PermissionChange => "call-permission-change",
-        Risk::Unknown | Risk::Forbidden => "call-unknown",
+/// 一条 Permit 消息里的授权.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PermitFact {
+    pub grants: usize,
+    pub unlimited: usize,
+}
+
+impl PermitFact {
+    fn signals(&self, signals: &mut Vec<Signal>) {
+        if self.grants > 1 {
+            signals.push(Signal::new(ROOT, "permit-many", vec![self.grants.to_string()]));
+            if self.unlimited > 0 {
+                signals.push(Signal::new(ROOT, "permit-unlimited", vec![self.unlimited.to_string()]));
+            }
+        }
     }
 }
 
-fn call_signals(node: NodeId, facts: &EvmFacts, signals: &mut Vec<Signal>) {
+const FUNCTION_PREFIX: &str = "fn:";
+
+/// 标准函数在规则表里的种类.规则表是 `'static` 的,所以种类名不用复制.
+fn function_kind(chain: Chain, signature: &str) -> Option<&'static str> {
+    let key = [FUNCTION_PREFIX, signature].concat();
+    let table = rules().get(chain.id())?;
+    table.get_key_value(&key).map(|(kind, _)| kind.as_str())
+}
+
+/// 附带原生币的调用不适用转账和已知函数的展示,授权类调用的类别更高,不变.
+fn plain_class(chain: Chain, kind: &str) -> bool {
+    let rule = rules().get(chain.id()).and_then(|table| table.get(kind));
+    rule.is_some_and(|rule| matches!(rule.class, RuleClass::Transfer | RuleClass::Recognized))
+}
+
+fn call_kinds(chain: Chain, call: &CallFact) -> Vec<(&'static str, Vec<String>)> {
+    let mut kinds = match &call.shape {
+        CallShape::Undecoded => vec![("call-unknown", Vec::new())],
+        CallShape::Irregular(signature) => vec![
+            ("call-unknown", Vec::new()),
+            ("call-irregular", vec![signature.clone()]),
+        ],
+        CallShape::Described if call.has_value => vec![("call-with-value", Vec::new())],
+        CallShape::Described => vec![("call-recognized", Vec::new())],
+        CallShape::Standard(_) if !call.listed => vec![("call-unlisted", vec![call.contract.clone()])],
+        CallShape::Standard(signature) => match function_kind(chain, signature) {
+            Some(kind) if call.has_value && plain_class(chain, kind) => vec![("call-with-value", Vec::new())],
+            Some(kind) => vec![(kind, Vec::new())],
+            None => vec![("call-unknown", Vec::new())],
+        },
+    };
+    if call.unlimited {
+        kinds.push(("call-unlimited", Vec::new()));
+    }
+    kinds
+}
+
+/// 一次调用的类别,给还在用动作列表的旧字段.
+pub fn call_risk(chain: Chain, call: &CallFact) -> Risk {
+    let table = rules().get(chain.id());
+    let classes = call_kinds(chain, call).into_iter().map(|(kind, _)| {
+        let rule = table.and_then(|table| table.get(kind));
+        rule.map_or(Risk::Unknown, |rule| Risk::from(rule.class))
+    });
+    classes.max().unwrap_or(Risk::Unknown)
+}
+
+fn call_signals(chain: Chain, node: NodeId, calls: &[CallFact], signals: &mut Vec<Signal>) {
     // 没有事实的调用不能因为规则表里 `call` 是最低类别就过关.
-    if facts.calls.is_empty() {
-        signals.push(Signal::new(node, call_kind(Risk::Unknown), Vec::new()));
+    if calls.is_empty() {
+        signals.push(Signal::new(node, "call-unknown", Vec::new()));
     }
-    signals.extend(
-        facts
-            .calls
-            .iter()
-            .map(|risk| Signal::new(node, call_kind(*risk), Vec::new())),
-    );
-    signals.extend(
-        facts
-            .call_alerts
-            .iter()
-            .map(|alert| Signal::new(node, "call-alert", vec![alert.clone()])),
-    );
-}
-
-/// 还没迁移的 EIP-712 页面也要说明路径,文案在规则表里.
-pub fn unusual_path_alert(path: &str) -> String {
-    let alert = rules()[Chain::Evm.id()][PATH_KIND].alert.as_deref().unwrap_or_default();
-    filled(alert, &[path.to_string()])
+    let kinds = calls.iter().flat_map(|call| call_kinds(chain, call));
+    signals.extend(kinds.map(|(kind, args)| Signal::new(node, kind, args)));
 }
 
 /// EVM 的策略.类别和告警都在规则表里.
@@ -486,7 +552,7 @@ pub fn assess_evm(decoded: &Decoded, facts: &EvmFacts) -> Assessment {
         .find_map(|(id, _, kind)| (kind == CALL_ACTION).then_some(id));
     let mut signals = Vec::new();
     if let Some(node) = call {
-        call_signals(node, facts, &mut signals);
+        call_signals(decoded.chain(), node, &facts.calls, &mut signals);
     }
     if facts.fee_high {
         signals.push(Signal::new(row(FEE_CAP_ROW), "fee-high", Vec::new()));
@@ -502,16 +568,157 @@ pub fn assess_evm(decoded: &Decoded, facts: &EvmFacts) -> Assessment {
         let args = vec![chain_id.clone(), supplied.clone()];
         signals.push(Signal::new(row(NETWORK_ROW), "chain-unknown", args));
     }
+    if let Some(permit) = &facts.permit {
+        permit.signals(&mut signals);
+    }
     let mut assessment = assess_with(decoded, rules(), &signals);
     if let (Some(node), Some(note)) = (call, &facts.call_note) {
         assessment.findings.entry(node).or_default().note = Some(note.clone());
     }
-    for visit in &visits {
-        let own = matches!(&visit.node.value, Value::Address(address) if Some(address) == facts.signer.as_ref());
+    mark_own(&mut assessment, &visits, facts.signer.as_ref());
+    assessment
+}
+
+fn mark_own(assessment: &mut Assessment, visits: &[Visit<'_>], signer: Option<&String>) {
+    for visit in visits {
+        let own = matches!(&visit.node.value, Value::Address(address) if Some(address) == signer);
         if own {
             assessment.findings.entry(visit.id).or_default().own = true;
         }
     }
+}
+
+const TRIGGER_ACTION: &str = "TriggerSmartContract";
+const ASSET_ACTION: &str = "TransferAssetContract";
+const AMOUNT_ROW: &str = "amount";
+const EXPIRATION_ROW: &str = "expiration";
+const TIMESTAMP_ROW: &str = "timestamp";
+const FEE_LIMIT_ROW: &str = "fee_limit";
+const OWNER_ROW: &str = "owner_address";
+
+/// 节点接受的最长有效期.离线设备没有时钟,所以比较的是 `timestamp`.
+pub const MAX_VALIDITY_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// `expiration` 在 `timestamp` 之后的 24 小时内.节点比较的是区块时间,不看 `timestamp`,所以这里只能告警.
+pub fn expiration_in_window(expiration: i64, timestamp: i64) -> bool {
+    let span = i128::from(expiration) - i128::from(timestamp);
+    span > 0 && span <= i128::from(MAX_VALIDITY_MS)
+}
+
+/// `owner_address` 和签名账户的关系.里面是发起方的地址.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum OwnerFact {
+    /// 就是签名账户,或者这种合约没有发起方.
+    #[default]
+    Own,
+    /// 不是签名账户,`Permission_id` 不为 0,这是 TRON 的多签.
+    Foreign(String),
+    /// 保存的公钥算不出这条路径的地址,解锁后核对,不符时拒绝.
+    Unverified(String),
+    /// 同上,但 `Permission_id` 不为 0,解锁后也不会拒绝.
+    UnverifiedMultisig(String),
+}
+
+impl OwnerFact {
+    fn signal(&self, node: NodeId) -> Option<Signal> {
+        let (kind, owner) = match self {
+            Self::Own => return None,
+            Self::Foreign(owner) => ("owner-foreign", owner),
+            Self::Unverified(owner) => ("owner-unverified", owner),
+            Self::UnverifiedMultisig(owner) => ("owner-multisig-unverified", owner),
+        };
+        Some(Signal::new(node, kind, vec![owner.clone()]))
+    }
+}
+
+/// TRON 的事实.路径,合约调用和账户都由 `tx` 层算出,这里不碰密钥和载荷.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TronFacts {
+    pub signer: Option<String>,
+    /// 这条派生路径不是本机导出的账户.
+    pub unusual_path: Option<String>,
+    /// 这笔交易的全部合约调用.
+    pub calls: Vec<CallFact>,
+    /// 调用的方法和合约.
+    pub call_note: Option<String>,
+    pub fee_high: bool,
+    pub owner: OwnerFact,
+    /// 新权限里有 owner 第一个地址之外的地址.
+    pub permission_shared: bool,
+    /// TRC-10 在清单内时,按清单小数位显示的金额.
+    pub listed_asset: Option<String>,
+    pub permit: Option<PermitFact>,
+}
+
+fn time_of(visits: &[Visit<'_>], name: &str) -> i64 {
+    let visit = visits.iter().find(|visit| visit.node.name == name);
+    match visit.map(|visit| &visit.node.value) {
+        Some(Value::Time(millis)) => *millis,
+        _ => 0,
+    }
+}
+
+/// TRON 的消息和裸哈希.没有交易的字段,规则都在树的动作上.
+pub fn assess_tron_message(decoded: &Decoded, facts: &TronFacts) -> Assessment {
+    let visits = decoded.visits();
+    let mut signals = Vec::new();
+    if let Some(path) = &facts.unusual_path {
+        let row = visits.iter().find(|visit| visit.node.name == PATH_ROW);
+        let node = row.map_or(ROOT, |visit| visit.id);
+        signals.push(Signal::new(node, PATH_KIND, vec![path.clone()]));
+    }
+    if let Some(permit) = &facts.permit {
+        permit.signals(&mut signals);
+    }
+    let mut assessment = assess_with(decoded, rules(), &signals);
+    mark_own(&mut assessment, &visits, facts.signer.as_ref());
+    assessment
+}
+
+/// TRON 的策略.类别和告警都在规则表里.
+pub fn assess_tron(decoded: &Decoded, facts: &TronFacts) -> Assessment {
+    let visits = decoded.visits();
+    let row = |name: &str| {
+        visits
+            .iter()
+            .find(|visit| visit.node.name == name)
+            .map_or(ROOT, |visit| visit.id)
+    };
+    let actions = decoded.actions();
+    let action = |wanted: &str| {
+        actions
+            .iter()
+            .find_map(|(id, _, kind)| (*kind == wanted).then_some(*id))
+    };
+    let call = action(TRIGGER_ACTION);
+    let mut signals = Vec::new();
+    if let Some(node) = call {
+        call_signals(decoded.chain(), node, &facts.calls, &mut signals);
+    }
+    if let Some(node) = action(ASSET_ACTION).filter(|_| facts.listed_asset.is_none()) {
+        signals.push(Signal::new(node, "asset-unlisted", Vec::new()));
+    }
+    if facts.fee_high {
+        signals.push(Signal::new(row(FEE_LIMIT_ROW), "fee-high", Vec::new()));
+    }
+    if let Some(path) = &facts.unusual_path {
+        signals.push(Signal::new(row(PATH_ROW), PATH_KIND, vec![path.clone()]));
+    }
+    signals.extend(facts.owner.signal(row(OWNER_ROW)));
+    if facts.permission_shared {
+        signals.push(Signal::new(ROOT, "permission-shared", Vec::new()));
+    }
+    if !expiration_in_window(time_of(&visits, EXPIRATION_ROW), time_of(&visits, TIMESTAMP_ROW)) {
+        signals.push(Signal::new(row(EXPIRATION_ROW), "expiration-window", Vec::new()));
+    }
+    let mut assessment = assess_with(decoded, rules(), &signals);
+    if let (Some(node), Some(note)) = (call, &facts.call_note) {
+        assessment.findings.entry(node).or_default().note = Some(note.clone());
+    }
+    if let Some(amount) = &facts.listed_asset {
+        assessment.findings.entry(row(AMOUNT_ROW)).or_default().display = Some(amount.clone());
+    }
+    mark_own(&mut assessment, &visits, facts.signer.as_ref());
     assessment
 }
 
@@ -768,22 +975,22 @@ mod tests {
     #[test]
     fn only_the_migrated_chains_have_tables() {
         for (chain, table) in rules() {
-            let migrated = ["bitcoin", "evm", "solana"].contains(&chain.as_str());
+            let migrated = ["bitcoin", "evm", "solana", "tron"].contains(&chain.as_str());
             assert_eq!(table.is_empty(), !migrated, "{chain}");
         }
     }
 
-    const EVM_KINDS: [&str; 25] = [
+    const EVM_KINDS: [&str; 33] = [
         "no-chain-id",
         "native-transfer",
         "contract-creation",
         "call",
-        "call-transfer",
         "call-recognized",
-        "call-approval",
-        "call-permission-change",
         "call-unknown",
-        "call-alert",
+        "call-unlisted",
+        "call-irregular",
+        "call-with-value",
+        "call-unlimited",
         "authorization",
         "authorization-clear",
         "authorization-every-chain",
@@ -799,6 +1006,14 @@ mod tests {
         "fee-high",
         "network-renamed",
         "chain-unknown",
+        "eip712-message",
+        "eip712-permit",
+        "eip712-described",
+        "eip712-no-chain-id",
+        "eip712-no-contract",
+        "eip712-other-chain",
+        "permit-many",
+        "permit-unlimited",
     ];
 
     #[test]
@@ -807,7 +1022,17 @@ mod tests {
         for kind in EVM_KINDS.into_iter().chain(crate::decode::transaction_actions()) {
             assert!(table.contains_key(kind), "{kind}");
         }
-        assert_eq!(table.len(), EVM_KINDS.len() + 5, "规则表里有用不到的种类");
+        assert_eq!(
+            table.len(),
+            EVM_KINDS.len() + 5 + function_kinds("evm").len(),
+            "规则表里有用不到的种类"
+        );
+    }
+
+    /// 策略不依赖描述文件,函数名在这里和规则表自己比较,`tx/abi.rs` 的测试比较内置函数.
+    fn function_kinds(chain: &str) -> Vec<&'static String> {
+        let table = &rules()[chain];
+        table.keys().filter(|kind| kind.starts_with(FUNCTION_PREFIX)).collect()
     }
 
     /// 第 1.1 节:这些内容都是无法识别,告警要说清后果.
@@ -825,6 +1050,10 @@ mod tests {
             "personal-sign",
             "raw-hash",
             "chain-unknown",
+            "eip712-message",
+            "eip712-no-chain-id",
+            "eip712-no-contract",
+            "eip712-other-chain",
         ] {
             assert_eq!(table[kind].class, RuleClass::Unknown, "{kind}");
             assert!(table[kind].alert.is_some(), "{kind}");
@@ -960,6 +1189,55 @@ mod tests {
         assert_eq!(assessment.alerts, [UNKNOWN_ALERT]);
     }
 
+    /// 第 7.2 节的更正:清单外的合约解码显示,类别是无法识别.
+    #[test]
+    fn standard_calls_on_an_unlisted_contract_are_unknown_with_the_contract_named() {
+        let call = CallFact {
+            shape: CallShape::Standard("transfer(address,uint256)".to_string()),
+            contract: "0xabc".to_string(),
+            ..CallFact::default()
+        };
+        assert_eq!(call_risk(Chain::Evm, &call), Risk::Unknown);
+        let listed = CallFact {
+            listed: true,
+            ..call.clone()
+        };
+        assert_eq!(call_risk(Chain::Evm, &listed), Risk::Transfer);
+        assert_eq!(
+            call_risk(
+                Chain::Evm,
+                &CallFact {
+                    has_value: true,
+                    ..listed
+                }
+            ),
+            Risk::Unknown
+        );
+        let kinds = call_kinds(Chain::Evm, &call);
+        assert_eq!(kinds, [("call-unlisted", vec!["0xabc".to_string()])]);
+    }
+
+    #[test]
+    fn an_approval_keeps_its_class_with_a_native_value() {
+        let call = CallFact {
+            shape: CallShape::Standard("approve(address,uint256)".to_string()),
+            listed: true,
+            has_value: true,
+            ..CallFact::default()
+        };
+        assert_eq!(call_risk(Chain::Tron, &call), Risk::Approval);
+    }
+
+    #[test]
+    fn a_descriptor_gives_recognized_never_transfer() {
+        let call = CallFact {
+            shape: CallShape::Described,
+            listed: true,
+            ..CallFact::default()
+        };
+        assert_eq!(call_risk(Chain::Evm, &call), Risk::Recognized);
+    }
+
     #[test]
     fn a_call_without_facts_is_unknown() {
         let decoded = decode(
@@ -1024,6 +1302,143 @@ mod tests {
             assert_eq!(table[kind].class, RuleClass::Unknown, "{kind}");
             assert!(table[kind].alert.is_some(), "{kind}");
         }
+    }
+
+    const TRON_SIGNALS: [&str; 27] = [
+        "call-recognized",
+        "call-unknown",
+        "call-unlisted",
+        "call-irregular",
+        "call-with-value",
+        "call-unlimited",
+        "asset-unlisted",
+        "fee-high",
+        "path-unusual",
+        "owner-foreign",
+        "owner-unverified",
+        "owner-multisig-unverified",
+        "permission-shared",
+        "expiration-window",
+        "field-unused",
+        "memo",
+        "permission-id",
+        "personal-sign",
+        "raw-hash",
+        "eip712-message",
+        "eip712-permit",
+        "eip712-described",
+        "eip712-no-chain-id",
+        "eip712-no-contract",
+        "eip712-other-chain",
+        "permit-many",
+        "permit-unlimited",
+    ];
+
+    #[test]
+    fn every_tron_kind_has_a_rule() {
+        let table = &rules()["tron"];
+        let functions = function_kinds("tron");
+        let kinds: std::collections::BTreeSet<&str> = crate::decode::tron_actions()
+            .into_iter()
+            .chain(TRON_SIGNALS)
+            .chain(functions.iter().map(|kind| kind.as_str()))
+            .collect();
+        for kind in &kinds {
+            assert!(table.contains_key(*kind), "{kind}");
+        }
+        assert_eq!(table.len(), kinds.len(), "规则表里有用不到的种类");
+    }
+
+    /// 第 5.2 节的矩阵.
+    #[test]
+    fn every_contract_type_has_the_class_of_the_matrix() {
+        use RuleClass::{Approval, PermissionChange, Recognized, Transfer, Unknown};
+        let table = &rules()["tron"];
+        let classes = [
+            (Transfer, 3),
+            (Recognized, 31),
+            (Approval, 1),
+            (PermissionChange, 1),
+            (Unknown, 5),
+        ];
+        for (class, count) in classes {
+            let matching = crate::decode::tron_contracts()
+                .iter()
+                .filter(|(_, name)| table[*name].class == class)
+                .count();
+            assert_eq!(matching, count, "{class:?}");
+        }
+        for name in ["TransferContract", "TransferAssetContract", TRIGGER_ACTION] {
+            assert_eq!(table[name].class, Transfer, "{name}");
+        }
+        assert_eq!(table["DelegateResourceContract"].class, Approval);
+        assert_eq!(table["AccountPermissionUpdateContract"].class, PermissionChange);
+        for name in [
+            "VoteAssetContract",
+            "CustomContract",
+            "CreateSmartContract",
+            "GetContract",
+            "ShieldedTransferContract",
+        ] {
+            assert_eq!(table[name].class, Unknown, "{name}");
+            assert!(table[name].alert.is_some(), "{name}");
+        }
+        for name in [
+            "WitnessCreateContract",
+            "AssetIssueContract",
+            "ParticipateAssetIssueContract",
+            "ExchangeCreateContract",
+            "ExchangeInjectContract",
+            "ExchangeTransactionContract",
+            "MarketSellAssetContract",
+        ] {
+            assert_eq!(table[name].class, Recognized, "{name}");
+            assert!(table[name].alert.is_some(), "{name}");
+        }
+    }
+
+    /// 第 1.1 节:这些内容都能签,类别和确认方式来自规则表.
+    #[test]
+    fn unknown_tron_content_is_unknown_with_an_alert() {
+        let table = &rules()["tron"];
+        for kind in [
+            "contract-unknown",
+            "unknown-field",
+            "enum-unknown",
+            "negative-integer",
+            "field-unused",
+            "owner-foreign",
+            "owner-multisig-unverified",
+            "personal-sign",
+            "raw-hash",
+            "eip712-message",
+            "eip712-no-chain-id",
+            "eip712-no-contract",
+            "eip712-other-chain",
+        ] {
+            assert_eq!(table[kind].class, RuleClass::Unknown, "{kind}");
+            assert!(table[kind].alert.is_some(), "{kind}");
+        }
+        for kind in ["memo", "permission-id", "expiration-window", "path-unusual"] {
+            assert!(table[kind].alert.is_some(), "{kind}");
+        }
+        let second: Vec<&str> = table
+            .iter()
+            .filter(|(_, rule)| rule.second)
+            .map(|(kind, _)| kind.as_str())
+            .collect();
+        assert_eq!(second, ["contract-unknown", "raw-hash"]);
+    }
+
+    #[test]
+    fn the_validity_window_is_compared_to_the_timestamp() {
+        let now = 1_800_000_000_000;
+        assert!(expiration_in_window(now + 1, now));
+        assert!(expiration_in_window(now + MAX_VALIDITY_MS, now));
+        assert!(!expiration_in_window(now, now));
+        assert!(!expiration_in_window(now - 1, now));
+        assert!(!expiration_in_window(now + MAX_VALIDITY_MS + 1, now));
+        assert!(!expiration_in_window(i64::MAX, i64::MIN));
     }
 
     #[test]

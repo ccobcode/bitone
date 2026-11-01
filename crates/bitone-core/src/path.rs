@@ -110,21 +110,18 @@ fn bitcoin_mode(coin: u32) -> Option<Mode> {
     }
 }
 
-/// 认出路径属于哪条链,用哪种地址.认不出来时没有 `Ok` 结果,Bitcoin 的账户,找零链和索引都不限制.
+/// 认出路径属于哪条链,用哪种地址.认不出来时没有 `Ok` 结果,Bitcoin 的账户,找零链和索引,
+/// EVM,TRON 主网 coin type 下的路径都不限制.
 pub fn classify(path: &DerivationPath) -> Result<PathInfo, Error> {
     let info = |chain, mode, kind| Ok(PathInfo { chain, mode, kind });
     match path.0.as_slice() {
         [purpose, coin, ..] if *purpose == h(44) && *coin == h(60) => info(Chain::Evm, None, AccountKind::Single),
+        [purpose, coin, ..] if *purpose == h(44) && *coin == h(195) => {
+            info(Chain::Tron, Some(Mode::Mainnet), AccountKind::Single)
+        }
         [purpose, coin, _, _, _]
             if *purpose == h(84) || *purpose == h(86) || *purpose == h(44) || *purpose == h(49) =>
         {
-            if *purpose == h(44) && *coin == h(195) {
-                return if path.0[2..] == [h(0), 0, 0] {
-                    info(Chain::Tron, Some(Mode::Mainnet), AccountKind::Single)
-                } else {
-                    Err(Error::PathNotAllowed)
-                };
-            }
             if *purpose == h(44) && *coin == h(1) {
                 return if path.0[2..] == [h(0), 0, 0] {
                     info(Chain::Tron, Some(Mode::Testnet), AccountKind::Single)
@@ -182,12 +179,12 @@ pub fn check_bitcoin_path(path: &DerivationPath, network: Option<Network>) -> Re
     }
 }
 
-/// EVM 请求里的路径有没有矛盾.路径不设白名单,只有用途和 coin type 都属于本钱包其他链的主网账户才算.
-/// 这些私钥上有真实资产,裸哈希签名能签下它们的交易.coin type `1'` 不只属于一条链,说明不了什么.
-pub fn check_evm_path(path: &DerivationPath) -> Result<(), Error> {
+/// EVM,TRON 请求里的路径有没有矛盾.路径不设白名单,只有用途和 coin type 都属于本钱包其他链的主网账户才算.
+/// 这些私钥上有真实资产,裸哈希和未知载荷都能签下它们的交易.coin type `1'` 不只属于一条链,说明不了什么.
+pub fn check_foreign_path(path: &DerivationPath, chain: Chain) -> Result<(), Error> {
     let foreign = account_specs(Mode::Mainnet, true)
         .iter()
-        .filter(|spec| spec.chain != Chain::Evm)
+        .filter(|spec| spec.chain != chain)
         .filter_map(|spec| DerivationPath::parse(spec.path).ok())
         .any(|account| path.0.get(..2) == account.0.get(..2));
     if foreign {
@@ -227,20 +224,41 @@ pub fn check_solana_path(path: &DerivationPath, network: Option<Network>) -> Res
     }
 }
 
-/// 路径是不是本机导出的 Solana 账户.其余路径可以签名,但要告警.
-pub fn is_usual_solana_path(path: &DerivationPath) -> bool {
+/// TRON 请求里的路径有没有矛盾.`195'` 是主网私钥,`1'` 是测试币私钥,本机认识的网络要和它一致.
+pub fn check_tron_path(path: &DerivationPath, network: Option<Network>) -> Result<(), Error> {
+    check_foreign_path(path, Chain::Tron)?;
+    let coin = path.0.get(1).copied();
+    let mode = match coin {
+        Some(coin) if coin == h(195) => Some(Mode::Mainnet),
+        Some(coin) if coin == h(1) => Some(Mode::Testnet),
+        _ => None,
+    };
+    match (mode, network) {
+        (Some(mode), Some(network)) if mode != network.mode() => Err(Error::PathNetworkMismatch),
+        _ => Ok(()),
+    }
+}
+
+fn is_exported(path: &DerivationPath, chain: Chain) -> bool {
     let text = path.to_string();
     all_account_specs(true)
         .iter()
-        .any(|spec| spec.chain == Chain::Solana && spec.path == text)
+        .any(|spec| spec.chain == chain && spec.path == text)
 }
 
 /// 路径是不是本机导出的 EVM 账户.其余路径可以签名,但要告警.
 pub fn is_usual_evm_path(path: &DerivationPath) -> bool {
-    let text = path.to_string();
-    all_account_specs(true)
-        .iter()
-        .any(|spec| spec.chain == Chain::Evm && spec.path == text)
+    is_exported(path, Chain::Evm)
+}
+
+/// 路径是不是本机导出的 TRON 账户.其余路径可以签名,但要告警.
+pub fn is_usual_tron_path(path: &DerivationPath) -> bool {
+    is_exported(path, Chain::Tron)
+}
+
+/// 路径是不是本机导出的 Solana 账户.其余路径可以签名,但要告警.
+pub fn is_usual_solana_path(path: &DerivationPath) -> bool {
+    is_exported(path, Chain::Solana)
 }
 
 /// 路径是否落在本机导出的 Bitcoin 账户下,地址类型也和账户一致.其余路径可以花费,但要告警.
@@ -377,7 +395,6 @@ mod tests {
     #[test]
     fn rejects_paths_outside_the_whitelist() {
         for path in [
-            "m/44'/195'/0'/0/1",
             "m/44'/501'/1'/0'",
             "m/44'/1'/0'/1/0",
             "m/44'/2'/0'/0/0",
@@ -414,7 +431,7 @@ mod tests {
             "m/0",
             "m",
         ] {
-            assert_eq!(check_evm_path(&p(free)), Ok(()), "{free}");
+            assert_eq!(check_foreign_path(&p(free), Chain::Evm), Ok(()), "{free}");
         }
         for taken in [
             "m/84'/0'/0'/0/0",
@@ -423,8 +440,65 @@ mod tests {
             "m/44'/501'/0'/0'",
             "m/44'/0'/0'/0/0",
         ] {
-            assert_eq!(check_evm_path(&p(taken)), Err(Error::PathNetworkMismatch), "{taken}");
+            assert_eq!(
+                check_foreign_path(&p(taken), Chain::Evm),
+                Err(Error::PathNetworkMismatch),
+                "{taken}"
+            );
         }
+    }
+
+    #[test]
+    fn every_path_under_coin_type_195_is_tron_on_mainnet() {
+        for path in ["m/44'/195'/0'/0/0", "m/44'/195'/0'/0/1", "m/44'/195'/3'", "m/44'/195'"] {
+            let info = classify(&p(path)).unwrap();
+            assert_eq!((info.chain, info.mode), (Chain::Tron, Some(Mode::Mainnet)), "{path}");
+            assert!(validate_for_network(&p(path), Network::Tron).is_ok(), "{path}");
+            assert_eq!(
+                validate_for_network(&p(path), Network::TronNile),
+                Err(Error::PathNetworkMismatch),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn any_tron_path_is_free_except_the_mainnet_keys_of_other_chains() {
+        for free in ["m/44'/195'/9'/0/1", "m/44'/966'/0'/0/0", "m/84'/1'/0'/0/0", "m/0", "m"] {
+            assert_eq!(check_tron_path(&p(free), None), Ok(()), "{free}");
+        }
+        for taken in [
+            "m/84'/0'/0'/0/0",
+            "m/86'/0'/5'/1/2",
+            "m/44'/0'/0'/0/0",
+            "m/49'/0'/0'/0/0",
+            "m/44'/60'/0'/0/0",
+            "m/44'/501'/0'/0'",
+        ] {
+            assert_eq!(
+                check_tron_path(&p(taken), None),
+                Err(Error::PathNetworkMismatch),
+                "{taken}"
+            );
+            assert_eq!(
+                check_tron_path(&p(taken), Some(Network::Tron)),
+                Err(Error::PathNetworkMismatch),
+                "{taken}"
+            );
+        }
+    }
+
+    #[test]
+    fn known_tron_networks_keep_their_keys_apart() {
+        let check = |path: &str, network| check_tron_path(&p(path), Some(network));
+        assert_eq!(check("m/44'/195'/0'/0/1", Network::Tron), Ok(()));
+        assert_eq!(check("m/44'/1'/0'/0/7", Network::TronNile), Ok(()));
+        assert_eq!(check("m/44'/1'/0'/0/0", Network::Tron), Err(Error::PathNetworkMismatch));
+        assert_eq!(
+            check("m/44'/195'/0'/0/0", Network::TronShasta),
+            Err(Error::PathNetworkMismatch)
+        );
+        assert_eq!(check("m/44'/966'/0'/0/0", Network::TronNile), Ok(()));
     }
 
     #[test]
@@ -468,6 +542,14 @@ mod tests {
         assert!(is_usual_solana_path(&p("m/44'/501'/0'/0'")));
         assert!(is_usual_solana_path(&p("m/44'/1'/0'/0'")));
         assert!(!is_usual_solana_path(&p("m/44'/501'/1'/0'")));
+    }
+
+    #[test]
+    fn only_the_exported_tron_accounts_are_usual() {
+        assert!(is_usual_tron_path(&p("m/44'/195'/0'/0/0")));
+        assert!(is_usual_tron_path(&p("m/44'/1'/0'/0/0")));
+        assert!(!is_usual_tron_path(&p("m/44'/195'/0'/0/1")));
+        assert!(!is_usual_tron_path(&p("m/44'/60'/0'/0/0")));
     }
 
     #[test]

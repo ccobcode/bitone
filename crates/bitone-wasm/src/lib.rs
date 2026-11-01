@@ -499,10 +499,10 @@ struct TronPayloadInfo {
 /// 粘贴的 `raw_data` 的过期时间和 fee_limit.核心库解析不了时是 `undefined`,不算错误.
 #[wasm_bindgen(js_name = tronPayloadInfo)]
 pub fn tron_payload_info(payload: &[u8]) -> Result<JsValue, JsError> {
-    match tron::RawData::decode(payload) {
+    match tron::UnsignedTx::decode(payload) {
         Ok(tx) => to_js(&TronPayloadInfo {
-            expiration_ms: tx.expiration,
-            fee_limit: tx.fee_limit,
+            expiration_ms: u64::try_from(tx.expiration()).unwrap_or_default(),
+            fee_limit: u64::try_from(tx.fee_limit()).unwrap_or_default(),
         }),
         Err(_) => Ok(JsValue::UNDEFINED),
     }

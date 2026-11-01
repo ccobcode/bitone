@@ -6,5 +6,4 @@ pub use alloy_eips::eip2930::AccessList;
 pub use alloy_primitives::U256;
 pub use alloy_rlp::Header;
 pub use bitcoin::psbt::Psbt;
-pub use prost::Message;
 pub use psbt_v2::v2::Psbt as PsbtV2;

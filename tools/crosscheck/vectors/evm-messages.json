@@ -1,0 +1,226 @@
+{
+    "source": {
+        "package": "viem",
+        "version": "2.57.7"
+    },
+    "calls": [
+        {
+            "case": "transfer",
+            "data": "a9059cbb00000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c8000000000000000000000000000000000000000000000000000000004a817c80",
+            "fields": [
+                "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "1250000000"
+            ]
+        },
+        {
+            "case": "transfer 金额 0",
+            "data": "a9059cbb00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000",
+            "fields": [
+                "0000000000000000000000000000000000000001",
+                "0"
+            ]
+        },
+        {
+            "case": "approve 无限",
+            "data": "095ea7b300000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c8ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "fields": [
+                "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            ]
+        },
+        {
+            "case": "transferFrom",
+            "data": "23b872dd000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb9226600000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c80000000000000000000000000000000000000000000000000000000000000007",
+            "fields": [
+                "f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+                "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "7"
+            ]
+        },
+        {
+            "case": "increaseAllowance",
+            "data": "3950935100000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c80000000000000000000000000000000000000000000000000000000000000009",
+            "fields": [
+                "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "9"
+            ]
+        },
+        {
+            "case": "increaseApproval",
+            "data": "d73dd62300000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c80000000000000000000000000000000000000000000000000000000000000009",
+            "fields": [
+                "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "9"
+            ]
+        },
+        {
+            "case": "decreaseAllowance",
+            "data": "a457c2d700000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c80000000000000000000000000000000000000000000000000000000000000009",
+            "fields": [
+                "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "9"
+            ]
+        },
+        {
+            "case": "decreaseApproval",
+            "data": "6618846300000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c80000000000000000000000000000000000000000000000000000000000000009",
+            "fields": [
+                "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "9"
+            ]
+        },
+        {
+            "case": "setApprovalForAll",
+            "data": "a22cb46500000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c80000000000000000000000000000000000000000000000000000000000000001",
+            "fields": [
+                "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "true"
+            ]
+        },
+        {
+            "case": "permit",
+            "data": "d505accf000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb9226600000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c80000000000000000000000000000000000000000000000000000000000000064000000000000000000000000000000000000000000000000000000006b49d200000000000000000000000000000000000000000000000000000000000000001b11111111111111111111111111111111111111111111111111111111111111112222222222222222222222222222222222222222222222222222222222222222",
+            "fields": [
+                "f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+                "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "100",
+                "1800000000",
+                "27",
+                "1111111111111111111111111111111111111111111111111111111111111111",
+                "2222222222222222222222222222222222222222222222222222222222222222"
+            ]
+        },
+        {
+            "case": "Permit2 approve",
+            "data": "87517c45000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec700000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c8000000000000000000000000ffffffffffffffffffffffffffffffffffffffff000000000000000000000000000000000000000000000000000000006b49d200",
+            "fields": [
+                "dac17f958d2ee523a2206206994597c13d831ec7",
+                "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "1461501637330902918203684832716283019655932542975",
+                "1800000000"
+            ]
+        },
+        {
+            "case": "multicall",
+            "data": "ac9650d800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000044a9059cbb00000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c80000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000",
+            "fields": [
+                "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "1",
+                "f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+                "2"
+            ]
+        },
+        {
+            "case": "multicall 带截止时间,嵌套",
+            "data": "5ae401dc000000000000000000000000000000000000000000000000000000006b49d20000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e4ac9650d80000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000044095ea7b300000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c800000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "fields": [
+                "1800000000",
+                "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "3"
+            ]
+        },
+        {
+            "case": "空 multicall",
+            "data": "ac9650d800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000",
+            "fields": []
+        }
+    ],
+    "irregular": [
+        {
+            "case": "尾部字节",
+            "data": "095ea7b300000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c8000000000000000000000000000000000000000000000000000000000000000100",
+            "signature": "approve(address,uint256)"
+        },
+        {
+            "case": "32 字节的尾部",
+            "data": "a9059cbb00000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c800000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001",
+            "signature": "transfer(address,uint256)"
+        }
+    ],
+    "typed": [
+        {
+            "case": "EIP-712 规范的 Mail",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}],\"Mail\":[{\"name\":\"from\",\"type\":\"Person\"},{\"name\":\"to\",\"type\":\"Person\"},{\"name\":\"contents\",\"type\":\"string\"}]},\"primaryType\":\"Mail\",\"domain\":{\"name\":\"Ether Mail\",\"version\":\"1\",\"chainId\":1,\"verifyingContract\":\"0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\"},\"message\":{\"from\":{\"name\":\"Cow\",\"wallet\":\"0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\"},\"to\":{\"name\":\"Bob\",\"wallet\":\"0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\"},\"contents\":\"Hello, Bob!\"}}",
+            "domain_separator": "f2cee375fa42b42143804025fc449deafd50cc031ca257e0b194a650a912090f",
+            "hash_struct": "c52c0ee5d84264471806290a3f2c4cecfc5490626bf912d01f240d7a274b371e",
+            "hash": "be609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2"
+        },
+        {
+            "case": "ERC-2612 Permit",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Permit\":[{\"name\":\"owner\",\"type\":\"address\"},{\"name\":\"spender\",\"type\":\"address\"},{\"name\":\"value\",\"type\":\"uint256\"},{\"name\":\"nonce\",\"type\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\"}]},\"primaryType\":\"Permit\",\"domain\":{\"name\":\"Tether\",\"version\":\"1\",\"chainId\":\"1\",\"verifyingContract\":\"0xdAC17F958D2ee523a2206206994597C13D831ec7\"},\"message\":{\"owner\":\"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\",\"spender\":\"0x70997970C51812dc3A010C7d01b50e0d17dc79C8\",\"value\":\"115792089237316195423570985008687907853269984665640564039457584007913129639935\",\"nonce\":0,\"deadline\":\"0x6b49d200\"}}",
+            "domain_separator": "156435bead2a5a11c356590870fb865f717235b3180416caa5e9d2b26e53b21f",
+            "hash_struct": "46eb714c3a472d5f7bfdc55a222593f0b6f6ec51adbdeefcfb4df8b69df356fb",
+            "hash": "11733db74c03654773c94556385338ed5cbde424d05771ab0755841099a764e7"
+        },
+        {
+            "case": "Permit2 PermitBatch",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"PermitBatch\":[{\"name\":\"details\",\"type\":\"PermitDetails[]\"},{\"name\":\"spender\",\"type\":\"address\"},{\"name\":\"sigDeadline\",\"type\":\"uint256\"}],\"PermitDetails\":[{\"name\":\"token\",\"type\":\"address\"},{\"name\":\"amount\",\"type\":\"uint160\"},{\"name\":\"expiration\",\"type\":\"uint48\"},{\"name\":\"nonce\",\"type\":\"uint48\"}]},\"primaryType\":\"PermitBatch\",\"domain\":{\"name\":\"Permit2\",\"chainId\":1,\"verifyingContract\":\"0x000000000022D473030F116dDEE9F6B43aC78BA3\"},\"message\":{\"details\":[{\"token\":\"0xdAC17F958D2ee523a2206206994597C13D831ec7\",\"amount\":\"1461501637330902918203684832716283019655932542975\",\"expiration\":1800000000,\"nonce\":0},{\"token\":\"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\",\"amount\":\"5\",\"expiration\":1800000000,\"nonce\":1}],\"spender\":\"0x70997970C51812dc3A010C7d01b50e0d17dc79C8\",\"sigDeadline\":\"1800000000\"}}",
+            "domain_separator": "866a5aba21966af95d6c7ab78eb2b2fc913915c28be3b9aa07cc04ff903e3f28",
+            "hash_struct": "c6f77557fc981bd378ca06584158c7a4b576ed7e819b37933f03680896625866",
+            "hash": "c9b20807542be5e678bce26888801bc80e382b6eb71e466c217dad55882a7afa"
+        },
+        {
+            "case": "DAI 的 Permit",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Permit\":[{\"name\":\"holder\",\"type\":\"address\"},{\"name\":\"spender\",\"type\":\"address\"},{\"name\":\"nonce\",\"type\":\"uint256\"},{\"name\":\"expiry\",\"type\":\"uint256\"},{\"name\":\"allowed\",\"type\":\"bool\"}]},\"primaryType\":\"Permit\",\"domain\":{\"name\":\"Dai Stablecoin\",\"version\":\"1\",\"chainId\":1,\"verifyingContract\":\"0x6B175474E89094C44Da98b954EedeAC495271d0F\"},\"message\":{\"holder\":\"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\",\"spender\":\"0x70997970C51812dc3A010C7d01b50e0d17dc79C8\",\"nonce\":0,\"expiry\":0,\"allowed\":true}}",
+            "domain_separator": "dbb8cf42e1ecb028be3f3dbc922e1d878b963f411dc388ced501601c60f7c6f7",
+            "hash_struct": "15740f42592d7c4c052203549447cd8634b57f18e9a815b850cf4d4312392dbc",
+            "hash": "222263fb7f8c54761a69b9e44c3fb0e128fdc04b52477e4f39be9a669e019368"
+        },
+        {
+            "case": "全部原子类型",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"salt\",\"type\":\"bytes32\"}],\"Atoms\":[{\"name\":\"flag\",\"type\":\"bool\"},{\"name\":\"small\",\"type\":\"int8\"},{\"name\":\"wide\",\"type\":\"int256\"},{\"name\":\"byte\",\"type\":\"uint8\"},{\"name\":\"fixed4\",\"type\":\"bytes4\"},{\"name\":\"fixed32\",\"type\":\"bytes32\"},{\"name\":\"blob\",\"type\":\"bytes\"},{\"name\":\"empty\",\"type\":\"bytes\"},{\"name\":\"text\",\"type\":\"string\"},{\"name\":\"who\",\"type\":\"address\"}]},\"primaryType\":\"Atoms\",\"domain\":{\"name\":\"Atoms\",\"chainId\":137,\"salt\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},\"message\":{\"flag\":true,\"small\":-128,\"wide\":\"-57896044618658097711785492504343953926634992332820282019728792003956564819968\",\"byte\":255,\"fixed4\":\"0xdeadbeef\",\"fixed32\":\"0x1111111111111111111111111111111111111111111111111111111111111111\",\"blob\":\"0x0102\",\"empty\":\"0x\",\"text\":\"你好\",\"who\":\"0x70997970C51812dc3A010C7d01b50e0d17dc79C8\"}}",
+            "domain_separator": "d4e23e3a731fe866d98a73b301a73f6f2e88153ab7361448f3066ff59dac0c74",
+            "hash_struct": "4c481e2a022ec33a3dac5f08198a5736ee6cc302dd4cbb187c9f459346dabd24",
+            "hash": "2a4086d34469d9f69bc74e7bc7475cb4f50ec2e1cd5697bd9a38f828439eac5d"
+        },
+        {
+            "case": "数组,定长数组和嵌套数组",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Leaf\":[{\"name\":\"id\",\"type\":\"uint16\"}],\"Grid\":[{\"name\":\"fixed\",\"type\":\"uint8[3]\"},{\"name\":\"rows\",\"type\":\"uint8[][]\"},{\"name\":\"pairs\",\"type\":\"bytes4[2][]\"},{\"name\":\"leaves\",\"type\":\"Leaf[]\"},{\"name\":\"words\",\"type\":\"string[]\"},{\"name\":\"none\",\"type\":\"address[]\"}]},\"primaryType\":\"Grid\",\"domain\":{\"chainId\":1,\"verifyingContract\":\"0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\"},\"message\":{\"fixed\":[1,2,3],\"rows\":[[1],[],[2,3]],\"pairs\":[[\"0x01020304\",\"0x05060708\"]],\"leaves\":[{\"id\":7},{\"id\":8}],\"words\":[\"a\",\"b\"],\"none\":[]}}",
+            "domain_separator": "aacfa53e40b6cf4731969904a1d33ebb37884de6fd02a022d1f1ed02e1334e1f",
+            "hash_struct": "2747b77c65e855819b25142ffcbf6f78666cfb1650b242df66fdb0891bea185c",
+            "hash": "36384df0879a4b8095d1938ff2a75003396e1a102596e4ee49d3cd329ad073bc"
+        },
+        {
+            "case": "自引用类型",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"}],\"Node\":[{\"name\":\"value\",\"type\":\"uint256\"},{\"name\":\"children\",\"type\":\"Node[]\"}]},\"primaryType\":\"Node\",\"domain\":{\"name\":\"Tree\"},\"message\":{\"value\":1,\"children\":[{\"value\":2,\"children\":[]}]}}",
+            "domain_separator": "51d0e5b770069f27cfdeb3a9506583832196c905e51939a7871a58ee8e3b626f",
+            "hash_struct": "3a0d2413ec3440d0b7421bee3d890f102274d4ab91b275f0c91b733c4565fd66",
+            "hash": "1cb9eac5b6193ab3614376f05598087d5f401df72efdc66dbc71983ad714ac76"
+        },
+        {
+            "case": "类型互相引用",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"}],\"Left\":[{\"name\":\"id\",\"type\":\"uint8\"},{\"name\":\"next\",\"type\":\"Right[]\"}],\"Right\":[{\"name\":\"id\",\"type\":\"uint8\"},{\"name\":\"next\",\"type\":\"Left[]\"}]},\"primaryType\":\"Left\",\"domain\":{\"name\":\"Cycle\"},\"message\":{\"id\":1,\"next\":[{\"id\":2,\"next\":[]}]}}",
+            "domain_separator": "e57ecc43d7aeb5c4eb995db8052995e6c5f2a570598517bc283a4d3bc9b33570",
+            "hash_struct": "e065e87f780f327c9e30f8d122f3b415ee1df9a3efe44a219766efcaf084e82d",
+            "hash": "a2ce807e6598e1aa071e9e0f74f79ec47cfe1a89024bf73fb48fca10f0926579"
+        },
+        {
+            "case": "域的字段不是规范顺序",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"verifyingContract\",\"type\":\"address\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"name\",\"type\":\"string\"}],\"Ping\":[{\"name\":\"id\",\"type\":\"uint8\"}]},\"primaryType\":\"Ping\",\"domain\":{\"name\":\"Order\",\"chainId\":1,\"verifyingContract\":\"0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\"},\"message\":{\"id\":1}}",
+            "domain_separator": "fecfaeca03ec95eebd9f85ea5097632899c006db9ab515d1ca368a00af2182b0",
+            "hash_struct": "e7752cd1500596ba97a455e9ff1b6d6a66c9dbb89461597e3e775868ae382e79",
+            "hash": "8dc47bb213e7c4c6bb2402a95070e7a535f04361f2711183150caa791c38ca68"
+        },
+        {
+            "case": "域没有 chainId 和合约",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"}],\"Ping\":[{\"name\":\"id\",\"type\":\"uint8\"}]},\"primaryType\":\"Ping\",\"domain\":{\"name\":\"Anywhere\"},\"message\":{\"id\":1}}",
+            "domain_separator": "34dc3acbfcfc5d163130c01287b4ed7b0e5c38aaec7b5aec9bfa374177ef2151",
+            "hash_struct": "e7752cd1500596ba97a455e9ff1b6d6a66c9dbb89461597e3e775868ae382e79",
+            "hash": "b679fd5d4a2d6cc97bbabee8b05df112e9ce50194a0219e992a814ce99c8318f"
+        },
+        {
+            "case": "types 里没有 EIP712Domain",
+            "payload": "{\"types\":{\"Ping\":[{\"name\":\"id\",\"type\":\"uint8\"}]},\"primaryType\":\"Ping\",\"domain\":{\"name\":\"Implicit\",\"version\":\"2\",\"chainId\":1,\"verifyingContract\":\"0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\"},\"message\":{\"id\":1}}",
+            "domain_separator": "15e0de213ddafe0cca971b7ad3299f89064645b1ca8f69e0131a317f9d1fd186",
+            "hash_struct": "e7752cd1500596ba97a455e9ff1b6d6a66c9dbb89461597e3e775868ae382e79",
+            "hash": "0e3cfa381ac90b415d8ead9d35763d69271390c29ea7ea783fed6805f845fcca"
+        },
+        {
+            "case": "主类型是 EIP712Domain",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"}]},\"primaryType\":\"EIP712Domain\",\"domain\":{\"name\":\"Only\"},\"message\":{}}",
+            "domain_separator": "b214ce27b25e5e15b251aaf9254e842d823969730d0d9ffa6f8759feec67f7a9",
+            "hash_struct": null,
+            "hash": "7b4b00c6964d807890377c4f89ef05600517e347123019243289a03ca0fa474b"
+        }
+    ]
+}

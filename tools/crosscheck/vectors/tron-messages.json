@@ -1,0 +1,94 @@
+{
+    "source": {
+        "package": "tronweb",
+        "version": "6.5.1"
+    },
+    "signer": "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+    "personal": [
+        {
+            "case": "文本",
+            "payload": "68656c6c6f",
+            "hash": "a07d8e5b946cc0416662f5420751673680809e5f10313e20c7c5badb0ef4226d",
+            "signature": "6923f6d8fd72af89700ddec004173727c63e18baf422ba909cb2517e092e89506fe38b24aac077d70713f9021b0889c41f854f3d5912855ce33d1d152fe021b11c"
+        },
+        {
+            "case": "中文",
+            "payload": "e4bda0e5a5bd2c54524f4e",
+            "hash": "88b72cb64a5ff7bdaa0f9c6fddf4fe8987ed43dcf1015b2ebc918b9e04b73a9e",
+            "signature": "dfb63aaa2616ceb022472c2968d37ddcbd90b369064bccad83d719b24aaaf1d271f85c1464e1c7964a55640ef5fcf6c11c32639ee6fd0e2f8267aa64fec635c71c"
+        },
+        {
+            "case": "空消息",
+            "payload": "",
+            "hash": "5beedb3d65d99ecaf9857d8695e750cc56278093f4ccbd1cc4e561fc82b1d189",
+            "signature": "06ecd4ca31131b28fe83211ee3e8567d2334390ccb18544c6b510dba95af78bb779e54dc721e90d4b52eb5cde7cf7b3045f0e6412f16840e52da80721409bc321c"
+        },
+        {
+            "case": "字节",
+            "payload": "fffe00",
+            "hash": "55ec1a433ed7addd249d2177b9d7d77512486a1213de991b944b9d294ec3d7d6",
+            "signature": "bd34ac4bc8ee2aefcf44d7102b2d0102c8c8beae1feab695ede04c12f2ef684a026d95f8c0cdf2c13b5217e0ab1ddd3d4e733deaacfbe8fc4d54aa46f76b31a31c"
+        }
+    ],
+    "typed": [
+        {
+            "case": "TIP-712 规范的转账,含 trcToken",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"AssetTransfer\":[{\"name\":\"from\",\"type\":\"address\"},{\"name\":\"to\",\"type\":\"address\"},{\"name\":\"id\",\"type\":\"trcToken\"},{\"name\":\"amount\",\"type\":\"uint256\"}]},\"primaryType\":\"AssetTransfer\",\"domain\":{\"name\":\"TRON Mail\",\"version\":\"1\",\"chainId\":728126428,\"verifyingContract\":\"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t\"},\"message\":{\"from\":\"41c8599111f29c1e1e061265b4af93ea1f274ad78a\",\"to\":\"41a2726afbecbd8e936000ed684cef5e2f5cf43008\",\"id\":\"1000001\",\"amount\":5}}",
+            "domain_separator": "dc4fa6f08ff48e27e8701403a5037eefe66fa6263a68de18663e989cb13c9a80",
+            "hash_struct": "be661488d6dad339e652e39569f6cc1ddbef80c805a56b31fa6a07f4495efd52",
+            "hash": "4ab938b5eecd3fd273ab52b176fbb4e67c304f77e8de6f9aa3cf50142f7dcad7",
+            "signature": "200d4c558d02c3c59c137836f6e9860d3bab02ce6b9abf04be8a561eef4e8ebf6e8d24157050c656f9f78ecb031f91f6e943459f1589775e939b666cb97028541c"
+        },
+        {
+            "case": "Mail,Base58 和 0x 地址",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Mail\":[{\"name\":\"from\",\"type\":\"Person\"},{\"name\":\"to\",\"type\":\"Person\"},{\"name\":\"contents\",\"type\":\"string\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Mail\",\"domain\":{\"name\":\"Ether Mail\",\"version\":\"1\",\"chainId\":\"0x2b6653dc\",\"verifyingContract\":\"0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\"},\"message\":{\"from\":{\"name\":\"Cow\",\"wallet\":\"TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\"},\"to\":{\"name\":\"Bob\",\"wallet\":\"0xa2726afbecbd8e936000ed684cef5e2f5cf43008\"},\"contents\":\"Hello, Bob!\"}}",
+            "domain_separator": "4d98427f78d8d35461bf42ec2690e952cfcdeff2423b0f5840d076a6be45916e",
+            "hash_struct": "7c7887282baf8f8ddcadcb598c11833518079c054e1cb778a965a4aa4f3de829",
+            "hash": "04e577fd71ac1bda17b03075f320dc27a6685ed56a119cb1afe647804d976cb8",
+            "signature": "c6da17c7101129b420afd47a0c9ad8eff94306686dd13357342dae429c2d5b8b387f2034afb5fc906542ca6c678fabc2f38240788ceef581b5587ce19a6c5c391b"
+        },
+        {
+            "case": "Permit",
+            "payload": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Permit\":[{\"name\":\"owner\",\"type\":\"address\"},{\"name\":\"spender\",\"type\":\"address\"},{\"name\":\"value\",\"type\":\"uint256\"},{\"name\":\"nonce\",\"type\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\"}]},\"primaryType\":\"Permit\",\"domain\":{\"name\":\"Tether\",\"version\":\"1\",\"chainId\":3448148188,\"verifyingContract\":\"TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf\"},\"message\":{\"owner\":\"TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\",\"spender\":\"TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE\",\"value\":\"1000000\",\"nonce\":0,\"deadline\":1800000000}}",
+            "domain_separator": "71a40f713a6ddd3b1eab7969c9007a8390d20238e45190e1168101b9fb14dd47",
+            "hash_struct": "59553b35f78b1856b9b61c1ffc7fbe929a7116f31f7c0fe21bfdd1034b16e599",
+            "hash": "39fe2e9856c3da0a29061bbf2ad01bc4035be25b5a76db42bfc79751a7a59bb7",
+            "signature": "e452ba86e694b3161c8ac7ca767b192eee0f63c4d611ff7c32752af37c0abdc3613c97862e981bcd2a229615021dd22557c3f526a4460231b0a11470a94269951c"
+        }
+    ],
+    "calls": [
+        {
+            "case": "transfer",
+            "data": "a9059cbb000000000000000000000000a2726afbecbd8e936000ed684cef5e2f5cf4300800000000000000000000000000000000000000000000000000000000001312d0",
+            "fields": [
+                "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE",
+                "1250000"
+            ]
+        },
+        {
+            "case": "approve",
+            "data": "095ea7b3000000000000000000000000c8599111f29c1e1e061265b4af93ea1f274ad78a0000000000000000000000000000000000000000000000000000000000000007",
+            "fields": [
+                "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+                "7"
+            ]
+        },
+        {
+            "case": "transferFrom",
+            "data": "23b872dd000000000000000000000000c8599111f29c1e1e061265b4af93ea1f274ad78a000000000000000000000000a2726afbecbd8e936000ed684cef5e2f5cf430080000000000000000000000000000000000000000000000000000000000000009",
+            "fields": [
+                "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+                "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE",
+                "9"
+            ]
+        },
+        {
+            "case": "increaseApproval",
+            "data": "d73dd623000000000000000000000000a2726afbecbd8e936000ed684cef5e2f5cf430080000000000000000000000000000000000000000000000000000000000000009",
+            "fields": [
+                "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE",
+                "9"
+            ]
+        }
+    ]
+}

@@ -195,29 +195,77 @@
             "class": "transfer",
             "alert": null
         },
-        "call-transfer": {
-            "class": "transfer",
-            "alert": null
-        },
         "call-recognized": {
             "class": "recognized",
-            "alert": null
-        },
-        "call-approval": {
-            "class": "approval",
-            "alert": null
-        },
-        "call-permission-change": {
-            "class": "permission-change",
             "alert": null
         },
         "call-unknown": {
             "class": "unknown",
             "alert": "本机不认识这个合约调用,无法判断签名后果,签名前请确认来源和调用数据"
         },
-        "call-alert": {
+        "call-unlisted": {
+            "class": "unknown",
+            "alert": "合约 {0} 不在内置清单,它不一定遵守标准,这里的方法和金额只是按标准读出来的"
+        },
+        "call-irregular": {
+            "class": "unknown",
+            "alert": "这笔调用的方法是 {0},但参数不是标准编码,合约可能按别的含义执行,只能核对原始数据"
+        },
+        "call-with-value": {
+            "class": "unknown",
+            "alert": "这笔调用同时附带原生币,不是普通转账"
+        },
+        "call-unlimited": {
+            "class": "approval",
+            "alert": "额度是无限,对方可随时转走全部这种资产"
+        },
+        "fn:transfer(address,uint256)": {
             "class": "transfer",
-            "alert": "{0}"
+            "alert": null
+        },
+        "fn:approve(address,uint256)": {
+            "class": "approval",
+            "alert": null
+        },
+        "fn:transferFrom(address,address,uint256)": {
+            "class": "recognized",
+            "alert": null
+        },
+        "fn:increaseAllowance(address,uint256)": {
+            "class": "approval",
+            "alert": null
+        },
+        "fn:increaseApproval(address,uint256)": {
+            "class": "approval",
+            "alert": null
+        },
+        "fn:decreaseAllowance(address,uint256)": {
+            "class": "recognized",
+            "alert": null
+        },
+        "fn:decreaseApproval(address,uint256)": {
+            "class": "recognized",
+            "alert": null
+        },
+        "fn:setApprovalForAll(address,bool)": {
+            "class": "approval",
+            "alert": null
+        },
+        "fn:permit(address,address,uint256,uint256,uint8,bytes32,bytes32)": {
+            "class": "approval",
+            "alert": null
+        },
+        "fn:approve(address,address,uint160,uint48)": {
+            "class": "approval",
+            "alert": null
+        },
+        "fn:multicall(bytes[])": {
+            "class": "unknown",
+            "alert": "这是一组内部调用,请逐个核对"
+        },
+        "fn:multicall(uint256,bytes[])": {
+            "class": "unknown",
+            "alert": "这是一组内部调用,请逐个核对"
         },
         "authorization": {
             "class": "permission-change",
@@ -248,6 +296,38 @@
             "class": "unknown",
             "alert": "这是 EIP-712 消息的摘要,本机只看得到两个哈希,看不到消息内容.它可能是授权或转走资产的签名",
             "second": true
+        },
+        "eip712-message": {
+            "class": "unknown",
+            "alert": "这是 EIP-712 消息,不是交易,本机没有它的描述文件,无法判断签名后果.这段内容可能被合约当作授权,请逐项核对 domain,types,message"
+        },
+        "eip712-permit": {
+            "class": "approval",
+            "alert": null
+        },
+        "eip712-described": {
+            "class": "recognized",
+            "alert": null
+        },
+        "eip712-no-chain-id": {
+            "class": "unknown",
+            "alert": "域里没有 chainId,这个签名不绑定链,在任何一条链上都可能有效"
+        },
+        "eip712-no-contract": {
+            "class": "unknown",
+            "alert": "域里没有 verifyingContract,这个签名不绑定合约,任何合约都可能接受它"
+        },
+        "eip712-other-chain": {
+            "class": "unknown",
+            "alert": "域里的 chainId {0} 和这个网络不符,这个签名在这里不生效,在 chainId {0} 的链上仍然有效"
+        },
+        "permit-many": {
+            "class": "approval",
+            "alert": "这笔签名包含 {0} 个授权,请逐个核对"
+        },
+        "permit-unlimited": {
+            "class": "approval",
+            "alert": "其中 {0} 个是无限额度,对方可随时转走全部这种资产"
         },
         "personal-sign": {
             "class": "unknown",
@@ -1155,5 +1235,357 @@
             "second": true
         }
     },
-    "tron": {}
+    "tron": {
+        "AccountCreateContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "TransferContract": {
+            "class": "transfer",
+            "alert": null
+        },
+        "TransferAssetContract": {
+            "class": "transfer",
+            "alert": null
+        },
+        "VoteAssetContract": {
+            "class": "unknown",
+            "alert": "这种合约没有执行器,链上不会执行"
+        },
+        "VoteWitnessContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "WitnessCreateContract": {
+            "class": "recognized",
+            "alert": "申请成为超级代表要扣账户升级费"
+        },
+        "AssetIssueContract": {
+            "class": "recognized",
+            "alert": "发行 TRC-10 要扣发行费"
+        },
+        "WitnessUpdateContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "ParticipateAssetIssueContract": {
+            "class": "recognized",
+            "alert": "这笔交易用 TRX 换 TRC-10"
+        },
+        "AccountUpdateContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "FreezeBalanceContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "UnfreezeBalanceContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "WithdrawBalanceContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "UnfreezeAssetContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "UpdateAssetContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "ProposalCreateContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "ProposalApproveContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "ProposalDeleteContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "SetAccountIdContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "CustomContract": {
+            "class": "unknown",
+            "alert": "这种合约只有枚举值,没有消息和执行器"
+        },
+        "CreateSmartContract": {
+            "class": "unknown",
+            "alert": "部署合约,字节码的含义本机无法判断"
+        },
+        "TriggerSmartContract": {
+            "class": "transfer",
+            "alert": null
+        },
+        "GetContract": {
+            "class": "unknown",
+            "alert": "这种合约只有枚举值,没有消息和执行器"
+        },
+        "UpdateSettingContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "ExchangeCreateContract": {
+            "class": "recognized",
+            "alert": "资产会转入交易对"
+        },
+        "ExchangeInjectContract": {
+            "class": "recognized",
+            "alert": "资产会转入交易对"
+        },
+        "ExchangeWithdrawContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "ExchangeTransactionContract": {
+            "class": "recognized",
+            "alert": "这笔兑换的成交金额取决于交易对的状态,请核对 quant 和 expected"
+        },
+        "UpdateEnergyLimitContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "AccountPermissionUpdateContract": {
+            "class": "permission-change",
+            "alert": null
+        },
+        "ClearABIContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "UpdateBrokerageContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "ShieldedTransferContract": {
+            "class": "unknown",
+            "alert": "屏蔽转账的内容本机无法核实,冷钱包没有屏蔽密钥"
+        },
+        "MarketSellAssetContract": {
+            "class": "recognized",
+            "alert": "这笔挂单会卖出资产"
+        },
+        "MarketCancelOrderContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "FreezeBalanceV2Contract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "UnfreezeBalanceV2Contract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "WithdrawExpireUnfreezeContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "DelegateResourceContract": {
+            "class": "approval",
+            "alert": null
+        },
+        "UnDelegateResourceContract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "CancelAllUnfreezeV2Contract": {
+            "class": "recognized",
+            "alert": null
+        },
+        "contract-unknown": {
+            "class": "unknown",
+            "alert": "这是本机不认识的合约类型,参数显示原始数据,签名前请确认来源",
+            "second": true
+        },
+        "unknown-field": {
+            "class": "unknown",
+            "alert": "这笔交易有本机不认识的字段,可能来自更新的协议,请确认来源"
+        },
+        "enum-unknown": {
+            "class": "unknown",
+            "alert": "有枚举值本机不认识,这里显示数字"
+        },
+        "negative-integer": {
+            "class": "unknown",
+            "alert": "有字段是负数,协议里没有这种用法"
+        },
+        "field-unused": {
+            "class": "unknown",
+            "alert": "这笔交易写了链上不使用的字段,含义无法判断"
+        },
+        "memo": {
+            "class": "transfer",
+            "alert": "这笔交易带备注,节点会额外扣费",
+            "note": "备注"
+        },
+        "permission-id": {
+            "class": "transfer",
+            "alert": "这笔交易用权限 {0} 签名,不是账户的 owner 权限"
+        },
+        "owner-foreign": {
+            "class": "unknown",
+            "alert": "花费的账户是 {0},不是本账户.这是 TRON 的多签,本机看不到这个账户的权限设置"
+        },
+        "owner-unverified": {
+            "class": "transfer",
+            "alert": "这条路径不在已导出的账户下,解锁后才能核对 {0} 是不是本账户,不是时拒绝签名"
+        },
+        "owner-multisig-unverified": {
+            "class": "unknown",
+            "alert": "这是 TRON 的多签,花费的账户 {0} 可能不是本账户,这条路径的地址解锁后才算得出来"
+        },
+        "receiver-other": {
+            "class": "transfer",
+            "alert": "资源的接收方不是本账户"
+        },
+        "asset-unlisted": {
+            "class": "recognized",
+            "alert": "这个 TRC-10 不在内置清单,金额是原始整数,小数位在链上"
+        },
+        "permission-shared": {
+            "class": "transfer",
+            "alert": "新权限里还有其他地址,请逐个核对"
+        },
+        "expiration-window": {
+            "class": "transfer",
+            "alert": "过期时间不在 timestamp 之后的 24 小时内,这笔交易可能无法上链"
+        },
+        "fee-high": {
+            "class": "transfer",
+            "alert": "手续费上限明显偏高"
+        },
+        "path-unusual": {
+            "class": "transfer",
+            "alert": "派生路径 {0} 不是本机导出的账户,付款地址要解锁才算得出来,请确认这是你用过的路径"
+        },
+        "call-value": {
+            "class": "transfer",
+            "alert": "这笔调用附带 {0}"
+        },
+        "call-token-value": {
+            "class": "transfer",
+            "alert": "这笔调用附带 {0} 个 TRC-10,数量是原始整数"
+        },
+        "call-recognized": {
+            "class": "recognized",
+            "alert": null
+        },
+        "call-unknown": {
+            "class": "unknown",
+            "alert": "本机不认识这个合约调用,无法判断签名后果,签名前请确认来源和调用数据"
+        },
+        "call-unlisted": {
+            "class": "unknown",
+            "alert": "合约 {0} 不在内置清单,它不一定遵守标准,这里的方法和金额只是按标准读出来的"
+        },
+        "call-irregular": {
+            "class": "unknown",
+            "alert": "这笔调用的方法是 {0},但参数不是标准编码,合约可能按别的含义执行,只能核对原始数据"
+        },
+        "call-with-value": {
+            "class": "unknown",
+            "alert": "这笔调用同时附带原生币,不是普通转账"
+        },
+        "call-unlimited": {
+            "class": "approval",
+            "alert": "额度是无限,对方可随时转走全部这种资产"
+        },
+        "fn:transfer(address,uint256)": {
+            "class": "transfer",
+            "alert": null
+        },
+        "fn:approve(address,uint256)": {
+            "class": "approval",
+            "alert": null
+        },
+        "fn:transferFrom(address,address,uint256)": {
+            "class": "recognized",
+            "alert": null
+        },
+        "fn:increaseAllowance(address,uint256)": {
+            "class": "approval",
+            "alert": null
+        },
+        "fn:increaseApproval(address,uint256)": {
+            "class": "approval",
+            "alert": null
+        },
+        "fn:decreaseAllowance(address,uint256)": {
+            "class": "recognized",
+            "alert": null
+        },
+        "fn:decreaseApproval(address,uint256)": {
+            "class": "recognized",
+            "alert": null
+        },
+        "fn:setApprovalForAll(address,bool)": {
+            "class": "approval",
+            "alert": null
+        },
+        "fn:permit(address,address,uint256,uint256,uint8,bytes32,bytes32)": {
+            "class": "approval",
+            "alert": null
+        },
+        "fn:approve(address,address,uint160,uint48)": {
+            "class": "approval",
+            "alert": null
+        },
+        "fn:multicall(bytes[])": {
+            "class": "unknown",
+            "alert": "这是一组内部调用,请逐个核对"
+        },
+        "fn:multicall(uint256,bytes[])": {
+            "class": "unknown",
+            "alert": "这是一组内部调用,请逐个核对"
+        },
+        "personal-sign": {
+            "class": "unknown",
+            "alert": "这是消息签名,不是交易.请确认内容和来源,这段内容可能被合约当作授权"
+        },
+        "raw-hash": {
+            "class": "unknown",
+            "alert": "这是裸哈希签名,本机看不到它对应的内容.它可以是一笔转账,一次授权或任何其他操作",
+            "second": true
+        },
+        "eip712-message": {
+            "class": "unknown",
+            "alert": "这是 TIP-712 消息,不是交易,本机没有它的描述文件,无法判断签名后果.这段内容可能被合约当作授权,请逐项核对 domain,types,message"
+        },
+        "eip712-permit": {
+            "class": "approval",
+            "alert": null
+        },
+        "eip712-described": {
+            "class": "recognized",
+            "alert": null
+        },
+        "eip712-no-chain-id": {
+            "class": "unknown",
+            "alert": "域里没有 chainId,这个签名不绑定链,在任何一条链上都可能有效"
+        },
+        "eip712-no-contract": {
+            "class": "unknown",
+            "alert": "域里没有 verifyingContract,这个签名不绑定合约,任何合约都可能接受它"
+        },
+        "eip712-other-chain": {
+            "class": "unknown",
+            "alert": "域里的 chainId {0} 和这个网络不符,这个签名在这里不生效,在 chainId {0} 的链上仍然有效"
+        },
+        "permit-many": {
+            "class": "approval",
+            "alert": "这笔签名包含 {0} 个授权,请逐个核对"
+        },
+        "permit-unlimited": {
+            "class": "approval",
+            "alert": "其中 {0} 个是无限额度,对方可随时转走全部这种资产"
+        }
+    }
 }

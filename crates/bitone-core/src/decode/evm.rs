@@ -212,11 +212,16 @@ fn signing_hash(digest: B256) -> Node {
     Node::new("signing_hash", Value::Hash(digest.to_vec()), Source::Derived)
 }
 
-fn whole(payload: &[u8]) -> Field<'_> {
+pub(super) fn whole(payload: &[u8]) -> Field<'_> {
     Field {
         bytes: payload,
         span: Span::new(0, payload.len() as u32),
     }
+}
+
+/// 不存在的字段显示的文字.
+pub(super) fn absent_text() -> String {
+    schema().no_chain_id.clone()
 }
 
 /// 列表的子项和 schema 的字段一一对应.
@@ -262,6 +267,8 @@ impl<'a> Named<'a> {
 struct Walk {
     coin: Option<Coin>,
     checks: Vec<RoundTrip>,
+    /// 描述文件解出的字段,挂在 `data` 下面.
+    call: Vec<Node>,
 }
 
 impl Walk {
@@ -272,6 +279,7 @@ impl Walk {
                 original: payload.to_vec(),
                 rebuilt,
             }],
+            call: Vec::new(),
         }
     }
 
@@ -331,7 +339,10 @@ impl Walk {
         Ok(match (to, input.is_empty()) {
             (TxKind::Create, true | false) => [target.action("contract-creation"), amount, data],
             (TxKind::Call(_), true) => [target.action("native-transfer"), amount, data],
-            (TxKind::Call(_), false) => [target, amount, data.action("call")],
+            (TxKind::Call(_), false) => {
+                let fields = std::mem::take(&mut self.call);
+                [target, amount, data.action("call").children(fields)]
+            }
         })
     }
 
@@ -626,8 +637,9 @@ fn type_node(entry: &TxSchema, tx: &Tx, tag: Option<Span>) -> Node {
     Node::new("tx_type", Value::Enum(label), source).action(entry.action.clone())
 }
 
-fn walk_transaction(tx: &Tx, payload: &[u8], coin: Option<Coin>) -> Result<Walked, Reject> {
+fn walk_transaction(tx: &Tx, payload: &[u8], coin: Option<Coin>, call: &[Node]) -> Result<Walked, Reject> {
     let mut walk = Walk::new(coin, payload, tx.encoded_for_signing());
+    walk.call = call.to_vec();
     let mut cursor = Cursor::new(&whole(payload));
     let tag = (!tx.tx_type().is_legacy())
         .then(|| cursor.take(1))
@@ -823,16 +835,18 @@ fn walk_message(payload: &[u8]) -> Result<Walked, Reject> {
 }
 
 /// 交易和已知的签名域.`coin` 是原生币,`chain_id` 是这笔签名所在网络的 Chain ID.
+/// `call` 是 `tx` 层按描述文件解出的字段,来源都是 `descriptor`,解码器不读清单.
 #[derive(Clone, Copy, Debug)]
-pub struct EvmWalker {
+pub struct EvmWalker<'a> {
     pub coin: Option<Coin>,
     pub chain_id: Option<u64>,
+    pub call: &'a [Node],
 }
 
-impl Decoder for EvmWalker {
+impl Decoder for EvmWalker<'_> {
     fn walk(&self, input: &Input<'_>) -> Result<Option<Walked>, Reject> {
         match parse_evm(input.payload)? {
-            EvmPayload::Transaction(tx) => walk_transaction(&tx, input.payload, self.coin).map(Some),
+            EvmPayload::Transaction(tx) => walk_transaction(&tx, input.payload, self.coin, self.call).map(Some),
             EvmPayload::Authorization(authorization) => {
                 walk_authorization(&authorization, input.payload, self.chain_id).map(Some)
             }
@@ -892,9 +906,10 @@ mod tests {
         unit: "ETH",
         decimals: 18,
     };
-    const WALKER: EvmWalker = EvmWalker {
+    const WALKER: EvmWalker<'static> = EvmWalker {
         coin: Some(COIN),
         chain_id: Some(1),
+        call: &[],
     };
     const PEER: Address = address!("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
     const KEY: B256 = b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
@@ -1057,6 +1072,7 @@ mod tests {
         let walker = EvmWalker {
             coin: None,
             chain_id: None,
+            call: &[],
         };
         let decoded = run(&walker, &encoded(eip1559())).unwrap();
         assert_eq!(shown(&decoded, "value"), ["1500000000000000000"]);

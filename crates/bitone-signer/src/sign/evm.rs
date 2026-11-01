@@ -250,6 +250,76 @@ mod tests {
         assert_eq!(field(&result, "data").label, "调用数据");
     }
 
+    fn call_to(contract: &str, data: Vec<u8>) -> Vec<u8> {
+        UnsignedTx::new(TxEip1559 {
+            to: TxKind::Call(contract.parse().unwrap()),
+            value: U256::ZERO,
+            input: data.into(),
+            ..eip1559(1)
+        })
+        .encode()
+    }
+
+    fn approve_data(amount: &[u8]) -> Vec<u8> {
+        evm::approve_data(&peer().into_array(), amount)
+    }
+
+    /// 钓鱼的主要入口:清单外的合约上,被授权方和额度一样要看得到.
+    #[test]
+    fn an_unlisted_approval_still_shows_the_spender_and_the_amount() {
+        let s = setup();
+        let req = request(&s, "ethereum", call_to(PEER, approve_data(&[0xff; 32])));
+        let result = review(&s, &req);
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
+        assert_eq!(result.counterparty.as_deref(), Some(PEER));
+        assert_eq!(result.counterparty_label.as_deref(), Some("被授权方"));
+        assert!(result.amount.as_ref().unwrap().unlimited);
+        assert!(alerted(&result, "不在内置清单"));
+        assert!(alerted(&result, "额度是无限"));
+        let spender = field(&result, "Spender");
+        assert_eq!((spender.value.as_str(), spender.label.as_str()), (PEER, "被授权方"));
+        assert_eq!(spender.source, bitone_core::decode::SourceKind::Descriptor);
+        assert_eq!(field(&result, "data").value.len(), 136);
+        assert!(sign(&s, &req).is_ok());
+    }
+
+    /// 第 7.1 节:描述文件只通过验签的清单到达,请求里的内容不算.
+    #[test]
+    fn a_descriptor_in_the_hint_means_nothing() {
+        let s = setup();
+        let mut req = request(&s, "ethereum", call_to(PEER, vec![0x12, 0x34, 0x56, 0x78]));
+        let plain = review(&s, &req);
+        req.hint = Some(
+            "{\"network\":\"ethereum\",\"signature\":\"stake()\",\"intent\":\"Stake\",\"contract\":\"0x\"}".to_string(),
+        );
+        let hinted = review(&s, &req);
+        assert_eq!(hinted.risk, Risk::Unknown);
+        assert_eq!(hinted.review_digest, plain.review_digest);
+    }
+
+    #[test]
+    fn a_listed_approval_is_an_approval_with_its_fields_in_the_list() {
+        let s = setup();
+        let result = review(&s, &request(&s, "ethereum", call_to(USDT, approve_data(&[1]))));
+        assert_eq!((result.risk, result.confirm), (Risk::Approval, Confirm::Hold));
+        assert_eq!(field(&result, "Amount").value, "0.000001 USDT");
+        assert_eq!(result.field_count as usize, result.fields.len());
+        assert!(result.alerts.is_empty());
+    }
+
+    /// 选择器对得上,参数解不开时不按偏移读,告警说出方法.
+    #[test]
+    fn an_irregular_approval_names_the_method() {
+        let s = setup();
+        let mut data = approve_data(&[1]);
+        data.push(0);
+        let result = review(&s, &request(&s, "ethereum", call_to(USDT, data)));
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(alerted(&result, "approve(address,uint256)"));
+        assert_eq!(result.counterparty.as_deref(), Some(USDT));
+        assert!(result.fields.iter().all(|row| row.name != "Spender"));
+    }
+
     /// 普通类型的每一种都要能装回可以广播的字节.
     #[test]
     fn every_type_assembles_to_valid_signed_bytes() {
@@ -942,22 +1012,140 @@ mod tests {
         assert!(review.amount.unwrap().unlimited);
     }
 
+    /// 第 5.1 节:这个签名在别的链上有效,所以只告警,不拒绝.
     #[test]
-    fn permit_for_another_chain_is_refused() {
+    fn permit_for_another_chain_is_unknown_with_an_alert() {
         let s = setup();
+        let req = typed(&s, "Permit", 137.into());
+        let result = review(&s, &req);
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(alerted(&result, "chainId 137"));
+        assert!(result.amount.unwrap().unlimited);
+        assert_eq!(result.counterparty.as_deref(), Some(PEER));
+        assert!(sign(&s, &req).is_ok());
+    }
+
+    /// 域说别的链时不能确认是测试网,测试网的名字也不能去掉主网提示.
+    #[test]
+    fn a_chain_that_differs_keeps_the_mainnet_prompt() {
+        let s = setup();
+        for (network, chain_id) in [("sepolia", 1), ("ethereum", 11155111)] {
+            let mut req = typed(&s, "Permit", chain_id.into());
+            req.network = network.into();
+            assert!(review(&s, &req).mainnet, "{network}");
+        }
+        let mut req = typed(&s, "Permit", 11155111.into());
+        req.network = "sepolia".into();
+        assert!(!review(&s, &req).mainnet);
+    }
+
+    #[test]
+    fn other_typed_messages_decode_and_sign_as_unknown() {
+        let s = setup();
+        let req = typed(&s, "Order", 1.into());
+        let result = review(&s, &req);
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(alerted(&result, "EIP-712"));
+        for name in ["domain", "types", "message", "primary_type", "signing_hash"] {
+            assert!(result.fields.iter().any(|row| row.name == name), "{name}");
+        }
+        assert_eq!(field(&result, "spender").value, PEER);
+        assert_eq!(field(&result, "name").value, "Tether");
+        assert_eq!(result.field_count as usize, result.fields.len());
+        let (response, _) = sign(&s, &req).unwrap();
+        let verified = tx::verify(&req, &response, &account_key(&s)).unwrap();
+        assert!(verified.signature_only);
+        assert_eq!(verified.raw.len(), 65);
+    }
+
+    /// 屏幕上的 `signing_hash` 就是实际签名的摘要.
+    #[test]
+    fn the_signed_digest_is_the_one_on_the_screen() {
+        let s = setup();
+        let req = typed(&s, "Order", 1.into());
+        let result = review(&s, &req);
+        let (response, _) = sign(&s, &req).unwrap();
+        let verified = tx::verify(&req, &response, &account_key(&s)).unwrap();
+        assert_eq!(verified.hash, format!("0x{}", field(&result, "signing_hash").value));
+    }
+
+    /// 自引用类型的值是有限的,嵌套超过解码树的上限时才拒绝.
+    #[test]
+    fn nesting_past_the_limit_is_refused() {
+        let s = setup();
+        let nested = |depth: usize| {
+            let mut value = serde_json::json!({"children": []});
+            for _ in 0..depth {
+                value = serde_json::json!({"children": [value]});
+            }
+            serde_json::json!({
+                "types": {"EIP712Domain": [], "Node": [{"name": "children", "type": "Node[]"}]},
+                "primaryType": "Node",
+                "domain": {},
+                "message": value
+            })
+        };
+        assert_eq!(review(&s, &typed_request(&s, &nested(3))).risk, Risk::Unknown);
         assert_eq!(
-            forbidden(review(&s, &typed(&s, "Permit", 137.into()))),
-            Some(Forbid::ChainIdMismatch)
+            forbidden(review(&s, &typed_request(&s, &nested(40)))),
+            Some(Forbid::ParseFailed)
         );
     }
 
     #[test]
-    fn other_typed_messages_are_refused() {
+    fn typed_data_signs_on_a_network_nobody_knows() {
         let s = setup();
-        assert_eq!(
-            forbidden(review(&s, &typed(&s, "Order", 1.into()))),
-            Some(Forbid::MessageSigning)
-        );
+        let mut req = typed(&s, "Order", 31337.into());
+        req.network = "local-debug".into();
+        let result = review(&s, &req);
+        assert_eq!(result.risk, Risk::Unknown);
+        assert!(result.mainnet);
+        assert!(alerted(&result, "Chain ID 31337"));
+        assert!(sign(&s, &req).is_ok());
+    }
+
+    #[test]
+    fn a_known_chain_id_names_the_network_for_typed_data_too() {
+        let s = setup();
+        let mut req = typed(&s, "Permit", 11155111.into());
+        req.network = "made-up".into();
+        let result = review(&s, &req);
+        assert_eq!(result.network, "sepolia");
+        assert!(!result.mainnet);
+        assert!(alerted(&result, "made-up"));
+    }
+
+    #[test]
+    fn a_descriptor_recognizes_a_typed_message() {
+        use bitone_core::manifest::{Descriptor, DisplayField, DisplayFormat, DisplayParams};
+        let s = setup();
+        let mut manifest = Manifest::builtin().clone();
+        manifest.descriptors.push(Descriptor {
+            network: "ethereum".into(),
+            contract: USDT.into(),
+            signature: "Order(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)".into(),
+            format: DisplayFormat {
+                intent: "下单".into(),
+                fields: vec![DisplayField {
+                    path: "value".into(),
+                    label: "下单金额".into(),
+                    format: None,
+                    params: DisplayParams::default(),
+                }],
+            },
+        });
+        let ctx = ReviewContext {
+            keys: &s.keys,
+            manifest: &manifest,
+            highest_change: HighestChange::default(),
+        };
+        let req = typed(&s, "Order", 1.into());
+        let result = tx::review(&req, &ctx);
+        assert_eq!(result.risk, Risk::Recognized);
+        assert!(result.fields.iter().any(|row| row.name == "下单金额"));
+        // 绑定的是这条链上的这个合约,别的链上没有这个描述文件.
+        let elsewhere = typed(&s, "Order", 137.into());
+        assert_eq!(tx::review(&elsewhere, &ctx).risk, Risk::Unknown);
     }
 
     fn permit2(primary: &str, details_type: &str, details: serde_json::Value) -> serde_json::Value {
@@ -1061,9 +1249,9 @@ mod tests {
         assert_eq!(row(&result, "签名截止时间"), UINT160_MAX);
     }
 
-    /// DAI 的 Permit 同名不同字段,`allowed` 才是实际授权,`value` 不进哈希.曾经显示额度 1,实际签下无限授权.
+    /// DAI 的 Permit 同名不同字段,`allowed` 才是实际授权.类型串不符,所以不走 Permit 的页面,额度不会显示错.
     #[test]
-    fn dai_style_permit_is_refused() {
+    fn dai_style_permit_is_unknown_and_shows_its_real_fields() {
         let s = setup();
         let mut data = typed_data("Permit", 1.into());
         data["types"]["Permit"] = serde_json::json!([
@@ -1074,11 +1262,25 @@ mod tests {
             {"name": "allowed", "type": "bool"}
         ]);
         data["message"] = serde_json::json!({
-            "holder": PEER, "spender": PEER, "nonce": 0, "expiry": 0, "allowed": true, "value": "1"
+            "holder": PEER, "spender": PEER, "nonce": 0, "expiry": 0, "allowed": true
         });
+        let req = typed_request(&s, &data);
+        let result = review(&s, &req);
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
+        assert_eq!(result.amount, None);
+        assert_eq!(field(&result, "allowed").value, "true");
+        assert!(sign(&s, &req).is_ok());
+    }
+
+    /// `value` 不进哈希时曾经显示额度 1,实际签下无限授权.这种成员是矛盾,拒绝.
+    #[test]
+    fn a_hidden_member_in_a_dai_style_permit_is_refused() {
+        let s = setup();
+        let mut data = typed_data("Permit", 1.into());
+        data["types"]["Permit"].as_array_mut().unwrap().remove(2);
         assert_eq!(
             forbidden(review(&s, &typed_request(&s, &data))),
-            Some(Forbid::MessageSigning)
+            Some(Forbid::ParseFailed)
         );
     }
 
@@ -1097,9 +1299,9 @@ mod tests {
         }
     }
 
-    /// chainId 不在域的类型里时不进哈希,校验 JSON 里的值没有意义,签名在所有链上都有效.
+    /// 域不绑定链或合约时,签名在别处也可能有效.第 5.1 节:可以签,告警要说清后果.
     #[test]
-    fn domain_must_commit_to_the_chain_and_the_contract() {
+    fn an_unbound_domain_is_unknown_and_says_what_it_means() {
         let s = setup();
         let without = |field: &str| {
             let mut data = typed_data("Permit", 1.into());
@@ -1107,16 +1309,45 @@ mod tests {
                 .as_array_mut()
                 .unwrap()
                 .retain(|f| f["name"] != field);
+            data["domain"].as_object_mut().unwrap().remove(field);
             data
         };
-        assert_eq!(
-            forbidden(review(&s, &typed_request(&s, &without("chainId")))),
-            Some(Forbid::ChainIdMismatch)
-        );
-        assert_eq!(
-            forbidden(review(&s, &typed_request(&s, &without("verifyingContract")))),
-            Some(Forbid::MessageSigning)
-        );
+        for (name, text) in [("chainId", "不绑定链"), ("verifyingContract", "不绑定合约")] {
+            let req = typed_request(&s, &without(name));
+            let result = review(&s, &req);
+            assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold), "{name}");
+            assert!(alerted(&result, text), "{name}");
+            assert_eq!(field(&result, name).value, "无");
+            assert!(result.mainnet);
+            assert!(sign(&s, &req).is_ok());
+        }
+    }
+
+    /// 类型里没有而 JSON 里有的成员不进哈希,页面上的值和签名无关,这是矛盾.
+    #[test]
+    fn a_domain_member_outside_its_type_is_refused() {
+        let s = setup();
+        for name in ["chainId", "verifyingContract"] {
+            let mut data = typed_data("Permit", 1.into());
+            data["types"]["EIP712Domain"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|f| f["name"] != name);
+            assert_eq!(
+                forbidden(review(&s, &typed_request(&s, &data))),
+                Some(Forbid::ParseFailed)
+            );
+        }
+    }
+
+    #[test]
+    fn a_chain_id_that_is_not_a_uint_does_not_bind() {
+        let s = setup();
+        let mut data = typed_data("Permit", "1".into());
+        data["types"]["EIP712Domain"][1]["type"] = "string".into();
+        let result = review(&s, &typed_request(&s, &data));
+        assert_eq!(result.risk, Risk::Unknown);
+        assert!(alerted(&result, "不绑定链"));
     }
 
     #[test]

@@ -73,5 +73,5 @@
 - 记录多到 HyperSync 一个请求扫不完时,最早的在前,中间的要翻页才看得到.
 - 公共 Electrum 服务器由志愿者运营,不保证可用,能看到查询的地址.正式部署要用自建的 electrs 或 Fulcrum.
 - Bitcoin 历史接口的条目按一批地址归纳,同一笔交易里第二个自有输出不会出现在 `from` 和 `to` 里,地址发现不能只靠这两个字段.
-- ERC-7730 只实现了函数清单的最小子集.
+- ERC-7730 只实现了字段名和 `tokenAmount`,`addressName`,`calldata` 这几种格式,`path` 只认顶层参数.
 - Solana 本地验证者的镜像要固定 `anzaxyz/agave:v2.3.13`,v3 在 Docker 转译下起不来.

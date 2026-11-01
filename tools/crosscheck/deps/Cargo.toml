@@ -1,4 +1,4 @@
-# docs/10-tx-decoding.md 第 6.1 节的运行时依赖.其中 alloy-dyn-abi,prost 还没进产物,这里只检查 wasm 和 Android 能否构建.
+# docs/10-tx-decoding.md 第 6.1 节的运行时依赖,这里只检查 wasm 和 Android 能否构建.
 [package]
 name = "dependency-builds"
 version = "0.0.0"
@@ -14,5 +14,4 @@ alloy-eips = { version = "=2.5.0", default-features = false, features = ["std"] 
 alloy-primitives = { version = "=1.7.3", default-features = false, features = ["std"] }
 alloy-rlp = { version = "=0.3.17", default-features = false, features = ["std"] }
 bitcoin = { version = "=0.32.102", default-features = false, features = ["std", "secp-recovery"] }
-prost = "=0.14.4"
 psbt-v2 = "=0.3.0"

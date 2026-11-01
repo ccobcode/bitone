@@ -5,12 +5,15 @@
 
 #![deny(clippy::wildcard_enum_match_arm, clippy::wildcard_in_or_patterns)]
 
+mod abi;
 mod check;
 mod evm;
 #[cfg(test)]
 pub(crate) mod fixture;
 mod format;
+mod generated;
 mod model;
+mod protobuf;
 mod psbt;
 mod psbt_official;
 mod psbt_values;
@@ -18,15 +21,26 @@ mod rlp;
 mod script;
 pub mod solana;
 mod solana_idl;
+mod tron;
+mod typed;
 
-pub use check::{Failure, MAX_DEPTH, Reject, RoundTrip};
+pub use abi::{AddressText, abi_node};
+pub use check::{Failure, MAX_DEPTH, Reject, RoundTrip, payload_digest};
 pub use evm::{
     Coin, EvmPayload, EvmWalker, PersonalWalker, RawHashWalker, Tx, authority, fee_cap, parse_evm, transaction_actions,
 };
 pub use format::{display, escape_text};
+pub use generated::google::protobuf as tron_any;
+pub use generated::protocol as tron_types;
 pub use model::{Amount, Extent, Kind, Node, Source, SourceKind, Span, Value};
+pub use protobuf::read_varint;
 pub use psbt::{Parsed, PsbtWalker, is_psbt, parse};
 pub use script::{ScriptClass, address_network, estimated_vsize, output_action, spend_weight};
+pub use tron::{
+    TronPersonalWalker, TronWalker, tron_actions, tron_contracts, tron_field_names, tron_message_hash, tron_owner,
+    tron_permission_id, tron_signed, tron_type_url,
+};
+pub use typed::{TypedFlavor, TypedMessage, TypedWalker, parse_typed, permit_types, typed_member};
 
 use crate::{Chain, Mode};
 

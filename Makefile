@@ -29,7 +29,7 @@ REPRO_FLAGS := --remap-path-prefix=$(CURDIR)=/src --remap-path-prefix=$(HOME)/.c
 .PHONY: dev gateway dist dist-server dist-android clean \
 	test test-rust test-web test-android test-punct check-punct fix-punct test-copy check-copy \
 	format format-check lint audit hooks \
-	wasm android-core check-deps-wasm check-deps-android corpus
+	wasm android-core check-deps-wasm check-deps-android corpus protogen
 
 # Development: 网关和网页端都在宿主机,网页端用 Vite 把 /v1 代理到网关
 dev: apps/web/node_modules wasm
@@ -118,6 +118,7 @@ audit:
 	$(CARGO) audit
 	$(CARGO) deny check
 	$(CARGO) deny --manifest-path tools/crosscheck/deps/Cargo.toml check licenses bans sources
+	$(CARGO) deny --manifest-path tools/protogen/Cargo.toml check licenses bans sources
 
 hooks:
 	git config core.hooksPath .githooks
@@ -143,10 +144,15 @@ check-deps-android:
 	cd tools/crosscheck/deps && ANDROID_NDK_HOME=$(ANDROID_HOME)/ndk/29.0.14206865 \
 		$(CARGO) ndk -t arm64-v8a -P 31 build --locked
 
-# 对照工具有自己的工具链,所以在它的目录里取 cargo.
+# 对照工具和生成器有自己的工具链,所以在它的目录里取 cargo.
 corpus:
+	cd tools/protogen && PATH=$$(rustup which cargo | xargs dirname):$$PATH cargo run --locked -- --check
 	cd tools/crosscheck && PATH=$$(rustup which cargo | xargs dirname):$$PATH cargo test --locked
 	cd tools/crosscheck && PATH=$$(rustup which cargo | xargs dirname):$$PATH cargo run --locked
+
+# 换 schemas/ 之后重新生成 TRON 的类型和字段表.
+protogen:
+	cd tools/protogen && PATH=$$(rustup which cargo | xargs dirname):$$PATH cargo run --locked
 
 apps/web/node_modules: apps/web/package.json apps/web/pnpm-lock.yaml
 	pnpm -C apps/web install --frozen-lockfile

@@ -4,10 +4,11 @@
 
 use crate::address::{eth_address_bytes, evm_text, parse_evm_address};
 use crate::decode::{
-    self, Coin, Decoded, Decoder, EvmPayload, EvmWalker, PersonalWalker, RawHashWalker, Tx, parse_evm,
+    self, Coin, Decoded, Decoder, EvmPayload, EvmWalker, Node, PersonalWalker, RawHashWalker, Reject, Tx, TypedFlavor,
+    TypedMessage, TypedWalker, parse_evm, parse_typed,
 };
-use crate::path::{DerivationPath, check_evm_path, is_usual_evm_path};
-use crate::policy::{self, EvmFacts};
+use crate::path::{DerivationPath, check_foreign_path, is_usual_evm_path};
+use crate::policy::{self, CallFact, EvmFacts};
 use crate::request::{KIND_PERSONAL_SIGN, KIND_RAW_HASH, KIND_TRANSACTION, KIND_TYPED_DATA, SignRequest, SignResponse};
 use crate::review::{ActionView, AmountView, Forbid, RawLine, Review, Risk, Row};
 use crate::tx::abi::{self, Style};
@@ -19,12 +20,9 @@ use alloy_eips::Encodable2718;
 use alloy_eips::eip7702::SignedAuthorization;
 use alloy_primitives::{Address, Bytes, Signature, TxKind, U256, eip191_hash_message};
 use bitcoin::hex::DisplayHex;
-use serde_json::Value;
 use sha3::{Digest, Keccak256};
 
-mod typed;
-
-pub use typed::typed_data_hash;
+pub(crate) mod typed;
 
 /// 官方类型.构建和测试用.
 pub mod types {
@@ -80,14 +78,10 @@ pub fn keccak(bytes: &[u8]) -> [u8; 32] {
     Keccak256::digest(bytes).into()
 }
 
-pub(super) fn signer_path_row(network: Network, chain_id: u64, payer: Option<&str>, path: &DerivationPath) -> Vec<Row> {
-    let mut rows = vec![
-        Row::text("网络", network.label()),
-        Row::text("Chain ID", chain_id.to_string()),
-    ];
-    rows.extend(payer.map(|payer| Row::mono("付款账户", payer)));
-    rows.push(Row::mono("派生路径", path.to_string()));
-    rows
+/// `eth_signTypedData_v4` 的哈希.
+pub fn typed_data_hash(payload: &[u8]) -> Result<[u8; 32], Forbid> {
+    let parsed = parse_typed(payload, TypedFlavor::Eip712).map_err(|_| Forbid::ParseFailed)?;
+    Ok(parsed.digest.0)
 }
 
 /// 路径不设白名单.只有一条路径才知道用哪把私钥.
@@ -99,7 +93,7 @@ fn request_path(request: &SignRequest) -> Result<DerivationPath, Forbid> {
     if path.0.len() > MAX_PATH_DEPTH {
         return Err(Forbid::PathNotAllowed);
     }
-    check_evm_path(&path).map_err(|_| Forbid::PathNetworkMismatch)?;
+    check_foreign_path(&path, Chain::Evm).map_err(|_| Forbid::PathNetworkMismatch)?;
     Ok(path)
 }
 
@@ -162,6 +156,15 @@ fn binding_of(payload: &EvmPayload) -> Binding {
     }
 }
 
+/// 域的 `chainId` 和本机认识的网络不符时不算绑定,所以主网提示一直在.
+fn typed_binding(parsed: &TypedMessage, declared: Option<Network>) -> Binding {
+    let chain_id = parsed.chain_id().and_then(|id| u64::try_from(id).ok());
+    Binding {
+        required: None,
+        bound: chain_id.filter(|id| declared.is_none_or(|network| network.evm_chain_id() == Some(*id))),
+    }
+}
+
 /// 本机认识的网络和 Chain ID 不符时拒绝.请求的名字本机不认识时以 Chain ID 为准,编出来的名字不能改变显示.
 fn resolve<'a>(declared: Option<Network>, name: &'a str, binding: Binding) -> Result<Target<'a>, Forbid> {
     match declared {
@@ -191,11 +194,14 @@ struct Summary {
     counterparty_label: Option<String>,
     counterparty: Option<String>,
     actions: Vec<ActionView>,
+    rows: Vec<Row>,
     raw: Vec<RawLine>,
+    /// 描述文件解出的字段.
+    call: Vec<Node>,
     facts: EvmFacts,
 }
 
-fn call_note(actions: &[ActionView]) -> Option<String> {
+pub(super) fn call_note(actions: &[ActionView]) -> Option<String> {
     let lines: Vec<String> = actions
         .iter()
         .map(|action| {
@@ -248,6 +254,7 @@ fn summarize(tx: &Tx, target: &Target<'_>, ctx: &ReviewContext, signer: Option<&
     let value = tx.value();
     let data: &Bytes = tx.input();
     let style = Style {
+        chain: Chain::Evm,
         network: target.id(),
         manifest: ctx.manifest,
         format: &evm_text,
@@ -260,20 +267,15 @@ fn summarize(tx: &Tx, target: &Target<'_>, ctx: &ReviewContext, signer: Option<&
             amount: Some(native_amount(target, ctx, value)),
             counterparty_label: Some("收款地址".into()),
             counterparty: Some(to.to_string()),
-            alerts: Vec::new(),
+            fact: CallFact::default(),
+            fields: Vec::new(),
             inner: Vec::new(),
             rows: Vec::new(),
         },
         (TxKind::Call(to), false) => {
             let classified = abi::classify(&style, &to.into_array(), data, !value.is_zero());
-            let actions = classified.actions();
-            facts.calls = actions.iter().map(|action| action.risk).collect();
-            // 第 3 节的顺序里无法识别高于授权,一组调用的最低类别是无法识别.
-            if !classified.inner.is_empty() {
-                facts.calls.push(Risk::Unknown);
-            }
-            facts.call_alerts.clone_from(&classified.alerts);
-            facts.call_note = call_note(&actions);
+            facts.calls = classified.facts();
+            facts.call_note = call_note(&classified.actions());
             classified
         }
         (TxKind::Create, _) => abi::Classified {
@@ -282,7 +284,8 @@ fn summarize(tx: &Tx, target: &Target<'_>, ctx: &ReviewContext, signer: Option<&
             amount: (!value.is_zero()).then(|| native_amount(target, ctx, value)),
             counterparty_label: None,
             counterparty: None,
-            alerts: Vec::new(),
+            fact: CallFact::default(),
+            fields: Vec::new(),
             inner: Vec::new(),
             rows: Vec::new(),
         },
@@ -308,7 +311,9 @@ fn summarize(tx: &Tx, target: &Target<'_>, ctx: &ReviewContext, signer: Option<&
         counterparty: new_controller.map_or(classified.counterparty, |address: Address| Some(address.to_string())),
         actions,
         raw: raw_lines(data),
+        call: classified.fields,
         facts,
+        ..Summary::default()
     }
 }
 
@@ -343,6 +348,11 @@ impl Reviewing<'_> {
         )
     }
 
+    fn rows(&self, extra: Vec<Row>) -> Vec<Row> {
+        let signer = self.signer.iter().map(|signer| Row::mono("付款账户", signer));
+        signer.chain(extra).collect()
+    }
+
     fn finish(
         &self,
         decoded: Result<Decoded, decode::Failure>,
@@ -362,7 +372,7 @@ impl Reviewing<'_> {
             (None, Some(network)) => Some((name.clone(), network.label().to_string())),
             (Some(_) | None, Some(_) | None) => None,
         };
-        summary.facts.unknown_chain = match (target, binding.required) {
+        summary.facts.unknown_chain = match (target, binding.required.or(binding.bound)) {
             (Target::Foreign(_), Some(chain_id)) => Some((chain_id.to_string(), name)),
             (Target::Foreign(_) | Target::Known(_), Some(_) | None) => None,
         };
@@ -372,7 +382,7 @@ impl Reviewing<'_> {
             counterparty_label: summary.counterparty_label,
             counterparty: summary.counterparty,
             actions: summary.actions,
-            rows: self.signer.iter().map(|signer| Row::mono("付款账户", signer)).collect(),
+            rows: self.rows(summary.rows),
             raw: summary.raw,
             mainnet: mode_of(binding) == Mode::Mainnet,
             ..Review::assessed(&decoded, assessment)
@@ -388,16 +398,63 @@ impl Reviewing<'_> {
         let parsed = parse_evm(&self.request.payload);
         let binding = parsed.as_ref().map_or_else(|_| Binding::default(), binding_of);
         let target = resolve(declared, &self.request.network, binding)?;
-        let walker = EvmWalker {
-            coin: coin_of(&target),
-            chain_id: target.network().and_then(Network::evm_chain_id),
-        };
         let summary = match &parsed {
             Ok(EvmPayload::Transaction(tx)) => summarize(tx, &target, self.ctx, self.signer.as_deref()),
             Ok(EvmPayload::Authorization(_) | EvmPayload::Message | EvmPayload::Unknown) | Err(_) => Summary::default(),
         };
+        let walker = EvmWalker {
+            coin: coin_of(&target),
+            chain_id: target.network().and_then(Network::evm_chain_id),
+            call: &summary.call,
+        };
         let decoded = self.decoded(&walker, &target, mode_of(binding));
         Ok(self.finish(decoded, &target, binding, declared, summary))
+    }
+
+    /// 第 5.1 节:任何消息都能解码和签名,域没有绑定的内容由规则告警.
+    fn typed(&self, declared: Option<Network>) -> Result<Review, Forbid> {
+        let parsed = match parse_typed(&self.request.payload, TypedFlavor::Eip712) {
+            Ok(parsed) => parsed,
+            Err(reason) => return Ok(self.refused(reason)),
+        };
+        let binding = typed_binding(&parsed, declared);
+        let target = resolve(declared, &self.request.network, binding)?;
+        let style = Style {
+            chain: Chain::Evm,
+            network: target.id(),
+            manifest: self.ctx.manifest,
+            format: &evm_text,
+        };
+        let view = typed::view(&parsed, &style);
+        let labels = typed::labels(&parsed, &style);
+        let walker = TypedWalker {
+            parsed: &parsed,
+            chain_id: target.network().and_then(Network::evm_chain_id),
+            format: &evm_text,
+            labels: labels.as_deref(),
+        };
+        let decoded = self.decoded(&walker, &target, mode_of(binding));
+        let summary = Summary {
+            amount: view.amount,
+            counterparty_label: view.counterparty_label,
+            counterparty: view.counterparty,
+            actions: view.actions,
+            rows: view.rows,
+            facts: EvmFacts {
+                permit: view.permit,
+                ..EvmFacts::default()
+            },
+            ..Summary::default()
+        };
+        Ok(self.finish(decoded, &target, binding, declared, summary))
+    }
+
+    fn refused(&self, reason: Reject) -> Review {
+        let failure = decode::Failure {
+            reason,
+            digest: decode::payload_digest(&self.request.payload),
+        };
+        Review::undecodable(&self.request.network, &failure)
     }
 
     /// 裸哈希和消息不绑定链,网络名只是声明.
@@ -422,16 +479,7 @@ pub fn review(declared: Option<Network>, request: &SignRequest, ctx: &ReviewCont
         KIND_TRANSACTION => reviewing.payload(declared),
         KIND_RAW_HASH => Ok(reviewing.unbound(&RawHashWalker, declared)),
         KIND_PERSONAL_SIGN => Ok(reviewing.unbound(&PersonalWalker, declared)),
-        KIND_TYPED_DATA => {
-            let network = declared.ok_or(Forbid::UnknownNetwork)?;
-            let path = &reviewing.path;
-            let review = typed::review(network, request, ctx, reviewing.signer.as_deref(), path)?;
-            Ok(if is_usual_evm_path(path) {
-                review
-            } else {
-                review.alerted(&policy::unusual_path_alert(&path.to_string()))
-            })
-        }
+        KIND_TYPED_DATA => reviewing.typed(declared),
         _ => Err(Forbid::Unsupported),
     }
 }
@@ -440,10 +488,7 @@ pub fn review(declared: Option<Network>, request: &SignRequest, ctx: &ReviewCont
 pub fn signing_hash(request: &SignRequest) -> Result<[u8; 32], Forbid> {
     match request.kind {
         KIND_TRANSACTION => Ok(keccak(&request.payload)),
-        KIND_TYPED_DATA => {
-            let data: Value = serde_json::from_slice(&request.payload).map_err(|_| Forbid::ParseFailed)?;
-            typed_data_hash(&data)
-        }
+        KIND_TYPED_DATA => typed_data_hash(&request.payload),
         KIND_RAW_HASH => request.payload.as_slice().try_into().map_err(|_| Forbid::ParseFailed),
         KIND_PERSONAL_SIGN => Ok(eip191_hash_message(&request.payload).0),
         _ => Err(Forbid::Unsupported),

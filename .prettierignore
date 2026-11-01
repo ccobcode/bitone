@@ -10,3 +10,11 @@ apps/mobile/gradle/*
 schemas/solana/
 crates/bitone-core/assets/solana-idl.json
 tools/crosscheck/vectors/solana.json
+# 生成物,内容的哈希和格式由生成器决定.
+crates/bitone-core/assets/tron-schema.json
+tools/crosscheck/vectors/tron.json
+tools/crosscheck/vectors/evm-messages.json
+tools/crosscheck/vectors/tron-messages.json
+# 下载的数据,内容的哈希在 schemas/lock.toml.
+schemas/erc7730/calldata-erc20-tokens.json
+schemas/erc7730/eip712-erc2612-permit.json

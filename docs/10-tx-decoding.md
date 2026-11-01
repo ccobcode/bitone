@@ -34,25 +34,25 @@
 
 只有下面几种情况拒绝签名,它们都不是用户意图能表达的内容:
 
-| 情况                 | 例子                                                                     |
-| -------------------- | ------------------------------------------------------------------------ |
-| 请求不属于本钱包     | 主密钥指纹不符                                                           |
-| 请求自相矛盾         | 派生路径和网络不符,地址和路径不符,Chain ID 和网络不符,前序交易和输入不符 |
-| 已知格式的字节不合规 | 非规范编码,多余字节,索引越界,这些内容链也不接受,不同解析器的结果可能不同 |
-| 签名无法正确完成     | 解锁后仍推导不出对应私钥,`SIGHASH_SINGLE` 没有对应输出,输入脚本不认识    |
-| 超过资源上限         | 整包,帧数和嵌套深度超过解析上限                                          |
+| 情况                 | 例子                                                                                                                         |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 请求不属于本钱包     | 主密钥指纹不符                                                                                                               |
+| 请求自相矛盾         | 派生路径和网络不符,地址和路径不符,交易的 Chain ID 和网络不符,前序交易和输入不符,`type_url` 和 `type` 不符,EIP-712 的隐藏成员 |
+| 已知格式的字节不合规 | 非规范编码,多余字节,索引越界,这些内容链也不接受,不同解析器的结果可能不同                                                     |
+| 签名无法正确完成     | 解锁后仍推导不出对应私钥,`SIGHASH_SINGLE` 没有对应输出,输入脚本不认识                                                        |
+| 超过资源上限         | 整包,帧数和嵌套深度超过解析上限                                                                                              |
 
 其余内容都可以签:
 
 - 未来的交易类型,合约类型,指令和程序:能解码的外层字段照常解码,其余作为 `opaque` 节点显示原始数据.
 - 已知的签名域先按真实含义解码,不算未知格式:`0x19` 是 EIP-191 和 EIP-712,`0x05` 是 EIP-7702 授权,Solana 的 `0xff` 开头是链下消息.
 - 其余载荷都不认识时,树只有一个 `opaque` 根节点.未知的 EIP-2718 类型按 `keccak256(payload)` 计算签名原文.
-- 未知网络:比如本地调试链或以后的新链.页面显示请求里的网络名,类别是无法识别,只要不能确认是测试网就显示主网提示.路径和网络的矛盾只对本机认识的网络检查,EVM 请求的路径例外,见下面的派生路径.Bitcoin 的 `paths` 是空的,所以看 `chain` 字段,没有时看 PSBT 魔数.
+- 未知网络:比如本地调试链或以后的新链.页面显示请求里的网络名,类别是无法识别,只要不能确认是测试网就显示主网提示.路径和网络的矛盾只对本机认识的网络检查,EVM,TRON 请求的路径例外,见下面的派生路径.Bitcoin 的 `paths` 是空的,所以看 `chain` 字段,没有时看 PSBT 魔数.TRON 看 `chain` 字段,没有时看 coin type `195'` 和载荷.
 - EVM 请求的网络名本机不认识,Chain ID 本机认识时,以 Chain ID 为准,请求里的网络名不能改变显示,告警写明这一点.两边都不认识时显示请求里的网络名和 Chain ID.
-- 路径不能单独判定链:EVM 路径不区分主网和测试网,coin type `1'` 可能是 TRON,Solana 或 Bitcoin 测试网.`SignRequest` 增加可选的链字段,没有时才按路径和载荷推断.
+- 路径不能单独判定链:EVM 路径不区分主网和测试网,coin type `1'` 可能是 TRON,Solana 或 Bitcoin 测试网.`SignRequest` 增加可选的链字段,没有时才按路径和载荷推断,`1'` 要由载荷认出来.
 - 危险但合法的行为:裸哈希签名,消息签名,账户委托,不绑定输出的 sighash,没有 Chain ID 的交易,都是无法识别,告警要说清后果.裸哈希和整段未知载荷在长按之后还要二次确认.`0x19 0x01` 摘要和本机不认识的 EIP-191 版本看不到内容,同样要二次确认.
 - 内置清单缺失或损坏不影响签名,只影响名称和图标.
-- 派生路径不设白名单,任意路径都可以花费和导入,页面显示路径并告警.例外是 EVM 请求落在本钱包其他链主网账户的用途和 coin type 上,比如 `m/84'/0'`,这是矛盾,网络名本机不认识时也拒绝.这些私钥上有真实资产,裸哈希能签下它们的交易,改个网络名不能绕过.Bitcoin 找零的路径和索引也不设上限,本机能重新算出地址就显示为本钱包地址,路径不常见或索引跳得太远时告警并要求长按.声明是本钱包却算不出同一地址时拒绝.保存的公钥算不出的硬化路径解锁后用私钥核对.
+- 派生路径不设白名单,任意路径都可以花费和导入,页面显示路径并告警.例外是 EVM,TRON 请求落在本钱包其他链主网账户的用途和 coin type 上,比如 `m/84'/0'`,这是矛盾,网络名本机不认识时也拒绝.这些私钥上有真实资产,裸哈希和未知载荷能签下它们的交易,改个网络名不能绕过.Bitcoin 找零的路径和索引也不设上限,本机能重新算出地址就显示为本钱包地址,路径不常见或索引跳得太远时告警并要求长按.声明是本钱包却算不出同一地址时拒绝.保存的公钥算不出的硬化路径解锁后用私钥核对.
 - Bitcoin 的见证输入没有前序交易时手续费无法确认,类别是无法识别,告警写明这一点.前序交易和输入不符时拒绝.
 
 新内容永远不会默认变成普通转账,普通转账只能由规则显式给出.
@@ -113,17 +113,21 @@ C1 和 C2 都要,因为官方解码器成功不代表字节被用完:
 
 ### 2.3 各载荷的检查方式
 
-| 载荷     | 签名原文                  | 结构遍历        | 字段含义来自                   | C2                                                   |
-| -------- | ------------------------- | --------------- | ------------------------------ | ---------------------------------------------------- |
-| EVM 交易 | 类型字节加 RLP            | RLP 项          | `alloy-consensus` 类型         | 官方编码.旧式交易另查 9 项形式,末两项必须为 0        |
-| EIP-712  | 由类型算出的哈希          | JSON 成员       | `alloy-dyn-abi` 的 `TypedData` | 重新计算 `hashStruct`                                |
-| TRON     | `raw_data` 字节           | protobuf 线格式 | 官方 proto 生成的类型          | `prost` 编码                                         |
-| Solana   | 消息字节                  | 消息布局        | 官方 Codama IDL                | 按 IDL 重新编码                                      |
-| Bitcoin  | 未签名交易加 sighash 原文 | PSBT 键值       | `bitcoin`,`psbt-v2` 类型       | 交易的共识编码.PSBT 映射内的键序不固定,这一层只用 C1 |
+| 载荷     | 签名原文                  | 结构遍历        | 字段含义来自                  | C2                                                   |
+| -------- | ------------------------- | --------------- | ----------------------------- | ---------------------------------------------------- |
+| EVM 交易 | 类型字节加 RLP            | RLP 项          | `alloy-consensus` 类型        | 官方编码.旧式交易另查 9 项形式,末两项必须为 0        |
+| EIP-712  | 由类型算出的哈希          | JSON 成员       | `alloy-dyn-abi` 的 `Resolver` | `Resolver` 重新计算 `hashStruct`                     |
+| TRON     | `raw_data` 字节           | protobuf 线格式 | 官方 proto 生成的类型         | `prost` 编码                                         |
+| Solana   | 消息字节                  | 消息布局        | 官方 Codama IDL               | 按 IDL 重新编码                                      |
+| Bitcoin  | 未签名交易加 sighash 原文 | PSBT 键值       | `bitcoin`,`psbt-v2` 类型      | 交易的共识编码.PSBT 映射内的键序不固定,这一层只用 C1 |
 
 - PSBT v2 没有交易字节,C2 比较遍历器读到的字段和官方解码结果拼成的交易.遍历器和官方解码器读到的条目数也要相同.
-- EIP-712 的载荷是 JSON,字节本身不进签名原文.C1 改为:每个 JSON 成员都被类型定义消费,重复键和多余成员都失败.`serde_json` 对重复键保留最后一个,所以要用能发现重复的解析方式.
-- TRON 节点用 `getRawData().toByteArray()` 重新序列化后取哈希.字段乱序或显式写默认值的载荷,哈希和节点算出的不同,所以 C2 不比节点更严.
+- EIP-712 的载荷是 JSON,字节本身不进签名原文.C1 改为:顶层只有 `types`,`primaryType`,`domain`,`message`,每个 JSON 成员都被类型定义消费,重复键和多余成员都失败.`serde_json` 对重复键保留最后一个,所以 `decode/typed.rs` 用自己的 `Visitor` 收集.小数和超过 64 位的 JSON 数字不同解析器取值不同,也失败,这些值要写成字符串.
+- EIP-712 的结构由 `decode/typed.rs` 按请求里的 `types` 遍历,原子类型用 `DynSolType::coerce_json`,树和摘要来自同一份 `DynSolValue`.不用 `TypedData::eip712_signing_hash`:它按固定字段哈希域,不看请求声明的 `EIP712Domain`,和 viem,MetaMask 不同,而且不接受自引用类型.`types` 没有 `EIP712Domain` 时按 viem 的规则从域的成员推出.
+- EIP-712 的 C2 比较 `Resolver::eip712_data_word` 和遍历器算出的域,消息的哈希.`Resolver` 表示不了两个以上类型互相引用,这种消息只有遍历器一份实现,靠 viem 的向量验证.`Resolver` 不认识 `trcToken`,比较时类型串换成 `uint256`.
+- TRON 节点用 `getRawData().toByteArray()` 重新序列化 `raw`,`Contract`,`Any` 后取哈希.这三层字段乱序或显式写默认值的载荷,哈希和节点算出的不同.
+- `Any.value` 的字节节点原样保留,链接受这一层的非规范写法.这里仍然拒绝:重复的标量在不同解析器上取值不同,官方类型重新编码也回不到原文,C2 不成立.
+- TRON 的未知字段和 `map` 不进官方类型的比较.未知字段是 `opaque` 节点,字节就是载荷本身.`map` 的条目 `prost` 跳过默认值,Java 和 tronweb 都写出键和值,tronweb 的键按字符串排序,所以这一段由遍历器负责.其余字节都和官方类型的编码比较.
 - 解析前的大小和嵌套限制沿用 `check_limits`.
 
 ### 2.4 手写范围
@@ -248,7 +252,7 @@ record ReviewResult
 
 类型字节的分发用 alloy 的 `TxType`,字段的名字和顺序在 `crates/bitone-core/assets/evm-schema.json`,值来自解构官方类型.每个字段都和官方类型的编码比较,schema 的顺序错了 C2 不通过.`SignedAuthorization` 的字段是私有的,靠 `Named::finish` 保证全部用完.
 
-- **按调用判定**:`to` 有值且 `data` 为空是普通转账.`to` 有值且 `data` 非空按第 7 节.`to` 为空是创建合约,无法识别.第 7 节的描述文件接入之前,合约调用的类别来自 `tx/abi.rs`,`data` 是 `bytes` 节点,调用方法和合约写在这一行的备注里.
+- **按调用判定**:`to` 有值且 `data` 为空是普通转账.`to` 有值且 `data` 非空按第 7 节,`data` 是 `bytes` 节点,描述文件解出的参数是它的子节点,来源是 `descriptor`,调用方法和合约写在这一行的备注里.`to` 为空是创建合约,无法识别.
 - **Chain ID**:本机认识的网络和 Chain ID 不符是禁止.网络名本机不认识时,Chain ID 本机认识就显示对应的网络,否则显示请求里的网络名和 Chain ID,类别是无法识别,有主网提示.路径不分主网和测试网,主网提示只看 Chain ID.
 - **路径**:不设白名单,见[安全设计 §2.6](04-security.md#26-派生路径校验).
 - **未知类型**:树是一个 `opaque` 根节点,签名原文是 `keccak256(payload)`.字面的 0x00 和 0x80 到 0xbf 开头的载荷也走这里.
@@ -262,18 +266,22 @@ record ReviewResult
 | `access_list`        | 每项 `address`,`storage_keys`                                           | 全部列出,不只显示数量                                                                                                                                             |
 | `authorization_list` | 每项 `chain_id`,`address`,`nonce`,`y_parity`,`r`,`s`,派生的 `authority` | 全部列出,不能为空.`authority` 由签名恢复,高 s 算恢复失败.`chain_id` 为 0,和网络不符,或恢复失败都是无法识别,只显示不拒绝.`address` 为零地址是清除委托,仍是权限变更 |
 
-| 消息                                                            | 解码                                     | 可签 | 类别                    |
-| --------------------------------------------------------------- | ---------------------------------------- | ---- | ----------------------- |
-| EIP-712 Permit,Permit2,类型串逐字相符                           | `TypedData`,全部字段                     | 是   | 授权                    |
-| EIP-712 任意消息,有描述文件                                     | 同上,按描述展示                          | 是   | 不低于已识别,按内部动作 |
-| EIP-712 任意消息,没有描述文件                                   | 同上,`domain`,`types`,`message` 全部显示 | 否   | 无法识别                |
-| EIP-712 域缺 `chainId` 或 `verifyingContract`,或 `chainId` 不符 | 同上                                     | 否   | 无法识别                |
-| `personal_sign`(EIP-191 版本 0x45)                              | 文本或字节                               | 是   | 无法识别                |
-| EIP-191 版本 0x00                                               | 验证者地址,数据                          | 是   | 无法识别                |
-| EIP-191 其他版本                                                | 版本,`opaque` 数据                       | 是   | 无法识别,二次确认       |
-| `0x19 0x01` 加域分隔符和消息哈希                                | `domain_separator`,`hash_struct`         | 是   | 无法识别,二次确认       |
-| `eth_sign`                                                      | 32 字节哈希,没有内容可解码               | 是   | 无法识别,二次确认       |
-| EIP-7702 授权元组(前缀 0x05)                                    | `chain_id`,`address`,`nonce`             | 是   | 无法识别                |
+| 消息                                                            | 解码                                     | 可签 | 类别              |
+| --------------------------------------------------------------- | ---------------------------------------- | ---- | ----------------- |
+| EIP-712 Permit,Permit2,类型串逐字相符                           | 全部字段                                 | 是   | 授权              |
+| EIP-712 任意消息,有描述文件                                     | 同上,按描述展示                          | 是   | 已识别            |
+| EIP-712 任意消息,没有描述文件                                   | 同上,`domain`,`types`,`message` 全部显示 | 是   | 无法识别          |
+| EIP-712 域缺 `chainId` 或 `verifyingContract`,或 `chainId` 不符 | 同上                                     | 是   | 无法识别,告警     |
+| `personal_sign`(EIP-191 版本 0x45)                              | 文本或字节                               | 是   | 无法识别          |
+| EIP-191 版本 0x00                                               | 验证者地址,数据                          | 是   | 无法识别          |
+| EIP-191 其他版本                                                | 版本,`opaque` 数据                       | 是   | 无法识别,二次确认 |
+| `0x19 0x01` 加域分隔符和消息哈希                                | `domain_separator`,`hash_struct`         | 是   | 无法识别,二次确认 |
+| `eth_sign`                                                      | 32 字节哈希,没有内容可解码               | 是   | 无法识别,二次确认 |
+| EIP-7702 授权元组(前缀 0x05)                                    | `chain_id`,`address`,`nonce`             | 是   | 无法识别          |
+
+- EIP-712 的 `chainId` 和网络不符不算矛盾:这个签名在 `chainId` 的链上有效,告警写明这一点.只有 `chainId` 和本机认识的测试网相符时才去掉主网提示.本机不认识的网络名按 `chainId` 显示,规则同交易.
+- `chainId` 不符的 Permit 是无法识别,页面照常显示被授权方和额度.
+- 类型里没有声明的成员不进哈希,页面上的值和签名无关,这是矛盾,拒绝.类型不是 `uint256` 的 `chainId`,类型不是 `address` 的 `verifyingContract` 不算绑定.
 
 `SignRequest.kind`:0 是交易和按载荷分辨的签名域,1 是 EIP-712 的 JSON,2 是 32 字节的裸哈希,3 是 `personal_sign` 的消息.其他取值不知道怎么算签名原文,拒绝.kind 0 的 `0x19`,`0x05` 载荷的签名原文是 `keccak256(payload)`,不符合对应格式时拒绝,不走未知类型的路径.
 
@@ -286,7 +294,7 @@ record ReviewResult
 | 1    | `ref_block_bytes`      | 2 字节                                                                               |
 | 3    | `ref_block_num`        | 解码并显示,非 0 是无法识别                                                           |
 | 4    | `ref_block_hash`       | 8 字节                                                                               |
-| 8    | `expiration`           | 大于 `timestamp`,差值不超过 24 小时                                                  |
+| 8    | `expiration`           | 不在 `timestamp` 之后的 24 小时内时告警.节点比较的是区块时间,离线设备没有时钟,不拒绝 |
 | 9    | `auths`                | 解码并显示,非空是无法识别                                                            |
 | 10   | `data`                 | 备注.合法 UTF-8 是 `text`,否则是 `bytes`.非空时节点按 `getMemoFee` 额外扣费,所以告警 |
 | 11   | `contract`             | 恰好 1 个,节点也这样要求                                                             |
@@ -294,16 +302,21 @@ record ReviewResult
 | 14   | `timestamp`            | 时间                                                                                 |
 | 18   | `fee_limit`            | 金额,超阈值告警                                                                      |
 
-| 编号 | `Contract` 字段 | 规则                                                                           |
-| ---- | --------------- | ------------------------------------------------------------------------------ |
-| 1    | `type`          | 枚举.未知编号是未来的合约类型,`parameter` 作为 `opaque`,长按后二次确认         |
-| 2    | `parameter`     | `type_url` 必须是 `type.googleapis.com/protocol.` 加和 `type` 相符的消息名     |
-| 3    | `provider`      | 解码并显示,非空是无法识别                                                      |
-| 4    | `ContractName`  | 解码并显示,非空是无法识别                                                      |
-| 5    | `Permission_id` | 解码并显示,非 0 时告警.`owner_address` 必须是本账户,替其他账户多签是单独的工作 |
+| 编号 | `Contract` 字段 | 规则                                                                                                                                            |
+| ---- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `type`          | 枚举.未知编号是未来的合约类型,`parameter.value` 作为 `opaque`,长按后二次确认                                                                    |
+| 2    | `parameter`     | `type_url` 必须是 `type.googleapis.com/protocol.` 加和 `type` 相符的消息名.和 `type` 不符是矛盾,拒绝.未知编号的 `type_url` 不能是已知合约的名字 |
+| 3    | `provider`      | 解码并显示,非空是无法识别                                                                                                                       |
+| 4    | `ContractName`  | 解码并显示,非空是无法识别                                                                                                                       |
+| 5    | `Permission_id` | 解码并显示,非 0 时告警                                                                                                                          |
 
-- 发起方字段按名字取 `owner_address`,和 java-tron 的 `getOwner` 一致,不再维护字段编号表.
+- 发起方字段按名字取 `owner_address`,和 java-tron 的 `getOwner` 一致,不再维护字段编号表.`ShieldedTransferContract` 取 `transparent_from_address`,可以为空.
+- `owner_address`:`Permission_id` 为 0 时必须是本账户,否则签名无法完成,拒绝.`Permission_id` 非 0 时可以是其他账户,这是 TRON 的多签,类别是无法识别,告警写明花费的是谁的账户.保存的公钥算不出的路径解锁后核对.
 - `int32`,`int64` 字段出现负数是无法识别.
+- 未知字段:已知消息里的未知字段是 `opaque` 节点,名字是 `field_` 加编号,类别是无法识别,长按后可以签.以后的 java-tron 可能加字段.任何线格式类型都接受.
+- 标签和长度必须是最短编码,字段按编号递增,未知字段也一样,非 `repeated` 字段不能重复.今天的节点把未知字段移到已知字段之后,排在中间的未知字段算出的哈希不同,这样的交易上不了链,不影响资金.
+- 地址字段必须是 `0x41` 开头的 21 字节,`ref_block_bytes`,`ref_block_hash`,`operations` 长度不符也拒绝,链都不接受.`SmartContract.contract_address` 链不检查,按 `bytes` 显示.
+- 字段的名字,编号,类型来自官方 proto,显示方式和动作在 `schemas/tron-fields.json`,类别和告警在 `assets/rules.json`.
 - 编号 20,32,51 是原表缺少的类型.
 
 | 编号 | 合约类型                        | 类别             | 说明                                                                |
@@ -323,7 +336,7 @@ record ReviewResult
 | 13   | WithdrawBalanceContract         | 已识别           |                                                                     |
 | 14   | UnfreezeAssetContract           | 已识别           |                                                                     |
 | 15   | UpdateAssetContract             | 已识别           |                                                                     |
-| 16   | ProposalCreateContract          | 已识别           | `parameters` 是 map,键序不规范时 C2 失败                            |
+| 16   | ProposalCreateContract          | 已识别           | `parameters` 是 map,按线上顺序显示.键重复,缺键或缺值时拒绝          |
 | 17   | ProposalApproveContract         | 已识别           |                                                                     |
 | 18   | ProposalDeleteContract          | 已识别           |                                                                     |
 | 19   | SetAccountIdContract            | 已识别           |                                                                     |
@@ -349,6 +362,21 @@ record ReviewResult
 | 57   | DelegateResourceContract        | 授权             | 显示 `receiver_address`,`lock`,`lock_period`                        |
 | 58   | UnDelegateResourceContract      | 已识别           |                                                                     |
 | 59   | CancelAllUnfreezeV2Contract     | 已识别           |                                                                     |
+
+TRON 的消息和裸哈希都可以签,结果只有签名,`signature_only` 为真.路径规则和交易相同,`owner_address` 的检查不适用.
+
+| `SignRequest.kind` | 标准    | 签名原文                                                | 类别              |
+| ------------------ | ------- | ------------------------------------------------------- | ----------------- |
+| 3                  | TIP-191 | `keccak256("\x19TRON Signed Message:\n" + 长度 + 消息)` | 无法识别          |
+| 1                  | TIP-712 | 同 EIP-712,差别见下                                     | 同第 5.1 节的消息 |
+| 2                  | 无      | 32 字节的哈希                                           | 无法识别,二次确认 |
+
+- tronweb 的 `hashMessage` 是 TIP-191 的实现,长度是消息字节数的十进制文本,和 EIP-191 只差前缀.
+- TIP-712 的 `address` 去掉 `0x41` 后按 20 字节编码,JSON 里可以是 Base58,`41` 开头或 `0x` 开头的十六进制,页面显示 Base58.
+- `trcToken` 是原子类型,按 `uint256` 编码,类型串里保留 `trcToken`,所以 `typeHash` 和写成 `uint256` 时不同.
+- 域的 `chainId` 是 `block.chainid & 0xffffffff`.主网 728126428,Nile 3448148188,Shasta 2494104990.这些值和 `Network` 对不上时按第 5.1 节告警.
+- tronweb 拒绝类型的循环引用,TIP-712 没有禁止,这里和 EIP-712 一样接受.tronweb 不看请求里的 `EIP712Domain`,只按固定顺序取域的成员,两者只有在域按规范顺序声明时才相同.
+- 消息和裸哈希不绑定链,页面都有主网提示.TIP-712 的 `chainId` 和本机认识的测试网相符时才去掉.
 
 ### 5.3 Solana
 
@@ -523,34 +551,36 @@ Token-2022 的 0 到 25 号,38,45,255 号和 SPL Token 同名指令规则相同,
 
 列的含义:依赖量来自 `cargo tree -e normal`,是该组在目标平台上的 crate 总数,"新增"是当前 `Cargo.lock` 没有的 crate 数.这些数字没有编译过,见第 10 节.
 
-| 链      | crate                                        | 版本     | 许可              | wasm32-unknown-unknown                  | Android           | 依赖量                                                        |
-| ------- | -------------------------------------------- | -------- | ----------------- | --------------------------------------- | ----------------- | ------------------------------------------------------------- |
-| EVM     | `alloy-consensus`,`alloy-eips`               | 2.5.0    | MIT OR Apache-2.0 | 已在产物里                              | 已在产物里        | 整组 85,Android 86.新增 40,另有 5 个已有 crate 的其他版本     |
-| EVM     | `alloy-primitives`,`alloy-dyn-abi`(`eip712`) | 1.7.3    | MIT OR Apache-2.0 | `alloy-primitives` 已在产物里           | 同左              | 含在上一行.`alloy-dyn-abi` 随第 6 步进入 `bitone-core`        |
-| EVM     | `alloy-rlp`                                  | 0.3.17   | MIT OR Apache-2.0 | 已在产物里                              | 已在产物里        | 含在上一行                                                    |
-| TRON    | `prost`                                      | 0.14.4   | Apache-2.0        | 上游只有 no-std 检查,纯 Rust            | 上游未测,无新增 C | 整组 10,新增 4.`prost-derive`,`itertools`,`either` 只在编译期 |
-| Bitcoin | `bitcoin`                                    | 0.32.102 | CC0-1.0           | 已在产物里                              | 已在产物里        | 整组 12,新增 0                                                |
-| Bitcoin | `psbt-v2`                                    | 0.3.0    | CC0-1.0           | GitHub 只读镜像没有 CI,只依赖 `bitcoin` | 同左              | 新增 1.`Cargo.lock` 里的 `miniscript` 是可选依赖,不编译       |
-| Solana  | 无                                           | 无       | 无                | 不涉及                                  | 不涉及            | 新增 0.遍历器和生成的表在 `bitone-core` 里                    |
+| 链      | crate                                                         | 版本     | 许可              | wasm32-unknown-unknown                  | Android    | 依赖量                                                            |
+| ------- | ------------------------------------------------------------- | -------- | ----------------- | --------------------------------------- | ---------- | ----------------------------------------------------------------- |
+| EVM     | `alloy-consensus`,`alloy-eips`                                | 2.5.0    | MIT OR Apache-2.0 | 已在产物里                              | 已在产物里 | 整组 85,Android 86.新增 40,另有 5 个已有 crate 的其他版本         |
+| EVM     | `alloy-primitives`,`alloy-dyn-abi`(`eip712`),`alloy-json-abi` | 1.7.3    | MIT OR Apache-2.0 | 已在产物里                              | 已在产物里 | 含在上一行                                                        |
+| EVM     | `alloy-rlp`                                                   | 0.3.17   | MIT OR Apache-2.0 | 已在产物里                              | 已在产物里 | 含在上一行                                                        |
+| TRON    | `prost`                                                       | 0.14.4   | Apache-2.0        | 已进 `bitone-core`,纯 Rust,无新增 C     | 同左       | 整组 10,`Cargo.lock` 新增 2.`prost-derive`,`itertools` 只在编译期 |
+| Bitcoin | `bitcoin`                                                     | 0.32.102 | CC0-1.0           | 已在产物里                              | 已在产物里 | 整组 12,新增 0                                                    |
+| Bitcoin | `psbt-v2`                                                     | 0.3.0    | CC0-1.0           | GitHub 只读镜像没有 CI,只依赖 `bitcoin` | 同左       | 新增 1.`Cargo.lock` 里的 `miniscript` 是可选依赖,不编译           |
+| Solana  | 无                                                            | 无       | 无                | 不涉及                                  | 不涉及     | 新增 0.遍历器和生成的表在 `bitone-core` 里                        |
 
 - EVM 用 `default-features = false`,`features = ["std"]`,关掉 `kzg`,`k256`,`secp256k1`,`serde`.授权人恢复用现有的 secp256k1.
 - `alloy-consensus`,`alloy-eips`,`alloy-primitives` 进入 `bitone-core` 后,`cargo tree -e normal` 的 crate 数在 wasm 上从 82 到 119,Android 从 85 到 122,新增 37 个,没有新的 C 依赖.
 - `alloy-consensus` 要求 Rust 1.94.1,低于工具链的 1.95.0.
+- `prost` 用 `default-features = false`,`features = ["derive", "std"]`.进入 `bitone-core` 后 `cargo tree -e normal` 的 crate 数在 wasm 上从 119 到 123,Android 从 122 到 126.不算过程宏时是 98 和 101,进产物的只新增 `prost`.`bytes`,`either` 已经由 alloy 带入.
 - 5 个其他版本是 `sha3 0.11`,`sha2 0.10`,`keccak 0.2`,`generic-array 0.14.9`,`crypto-common 0.1.6`.`deny.toml` 的 `multiple-versions` 是警告级别.
+- `alloy-dyn-abi` 用 `default-features = false`,`features = ["std", "eip712"]`.进入 `bitone-core` 后 `cargo tree -e normal` 的 crate 数在 wasm 上从 123 到 141,Android 从 126 到 142,没有新的 C 依赖.新增的过程宏 `alloy-sol-macro`,`syn-solidity` 等不进产物.
 - `psbt-v2` 还没到 1.0,近期下载量约 5600.它属于 `rust-bitcoin` 组织,只给 PSBT v2 用,v0 继续走 `bitcoin`.用 `default-features = false`,`features = ["std"]`.
 
 ### 6.2 只在开发和 CI 使用
 
 这些依赖不进 wasm 和 Android 的构建图.
 
-| 用途           | crate 或工具                                                                                              | 版本                                 | 许可                         | 说明                                                  |
-| -------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------ | ---------------------------- | ----------------------------------------------------- |
-| 生成 TRON 类型 | `prost-build`,`protox`                                                                                    | 0.14.4,0.10.0                        | Apache-2.0,MIT OR Apache-2.0 | `protox` 是纯 Rust,不需要 `protoc`.宿主机 49 个 crate |
+| 用途           | crate 或工具                                                                                                                                                                                                                                                                         | 版本                                                        | 许可                         | 说明                                                               |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
+| 生成 TRON 类型 | `prost-build`,`protox`                                                                                                                                                                                                                                                               | 0.14.4,0.10.0                                               | Apache-2.0,MIT OR Apache-2.0 | `protox` 是纯 Rust,不需要 `protoc`.`tools/protogen` 共 68 个 crate |
 | Solana 对照    | `solana-vote-interface`,`solana-hash`,`solana-pubkey`,`solana-instruction`,`tools/crosscheck` 的 dev 依赖 | 7.3.0,4.7.0,4.4.0,4.0.0              | Apache-2.0                   | Vote 的 IDL 是手写的,只有它要和 interface crate 比较  |
 | Solana 对照    | `@codama/dynamic-parsers`,`@codama/dynamic-codecs`,`codama`,RPC 的 `jsonParsed` 输出                      | 1.4.2,1.3.0,1.11.0                   | MIT                          | 不需要编译 Agave                                      |
-| EVM,TRON 对照  | `viem`,`tronweb`                                                                                          | 沿用 `apps/web` 锁定的版本或单独固定 | MIT                          | 运行时已用 alloy 和 prost,对照必须是另一套实现        |
-| Bitcoin 对照   | Bitcoin Core `decodepsbt`,`decoderawtransaction`                                                          | CI 固定版本                          | MIT                          | 已用于 regtest 验证                                   |
-| 模糊测试       | `cargo-fuzz`                                                                                              | CI 固定版本和 nightly                | MIT OR Apache-2.0            | 只在 CI                                               |
+| EVM,TRON 对照  | `viem`,`tronweb`                                                                                                                                                                                                                                                                     | 沿用 `apps/web` 锁定的版本或单独固定                        | MIT                          | 运行时已用 alloy 和 prost,对照必须是另一套实现                     |
+| Bitcoin 对照   | Bitcoin Core `decodepsbt`,`decoderawtransaction`                                                                                                                                                                                                                                     | CI 固定版本                                                 | MIT                          | 已用于 regtest 验证                                                |
+| 模糊测试       | `cargo-fuzz`                                                                                                                                                                                                                                                                         | CI 固定版本和 nightly                                       | MIT OR Apache-2.0            | 只在 CI                                                            |
 
 官方 interface crate 不进产物,原因是:
 
@@ -561,17 +591,17 @@ Token-2022 的 0 到 25 号,38,45,255 号和 SPL Token 同名指令规则相同,
 
 ### 6.3 Schema 来源
 
-| 来源                                       | 固定方式                                                                     | 许可                                                  |
-| ------------------------------------------ | ---------------------------------------------------------------------------- | ----------------------------------------------------- |
-| java-tron `protocol/src/main/protos/core/` | tag `GreatVoyage-v4.8.2.4`,commit `4e8389f159d0782f1ebcd9dab2fd88388c0e6fe9` | 仓库 LGPL-3.0,`account_contract.proto` 文件头是 GPLv3 |
-| `solana-program/*` 的 `idl.json`           | commit 和 SHA-256                                                            | Apache-2.0                                            |
-| ERC-7730 描述文件                          | `ethereum/clear-signing-erc7730-registry` 的 commit 和 SHA-256               | CC0-1.0                                               |
+| 来源                                                          | 固定方式                                                                     | 许可                                                  |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------- |
+| java-tron `protocol/src/main/protos/core/`,在 `schemas/tron/` | tag `GreatVoyage-v4.8.2.4`,commit `4e8389f159d0782f1ebcd9dab2fd88388c0e6fe9` | 仓库 LGPL-3.0,`account_contract.proto` 文件头是 GPLv3 |
+| `solana-program/*` 的 `idl.json`                              | commit 和 SHA-256                                                            | Apache-2.0                                            |
+| ERC-7730 描述文件,在 `schemas/erc7730/`                       | `ethereum/clear-signing-erc7730-registry` 的 commit 和 SHA-256               | CC0-1.0                                               |
 
 ### 6.4 固定方法
 
 1. `Cargo.toml` 写精确版本 `=x.y.z`,`Cargo.lock` 入库,升级是单独的改动,要重跑语料.
 2. 新增依赖在 `deny.toml` 写明理由,`cargo deny` 检查许可,来源和重复版本.
-3. Schema 文件放在 `schemas/`,`schemas/lock.toml` 记录仓库,commit,路径,SHA-256.生成器先校验哈希.
+3. Schema 文件放在 `schemas/`,`schemas/lock.toml` 记录仓库,commit,路径,SHA-256.生成器先校验哈希.TRON 的生成器是 `tools/protogen`,产物是 `decode/generated/` 和 `assets/tron-schema.json`,`--check` 在 CI 里比较产物.ERC-7730 的文件由核心库直接编译进去,`tools/protogen` 只校验它们的哈希.
 4. 生成器和对照工具放在工作区之外,有自己的锁文件和工具链.
 5. CI 定期比较上游 schema,有变化时开 PR,不自动合并.
 
@@ -599,14 +629,17 @@ Token-2022 的 0 到 25 号,38,45,255 号和 SPL Token 同名指令规则相同,
 
 格式是 ERC-7730,schema 主版本 2(当前 2.1.0).ERC-7730 仍是草案.主版本不符的描述文件按无效处理.
 
-| 规则 | 内容                                                                                                                              |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 绑定 | 调用数据按链,目标地址,选择器匹配.EIP-712 按链,`verifyingContract`,`primaryType`,类型串匹配.`context` 的全部约束都要满足           |
-| 解码 | 按描述里的 ABI 用 `alloy-dyn-abi` 解码,重新编码必须等于 `data`.不相等按没有描述处理                                               |
-| 类别 | 描述文件只决定字段名和展示.类别由策略按解码出的内部动作判定,不能降低                                                              |
-| 嵌套 | ERC-7730 的嵌入调用和 multicall 递归解码,最多 3 层,32 条.超过时按没有描述处理                                                     |
-| 内置 | `transfer`,`approve`,Permit 等来自注册表的 `ercs/calldata-erc20-tokens.json`,`ercs/eip712-erc2612-permit.json`,只绑定清单内的合约 |
-| 升级 | 描述绑定地址,不绑定代码.合约升级后含义可能改变,离线设备无法发现,所以描述文件给不出普通转账,普通转账只给清单内的代币               |
+| 规则   | 内容                                                                                                                                                                                                                  |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 绑定   | 调用数据按链,目标地址,选择器匹配,选择器由函数签名算出.EIP-712 按链,`verifyingContract`,`primaryType`,类型串匹配                                                                                                       |
+| 解码   | 按描述里的 ABI 用 `alloy-dyn-abi` 解码,重新编码必须等于 `data`.不相等按没有描述处理,选择器是标准函数时告警写明这一点                                                                                                  |
+| 类别   | 描述文件只决定字段名和展示.类别由策略按解码出的动作判定,不能降低.清单的描述文件给的类别是已识别,附带原生币时是无法识别,标准函数按规则表,种类名是 `fn:` 加规范签名                                                     |
+| 字段   | 每个 ABI 参数都进树,描述文件没写的参数显示 ABI 名字,所以描述文件不能隐藏参数.`path` 只认顶层参数,嵌套字段显示 ABI 名字                                                                                                |
+| 嵌套   | `calldata` 格式的参数按同一合约递归解码,最多 3 层,每层 32 条.超过时这一层按没有描述处理                                                                                                                               |
+| 内置   | `transfer`,`approve`,Permit 来自注册表的 `ercs/calldata-erc20-tokens.json`,`ercs/eip712-erc2612-permit.json`,其余标准函数在 `schemas/erc7730/bitone-calldata.json`,`bitone-eip712.json`,格式相同.内置描述不随清单改变 |
+| 清单外 | 标准函数在任何合约上都解码显示,用户才看得到被授权方和额度,这是钓鱼的主要入口.类别是无法识别,告警写明合约不在清单,不一定遵守标准.无限额度的告警保留                                                                    |
+| 优先级 | 标准函数的选择器不看清单的描述文件,解不开时也一样,所以描述文件不能替换授权和转账的解读                                                                                                                                |
+| 升级   | 描述绑定地址,不绑定代码.合约升级后含义可能改变,离线设备无法发现,所以描述文件给不出普通转账,普通转账只给清单内的代币                                                                                                   |
 
 TRON 的 TRC-20 调用使用同一份 ABI 规则,地址按 TRON 的格式显示.
 
@@ -623,15 +656,17 @@ ERC-7730 没有 Solana 绑定.BitOne 的 Solana 描述文件由两部分组成:
 
 | 链     | 显示                                                      |
 | ------ | --------------------------------------------------------- |
-| EVM    | 目标地址,选择器,`value`,按 32 字节分行的原始参数          |
+| EVM    | 目标地址,选择器,`value`,`data` 整段一行十六进制           |
 | TRON   | 同上,加 `call_token_value`,`token_id`                     |
 | Solana | 程序 ID,账户列表和签名者,可写标记,`data` 的长度和十六进制 |
 
-类别是无法识别,长按签名.函数签名数据库不是可信来源,不用来猜测方法名.
+类别是无法识别,长按签名.不按固定偏移切分参数,第 2.4 节禁止手算偏移.函数签名数据库不是可信来源,不用来猜测方法名.
 
 ### 7.5 清单格式
 
-清单增加 `descriptors`,取代 `functions`.`functions` 目前是空的.描述文件在清单构建时编译成紧凑的二进制形式.内置清单没有大小限制,经二维码导入的清单包受 `MAX_MESSAGE_BYTES`(256 KiB)限制.
+清单增加 `descriptors`,取代 `functions`.`descriptors` 是可选字段,没有它的清单包照常生效.每一项是 `network`,`contract`,带参数名的函数 `signature`,和 ERC-7730 `display.formats` 同构的 `intent`,`fields`.
+
+清单本身是 JSON,描述文件进清单之前由厂商挑出用到的部分,不另外编码.内置的标准函数编译在核心库里,不在清单中,导入清单包不影响它们.内置清单没有大小限制,经二维码导入的清单包受 `MAX_MESSAGE_BYTES`(256 KiB)限制.
 
 ## 8. 验证
 
@@ -639,12 +674,12 @@ ERC-7730 没有 Solana 绑定.BitOne 的 Solana 描述文件由两部分组成:
 
 ### 8.1 官方向量和对照
 
-| 链      | 官方向量                                                             | 独立对照                                                      |
-| ------- | -------------------------------------------------------------------- | ------------------------------------------------------------- |
-| EVM     | `ethereum/tests` 的 `TransactionTests`.EIP-712 规范示例              | `viem`,类型 0 到 4,EIP-712 摘要,EIP-7702 授权,`personal_sign` |
-| TRON    | java-tron 主网 `txID`                                                | `tronweb`,它的 `*_pb.cjs` 由同一份 proto 生成                 |
-| Solana  | `solana-program/*` 的 IDL 和 interface crate                         | interface crate,`@codama/dynamic-parsers`,RPC 的 `jsonParsed` |
-| Bitcoin | BIP-143,BIP-174,BIP-341,BIP-370 向量,Bitcoin Core 的 `rpc_psbt.json` | Bitcoin Core `decodepsbt`                                     |
+| 链      | 官方向量                                                             | 独立对照                                                                              |
+| ------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| EVM     | `ethereum/tests` 的 `TransactionTests`.EIP-712 规范示例              | `viem`,类型 0 到 4,ABI 解码,EIP-712 摘要,EIP-7702 授权,`personal_sign`                |
+| TRON    | java-tron 主网 `txID`                                                | `tronweb`,它的 `*_pb.cjs` 由同一份 proto 生成,缺 3 种合约.TIP-191,TIP-712,TRC-20 调用 |
+| Solana  | `solana-program/*` 的 IDL 和 interface crate                         | interface crate,`@codama/dynamic-parsers`,RPC 的 `jsonParsed`                         |
+| Bitcoin | BIP-143,BIP-174,BIP-341,BIP-370 向量,Bitcoin Core 的 `rpc_psbt.json` | Bitcoin Core `decodepsbt`                                                             |
 
 比对到字段级:对照工具解出的每个字段都要和树里同名节点相等.`tools/crosscheck/` 里的名字映射表是数据文件.
 
@@ -653,6 +688,10 @@ Bitcoin 的官方向量在 `tools/crosscheck/vectors/bitcoin.json`,`vectors.lock
 Solana 的向量在 `tools/crosscheck/vectors/solana.json`,由 `tools/crosscheck/codama/generate.mjs` 生成.运行时用自己的遍历器解码,所以字段的期望值来自 `@codama/dynamic-parsers`,指令的字节由 `@codama/dynamic-codecs` 从 IDL 编码.每条 IDL 指令都放进 legacy,v0,v1 三种消息,检查 C1,C2,C4,字段和账户名逐个相同,没有 `opaque` 节点,显示文字没有缺失.少一个必需账户时必须解码失败.Vote 的 IDL 是手写的,另外和 `solana-vote-interface` 比较.语料没有 Solana 样本之前,这些向量证明的是遍历器和 IDL 一致,不是 IDL 和程序一致.
 
 EVM 的向量在 `tools/crosscheck/vectors/evm.json`,由 `tools/crosscheck/viem/generate.mjs` 生成,viem 的版本固定,名字映射表是 `tools/crosscheck/viem/names.json`.运行时用 alloy 解码,所以字段的期望值来自 viem.类型 0 到 4 用测试私钥由 viem 构建,`ethereum/tests` 的合法向量由 viem 解开,生成时核对官方的哈希和发送方.树里的字段,未签名编码,装回签名的字节,交易哈希,恢复出的发送方和授权人都要相同.官方的不合法向量去掉签名三项后必须解码失败.类型 3,4 没有官方向量进入快照.
+
+TRON 的向量在 `tools/crosscheck/vectors/tron.json`,由 `tools/crosscheck/tronweb/generate.mjs` 生成,tronweb 的版本固定,样本是 `tools/crosscheck/tronweb/samples.json`.运行时用 prost 解码,所以字段的期望值来自 tronweb 的 `*_pb.cjs`,样本要填过 tronweb 认识的每个字段.41 个合约类型各一笔,另有备注,`Permission_id`,链上不使用的字段,未知字段,未知合约类型.树和向量逐字段双向比较,txID,装回签名的字节,恢复出的发送方都要相同,C1,C2,C4 都检查.tronweb 6.5.1 没有 `market_contract`,`shield_contract`,这 3 种合约用 `google-protobuf` 的 `BinaryWriter` 按样本里的编号写.`CustomContract`,`GetContract` 没有消息,只比外层.不合法的载荷必须解码失败.这份向量全部是构造的交易,主网 `txID` 等语料任务.
+
+调用和消息的向量在 `tools/crosscheck/vectors/evm-messages.json`,`tron-messages.json`,由 `viem/messages.mjs`,`tronweb/messages.mjs` 生成,样本是 `viem/samples.json`,`tronweb/message-samples.json`,不访问网络.标准函数的每个参数按顺序和对照工具解出的值比较,带尾部字节的调用不能读出字段.EIP-712 比较域分隔符,消息哈希和签名原文,样本含规范的 Mail,Permit,Permit2,DAI 的 Permit,全部原子类型,嵌套数组,自引用和互相引用的类型,非规范顺序的域,没有 `chainId` 的域.TIP-191,TIP-712 另外用同一助记词比较 tronweb 的签名.
 
 ### 8.2 语料
 
@@ -705,14 +744,14 @@ EVM 的向量在 `tools/crosscheck/vectors/evm.json`,由 `tools/crosscheck/viem/
 
 | 位置                                     | 处理                                                                                                                                                                                                                                                        |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tx/tron.rs`,19 个                       | 保留 `varint_is_strict`,`round_trip`,未知字段,重复字段,字段顺序,负数,`exactly_one_contract`,`type_url`,地址前缀,有效期等.`permission_id_is_refused`,`call_token_value_is_refused` 改为解码并显示                                                            |
+| `tx/tron.rs`,`decode/tron.rs`            | `varint_is_strict`,`round_trip`,重复字段,字段顺序,`exactly_one_contract`,`type_url`,地址前缀保留.未知字段,未知合约类型改为 `opaque`.负数改为无法识别,有效期改为告警.`permission_id_is_refused`,`call_token_value_is_refused` 改为解码并显示                 |
 | `tx/solana.rs`,16 个                     | 消息层的全部保留.`unsupported_versions_are_refused` 改为未知版本可签,要二次确认                                                                                                                                                                             |
-| `tx/abi.rs`,18 个                        | 输入保留,改成对内置描述运行.`approvals_are_red_on_any_contract` 改为清单外无法识别                                                                                                                                                                          |
+| `tx/abi.rs`,18 个                        | 输入保留,改成对内置描述运行.`approvals_are_red_on_any_contract` 换成 `approvals_show_the_spender_on_any_contract`:清单外仍解码显示被授权方和额度,类别无法识别,告警写明合约不在清单.参数不合规的授权按没有描述处理,告警写明方法                              |
 | `tx/evm/typed.rs`,2 个                   | 保留                                                                                                                                                                                                                                                        |
 | `tx/bitcoin.rs`,18 个                    | BIP-143,BIP-174,BIP-341 向量和选币测试保留                                                                                                                                                                                                                  |
 | `review.rs`,4 个                         | `risk_is_the_highest_of_all_actions`,`forbidden_cannot_be_signed` 保留.`no_actions_is_never_treated_as_safe` 改为无法识别                                                                                                                                   |
-| `bitone-signer/src/sign/evm.rs`,24 个    | 与 viem 的逐字节对比和第 1.1 节的拒绝保留.`unknown_contract_shows_raw_data`,`contract_creation_is_unknown` 保留.`other_typed_messages_are_refused` 改为解码后可签                                                                                           |
-| `bitone-signer/src/sign/tron.rs`,19 个   | 与 tronweb 的对比保留.`other_system_contracts_are_unknown_and_show_raw_fields` 换成逐类型断言.`mutated_payloads_never_panic` 保留                                                                                                                           |
+| `bitone-signer/src/sign/evm.rs`,24 个    | 与 viem 的逐字节对比和第 1.1 节的拒绝保留.`unknown_contract_shows_raw_data`,`contract_creation_is_unknown` 保留.`other_typed_messages_decode_and_sign_as_unknown` 解码后可签                                                                                |
+| `bitone-signer/src/sign/tron.rs`         | 与 tronweb 的对比保留.`other_system_contracts_are_unknown_and_show_raw_fields` 换成逐类型断言.`mutated_payloads_never_panic` 保留                                                                                                                           |
 | `bitone-signer/src/sign/solana.rs`,67 个 | 与 web3.js 的对比,nonce,查找表,手续费保留.`revoke_and_close_are_unknown`,`legacy_token_transfer_is_unknown`,`other_system_instructions_are_unknown`,`token_outside_the_manifest_is_unknown_with_a_raw_amount` 改类别.尾部字节类测试改为 `opaque` 加无法识别 |
 | `bitone-signer/src/sign/bitcoin.rs`,3 个 | 保留                                                                                                                                                                                                                                                        |
 | `bitone-ffi/src/lib.rs`                  | `review_needs_no_pin_and_sign_rechecks`,`garbage_is_refused_not_an_error` 保留,断言改到新字段                                                                                                                                                               |
@@ -722,28 +761,33 @@ EVM 的向量在 `tools/crosscheck/vectors/evm.json`,由 `tools/crosscheck/viem/
 
 ### 10.1 已核实
 
-| 事实                                                                                           | 来源                                                                                                                         |
-| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `ContractType` 有 41 个值,`raw` 和 `Contract` 的字段如第 5.2 节                                | java-tron `Tron.proto`,tag 和 master 一致,`develop` 的枚举相同                                                               |
-| 20,32 没有消息定义和执行器,3 有消息没有执行器,51 有执行器                                      | java-tron `protos/core/contract/`,`actuator/` 目录                                                                           |
-| 备注按 `getMemoFee` 扣费,合约数必须为 1,哈希取 `getRawData().toByteArray()`                    | java-tron `Manager.java`,`TransactionCapsule.java`                                                                           |
-| 协议文件的许可                                                                                 | GitHub API,`account_contract.proto` 文件头                                                                                   |
-| SIMD-0385 状态 `Activated`,v1 的格式和限制,feature 公钥在 Agave 里                             | `solana-foundation/solana-improvement-documents`,`anza-xyz/agave` 的 `feature-set`                                           |
+| 事实                                                                                           | 来源                                                                                                           |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `ContractType` 有 41 个值,`raw` 和 `Contract` 的字段如第 5.2 节                                | java-tron `Tron.proto`,tag 和 master 一致,`develop` 的枚举相同                                                 |
+| 节点比较 `expiration` 和区块时间,不看 `timestamp`,上限 24 小时                                 | java-tron `Manager.validateCommon`,`Constant.java`                                                             |
+| 节点用 protobuf-java 3.25.8,未知字段写在已知字段之后,`Any.value` 是字节,不重新序列化           | java-tron `protocol/build.gradle`,protobuf-java 的 `UnknownFieldSet`                                           |
+| 20,32 没有消息定义和执行器,3 有消息没有执行器,51 有执行器                                      | java-tron `protos/core/contract/`,`actuator/` 目录                                                             |
+| 备注按 `getMemoFee` 扣费,合约数必须为 1,哈希取 `getRawData().toByteArray()`                    | java-tron `Manager.java`,`TransactionCapsule.java`                                                             |
+| 协议文件的许可                                                                                 | GitHub API,`account_contract.proto` 文件头                                                                     |
+| SIMD-0385 状态 `Activated`,v1 的格式和限制,feature 公钥在 Agave 里                             | `solana-foundation/solana-improvement-documents`,`anza-xyz/agave` 的 `feature-set`                             |
 | 链下消息的三种格式,v1 的掩码和签名位置                                                         | `anza-xyz/solana-sdk` 的 `offchain-message`,`message`,`transaction`,`anza-xyz/kit` 的 `packages/offchain-messages`,SIMD-0385 |
 | Vote 的 20 条指令和 12 条管理指令的字段,账户                                                   | `solana-vote-interface` 7.3.0 的源码                                                                                         |
-| Solana 指令集合和 IDL 指令数                                                                   | `solana-program/*` 的 `idl.json`,对应 interface crate 的源码                                                                 |
-| EIP-7702 是 Final,EIP-8141 是 Draft,类型 0x06.`TxEip8141` 不是 `TxEnvelope` 的成员             | `ethereum/EIPs`,`alloy-consensus` 2.5.0 源码                                                                                 |
-| `TxLegacy::decode`,`TokenInstruction::unpack`,`prost` 的行为                                   | 对应 crate 的源码                                                                                                            |
-| crate 版本,许可,Rust 版本要求                                                                  | crates.io API                                                                                                                |
-| 依赖量                                                                                         | `cargo tree`,工具链 1.95.0,只解析依赖,没有编译                                                                               |
-| 上游 wasm 构建情况                                                                             | `alloy-rs/alloy`,`alloy-rs/core`,`anza-xyz/solana-sdk`,`solana-program/token-2022`,`tokio-rs/prost` 的 CI 文件               |
-| ERC-7730 是 Draft,schema 版本 2.1.0,注册表已迁到 `ethereum/clear-signing-erc7730-registry`,CC0 | `ethereum/ERCs`,GitHub API                                                                                                   |
-| UniFFI 0.32.0 起支持递归记录                                                                   | `mozilla/uniffi-rs` 的 `CHANGELOG.md`                                                                                        |
-| PSBT 键的集合                                                                                  | BIP-174,370,371,373,375,353,127 和 `psbt-v2` 的 `consts.rs`.BIP-431,433 目前是 Draft                                         |
+| Solana 指令集合和 IDL 指令数                                                                   | `solana-program/*` 的 `idl.json`,对应 interface crate 的源码                                                   |
+| EIP-7702 是 Final,EIP-8141 是 Draft,类型 0x06.`TxEip8141` 不是 `TxEnvelope` 的成员             | `ethereum/EIPs`,`alloy-consensus` 2.5.0 源码                                                                   |
+| `TxLegacy::decode`,`TokenInstruction::unpack`,`prost` 的行为                                   | 对应 crate 的源码                                                                                              |
+| crate 版本,许可,Rust 版本要求                                                                  | crates.io API                                                                                                  |
+| 依赖量                                                                                         | `cargo tree`,工具链 1.95.0,只解析依赖,没有编译                                                                 |
+| 上游 wasm 构建情况                                                                             | `alloy-rs/alloy`,`alloy-rs/core`,`anza-xyz/solana-sdk`,`solana-program/token-2022`,`tokio-rs/prost` 的 CI 文件 |
+| ERC-7730 是 Draft,schema 版本 2.1.0,注册表已迁到 `ethereum/clear-signing-erc7730-registry`,CC0 | `ethereum/ERCs`,GitHub API                                                                                     |
+| TIP-191 的前缀和长度,TIP-712 的地址,`trcToken`,`chainId`                                       | `tronprotocol/tips`,tronweb 6.5.1 的 `utils/message.js`,`utils/typedData.js`                                   |
+| TRON 的 `eth_chainId`,Shasta 0x94a9059e,Nile 0xcd8690dc                                        | TronGrid 的 JSON-RPC,TIP-712 只列出主网和 Nile                                                                 |
+| `TypedData` 的域哈希不看声明的类型,`Resolver::resolve` 拒绝自引用类型                          | `alloy-dyn-abi` 1.7.3 源码                                                                                     |
+| UniFFI 0.32.0 起支持递归记录                                                                   | `mozilla/uniffi-rs` 的 `CHANGELOG.md`                                                                          |
+| PSBT 键的集合                                                                                  | BIP-174,370,371,373,375,353,127 和 `psbt-v2` 的 `consts.rs`.BIP-431,433 目前是 Draft                           |
 
 ### 10.2 假设,未验证
 
-1. **构建**:`alloy-consensus`,`alloy-eips`,`alloy-primitives`,`alloy-rlp`,`psbt-v2` 已在 `bitone-core` 里构建.其余候选依赖的 wasm 和 Android 结论来自上游 CI 和依赖图,图里没有新增的 C 依赖.`solana-message`,`prost` 在 wasm 上没有直接的上游证据.
+1. **构建**:`alloy-consensus`,`alloy-eips`,`alloy-primitives`,`alloy-rlp`,`psbt-v2` 已在 `bitone-core` 里构建.其余候选依赖的 wasm 和 Android 结论来自上游 CI 和依赖图,图里没有新增的 C 依赖.`prost` 已进入 `bitone-core`,开发机上只构建了宿主机,wasm 和 Android 由 CI 构建.`solana-message` 在 wasm 上没有直接的上游证据.
 2. **体积**:没有测量 WASM 和 `.so` 的体积增长.
 3. **主网日期**:v1 在 2026-09-15 前后激活来自二手报道,没有核对主网的 feature 账户.`Activated` 状态来自 SIMD 仓库.
 4. **规范编码**:假设主网 TRON 交易都是规范字段顺序,`auths`,`scripts`,`provider`,`ContractName`,`ref_block_num` 没有合法用途.语料会验证,不成立时调整规则.

@@ -186,6 +186,16 @@ impl Network {
         }
     }
 
+    /// TIP-712 域里的 `chainId`,是 `block.chainid & 0xffffffff`.
+    pub fn tip712_chain_id(self) -> Option<u64> {
+        match self {
+            Network::Tron => Some(728126428),
+            Network::TronNile => Some(3448148188),
+            Network::TronShasta => Some(2494104990),
+            _ => None,
+        }
+    }
+
     pub fn from_evm_chain_id(chain_id: u64) -> Option<Network> {
         Network::ALL.into_iter().find(|n| n.evm_chain_id() == Some(chain_id))
     }

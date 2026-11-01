@@ -51,14 +51,42 @@ impl Asset {
     }
 }
 
-/// 已知的函数.只影响展示,不能降低风险类别.
+/// 一个字段的展示方式,格式和 ERC-7730 的 `display.formats` 相同.`path` 是顶层参数名.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayField {
+    pub path: String,
+    pub label: String,
+    #[serde(default)]
+    pub format: Option<String>,
+    #[serde(default)]
+    pub params: DisplayParams,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KnownFunction {
+pub struct DisplayParams {
+    #[serde(default)]
+    pub token_path: Option<String>,
+    #[serde(default)]
+    pub threshold: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayFormat {
+    pub intent: String,
+    #[serde(default)]
+    pub fields: Vec<DisplayField>,
+}
+
+/// 描述文件.只决定字段名和展示,类别由策略判定.只通过验签的清单到达.
+/// 按网络,合约绑定.选择器由 `signature` 算出,`signature` 是带参数名的函数,比如 `stake(uint256 amount)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Descriptor {
     pub network: String,
     pub contract: String,
-    pub selector: String,
-    pub title: String,
+    pub signature: String,
+    #[serde(flatten)]
+    pub format: DisplayFormat,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,7 +94,7 @@ pub struct Manifest {
     pub version: u32,
     pub assets: Vec<Asset>,
     #[serde(default)]
-    pub functions: Vec<KnownFunction>,
+    pub descriptors: Vec<Descriptor>,
 }
 
 static BUILTIN: OnceLock<Manifest> = OnceLock::new();
@@ -93,11 +121,16 @@ impl Manifest {
         self.lookup(network, "native")
     }
 
-    pub fn function(&self, network: &str, contract: &str, selector: &str) -> Option<&KnownFunction> {
-        self.functions.iter().find(|f| {
-            f.network == network
-                && f.contract.eq_ignore_ascii_case(contract)
-                && f.selector.eq_ignore_ascii_case(selector)
+    /// 绑定到这个合约的描述文件.
+    pub fn descriptors<'a>(&'a self, network: &'a str, contract: &'a str) -> impl Iterator<Item = &'a Descriptor> {
+        let hex = contract.starts_with("0x");
+        self.descriptors.iter().filter(move |d| {
+            d.network == network
+                && if hex {
+                    d.contract.eq_ignore_ascii_case(contract)
+                } else {
+                    d.contract == contract
+                }
         })
     }
 
@@ -176,6 +209,24 @@ mod tests {
             assert_eq!(plain.key(), builtin.key());
             assert_eq!((&plain.symbol, plain.decimals), (&builtin.symbol, builtin.decimals));
         }
+    }
+
+    #[test]
+    fn a_signed_manifest_without_descriptors_still_parses() {
+        let manifest: Manifest = serde_json::from_str("{\"version\":9,\"assets\":[]}").unwrap();
+        assert!(manifest.descriptors.is_empty());
+    }
+
+    #[test]
+    fn a_descriptor_keeps_the_erc7730_shape() {
+        let text = "{\"version\":9,\"assets\":[],\"descriptors\":[{\"network\":\"ethereum\",\"contract\":\"0xAB\",
+            \"signature\":\"stake(uint256 amount)\",\"intent\":\"Stake\",
+            \"fields\":[{\"path\":\"amount\",\"label\":\"Amount\",\"format\":\"tokenAmount\",
+            \"params\":{\"tokenPath\":\"@.to\"}}]}]}";
+        let manifest: Manifest = serde_json::from_str(text).unwrap();
+        let found: Vec<_> = manifest.descriptors("ethereum", "0xab").collect();
+        assert_eq!(found[0].format.fields[0].params.token_path.as_deref(), Some("@.to"));
+        assert_eq!(manifest.descriptors("polygon", "0xab").count(), 0);
     }
 
     #[test]

@@ -122,7 +122,7 @@ fn labels() -> &'static BTreeMap<String, String> {
 
 /// 字段名的显示文字.同一个名字在不同链上意思不同时,数据文件的键带链名.
 /// 数据文件里没有时显示字段名,EIP-712 的字段名来自载荷,所以要转义.
-fn field_label(chain: Chain, name: &str) -> String {
+pub(crate) fn field_label(chain: Chain, name: &str) -> String {
     let labels = labels();
     labels
         .get(&[chain.id(), name].join("."))
