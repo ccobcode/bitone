@@ -1,0 +1,71 @@
+# 只在 CI 跑,见 docs/10-tx-decoding.md 第 8.3 节.在工作区之外,有自己的锁文件和工具链.
+[package]
+name = "bitone-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+alloy-dyn-abi = { version = "=1.7.3", default-features = false, features = ["std"] }
+alloy-json-abi = { version = "=1.7.3", default-features = false, features = ["std"] }
+bitone-core = { path = "../crates/bitone-core" }
+libfuzzer-sys = "=0.4.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[[bin]]
+name = "decode_evm"
+path = "fuzz_targets/decode_evm.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_typed_data"
+path = "fuzz_targets/decode_typed_data.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_tron"
+path = "fuzz_targets/decode_tron.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_solana"
+path = "fuzz_targets/decode_solana.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_psbt"
+path = "fuzz_targets/decode_psbt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_abi"
+path = "fuzz_targets/decode_abi.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "walk_idl"
+path = "fuzz_targets/walk_idl.rs"
+test = false
+doc = false
+bench = false

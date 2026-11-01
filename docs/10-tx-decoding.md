@@ -615,7 +615,7 @@ Token-2022 的 0 到 25 号,38,45,255 号和 SPL Token 同名指令规则相同,
 | Solana 对照    | `@codama/dynamic-parsers`,`@codama/dynamic-codecs`,`codama`,RPC 的 `jsonParsed` 输出                      | 1.4.2,1.3.0,1.11.0                   | MIT                          | 不需要编译 Agave                                                   |
 | EVM,TRON 对照  | `viem`,`tronweb`                                                                                          | 沿用 `apps/web` 锁定的版本或单独固定 | MIT                          | 运行时已用 alloy 和 prost,对照必须是另一套实现                     |
 | Bitcoin 对照   | Bitcoin Core `decodepsbt`,`decoderawtransaction`                                                          | CI 固定版本                          | MIT                          | 已用于 regtest 验证                                                |
-| 模糊测试       | `cargo-fuzz`                                                                                              | CI 固定版本和 nightly                | MIT OR Apache-2.0            | 只在 CI                                                            |
+| 模糊测试       | `cargo-fuzz`,`libfuzzer-sys`                                                                              | CI 固定版本和 nightly                | (MIT OR Apache-2.0) AND NCSA | 只在 CI                                                            |
 
 官方 interface crate 不进产物,原因是:
 
@@ -747,9 +747,9 @@ TRON 的向量在 `tools/crosscheck/vectors/tron.json`,由 `tools/crosscheck/tro
 ### 8.3 模糊测试
 
 - 只在 CI 跑,`.github/workflows/fuzz.yml` 定时和手动触发.`Makefile` 没有模糊测试目标,不在开发机上运行.
-- `cargo-fuzz` 用固定版本的 nightly,不改变仓库的 1.95.0 工具链.种子来自语料.
+- `cargo-fuzz` 用固定版本的 nightly,不改变仓库的 1.95.0 工具链.种子来自 `tools/crosscheck/vectors/`.
 - 目标:`decode_evm`,`decode_typed_data`,`decode_tron`,`decode_solana`,`decode_psbt`,`decode_abi`,`walk_idl`.
-- 性质:不崩溃,不超时.解码成功时 C1,C2 成立.解码成功时对照工具也必须接受,字段相同.
+- 性质:不崩溃,不超时,`tx::review` 也不崩溃.解码成功时 C1,C2 成立,目标在 `decode` 之外重新计算.`decode_abi` 没有树,解成标准函数时重新编码必须等于参数区.
 - 崩溃样本作为构件上传,修复后进回归测试.发布配置是 `panic = "abort"`,解码器不允许 panic.
 
 ## 9. 事实和假设

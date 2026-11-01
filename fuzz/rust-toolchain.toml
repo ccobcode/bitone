@@ -1,0 +1,4 @@
+# 模糊测试要 nightly 的 sanitizer.这个目录之外仍是仓库的 1.95.0.
+[toolchain]
+channel = "nightly-2026-10-15"
+profile = "minimal"

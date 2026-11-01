@@ -1,9 +1,11 @@
 //! 语料检查和官方向量对照.只读入库的快照,不访问网络,见 docs/10-tx-decoding.md 第 8 节.
 //!
 //! `corpus/corpus.lock`,`vectors/vectors.lock` 每行是 `SHA-256 文件名`.语料是空的时候只输出空报告.
+//! `crosscheck seeds <目录>` 把向量写成模糊测试的种子.
 
 mod bitcoin_vectors;
 mod evm_vectors;
+mod seeds;
 mod solana_vectors;
 #[cfg(test)]
 mod stake_interface;
@@ -106,7 +108,13 @@ fn run() -> Result<(), String> {
 }
 
 fn main() -> ExitCode {
-    match run() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let result = match args.as_slice() {
+        [] => run(),
+        [command, dir] if command == "seeds" => seeds::run(Path::new(VECTORS), Path::new(dir)),
+        _ => Err("只接受 seeds <目录>".to_string()),
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(reason) => {
             eprintln!("{reason}");
@@ -179,6 +187,13 @@ mod tests {
     fn the_message_vectors_hold() {
         let report = message_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
         assert!(report.calls > 0 && report.irregular > 0 && report.typed > 0 && report.personal > 0);
+    }
+
+    #[test]
+    fn the_vectors_seed_every_fuzz_target() {
+        let dir = corpus("seeds", &[]);
+        seeds::run(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS), &dir).unwrap();
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 7);
     }
 
     #[test]

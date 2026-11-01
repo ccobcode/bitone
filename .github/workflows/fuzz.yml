@@ -1,0 +1,67 @@
+name: Fuzz
+
+# 只在这里跑,Makefile 没有模糊测试目标,见 docs/10-tx-decoding.md 第 8.3 节.
+on:
+    schedule:
+        - cron: "47 2 * * 2,5"
+    workflow_dispatch:
+        inputs:
+            seconds:
+                description: Seconds per target
+                required: false
+                default: "1800"
+
+permissions:
+    contents: read
+
+jobs:
+    seeds:
+        name: Seeds
+        runs-on: ubuntu-24.04
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - working-directory: tools/crosscheck
+              run: cargo run --locked -- seeds ../../fuzz/corpus
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: seeds
+                  path: fuzz/corpus
+                  if-no-files-found: error
+
+    fuzz:
+        name: ${{ matrix.target }}
+        needs: seeds
+        runs-on: ubuntu-24.04
+        timeout-minutes: 90
+        strategy:
+            fail-fast: false
+            matrix:
+                target:
+                    - decode_evm
+                    - decode_typed_data
+                    - decode_tron
+                    - decode_solana
+                    - decode_psbt
+                    - decode_abi
+                    - walk_idl
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+              with:
+                  name: seeds
+                  path: fuzz/corpus
+            # 在 fuzz/ 里取 cargo,nightly 的版本固定在 fuzz/rust-toolchain.toml.
+            - working-directory: fuzz
+              run: cargo install cargo-fuzz --version 0.13.2 --locked
+            - working-directory: fuzz
+              env:
+                  TARGET: ${{ matrix.target }}
+                  SECONDS_PER_TARGET: ${{ inputs.seconds || '1800' }}
+              run: cargo fuzz run "$TARGET" -- "-max_total_time=$SECONDS_PER_TARGET" -timeout=10 -rss_limit_mb=2048
+            - if: failure()
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: crashes-${{ matrix.target }}
+                  path: fuzz/artifacts
+                  if-no-files-found: ignore

@@ -20,6 +20,7 @@ use std::path::Path;
 
 const FILE: &str = "solana.json";
 const LABELS: &str = include_str!("../../../crates/bitone-core/assets/field-labels.json");
+const IDL: &str = include_str!("../../../crates/bitone-core/assets/solana-idl.json");
 const LOCK: &str = "vectors.lock";
 const SCHEMA_LOCK: &str = "lock.toml";
 const SCHEMAS: &str = "../../../schemas";
@@ -55,6 +56,16 @@ struct Vector {
 #[derive(Deserialize)]
 struct Vectors {
     instructions: Vec<Vector>,
+}
+
+#[derive(Deserialize)]
+struct IdlProgram {
+    ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct Idl {
+    programs: Vec<IdlProgram>,
 }
 
 #[derive(Debug)]
@@ -338,6 +349,36 @@ pub(crate) fn check(dir: &Path) -> Result<Report, String> {
         ));
     }
     Ok(report)
+}
+
+/// 模糊测试的种子.`walk_idl` 的格式见它的目标文件.
+#[derive(Default)]
+pub(crate) struct Seeds {
+    pub messages: Vec<Vec<u8>>,
+    pub instructions: Vec<Vec<u8>>,
+}
+
+pub(crate) fn seeds(dir: &Path) -> Result<Seeds, String> {
+    let bytes = fs::read(dir.join(FILE)).map_err(|error| error.to_string())?;
+    let vectors: Vectors = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    let idl: Idl = serde_json::from_str(IDL).map_err(|error| error.to_string())?;
+    let ids: Vec<&String> = idl.programs.iter().flat_map(|program| &program.ids).collect();
+    let mut seeds = Seeds::default();
+    for vector in &vectors.instructions {
+        for version in versions() {
+            seeds
+                .messages
+                .push(message(vector, version, vector.accounts.len())?.encode());
+        }
+        let program = ids
+            .iter()
+            .position(|id| **id == vector.program)
+            .ok_or_else(|| format!("IDL 没有 {}", vector.program))?;
+        let mut seed = vec![program as u8, vector.accounts.len() as u8];
+        seed.extend(Vec::from_hex(&vector.data).map_err(|error| error.to_string())?);
+        seeds.instructions.push(seed);
+    }
+    Ok(seeds)
 }
 
 #[cfg(test)]
