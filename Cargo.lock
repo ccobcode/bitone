@@ -929,7 +929,7 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
 name = "bitone-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alloy-consensus",
  "alloy-dyn-abi",
@@ -954,7 +954,7 @@ dependencies = [
 
 [[package]]
 name = "bitone-ffi"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bitone-core",
  "bitone-signer",
@@ -965,7 +965,7 @@ dependencies = [
 
 [[package]]
 name = "bitone-gateway"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -986,7 +986,7 @@ dependencies = [
 
 [[package]]
 name = "bitone-signer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -1008,7 +1008,7 @@ dependencies = [
 
 [[package]]
 name = "bitone-wasm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bitone-core",
  "secp256k1 0.29.1",

@@ -85,7 +85,7 @@ make test
 
 # 确认 APK 没有 INTERNET 权限
 make dist-android
-apkanalyzer manifest permissions dist/bitone-v0.1.0-android-unsigned.apk
+apkanalyzer manifest permissions dist/bitone-v0.2.0-android-unsigned.apk
 ```
 
 构建时也会检查合并后的清单,出现联网权限就失败.同一台机器上从干净状态构建两次,未签名 APK 的哈希一致.跨机器和容器内的构建还没有验证.
@@ -137,7 +137,7 @@ Bitcoin,TRON 和 Solana 的交易历史来自同一批服务.EVM 节点查不了
 把 `VERSION` 改成 [Releases](https://github.com/ccobcode/bitone/releases) 的最新版本.只有签名证书匹配时才会安装 APK.
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 APK=bitone-v$VERSION-android.apk
 CERT=d9f761bbbaf9cf637e579a88c69b04391de49d1853f6a078424f098edbe97c73
 
@@ -156,7 +156,7 @@ apksigner verify --print-certs $APK | grep $CERT && adb install $APK
 网页端的摄像头和交易构建都要求 HTTPS 或 localhost,所以 compose 文件在网关前放了 Caddy 来申请证书.把域名解析到服务器,并开放 80 和 443 端口.
 
 ```bash
-export VERSION=0.1.0
+export VERSION=0.2.0
 export DOMAIN=bitone.example.com
 curl -fLO https://raw.githubusercontent.com/ccobcode/bitone/v$VERSION/docker/compose.yaml
 docker compose up -d
@@ -165,13 +165,13 @@ docker compose up -d
 如果只想在本机试用,单独运行镜像,打开 `http://localhost:8787`.
 
 ```bash
-docker run -p 127.0.0.1:8787:8787 ghcr.io/ccobcode/bitone:0.1.0
+docker run -p 127.0.0.1:8787:8787 ghcr.io/ccobcode/bitone:0.2.0
 ```
 
 不用 Docker 时,使用发布包,支持 Linux 的 `x86_64` 和 `aarch64`,需要自己配 HTTPS 反向代理.
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 curl -fL https://github.com/ccobcode/bitone/releases/download/v$VERSION/bitone-v$VERSION-linux-$(uname -m).tar.gz | tar -xz
 cd bitone
 ./bin/bitone-gateway --config gateway.example.toml --web-dir web
@@ -186,7 +186,7 @@ cd bitone
 ```bash
 git clone https://github.com/ccobcode/bitone.git
 cd bitone
-VERSION=0.1.0
+VERSION=0.2.0
 make dist VERSION=$VERSION
 ```
 
@@ -248,7 +248,7 @@ adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
 CI 从 tag 构建全部产物并创建草稿 Release,不持有签名私钥.先在 `Cargo.toml` 改好版本号,合并到 `main`,再推送 tag.
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 git tag -a v$VERSION -m v$VERSION
 git push origin main v$VERSION
 ```

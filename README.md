@@ -85,7 +85,7 @@ make test
 
 # Confirm the APK has no INTERNET permission
 make dist-android
-apkanalyzer manifest permissions dist/bitone-v0.1.0-android-unsigned.apk
+apkanalyzer manifest permissions dist/bitone-v0.2.0-android-unsigned.apk
 ```
 
 The build also fails if the merged manifest gains a network permission. Two clean builds on one machine produce the same unsigned APK hash. Builds across machines and in containers have not been verified.
@@ -137,7 +137,7 @@ Use a dedicated phone, see [What It Does Not Protect Against](#what-it-does-not-
 Set `VERSION` to the latest of [Releases](https://github.com/ccobcode/bitone/releases). The APK installs only if its signing certificate matches.
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 APK=bitone-v$VERSION-android.apk
 CERT=d9f761bbbaf9cf637e579a88c69b04391de49d1853f6a078424f098edbe97c73
 
@@ -156,7 +156,7 @@ The official image holds the gateway and web app, so the web app talks only to y
 The web app needs HTTPS or localhost for the camera and for building transactions, so the compose file puts Caddy in front of the gateway to get a certificate. Point your domain at the server and open ports 80 and 443.
 
 ```bash
-export VERSION=0.1.0
+export VERSION=0.2.0
 export DOMAIN=bitone.example.com
 curl -fLO https://raw.githubusercontent.com/ccobcode/bitone/v$VERSION/docker/compose.yaml
 docker compose up -d
@@ -165,13 +165,13 @@ docker compose up -d
 To try it on one machine, run the image alone and open `http://localhost:8787`.
 
 ```bash
-docker run -p 127.0.0.1:8787:8787 ghcr.io/ccobcode/bitone:0.1.0
+docker run -p 127.0.0.1:8787:8787 ghcr.io/ccobcode/bitone:0.2.0
 ```
 
 Without Docker, use the release package on Linux `x86_64` or `aarch64`, behind your own HTTPS proxy.
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 curl -fL https://github.com/ccobcode/bitone/releases/download/v$VERSION/bitone-v$VERSION-linux-$(uname -m).tar.gz | tar -xz
 cd bitone
 ./bin/bitone-gateway --config gateway.example.toml --web-dir web
@@ -186,7 +186,7 @@ Requires rustup, Node, pnpm, JDK 21, the Android SDK and NDK, OpenSSL and GnuPG.
 ```bash
 git clone https://github.com/ccobcode/bitone.git
 cd bitone
-VERSION=0.1.0
+VERSION=0.2.0
 make dist VERSION=$VERSION
 ```
 
@@ -248,7 +248,7 @@ adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
 CI builds everything from a tag and creates a draft Release. It holds no signing key. Set the version in `Cargo.toml`, merge to `main`, then push a tag.
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 git tag -a v$VERSION -m v$VERSION
 git push origin main v$VERSION
 ```

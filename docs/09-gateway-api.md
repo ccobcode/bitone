@@ -13,7 +13,7 @@
 ## GET /v1/version
 
 ```json
-{ "version": "0.1.0", "networks": ["bitcoin", "ethereum"], "noHistory": ["bsc"] }
+{ "version": "0.2.0", "networks": ["bitcoin", "ethereum"], "noHistory": ["bsc"] }
 ```
 
 只返回配置了上游的网络.Chain ID 等信息内置在网页端,这里不提供.
