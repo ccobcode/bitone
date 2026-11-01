@@ -11,6 +11,8 @@ WORKDIR /src
 # 不复制 rust-toolchain.toml,否则会多下载 Android 和 iOS 目标.
 COPY Cargo.toml Cargo.lock rustfmt.toml ./
 COPY crates crates
+# 内置的 ERC-7730 描述文件在这里,编译时读取.
+COPY schemas schemas
 # 容器里的 clang 自带 wasm 目标.
 ENV CC_wasm32_unknown_unknown=clang AR_wasm32_unknown_unknown=llvm-ar
 RUN cargo build --release -p bitone-gateway \
