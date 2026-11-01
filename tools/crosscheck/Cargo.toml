@@ -1,0 +1,11 @@
+# 对照工具在工作区之外,有自己的锁文件和工具链.见 docs/10-tx-decoding.md 第 6.4 节和第 8 节.
+[package]
+name = "crosscheck"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+sha2 = "=0.11.1"

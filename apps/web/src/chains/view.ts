@@ -27,6 +27,7 @@ export function nativeText(tx: Pick<TxRecord, "network">, raw: bigint): string {
 }
 
 export function amountText(tx: TxRecord): string {
+    if (tx.kind === "raw" && tx.amount === "0") return t("原始请求");
     return formatAsset(tx.network, tx.asset, BigInt(tx.amount));
 }
 

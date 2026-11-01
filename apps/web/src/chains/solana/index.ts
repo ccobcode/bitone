@@ -7,7 +7,7 @@ import { EXECUTION_FAILED } from "../view";
 import { parseFees } from "./api";
 import { BroadcastCard } from "./BroadcastCard";
 import { quote } from "./quote";
-import { replace, setup, spentFlags, transfer } from "./transfer";
+import { raw, rawModes, replace, setup, spentFlags, transfer } from "./transfer";
 import { view } from "./view";
 
 export const solana: ChainSpec = {
@@ -38,6 +38,8 @@ export const solana: ChainSpec = {
     transfer,
     replace: { build: replace },
     setup,
+    rawModes,
+    raw,
     quote,
     view,
     BroadcastCard,

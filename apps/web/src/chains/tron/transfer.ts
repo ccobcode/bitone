@@ -1,9 +1,20 @@
 // TRON 的构建.没有序号可以占用,防重放靠过期时间和交易哈希.
 import { t } from "../../core/i18n";
-import type { Built, FeeSource } from "../spec";
-import { TransferError, badFees, header, requestFields, reviewRequest, type TransferDraft } from "../transfer";
+import type { Built, FeeSource, RawMode } from "../spec";
+import {
+    QUOTE_LIFETIME,
+    TransferError,
+    badFees,
+    header,
+    pastedRequest,
+    requestFields,
+    reviewRequest,
+    type RawDraft,
+    type RawValues,
+    type TransferDraft,
+} from "../transfer";
 import { estimateTron, fetchRefBlock, type TronEstimate, type TronResources } from "./api";
-import { buildTronTransfer } from "./core";
+import { buildTronTransfer, tronPayloadInfo } from "./core";
 
 export interface TronPlan {
     chain: "tron";
@@ -14,6 +25,8 @@ export interface TronPlan {
 export const TRON_LIFETIME = 30 * 60_000;
 /** 引用区块的时间和本机差太多时不用,防止网关把签名有效期拉长. */
 const REF_BLOCK_DRIFT = 60 * 60_000;
+/** 估算失败时用的 fee_limit,低于冷钱包告警的 200 TRX.页面会提示,用户可以在高级设置里改. */
+export const TRON_DEFAULT_FEE_LIMIT = 100_000_000n;
 
 /** TRC-20 的调用数据.TRON 地址的编码在核心库里,没有单独的接口,所以从预览里读回来. */
 export function tronCallData(draft: Omit<TransferDraft, "tier">): string {
@@ -31,9 +44,8 @@ export function tronCallData(draft: Omit<TransferDraft, "tier">): string {
         timestampMs: now,
         feeLimit: 1_000_000,
     });
-    return reviewRequest(request, draft.accounts)
-        .raw.map((line) => line.text)
-        .join("");
+    const review = reviewRequest(request, draft.accounts);
+    return review?.raw.map((line) => line.text).join("") ?? "";
 }
 
 export interface TronCost {
@@ -73,11 +85,15 @@ export async function transfer(draft: TransferDraft, fees: FeeSource): Promise<B
     if (feeData.kind !== "tron") throw badFees();
     const token = asset !== "native";
     const call = token ? { from, to, contract: asset, data: tronCallData(draft) } : { from, to };
-    const [estimate, block] = await Promise.all([estimateTron(network, call), fetchRefBlock(network)]);
+    const [estimate, block] = await Promise.all([
+        estimateTron(network, call).catch(() => null),
+        fetchRefBlock(network),
+    ]);
     if (Math.abs(block.timestamp - Date.now()) > REF_BLOCK_DRIFT) {
         throw new TransferError("invalid", t("引用区块的时间异常,已停止构建."));
     }
-    const feeLimit = token ? (draft.feeLimit ?? tronFeeLimit(estimate.energy, feeData.energyPrice)) : 0n;
+    const fallback = estimate ? tronFeeLimit(estimate.energy, feeData.energyPrice) : TRON_DEFAULT_FEE_LIMIT;
+    const feeLimit = token ? (draft.feeLimit ?? fallback) : 0n;
     // 过期时间从区块时间算,不依赖本机时钟.
     const expirationMs = block.timestamp + TRON_LIFETIME;
     const head = header(draft.wallet, network);
@@ -100,4 +116,23 @@ export async function transfer(draft: TransferDraft, fees: FeeSource): Promise<B
         fields: requestFields(draft, head.id, request, plan, amount.toString(), "transfer", expirationMs, true),
         claims: [],
     };
+}
+
+export function rawModes(): RawMode[] {
+    return [
+        {
+            id: "payload",
+            label: "raw_data",
+            fields: [{ id: "payload", label: "raw_data", hint: t("十六进制或 base64"), multiline: true }],
+        },
+    ];
+}
+
+/** 过期时间写在 `raw_data` 里.核心库解析不了时给一个本地期限,否则这笔永远不会结束. */
+export async function raw(draft: RawDraft, _mode: string, values: RawValues): Promise<Built> {
+    const { head, payload, request, target } = pastedRequest(draft, values);
+    const info = tronPayloadInfo(payload);
+    const plan: TronPlan = { chain: "tron", feeLimit: info?.feeLimit ?? 0 };
+    const expiresAt = info?.expirationMs ?? Date.now() + QUOTE_LIFETIME;
+    return { fields: requestFields(target, head.id, request, plan, "0", "raw", expiresAt, true), claims: [] };
 }

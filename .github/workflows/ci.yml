@@ -26,6 +26,28 @@ env:
     LLVM: /usr/bin
 
 jobs:
+    changes:
+        name: Changes
+        runs-on: ubuntu-24.04
+        timeout-minutes: 5
+        outputs:
+            crosscheck: ${{ steps.paths.outputs.crosscheck }}
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  fetch-depth: 0
+            # 比较不了时照常运行,比如手动触发和强制推送.
+            - id: paths
+              env:
+                  BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+              run: |
+                  crosscheck=true
+                  if [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2> /dev/null &&
+                      git diff --quiet "$BASE" HEAD -- tools/crosscheck .github/workflows/ci.yml Makefile rust-toolchain.toml; then
+                      crosscheck=false
+                  fi
+                  echo "crosscheck=$crosscheck" >> "$GITHUB_OUTPUT"
+
     quality:
         name: Format & Copy
         runs-on: ubuntu-24.04
@@ -105,3 +127,38 @@ jobs:
                   restore-keys: android-
             - uses: ./.github/actions/android-tools
             - run: make test-android
+
+    dependencies:
+        name: Dependency builds
+        needs: changes
+        if: needs.changes.outputs.crosscheck == 'true'
+        runs-on: ubuntu-24.04
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: |
+                      ~/.cargo/registry
+                      ~/.cargo/git
+                      ~/.cargo/bin
+                      ~/.cargo/.crates.toml
+                      ~/.cargo/.crates2.json
+                      tools/crosscheck/deps/target
+                  key: dependencies-${{ hashFiles('tools/crosscheck/deps/Cargo.lock', 'rust-toolchain.toml') }}
+                  restore-keys: dependencies-
+            - uses: ./.github/actions/android-tools
+            - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang llvm
+            - run: make check-deps-wasm check-deps-android
+
+    corpus:
+        name: Corpus
+        needs: changes
+        if: needs.changes.outputs.crosscheck == 'true'
+        # 语料入库之前不拦合并,第一批样本入库时去掉.
+        continue-on-error: true
+        runs-on: ubuntu-24.04
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - run: make corpus

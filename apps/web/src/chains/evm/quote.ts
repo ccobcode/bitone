@@ -6,7 +6,7 @@ import { abandonedHolder, firstFree } from "../../data/claims";
 import { TIERS, defineQuote, errorText, isReady, settle, type QuoteInput, type QuotePlan } from "../quote";
 import { nativeText } from "../view";
 import { fetchNonces } from "./api";
-import { evmGasLimit } from "./transfer";
+import { evmDefaultGas, evmGasLimit } from "./transfer";
 
 function gwei(raw: bigint): string {
     return `${formatUnits(raw, 9, { max: 4 })} Gwei`;
@@ -29,7 +29,7 @@ export function quote(input: QuoteInput): QuotePlan {
             },
         },
         ({ nonces, gas }, base, feeData) => {
-            const gasLimit = input.gasOverride ?? gas.data ?? (asset === "native" ? 21_000n : 65_000n);
+            const gasLimit = input.gasOverride ?? gas.data ?? evmDefaultGas(asset);
             const chainNonce = nonces.data?.get(from);
             const floor = chainNonce ? Math.max(chainNonce.latest, chainNonce.pending) : null;
             const nonce = floor === null ? null : firstFree(input.reservations, "nonce", floor);
@@ -57,7 +57,7 @@ export function quote(input: QuoteInput): QuotePlan {
                     problemNote:
                         problem === null
                             ? null
-                            : t("估算失败:{0},可以在高级设置里填写 Gas 上限.", cleanText(problem, 160)),
+                            : t("估算失败:{0},会用默认值生成请求,可以在高级设置里修改.", cleanText(problem, 160)),
                     held: floor === null ? null : abandonedHolder(input.reservations, input.txs, floor),
                     advancedLabel: nonce === null ? "" : `Nonce ${nonce}`,
                     advanced: [

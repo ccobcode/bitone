@@ -58,8 +58,8 @@ export type TxState =
     | "confirmed"
     | "failed";
 
-/** `speedup` 和 `cancel` 是替换交易,`rebuild` 是结果不明时的重建,都复用原交易的序号. */
-export type TxKind = "transfer" | "speedup" | "cancel" | "rebuild" | "create-nonce";
+/** `speedup` 和 `cancel` 是替换交易,`rebuild` 是结果不明时的重建,都复用原交易的序号.`raw` 来自原始请求页. */
+export type TxKind = "transfer" | "speedup" | "cancel" | "rebuild" | "create-nonce" | "raw";
 
 export interface TimelineEntry {
     state: TxState;

@@ -32,7 +32,7 @@ export function detailFacts(tx: TxRecord): TxFact[] {
     const rows: TxFact[] = [
         { label: t("网络"), value: networkName(tx.network) },
         { label: t("发送方"), value: tx.from, mono: true },
-        { label: t("接收方"), value: tx.to, mono: true },
+        { label: t("接收方"), value: tx.to || "—", mono: true },
         { label: t("金额"), value: amountText(tx) },
     ];
     if (tx.asset !== "native") rows.push({ label: t("代币合约"), value: tx.asset, mono: true });
@@ -90,6 +90,7 @@ export function timelineSteps(tx: TxRecord): TimelineStep[] {
 
 /** 重新发起的入口.取消和创建 nonce 账户这两种不是用户的转账,不能预填内容. */
 export function retryLink(tx: Pick<TxRecord, "id" | "kind" | "accountId" | "network" | "asset">): string {
+    if (tx.kind === "raw") return "/raw";
     if (tx.kind === "cancel" || tx.kind === "create-nonce") {
         return `/send?account=${encodeURIComponent(tx.accountId)}&network=${encodeURIComponent(tx.network)}&asset=native`;
     }

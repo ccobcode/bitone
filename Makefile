@@ -29,7 +29,7 @@ REPRO_FLAGS := --remap-path-prefix=$(CURDIR)=/src --remap-path-prefix=$(HOME)/.c
 .PHONY: dev gateway dist dist-server dist-android clean \
 	test test-rust test-web test-android test-punct check-punct fix-punct test-copy check-copy \
 	format format-check lint audit hooks \
-	wasm android-core
+	wasm android-core check-deps-wasm check-deps-android corpus
 
 # Development: 网关和网页端都在宿主机,网页端用 Vite 把 /v1 代理到网关
 dev: apps/web/node_modules wasm
@@ -117,6 +117,7 @@ lint: apps/web/node_modules
 audit:
 	$(CARGO) audit
 	$(CARGO) deny check
+	$(CARGO) deny --manifest-path tools/crosscheck/deps/Cargo.toml check licenses bans sources
 
 hooks:
 	git config core.hooksPath .githooks
@@ -132,6 +133,20 @@ android-core:
 		$(CARGO) ndk -t arm64-v8a -t x86_64 -P 31 -o $(MOBILE)/jniLibs build -p bitone-ffi --release
 	$(CARGO) run -p bitone-ffi --bin uniffi-bindgen -- generate --library \
 		target/aarch64-linux-android/release/libbitone_ffi.so --language kotlin --out-dir $(MOBILE)/java
+
+# 标准列出的运行时依赖还没进产物,先单独验证能在 wasm 和 Android 上构建.
+check-deps-wasm:
+	cd tools/crosscheck/deps && CC_wasm32_unknown_unknown=$(LLVM)/clang AR_wasm32_unknown_unknown=$(LLVM)/llvm-ar \
+		$(CARGO) build --locked --target wasm32-unknown-unknown
+
+check-deps-android:
+	cd tools/crosscheck/deps && ANDROID_NDK_HOME=$(ANDROID_HOME)/ndk/29.0.14206865 \
+		$(CARGO) ndk -t arm64-v8a -P 31 build --locked
+
+# 对照工具有自己的工具链,所以在它的目录里取 cargo.
+corpus:
+	cd tools/crosscheck && PATH=$$(rustup which cargo | xargs dirname):$$PATH cargo test --locked
+	cd tools/crosscheck && PATH=$$(rustup which cargo | xargs dirname):$$PATH cargo run --locked
 
 apps/web/node_modules: apps/web/package.json apps/web/pnpm-lock.yaml
 	pnpm -C apps/web install --frozen-lockfile

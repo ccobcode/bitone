@@ -1,9 +1,10 @@
 // TRON 的报价.带宽和能量够用时不花 TRX,不够时燃烧.
 import { t } from "../../core/i18n";
+import { cleanText } from "../../core/text";
 import { defineQuote, errorText, isReady, settle, type QuoteInput, type QuotePlan, type QuoteRow } from "../quote";
 import { nativeText } from "../view";
 import { estimateTron, fetchResources } from "./api";
-import { tronCallData, tronCost, tronFeeLimit } from "./transfer";
+import { TRON_DEFAULT_FEE_LIMIT, tronCallData, tronCost, tronFeeLimit } from "./transfer";
 
 export function quote(input: QuoteInput): QuotePlan {
     const { network, from, to, amount, asset } = input;
@@ -43,7 +44,11 @@ export function quote(input: QuoteInput): QuotePlan {
                     : null;
             const feeLimit =
                 input.feeLimitOverride ??
-                (estimate && prices ? tronFeeLimit(estimate.energy, prices.energyPrice) : null);
+                (estimate && prices
+                    ? tronFeeLimit(estimate.energy, prices.energyPrice)
+                    : estimated.isError
+                      ? TRON_DEFAULT_FEE_LIMIT
+                      : null);
             const rows: QuoteRow[] = [
                 { label: t("带宽"), value: estimate?.bandwidth.toString() ?? "—" },
                 { label: t("能量"), value: estimate?.energy.toString() ?? "—" },
@@ -78,6 +83,10 @@ export function quote(input: QuoteInput): QuotePlan {
                     rows,
                     fee: cost?.total ?? null,
                     problem,
+                    problemNote:
+                        token && problem && estimated.isError
+                            ? t("估算失败:{0},会用默认值生成请求,可以在高级设置里修改.", cleanText(problem, 160))
+                            : null,
                     advancedLabel: t("过期 30 分钟"),
                     advanced: [
                         { id: "adv-exp", label: t("过期时间"), value: t("30 分钟"), editable: false },

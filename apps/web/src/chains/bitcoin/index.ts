@@ -8,7 +8,7 @@ import { EXECUTION_FAILED } from "../view";
 import { parseFees } from "./api";
 import { deriveAddress } from "./core";
 import { quote } from "./quote";
-import { replace, spentFlags, transfer } from "./transfer";
+import { raw, rawModes, replace, spentFlags, transfer } from "./transfer";
 import { view } from "./view";
 
 export const bitcoin: ChainSpec = {
@@ -53,6 +53,8 @@ export const bitcoin: ChainSpec = {
     discoveryNotice: () => t("Bitcoin 余额可能不全."),
     transfer,
     replace: { build: replace },
+    rawModes,
+    raw,
     quote,
     view,
     BroadcastCard: SpeedCard,

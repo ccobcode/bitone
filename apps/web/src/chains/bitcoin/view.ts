@@ -7,6 +7,12 @@ function fee(tx: TxRecord): TxFact {
     return { label: t("手续费"), value: nativeText(tx, BigInt(planOf(tx, "bitcoin").fee)) };
 }
 
+/** 收款加找零.取消交易只有找零. */
+function outputCount(tx: TxRecord): number {
+    const { payments, changePath } = planOf(tx, "bitcoin");
+    return (tx.kind === "cancel" ? 0 : (payments?.length ?? 1)) + (changePath ? 1 : 0);
+}
+
 function finality(tx: TxRecord): Finality {
     const reached = finalityState(tx).done ? 6 : Math.min(tx.confirmations, 6);
     return {
@@ -29,7 +35,7 @@ export const view: ChainView = {
         return [
             common,
             { label: t("输入"), value: t("{0} 个", plan.inputs.length) },
-            { label: t("输出"), value: t("{0} 个", plan.changePath && tx.kind !== "cancel" ? 2 : 1) },
+            { label: t("输出"), value: t("{0} 个", outputCount(tx)) },
             { label: t("找零路径"), value: plan.changePath ?? t("无找零"), mono: true },
         ];
     },

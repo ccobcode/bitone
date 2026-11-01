@@ -5,6 +5,7 @@ import init, {
     accountAddress,
     accountSpecs,
     addressFrame,
+    buildPayloadRequest as wasmBuildPayload,
     initSync,
     networkLabel,
     networks,
@@ -195,6 +196,14 @@ export interface RequestHeader {
     fingerprint: string;
     network: string;
 }
+
+export interface PayloadRequest extends RequestHeader {
+    path: string;
+    payload: Uint8Array;
+}
+
+/** 把粘贴的载荷放进请求,这里不解析. */
+export const buildPayloadRequest = (args: PayloadRequest): Uint8Array => wasmBuildPayload(args);
 
 /** 校验清单包,返回版本号.网页端不知道冷钱包现在的版本,版本回退由冷钱包判断. */
 export function manifestPackageVersion(bytes: Uint8Array): number {
