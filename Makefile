@@ -114,8 +114,9 @@ lint: apps/web/node_modules
 	$(CARGO) clippy --workspace --all-targets -- -D warnings
 	pnpm -C apps/web exec biome lint
 
+# crypto-bigint 0.5 只经 alloy 关掉的可选特性 k256 进入锁文件,不编译,所以 RUSTSEC-2026-0387 不影响产物.
 audit:
-	$(CARGO) audit
+	$(CARGO) audit --ignore RUSTSEC-2026-0387
 	$(CARGO) deny check
 	$(CARGO) deny --manifest-path tools/crosscheck/deps/Cargo.toml check licenses bans sources
 	$(CARGO) deny --manifest-path tools/protogen/Cargo.toml check licenses bans sources
