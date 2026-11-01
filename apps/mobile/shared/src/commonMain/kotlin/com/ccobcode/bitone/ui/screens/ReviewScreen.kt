@@ -126,7 +126,10 @@ fun ReviewScreen(flow: WalletFlow) {
             }
             ReviewStyle.Unknown -> {
                 if (review.amount != null) InlineAmount(review, network?.icon)
-                Counterparty(review, leading = { UnlistedIcon(24.dp) }) { Chip("未知合约", c.warnSoft, c.warn) }
+                val contract = network?.icon != Network.Bitcoin
+                Counterparty(review, leading = { UnlistedIcon(24.dp) }) {
+                    if (contract) Chip("未知合约", c.warnSoft, c.warn)
+                }
             }
             ReviewStyle.Permission -> {
                 // 权限变更可以和转账打包在一笔交易里,金额不能藏起来.

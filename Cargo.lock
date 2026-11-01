@@ -347,6 +347,7 @@ dependencies = [
  "ed25519-dalek",
  "minicbor",
  "p256",
+ "psbt-v2",
  "qrcode",
  "serde",
  "serde_json",
@@ -402,6 +403,7 @@ dependencies = [
  "hex-literal",
  "hmac",
  "p256",
+ "psbt-v2",
  "serde_json",
  "sha2",
  "thiserror",
@@ -1423,6 +1425,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
+name = "miniscript"
+version = "12.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06a2f93613888f7d069f00cb94f83dab82f01f78a50c9935814a2547fa30ceba"
+dependencies = [
+ "bech32",
+ "bitcoin",
+]
+
+[[package]]
 name = "mio"
 version = "1.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1592,6 +1604,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "psbt-v2"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e075616cae99e29d70960a6374c2757dff4dd6b646dd0398ce1012666231c7aa"
+dependencies = [
+ "bitcoin",
+ "miniscript",
 ]
 
 [[package]]

@@ -1,16 +1,20 @@
 //! Bitcoin 交易:构建 PSBT,核对,核验.见 docs/04-security.md 第 2.6,2.7 节.
 //!
-//! PSBT 来自网页端,里面的声明都不可信.路径和地址靠重新派生,金额靠前序交易的 txid,
-//! 有一项对不上就禁止签名.`prepare` 是核对,签名,核验共用的入口,三处看到的输入不可能不一致.
+//! PSBT 来自网页端,里面的声明都不可信.`prepare` 只查第 1.1 节的拒绝情况,它是核对,签名,核验共用的入口,
+//! 三处看到的输入不可能不一致.`review` 把树交给策略,路径和地址靠重新派生,金额靠前序交易的 txid.
 
+use crate::decode::{self, Node, NodeId, PsbtWalker, ScriptClass, address_network, parse};
 use crate::keys::PublicKeys;
-use crate::path::{DerivationPath, classify, validate_for_network};
-use crate::policy;
+use crate::manifest::Asset;
+use crate::path::{
+    DerivationPath, bitcoin_path_mode, check_bitcoin_path, classify, is_usual_bitcoin_path, validate_for_network,
+};
+use crate::policy::{self, BitcoinFacts, OutputFact, OwnEntry, SpendFact};
 use crate::request::{KIND_TRANSACTION, SignRequest, SignResponse};
-use crate::review::{ActionView, AmountView, Forbid, RawLine, Review, ReviewBuilder, Risk, Row};
+use crate::review::{ActionView, AmountView, Forbid, RawLine, Review, Risk, Row};
 use crate::tx::{ReviewContext, Verified};
 use crate::units::format_units;
-use crate::{AccountKind, Chain, Error, Network};
+use crate::{AccountKind, Chain, Error, Mode, Network};
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::bip32::{ChildNumber, DerivationPath as BipPath, Fingerprint, KeySource};
 use bitcoin::consensus::{deserialize, serialize};
@@ -27,6 +31,7 @@ use bitcoin::{
     taproot, transaction,
 };
 use serde::Serialize;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 
@@ -127,7 +132,7 @@ struct Origin {
     leaves: usize,
 }
 
-/// 本钱包的输入.路径已过白名单,声明的公钥能算出输入实际的 script.
+/// 本钱包的输入.声明的公钥能算出输入实际的 script,路径属于本钱包要靠重新派生.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OwnInput {
     pub path: DerivationPath,
@@ -146,11 +151,22 @@ pub struct PreparedInput {
     pub own: Option<OwnInput>,
 }
 
+/// 声明属于本钱包的输出.声明的公钥能算出它的 script,路径属于本钱包要靠重新派生.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OwnOutput {
+    pub path: DerivationPath,
+    pub kind: AccountKind,
+}
+
 /// 解析并确认过的 PSBT.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Prepared {
     pub psbt: Psbt,
     pub inputs: Vec<PreparedInput>,
+    /// 和输出一一对应.
+    pub outputs: Vec<Option<OwnOutput>>,
+    /// 有输入的金额没有经过前序交易确认,全部签名也不能替它担保.
+    pub fee_unconfirmed: bool,
 }
 
 fn bitcoin_network(network: Network) -> Option<bitcoin::Network> {
@@ -232,7 +248,7 @@ impl Origin {
     }
 }
 
-/// 金额和 script 只从前序交易取,取不到时只有 Taproot 可以先用声明的值.
+/// 金额和 script 优先从前序交易取,取不到时只有见证输入可以先用声明的值.
 /// 返回的布尔值表示这个值有没有经过前序交易确认.
 fn spent_output(txin: &TxIn, input: &Input) -> Result<(TxOut, bool), Forbid> {
     if let Some(prev) = &input.non_witness_utxo {
@@ -249,7 +265,7 @@ fn spent_output(txin: &TxIn, input: &Input) -> Result<(TxOut, bool), Forbid> {
         return Ok((out.clone(), true));
     }
     match &input.witness_utxo {
-        Some(out) if out.script_pubkey.is_p2tr() => Ok((out.clone(), false)),
+        Some(out) if out.script_pubkey.is_witness_program() || out.script_pubkey.is_p2sh() => Ok((out.clone(), false)),
         _ => Err(Forbid::MissingPrevTx),
     }
 }
@@ -267,18 +283,27 @@ fn input_sighash(input: &Input, kind: AccountKind, index: usize, outputs: usize)
     Ok(sighash)
 }
 
-fn own_input(
-    origin: Origin,
-    input: &Input,
-    index: usize,
-    outputs: usize,
-    network: Network,
-) -> Result<OwnInput, Forbid> {
-    let info = validate_for_network(&origin.path, network).map_err(|e| match e {
-        Error::PathNetworkMismatch => Forbid::PathNetworkMismatch,
-        _ => Forbid::PathNotAllowed,
-    })?;
-    origin.check_form(info.kind)?;
+/// 本钱包能签的地址类型由 script 决定,路径不设白名单,说明不了类型.
+fn spend_kind(script: &Script) -> Option<AccountKind> {
+    match ScriptClass::of(script) {
+        ScriptClass::P2wpkh => Some(AccountKind::SegWit),
+        ScriptClass::P2tr => Some(AccountKind::Taproot),
+        ScriptClass::P2sh => Some(AccountKind::NestedSegWit),
+        ScriptClass::P2pkh => Some(AccountKind::Legacy),
+        ScriptClass::P2wsh
+        | ScriptClass::P2pk
+        | ScriptClass::BareMultisig
+        | ScriptClass::Anchor
+        | ScriptClass::OpReturn
+        | ScriptClass::FutureWitness
+        | ScriptClass::Other => None,
+    }
+}
+
+fn own_input(origin: Origin, input: &Input, prevout: &TxOut, index: usize, outputs: usize) -> Result<OwnInput, Forbid> {
+    // 不认识的脚本算不出 sighash 的原文,签名无法完成.
+    let kind = spend_kind(&prevout.script_pubkey).ok_or(Forbid::Unsupported)?;
+    origin.check_form(kind)?;
     match origin.key {
         StatedKey::XOnly(key) => {
             if input.tap_merkle_root.is_some() || input.tap_internal_key.is_some_and(|internal| internal != key) {
@@ -286,7 +311,7 @@ fn own_input(
             }
         }
         StatedKey::Full(key) => {
-            let wrapped = info.kind == AccountKind::NestedSegWit;
+            let wrapped = kind == AccountKind::NestedSegWit;
             if wrapped
                 && input
                     .redeem_script
@@ -297,25 +322,72 @@ fn own_input(
             }
         }
     }
-    let sighash = input_sighash(input, info.kind, index, outputs)?;
-    Ok(OwnInput {
+    let sighash = input_sighash(input, kind, index, outputs)?;
+    let own = OwnInput {
         path: origin.path,
-        kind: info.kind,
+        kind,
         sighash,
         key: origin.key,
-    })
+    };
+    if own.key.script(kind)? != prevout.script_pubkey {
+        return Err(Forbid::AddressMismatch);
+    }
+    Ok(own)
+}
+
+/// 带本钱包指纹的输出.声明的公钥算不出输出的 script 时拒绝,不能当成外部输出放过去.
+fn own_output(
+    out: &TxOut,
+    meta: &Output,
+    network: Option<Network>,
+    fingerprint: [u8; 4],
+) -> Result<Option<OwnOutput>, Forbid> {
+    let Some(origin) = origin(&meta.bip32_derivation, &meta.tap_key_origins, fingerprint)? else {
+        return Ok(None);
+    };
+    check_bitcoin_path(&origin.path, network).map_err(|_| Forbid::AddressMismatch)?;
+    let kind = spend_kind(&out.script_pubkey).ok_or(Forbid::AddressMismatch)?;
+    origin.check_form(kind)?;
+    if meta.tap_tree.is_some() {
+        return Err(Forbid::AddressMismatch);
+    }
+    if let (StatedKey::XOnly(key), Some(internal)) = (origin.key, meta.tap_internal_key)
+        && key != internal
+    {
+        return Err(Forbid::AddressMismatch);
+    }
+    if origin.key.script(kind)? != out.script_pubkey {
+        return Err(Forbid::AddressMismatch);
+    }
+    Ok(Some(OwnOutput {
+        path: origin.path,
+        kind,
+    }))
+}
+
+/// 手续费能不能确认.SegWit 签名只承诺自身输入的金额,这就是 CVE-2020-14199.
+/// 没有前序交易的输入不是 Taproot,或者别的输入的签名不承诺它的金额,手续费都只是声明.
+fn fee_unconfirmed(inputs: &[PreparedInput]) -> bool {
+    let weak = |index: usize| {
+        inputs
+            .iter()
+            .enumerate()
+            .any(|(other, input)| other != index && input.own.as_ref().is_some_and(|own| !own.vouches_for_all()))
+    };
+    inputs
+        .iter()
+        .enumerate()
+        .any(|(index, input)| !input.proven && (!input.prevout.script_pubkey.is_p2tr() || weak(index)))
 }
 
 /// 解析 PSBT,找出本钱包的输入,确认每个输入的金额和 script.
 ///
 /// 这里只看 PSBT 自身.公钥对不对由调用方负责:`review` 用保存的公钥重新派生,
 /// 签名时用私钥派生,`verify` 没有账户公钥,靠签名本身.
-pub fn prepare(network: Network, payload: &[u8], fingerprint: [u8; 4]) -> Result<Prepared, Forbid> {
-    let psbt = Psbt::deserialize(payload).map_err(|_| Forbid::ParseFailed)?;
-    // 解析器会忽略末尾多余的字节,重新编码必须回到完全相同的内容.
-    if psbt.serialize() != payload {
-        return Err(Forbid::ParseFailed);
-    }
+pub fn prepare(network: impl Into<Option<Network>>, payload: &[u8], fingerprint: [u8; 4]) -> Result<Prepared, Forbid> {
+    let network = network.into();
+    let parsed = parse(payload).map_err(|_| Forbid::ParseFailed)?;
+    let psbt = parsed.ok_or(Forbid::ParseFailed)?.psbt;
     let tx = &psbt.unsigned_tx;
     let outpoints: HashSet<OutPoint> = tx.input.iter().map(|txin| txin.previous_output).collect();
     if tx.output.is_empty() || outpoints.len() != tx.input.len() {
@@ -333,34 +405,32 @@ pub fn prepare(network: Network, payload: &[u8], fingerprint: [u8; 4]) -> Result
 
     let mut inputs = Vec::with_capacity(tx.input.len());
     for (index, ((txin, input), origin)) in tx.input.iter().zip(&psbt.inputs).zip(origins).enumerate() {
-        let own = origin
-            .map(|o| own_input(o, input, index, tx.output.len(), network))
-            .transpose()?;
-        let (prevout, proven) = spent_output(txin, input)?;
-        if let Some(own) = &own
-            && own.key.script(own.kind)? != prevout.script_pubkey
-        {
-            return Err(Forbid::AddressMismatch);
+        if let Some(origin) = &origin {
+            check_bitcoin_path(&origin.path, network).map_err(|_| Forbid::PathNetworkMismatch)?;
         }
+        let (prevout, proven) = spent_output(txin, input)?;
+        let own = origin
+            .map(|origin| own_input(origin, input, &prevout, index, tx.output.len()))
+            .transpose()?;
         inputs.push(PreparedInput { prevout, proven, own });
     }
+    let outputs = tx
+        .output
+        .iter()
+        .zip(&psbt.outputs)
+        .map(|(out, meta)| own_output(out, meta, network, fingerprint))
+        .collect::<Result<Vec<_>, _>>()?;
 
     // 任何一个有效签名都必须来自一次真实的展示.Taproot 签名承诺全部输入的金额和 script,
     // 声明有假它就无效.ECDSA 和 ANYONECANPAY 只承诺自己这个输入,别的输入造假时依然有效.
-    // "是不是 Taproot"本身也只是 witness_utxo 的声明:把用户的 SegWit 币说成 Taproot,
-    // 分两次各骗一个 ECDSA 签名再拼起来,就是 CVE-2020-14199.
-    // 所以只要有这样的签名,其余输入都要有前序交易,Taproot 也不例外.
-    for (index, input) in inputs.iter().enumerate() {
-        let weak = input.own.as_ref().is_some_and(|own| !own.vouches_for_all());
-        let unproven = inputs
-            .iter()
-            .enumerate()
-            .any(|(other, input)| other != index && !input.proven);
-        if weak && unproven {
-            return Err(Forbid::MissingPrevTx);
-        }
-    }
-    Ok(Prepared { psbt, inputs })
+    // "是不是 Taproot"本身也只是 witness_utxo 的声明.这些情况可以签,但手续费无法确认,类别是无法识别.
+    let fee_unconfirmed = fee_unconfirmed(&inputs);
+    Ok(Prepared {
+        psbt,
+        inputs,
+        outputs,
+        fee_unconfirmed,
+    })
 }
 
 /// 累加金额.超过总量上限的值不可能是真的.
@@ -372,6 +442,21 @@ fn total(mut values: impl Iterator<Item = Amount>) -> Result<Amount, Forbid> {
 }
 
 impl Prepared {
+    /// 本机不认识网络时,私钥类型只能来自路径.有一条主网路径就按主网,不能确认是测试网时都按主网.
+    fn key_mode(&self) -> Option<Mode> {
+        let inputs = self
+            .inputs
+            .iter()
+            .filter_map(|input| input.own.as_ref().map(|own| &own.path));
+        let outputs = self.outputs.iter().flatten().map(|own| &own.path);
+        let modes: Vec<Mode> = inputs.chain(outputs).filter_map(bitcoin_path_mode).collect();
+        modes
+            .iter()
+            .copied()
+            .find(|mode| *mode == Mode::Mainnet)
+            .or(modes.first().copied())
+    }
+
     /// 输入总额减输出总额.
     pub fn fee(&self) -> Result<u64, Forbid> {
         let spent = total(self.inputs.iter().map(|i| i.prevout.value))?;
@@ -396,7 +481,7 @@ impl Prepared {
 }
 
 /// `code` 是 SegWit 的 P2WPKH script,或旧式的 scriptPubKey.Taproot 不用它.
-fn signature_hash(
+pub fn signature_hash(
     tx: &Transaction,
     index: usize,
     prevouts: &[TxOut],
@@ -433,81 +518,43 @@ fn kind_label(kind: AccountKind) -> &'static str {
     }
 }
 
-fn address_text(script: &Script, network: Network) -> Option<String> {
-    let params = bitcoin_network(network)?;
-    Address::from_script(script, params).ok().map(|a| a.to_string())
+fn address_text(script: &Script, mode: Mode) -> Option<String> {
+    Address::from_script(script, address_network(mode))
+        .ok()
+        .map(|a| a.to_string())
 }
 
-fn derived_script(ctx: &ReviewContext, path: &DerivationPath, kind: AccountKind) -> Result<ScriptBuf, Forbid> {
-    let key = ctx.keys.secp256k1(path)?;
+/// 用保存的公钥重新算出 script.算不一样时拒绝.没有导出的硬化路径算不出来,返回假,解锁后用私钥核对.
+fn rederives(ctx: &ReviewContext, path: &DerivationPath, kind: AccountKind, script: &Script) -> Result<bool, Forbid> {
+    let key = match ctx.keys.secp256k1(path) {
+        Ok(key) => key,
+        Err(Forbid::PathNotAllowed) => return Ok(false),
+        Err(_) => return Err(Forbid::AddressMismatch),
+    };
     let key = PublicKey::from_slice(&key).map_err(|_| Forbid::AddressMismatch)?;
-    script_for(kind, &key)
+    if script_for(kind, &key)? != *script {
+        return Err(Forbid::AddressMismatch);
+    }
+    Ok(true)
 }
 
-/// 输出是不是本钱包的找零.带本钱包指纹却对不上的输出一律拒绝,不能当成外部输出放过去.
-/// 返回找零索引.
-fn change_index(out: &TxOut, meta: &Output, network: Network, ctx: &ReviewContext) -> Result<Option<u32>, Forbid> {
-    let Some(origin) = origin(&meta.bip32_derivation, &meta.tap_key_origins, ctx.keys.fingerprint)? else {
-        return Ok(None);
-    };
-    let kind = validate_for_network(&origin.path, network)
-        .map_err(|_| Forbid::AddressMismatch)?
-        .kind;
-    origin.check_form(kind)?;
-    let [.., 1, index] = origin.path.0.as_slice() else {
-        return Err(Forbid::AddressMismatch);
-    };
-    if meta.tap_tree.is_some() {
-        return Err(Forbid::AddressMismatch);
-    }
-    if let (StatedKey::XOnly(key), Some(internal)) = (origin.key, meta.tap_internal_key)
-        && key != internal
-    {
-        return Err(Forbid::AddressMismatch);
-    }
-    let derived = derived_script(ctx, &origin.path, kind).map_err(|_| Forbid::AddressMismatch)?;
-    if derived != out.script_pubkey {
-        return Err(Forbid::AddressMismatch);
-    }
-    Ok(Some(*index))
-}
-
-/// 花费这种输入要加的重量.解锁脚本每字节算 4,见证每字节算 1,签名按最长算.
+/// 花费这种输入要加的重量.
 fn spend_weight(kind: AccountKind) -> u64 {
-    match kind {
-        AccountKind::Taproot => 66,
-        AccountKind::NestedSegWit => 23 * 4 + 108,
-        AccountKind::Legacy => 107 * 4,
-        AccountKind::SegWit | AccountKind::Single => 108,
-    }
+    decode::spend_weight(match kind {
+        AccountKind::Taproot => ScriptClass::P2tr,
+        AccountKind::NestedSegWit => ScriptClass::P2sh,
+        AccountKind::Legacy => ScriptClass::P2pkh,
+        AccountKind::SegWit | AccountKind::Single => ScriptClass::P2wpkh,
+    })
 }
 
-/// 其他钱包的输入只知道 script,看不出类型的按 SegWit 估算.
-fn script_kind(script: &Script) -> AccountKind {
-    if script.is_p2tr() {
-        AccountKind::Taproot
-    } else if script.is_p2sh() {
-        AccountKind::NestedSegWit
-    } else if script.is_p2pkh() {
-        AccountKind::Legacy
-    } else {
-        AccountKind::SegWit
-    }
-}
-
-/// 签名后的虚拟大小.签名长度有 1 字节浮动,所以费率是估算值.
+/// 签名后的虚拟大小.
 fn estimated_vsize(prepared: &Prepared) -> u64 {
-    let spending: u64 = prepared
+    let spent = prepared
         .inputs
         .iter()
-        .map(|input| spend_weight(script_kind(&input.prevout.script_pubkey)))
-        .sum();
-    let witness = prepared
-        .inputs
-        .iter()
-        .any(|i| script_kind(&i.prevout.script_pubkey) != AccountKind::Legacy);
-    let base = prepared.psbt.unsigned_tx.weight().to_wu();
-    (base + spending + if witness { 2 } else { 0 }).div_ceil(4)
+        .map(|input| input.prevout.script_pubkey.as_script());
+    decode::estimated_vsize(&prepared.psbt.unsigned_tx, spent)
 }
 
 fn joined(labels: impl Iterator<Item = String>) -> String {
@@ -520,13 +567,97 @@ fn joined(labels: impl Iterator<Item = String>) -> String {
     unique.join(",")
 }
 
-pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forbid> {
-    if request.kind != KIND_TRANSACTION {
-        return Err(Forbid::RawHashSigning);
-    }
-    let prepared = prepare(network, &request.payload, ctx.keys.fingerprint)?;
+/// 重新派生之后的事实.策略只看它和树.
+fn facts(prepared: &Prepared, ctx: &ReviewContext, mode: Mode) -> Result<BitcoinFacts, Forbid> {
+    let spends = prepared
+        .inputs
+        .iter()
+        .map(|input| {
+            let Some(own) = &input.own else {
+                return Ok(SpendFact::default());
+            };
+            Ok(SpendFact {
+                own: Some(OwnEntry {
+                    path: own.path.to_string(),
+                    verified: rederives(ctx, &own.path, own.kind, &input.prevout.script_pubkey)?,
+                    usual: is_usual_bitcoin_path(&own.path, own.kind),
+                }),
+                unbound_sighash: (!own.sighash.commits_everything()).then(|| own.sighash.label()),
+            })
+        })
+        .collect::<Result<Vec<_>, Forbid>>()?;
+    let outputs = prepared
+        .psbt
+        .unsigned_tx
+        .output
+        .iter()
+        .zip(&prepared.outputs)
+        .map(|(out, own)| {
+            let sats = out.value.to_sat();
+            let Some(own) = own else {
+                return Ok(OutputFact {
+                    sats,
+                    ..OutputFact::default()
+                });
+            };
+            let usual = is_usual_bitcoin_path(&own.path, own.kind) && matches!(own.path.0.as_slice(), [.., 1, _]);
+            let verified = rederives(ctx, &own.path, own.kind, &out.script_pubkey)?;
+            let change_index = match own.path.0.as_slice() {
+                [.., index] if usual && verified => Some(*index),
+                _ => None,
+            };
+            Ok(OutputFact {
+                own: Some(OwnEntry {
+                    path: own.path.to_string(),
+                    verified,
+                    usual,
+                }),
+                sats,
+                change_index,
+            })
+        })
+        .collect::<Result<Vec<_>, Forbid>>()?;
+    Ok(BitcoinFacts {
+        spends,
+        outputs,
+        fee: prepared.fee()?,
+        fee_unconfirmed: prepared.fee_unconfirmed,
+        highest_change: ctx.highest_change.of(mode),
+    })
+}
+
+/// 旧的摘要字段,第 9 节删除.类别和告警都来自策略,这里只把内容排成行.
+struct Summary {
+    amount: AmountView,
+    counterparty: Option<String>,
+    actions: Vec<ActionView>,
+    rows: Vec<Row>,
+}
+
+/// 第 `index` 个输出节点的类别.
+fn output_risk(decoded: &decode::Decoded, findings: &BTreeMap<NodeId, policy::Finding>, index: usize) -> Risk {
+    let outputs: Vec<(NodeId, &Node, &str)> = decoded
+        .actions()
+        .into_iter()
+        .filter(|(_, _, kind)| kind.starts_with("output-"))
+        .collect();
+    outputs
+        .get(index)
+        .and_then(|(id, _, _)| findings.get(id))
+        .and_then(|finding| finding.risk)
+        .unwrap_or(Risk::Unknown)
+}
+
+fn summary(
+    prepared: &Prepared,
+    facts: &BitcoinFacts,
+    native: &Asset,
+    known: Option<Network>,
+    mode: Mode,
+    network_label: &str,
+    risk_of: impl Fn(usize) -> Risk,
+) -> Result<Summary, Forbid> {
     let tx = &prepared.psbt.unsigned_tx;
-    let native = ctx.native(network);
     let coin = |value: u64| {
         format!(
             "{} {}",
@@ -537,152 +668,161 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
     let amount_view = |value: u64| AmountView {
         text: format_units(&value.to_string(), native.decimals),
         symbol: Some(native.symbol.clone()),
-        asset: Some(native.key()),
+        asset: known.map(|_| native.key()),
         unlimited: false,
     };
-    let mut builder = ReviewBuilder::default();
 
     let mut foreign = Vec::new();
     let mut payer_rows = Vec::new();
     let mut unbound_actions = Vec::new();
-    for (index, input) in prepared.inputs.iter().enumerate() {
+    for input in &prepared.inputs {
         let Some(own) = &input.own else {
             foreign.push(input.prevout.value.to_sat());
             continue;
         };
-        if derived_script(ctx, &own.path, own.kind)? != input.prevout.script_pubkey {
-            return Err(Forbid::AddressMismatch);
-        }
-        // 协议允许,可以签.页面上的收款方和金额不受这个签名保护,所以是无法识别.
         if !own.sighash.commits_everything() {
-            builder.alerts.push(format!(
-                "第 {} 个输入的 sighash 是 {},这个签名不绑定页面显示的全部收款方和金额,签名后它们可以被改动",
-                index + 1,
-                own.sighash.label()
-            ));
             unbound_actions.push(ActionView {
                 risk: Risk::Unknown,
                 title: "签名不绑定全部内容".to_string(),
                 rows: vec![Row::text("sighash", own.sighash.label())],
             });
         }
-        let address = address_text(&input.prevout.script_pubkey, network).ok_or(Forbid::AddressMismatch)?;
+        let address = address_text(&input.prevout.script_pubkey, mode).ok_or(Forbid::AddressMismatch)?;
         payer_rows.push(Row::mono("付款账户", address));
         payer_rows.push(Row::mono("派生路径", own.path.to_string()));
         payer_rows.push(Row::text("输入金额", coin(input.prevout.value.to_sat())));
     }
-    if !foreign.is_empty() {
-        builder.alerts.push(format!("有 {} 个输入不属于本钱包", foreign.len()));
-    }
-    let fee = prepared.fee()?;
 
     let mut sent = 0u64;
     let mut returned = 0u64;
     let mut external = Vec::new();
     let mut change_actions = Vec::new();
-    let mut highest = None;
-    for (out, meta) in tx.output.iter().zip(&prepared.psbt.outputs) {
+    for (index, (out, fact)) in tx.output.iter().zip(&facts.outputs).enumerate() {
         let value = out.value.to_sat();
-        let text = address_text(&out.script_pubkey, network);
-        match change_index(out, meta, network, ctx)? {
-            Some(index) => {
-                returned += value;
-                highest = highest.max(Some(index));
-                if index > ctx.highest_change.of(network).saturating_add(policy::CHANGE_GAP) {
-                    builder
-                        .alerts
-                        .push(format!("找零索引 {index} 跳得太远,资金可能落到不容易找回的位置"));
-                }
-                let address = text.ok_or(Forbid::AddressMismatch)?;
-                change_actions.push(ActionView {
-                    risk: Risk::Transfer,
-                    title: "找零".to_string(),
-                    rows: vec![Row::mono("找零地址", address), Row::text("金额", coin(value))],
-                });
-            }
-            None => {
-                sent += value;
-                if text.is_none() {
-                    builder.alerts.push("有输出不是标准地址,请核对原始脚本".to_string());
-                }
-                let shown = text.unwrap_or_else(|| out.script_pubkey.as_bytes().to_lower_hex_string());
-                external.push(ActionView {
-                    risk: Risk::Transfer,
-                    title: Risk::Transfer.label().to_string(),
-                    rows: vec![Row::mono("收款地址", shown), Row::text("金额", coin(value))],
-                });
-            }
-        }
-    }
-    builder.change_index = highest;
-
-    let over_percent = u128::from(fee) * 100 > u128::from(sent) * u128::from(policy::BITCOIN_FEE_PERCENT);
-    if over_percent || u128::from(fee) > policy::fee_ceiling(network) {
-        builder.alerts.push("手续费明显偏高".to_string());
-    }
-
-    match external.as_slice() {
-        [] => {
-            builder.amount = Some(amount_view(returned));
-            builder.actions.push(ActionView {
+        let text = address_text(&out.script_pubkey, mode).filter(|_| ScriptClass::of(&out.script_pubkey).has_address());
+        if fact.own.as_ref().is_some_and(|own| own.verified) {
+            returned += value;
+            let address = text.ok_or(Forbid::AddressMismatch)?;
+            change_actions.push(ActionView {
                 risk: Risk::Transfer,
-                title: "转给自己".to_string(),
-                rows: vec![Row::text("金额", coin(returned))],
+                title: "找零".to_string(),
+                rows: vec![Row::mono("找零地址", address), Row::text("金额", coin(value))],
+            });
+        } else {
+            sent += value;
+            let shown = text.unwrap_or_else(|| out.script_pubkey.as_bytes().to_lower_hex_string());
+            let risk = risk_of(index);
+            external.push(ActionView {
+                risk,
+                title: risk.label().to_string(),
+                rows: vec![Row::mono("收款地址", shown), Row::text("金额", coin(value))],
             });
         }
-        [only] => {
-            builder.amount = Some(amount_view(sent));
-            builder.counterparty_label = Some("收款地址".to_string());
-            builder.counterparty = Some(only.rows[0].value.clone());
-        }
-        // 总额盖不住分配:小额给正确地址,大额给攻击者,总额不变.
-        many => {
-            builder.amount = Some(amount_view(sent));
-            builder
-                .alerts
-                .push(format!("这笔交易有 {} 个收款方,请逐个核对", many.len()));
-        }
     }
-    builder.actions.append(&mut external);
-    builder.actions.append(&mut change_actions);
-    builder.actions.append(&mut unbound_actions);
+
+    let counterparty = match external.as_slice() {
+        [only] => Some(only.rows[0].value.clone()),
+        [] | [_, _, ..] => None,
+    };
+    let amount = amount_view(if external.is_empty() { returned } else { sent });
+    let mut actions = Vec::new();
+    if external.is_empty() {
+        actions.push(ActionView {
+            risk: Risk::Transfer,
+            title: "转给自己".to_string(),
+            rows: vec![Row::text("金额", coin(returned))],
+        });
+    }
+    actions.append(&mut external);
+    actions.append(&mut change_actions);
+    actions.append(&mut unbound_actions);
 
     let owns = || prepared.inputs.iter().filter_map(|input| input.own.as_ref());
-    builder.rows.push(Row::text("网络", network.label()));
-    builder.rows.append(&mut payer_rows);
-    builder.rows.push(Row::text(
+    let mut rows = vec![Row::text("网络", network_label)];
+    rows.append(&mut payer_rows);
+    rows.push(Row::text(
         "地址类型",
         joined(owns().map(|own| kind_label(own.kind).to_string())),
     ));
     if !foreign.is_empty() {
         let value = foreign.iter().sum::<u64>();
-        builder.rows.push(Row::text(
+        rows.push(Row::text(
             "其他钱包的输入",
             format!("{} 个,共 {}", foreign.len(), coin(value)),
         ));
     }
-    builder.rows.push(Row::text("手续费", coin(fee)));
-    let rate = u128::from(fee) * 100 / u128::from(estimated_vsize(&prepared));
-    builder.rows.push(Row::text(
+    rows.push(Row::text("手续费", coin(facts.fee)));
+    let rate = u128::from(facts.fee) * 100 / u128::from(estimated_vsize(prepared));
+    rows.push(Row::text(
         "费率",
         format!("{} sat/vB", format_units(&rate.to_string(), 2)),
     ));
-    builder
-        .rows
-        .push(Row::text("sighash", joined(owns().map(|own| own.sighash.label()))));
+    rows.push(Row::text("sighash", joined(owns().map(|own| own.sighash.label()))));
     if tx.lock_time != absolute::LockTime::ZERO {
-        builder
-            .rows
-            .push(Row::text("锁定时间", tx.lock_time.to_consensus_u32().to_string()));
+        rows.push(Row::text("锁定时间", tx.lock_time.to_consensus_u32().to_string()));
     }
-    builder.raw = serialize(tx)
+    Ok(Summary {
+        amount,
+        counterparty,
+        actions,
+        rows,
+    })
+}
+
+/// `network` 为空表示本机不认识这个网络,类别是无法识别,路径和网络的矛盾不检查,见 docs/10-tx-decoding.md 第 1.1 节.
+pub fn review(network: Option<Network>, request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forbid> {
+    if request.kind != KIND_TRANSACTION {
+        return Err(Forbid::RawHashSigning);
+    }
+    let prepared = prepare(network, &request.payload, ctx.keys.fingerprint);
+    let mode = network
+        .map(Network::mode)
+        .or(prepared.as_ref().ok().and_then(Prepared::key_mode))
+        .unwrap_or(Mode::Mainnet);
+    let input = decode::Input {
+        chain: Chain::Bitcoin,
+        mode: Some(mode),
+        network: &request.network,
+        kind: request.kind,
+        paths: &request.paths,
+        payload: &request.payload,
+    };
+    let decoded = match decode::decode(&PsbtWalker, &input) {
+        Ok(decoded) => decoded,
+        Err(failure) => return Ok(Review::undecodable(&request.network, &failure)),
+    };
+    let prepared = prepared?;
+    let facts = facts(&prepared, ctx, mode)?;
+    let assessment = policy::assess_bitcoin(&decoded, &facts);
+    let findings = assessment.findings.clone();
+    let native = network.map_or_else(
+        || Cow::Owned(Asset::plain_native(Network::Bitcoin)),
+        |network| ctx.native(network),
+    );
+    let label = network.map_or_else(|| decode::escape_text(&request.network), |n| n.label().to_string());
+    let summary = summary(&prepared, &facts, &native, network, mode, &label, |index| {
+        output_risk(&decoded, &findings, index)
+    })?;
+    let change_index = facts.outputs.iter().filter_map(|output| output.change_index).max();
+    let raw = serialize(&prepared.psbt.unsigned_tx)
         .chunks(32)
         .map(|c| RawLine {
             text: c.to_lower_hex_string(),
             note: None,
         })
         .collect();
-    Ok(builder.finish(network.id()))
+    let counterparty_label = summary.counterparty.as_ref().map(|_| "收款地址".to_string());
+    Ok(Review {
+        amount: Some(summary.amount),
+        counterparty_label,
+        counterparty: summary.counterparty,
+        actions: summary.actions,
+        rows: summary.rows,
+        raw,
+        change_index,
+        change_is_testnet: mode == Mode::Testnet,
+        ..Review::assessed(&decoded, assessment)
+    })
 }
 
 fn output_weight(kind: AccountKind) -> Result<u64, Error> {
@@ -1045,6 +1185,10 @@ pub fn verify(network: Network, request: &SignRequest, response: &SignResponse) 
     }
     let prepared = prepare(network, &request.payload, request.fingerprint).map_err(|_| Error::InvalidParams)?;
     prepared.fee().map_err(|_| Error::InvalidParams)?;
+    // 网页端构建时都带前序交易,这里只会是被改过的构建记录.
+    if prepared.fee_unconfirmed {
+        return Err(Error::InvalidParams);
+    }
     if response.signatures.len() != prepared.inputs.len() {
         return Err(Error::BadSignature);
     }

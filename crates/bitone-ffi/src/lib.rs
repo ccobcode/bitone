@@ -8,7 +8,7 @@ use bitone_core::protocol::{AddressCheck, DEFAULT_FRAGMENT_BYTES, FrameDecoder, 
 use bitone_core::request::SignRequest;
 use bitone_core::review::{Confirm, Forbid, Review, Risk};
 use bitone_core::tx::{self, HighestChange, ReviewContext};
-use bitone_core::{AccountKind, Mode, Network, qr};
+use bitone_core::{AccountKind, qr};
 use bitone_signer::{keys::Wallet, mnemonic, vault};
 use std::sync::Mutex;
 use zeroize::Zeroizing;
@@ -505,7 +505,7 @@ impl UnlockedWallet {
                 encoder: Mutex::new(encoder),
             }),
             change_index: review.change_index,
-            change_is_testnet: Network::from_id(&request.network).is_some_and(|n| n.mode() == Mode::Testnet),
+            change_is_testnet: review.change_is_testnet,
         })
     }
 

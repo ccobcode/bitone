@@ -10,10 +10,16 @@ mod check;
 pub(crate) mod fixture;
 mod format;
 mod model;
+mod psbt;
+mod psbt_official;
+mod psbt_values;
+mod script;
 
 pub use check::{Failure, MAX_DEPTH, Reject, RoundTrip};
 pub use format::{display, escape_text};
 pub use model::{Amount, Extent, Kind, Node, Source, SourceKind, Span, Value};
+pub use psbt::{Parsed, PsbtWalker, is_psbt, parse};
+pub use script::{ScriptClass, address_network, estimated_vsize, output_action, spend_weight};
 
 use crate::{Chain, Mode};
 

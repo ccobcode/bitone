@@ -9,7 +9,7 @@ pub mod evm;
 pub mod solana;
 pub mod tron;
 
-use crate::decode::{Decoded, Failure};
+use crate::decode::{Decoded, Failure, is_psbt};
 use crate::hex::DisplayHex;
 use crate::keys::PublicKeys;
 use crate::manifest::{Asset, Manifest};
@@ -30,8 +30,8 @@ pub struct HighestChange {
 }
 
 impl HighestChange {
-    pub fn of(self, network: Network) -> u32 {
-        match network.mode() {
+    pub fn of(self, mode: Mode) -> u32 {
+        match mode {
             Mode::Mainnet => self.mainnet,
             Mode::Testnet => self.testnet,
         }
@@ -63,10 +63,7 @@ impl Facts for ReviewContext<'_> {
     }
 
     fn highest_change(&self, mode: Mode) -> u32 {
-        match mode {
-            Mode::Mainnet => self.highest_change.mainnet,
-            Mode::Testnet => self.highest_change.testnet,
-        }
+        self.highest_change.of(mode)
     }
 }
 
@@ -87,13 +84,29 @@ pub fn review_decoded(decoded: Result<Decoded, Failure>, network: &str, ctx: &Re
     }
 }
 
+/// 请求属于哪条链.网络是本机认识的就看网络,否则看请求的链字段,没有时按路径和载荷判断.
+/// Bitcoin 的路径在 PSBT 里,所以 `paths` 是空的.
+pub fn request_chain(request: &SignRequest) -> Option<Chain> {
+    match (Network::from_id(&request.network), request.chain) {
+        (Some(network), _) => Some(network.chain()),
+        (None, Some(number)) => Chain::from_number(number),
+        (None, None) => (request.paths.is_empty() && is_psbt(&request.payload)).then_some(Chain::Bitcoin),
+    }
+}
+
 fn try_review(request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forbid> {
     if request.fingerprint != ctx.keys.fingerprint {
         return Err(Forbid::FingerprintMismatch);
     }
-    let network = Network::from_id(&request.network).ok_or(Forbid::UnknownNetwork)?;
+    let Some(network) = Network::from_id(&request.network) else {
+        // 其他链在各自的迁移步骤里接入.
+        return match request_chain(request) {
+            Some(Chain::Bitcoin) => bitcoin::review(None, request, ctx),
+            Some(Chain::Evm | Chain::Tron | Chain::Solana) | None => Err(Forbid::UnknownNetwork),
+        };
+    };
     let review = match network.chain() {
-        Chain::Bitcoin => bitcoin::review(network, request, ctx),
+        Chain::Bitcoin => bitcoin::review(Some(network), request, ctx),
         Chain::Evm => evm::review(network, request, ctx),
         Chain::Tron => tron::review(network, request, ctx),
         Chain::Solana => solana::review(network, request, ctx),

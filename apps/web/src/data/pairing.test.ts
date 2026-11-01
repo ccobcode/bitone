@@ -185,6 +185,6 @@ describe("ensureAddress", () => {
         expect(row.address).toMatch(/^bc1q/);
         expect(await db.addresses.count()).toBe(before + 1);
         expect(addressPath(account, row)).toBe(`m/84'/0'/0'/0/${GAP_LIMIT}`);
-        await expect(ensureAddress(account, "mainnet", 100_000)).rejects.toThrow();
+        await expect(ensureAddress(account, "mainnet", 0x8000_0000)).rejects.toThrow();
     });
 });

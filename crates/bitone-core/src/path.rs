@@ -1,15 +1,12 @@
-//! 派生路径和白名单,见 docs/04-security.md 第 2.6 节.
+//! 派生路径,见 docs/04-security.md 第 2.6 节.
 //!
-//! 路径决定链和网络,这是测试网签名不能花主网资金的依据.
+//! 路径决定链和私钥类型.Bitcoin 路径不设白名单,任意路径都可以花费,页面显示路径并告警.
 
 use crate::{Chain, Error, Mode, Network};
 use minicbor::{Decode, Encode};
 use std::fmt;
 
 const HARDENED: u32 = 0x8000_0000;
-
-/// Bitcoin 地址索引的硬上限,防止资金被放到用户找不到的位置.
-pub const MAX_ADDRESS_INDEX: u32 = 100_000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DerivationPath(pub Vec<u32>);
@@ -113,11 +110,11 @@ fn bitcoin_mode(coin: u32) -> Option<Mode> {
     }
 }
 
-/// 判断路径是否在白名单里.不在白名单的路径没有 `Ok` 结果.
+/// 认出路径属于哪条链,用哪种地址.认不出来时没有 `Ok` 结果,Bitcoin 的账户,找零链和索引都不限制.
 pub fn classify(path: &DerivationPath) -> Result<PathInfo, Error> {
     let info = |chain, mode, kind| Ok(PathInfo { chain, mode, kind });
     match path.0.as_slice() {
-        [purpose, coin, account, change, index]
+        [purpose, coin, _, _, _]
             if *purpose == h(84) || *purpose == h(86) || *purpose == h(44) || *purpose == h(49) =>
         {
             if *purpose == h(44) && *coin == h(60) {
@@ -142,21 +139,12 @@ pub fn classify(path: &DerivationPath) -> Result<PathInfo, Error> {
                 };
             }
             let mode = bitcoin_mode(*coin).ok_or(Error::PathNotAllowed)?;
-            if *account != h(0) || *change > 1 {
-                return Err(Error::PathNotAllowed);
-            }
-            if *index >= MAX_ADDRESS_INDEX {
-                return Err(Error::IndexTooLarge);
-            }
             let kind = match *purpose {
                 p if p == h(84) => AccountKind::SegWit,
                 p if p == h(86) => AccountKind::Taproot,
                 p if p == h(49) => AccountKind::NestedSegWit,
                 _ => AccountKind::Legacy,
             };
-            if matches!(kind, AccountKind::NestedSegWit | AccountKind::Legacy) && mode != Mode::Mainnet {
-                return Err(Error::PathNotAllowed);
-            }
             info(Chain::Bitcoin, Some(mode), kind)
         }
         [purpose, coin, account, change] if *purpose == h(44) && *account == h(0) && *change == h(0) => match *coin {
@@ -180,6 +168,39 @@ pub fn validate_for_network(path: &DerivationPath, network: Network) -> Result<P
         return Err(Error::PathNetworkMismatch);
     }
     Ok(info)
+}
+
+/// Bitcoin 路径里的 coin type 能说明的私钥类型.`0'` 是主网,`1'` 是测试币,其他值说明不了.
+pub fn bitcoin_path_mode(path: &DerivationPath) -> Option<Mode> {
+    bitcoin_mode(*path.0.get(1)?)
+}
+
+/// Bitcoin 请求里的路径有没有矛盾.只有路径明确属于另一种私钥或另一条链才算,
+/// 认不出来的路径不是矛盾.本机不认识的网络不做这项检查.
+pub fn check_bitcoin_path(path: &DerivationPath, network: Option<Network>) -> Result<(), Error> {
+    let Some(network) = network else {
+        return Ok(());
+    };
+    match (bitcoin_path_mode(path), classify(path)) {
+        (Some(mode), _) if mode != network.mode() => Err(Error::PathNetworkMismatch),
+        (None, Ok(info)) if info.chain != Chain::Bitcoin => Err(Error::PathNetworkMismatch),
+        _ => Ok(()),
+    }
+}
+
+/// 路径是否落在本机导出的 Bitcoin 账户下,地址类型也和账户一致.其余路径可以花费,但要告警.
+pub fn is_usual_bitcoin_path(path: &DerivationPath, kind: AccountKind) -> bool {
+    let [purpose, coin, account, change, index] = path.0.as_slice() else {
+        return false;
+    };
+    let parent = [*purpose, *coin, *account];
+    *change <= 1
+        && *index < HARDENED
+        && all_account_specs(true).iter().any(|spec| {
+            spec.chain == Chain::Bitcoin
+                && spec.kind == kind
+                && DerivationPath::parse(spec.path).is_ok_and(|account| account.0 == parent)
+        })
 }
 
 /// 一个账户要导出的路径和公钥类型.
@@ -301,15 +322,12 @@ mod tests {
     #[test]
     fn rejects_paths_outside_the_whitelist() {
         for path in [
-            "m/84'/0'/1'/0/0",
-            "m/84'/0'/0'/2/0",
             "m/44'/60'/0'/0/1",
             "m/44'/60'/1'/0/0",
             "m/44'/195'/0'/0/1",
             "m/44'/501'/1'/0'",
             "m/44'/1'/0'/1/0",
             "m/44'/2'/0'/0/0",
-            "m/49'/1'/0'/0/0",
             "m/44'/1'/0'/0/1",
             "m/0",
             "m",
@@ -319,9 +337,48 @@ mod tests {
     }
 
     #[test]
-    fn rejects_huge_change_index() {
-        assert_eq!(classify(&p("m/84'/0'/0'/1/999999999")), Err(Error::IndexTooLarge));
-        assert!(classify(&p("m/84'/0'/0'/1/99999")).is_ok());
+    fn bitcoin_accounts_and_indexes_are_not_limited() {
+        for path in [
+            "m/84'/0'/9'/0/0",
+            "m/84'/0'/0'/7/1",
+            "m/84'/0'/0'/1/999999999",
+            "m/49'/1'/0'/0/0",
+        ] {
+            assert_eq!(classify(&p(path)).unwrap().chain, Chain::Bitcoin, "{path}");
+        }
+    }
+
+    #[test]
+    fn only_another_key_or_chain_contradicts_a_bitcoin_path() {
+        let check = |path: &str, network| check_bitcoin_path(&p(path), network);
+        assert_eq!(
+            check("m/84'/1'/0'/0/0", Some(Network::Bitcoin)),
+            Err(Error::PathNetworkMismatch)
+        );
+        assert_eq!(
+            check("m/84'/0'/0'/0/0", Some(Network::BtcSignet)),
+            Err(Error::PathNetworkMismatch)
+        );
+        assert_eq!(
+            check("m/44'/60'/0'/0/0", Some(Network::Bitcoin)),
+            Err(Error::PathNetworkMismatch)
+        );
+        assert_eq!(check("m/44'/1'/0'/0/0", Some(Network::BtcSignet)), Ok(()));
+        for free in ["m/9'/7'/0'", "m/0", "m", "m/84'/0'/5'/9/9"] {
+            assert_eq!(check(free, Some(Network::Bitcoin)), Ok(()), "{free}");
+        }
+        assert_eq!(check("m/44'/60'/0'/0/0", None), Ok(()));
+    }
+
+    #[test]
+    fn usual_means_under_an_exported_account_of_the_same_kind() {
+        let usual = |path: &str, kind| is_usual_bitcoin_path(&p(path), kind);
+        assert!(usual("m/84'/0'/0'/1/999999999", AccountKind::SegWit));
+        assert!(usual("m/44'/0'/0'/0/0", AccountKind::Legacy));
+        assert!(!usual("m/84'/0'/1'/0/0", AccountKind::SegWit));
+        assert!(!usual("m/84'/0'/0'/2/0", AccountKind::SegWit));
+        assert!(!usual("m/84'/0'/0'/0/0", AccountKind::Legacy));
+        assert!(!usual("m/84'/0'/0'/0/5'", AccountKind::SegWit));
     }
 
     #[test]

@@ -1,0 +1,255 @@
+{
+    "magic": "70736274ff",
+    "coin": { "unit": "BTC", "decimals": 8 },
+    "global": [
+        {
+            "type": 0,
+            "name": "unsigned_tx",
+            "key": "none",
+            "value": "unsigned_tx",
+            "source": "signed",
+            "only": 0,
+            "required": true,
+            "structural": true
+        },
+        { "type": 1, "name": "xpub", "key": "xpub", "value": "key_source", "source": "context" },
+        {
+            "type": 2,
+            "name": "version",
+            "key": "none",
+            "value": "tx_version",
+            "source": "signed",
+            "only": 2,
+            "required": true,
+            "structural": true
+        },
+        {
+            "type": 3,
+            "name": "fallback_locktime",
+            "key": "none",
+            "value": "uint32",
+            "source": "signed",
+            "only": 2,
+            "structural": true
+        },
+        {
+            "type": 4,
+            "name": "input_count",
+            "key": "none",
+            "value": "input_count",
+            "source": "signed",
+            "only": 2,
+            "required": true,
+            "structural": true
+        },
+        {
+            "type": 5,
+            "name": "output_count",
+            "key": "none",
+            "value": "output_count",
+            "source": "signed",
+            "only": 2,
+            "required": true,
+            "structural": true
+        },
+        {
+            "type": 6,
+            "name": "tx_modifiable",
+            "key": "none",
+            "value": "flags",
+            "source": "signed",
+            "only": 2,
+            "structural": true,
+            "action": "tx-modifiable"
+        },
+        {
+            "type": 7,
+            "name": "sp_ecdh_share",
+            "key": "opaque",
+            "value": "opaque",
+            "source": "context",
+            "action": "psbt-key-unimplemented"
+        },
+        {
+            "type": 8,
+            "name": "sp_dleq",
+            "key": "opaque",
+            "value": "opaque",
+            "source": "context",
+            "action": "psbt-key-unimplemented"
+        },
+        {
+            "type": 251,
+            "name": "psbt_version",
+            "key": "none",
+            "value": "psbt_version",
+            "source": "context",
+            "structural": true
+        },
+        { "type": 252, "name": "proprietary", "key": "proprietary", "value": "opaque", "source": "context" }
+    ],
+    "input": [
+        { "type": 0, "name": "non_witness_utxo", "key": "none", "value": "prev_tx", "source": "context" },
+        { "type": 1, "name": "witness_utxo", "key": "none", "value": "tx_out", "source": "signed" },
+        { "type": 2, "name": "partial_sig", "key": "pubkey", "value": "ecdsa_signature", "source": "context" },
+        { "type": 3, "name": "sighash_type", "key": "none", "value": "sighash", "source": "signed" },
+        { "type": 4, "name": "redeem_script", "key": "none", "value": "script", "source": "signed" },
+        { "type": 5, "name": "witness_script", "key": "none", "value": "script", "source": "signed" },
+        { "type": 6, "name": "bip32_derivation", "key": "pubkey", "value": "key_source", "source": "context" },
+        { "type": 7, "name": "final_scriptsig", "key": "none", "value": "script", "source": "context" },
+        { "type": 8, "name": "final_scriptwitness", "key": "none", "value": "witness", "source": "context" },
+        { "type": 9, "name": "por_commitment", "key": "none", "value": "utf8", "source": "context" },
+        { "type": 10, "name": "ripemd160", "key": "hash", "value": "preimage", "source": "context" },
+        { "type": 11, "name": "sha256", "key": "hash", "value": "preimage", "source": "context" },
+        { "type": 12, "name": "hash160", "key": "hash", "value": "preimage", "source": "context" },
+        { "type": 13, "name": "hash256", "key": "hash", "value": "preimage", "source": "context" },
+        {
+            "type": 14,
+            "name": "previous_txid",
+            "key": "none",
+            "value": "txid",
+            "source": "signed",
+            "only": 2,
+            "required": true,
+            "structural": true
+        },
+        {
+            "type": 15,
+            "name": "output_index",
+            "key": "none",
+            "value": "uint32",
+            "source": "signed",
+            "only": 2,
+            "required": true,
+            "structural": true
+        },
+        {
+            "type": 16,
+            "name": "sequence",
+            "key": "none",
+            "value": "sequence",
+            "source": "signed",
+            "only": 2,
+            "structural": true
+        },
+        {
+            "type": 17,
+            "name": "required_time_locktime",
+            "key": "none",
+            "value": "time_lock",
+            "source": "signed",
+            "only": 2,
+            "structural": true
+        },
+        {
+            "type": 18,
+            "name": "required_height_locktime",
+            "key": "none",
+            "value": "height_lock",
+            "source": "signed",
+            "only": 2,
+            "structural": true
+        },
+        { "type": 19, "name": "tap_key_sig", "key": "none", "value": "tap_signature", "source": "context" },
+        { "type": 20, "name": "tap_script_sig", "key": "xonly_leaf", "value": "tap_signature", "source": "context" },
+        { "type": 21, "name": "tap_leaf_script", "key": "control_block", "value": "leaf_script", "source": "context" },
+        { "type": 22, "name": "tap_bip32_derivation", "key": "xonly", "value": "tap_key_source", "source": "context" },
+        { "type": 23, "name": "tap_internal_key", "key": "none", "value": "xonly", "source": "context" },
+        { "type": 24, "name": "tap_merkle_root", "key": "none", "value": "hash32", "source": "context" },
+        {
+            "type": 26,
+            "name": "musig2_participant_pubkeys",
+            "key": "opaque",
+            "value": "opaque",
+            "source": "context",
+            "action": "psbt-key-unimplemented"
+        },
+        {
+            "type": 27,
+            "name": "musig2_pub_nonce",
+            "key": "opaque",
+            "value": "opaque",
+            "source": "context",
+            "action": "psbt-key-unimplemented"
+        },
+        {
+            "type": 28,
+            "name": "musig2_partial_sig",
+            "key": "opaque",
+            "value": "opaque",
+            "source": "context",
+            "action": "psbt-key-unimplemented"
+        },
+        {
+            "type": 29,
+            "name": "sp_ecdh_share",
+            "key": "opaque",
+            "value": "opaque",
+            "source": "context",
+            "action": "psbt-key-unimplemented"
+        },
+        {
+            "type": 30,
+            "name": "sp_dleq",
+            "key": "opaque",
+            "value": "opaque",
+            "source": "context",
+            "action": "psbt-key-unimplemented"
+        },
+        { "type": 252, "name": "proprietary", "key": "proprietary", "value": "opaque", "source": "context" }
+    ],
+    "output": [
+        { "type": 0, "name": "redeem_script", "key": "none", "value": "script", "source": "context" },
+        { "type": 1, "name": "witness_script", "key": "none", "value": "script", "source": "context" },
+        { "type": 2, "name": "bip32_derivation", "key": "pubkey", "value": "key_source", "source": "context" },
+        {
+            "type": 3,
+            "name": "amount",
+            "key": "none",
+            "value": "amount",
+            "source": "signed",
+            "only": 2,
+            "required": true,
+            "structural": true
+        },
+        {
+            "type": 4,
+            "name": "script",
+            "key": "none",
+            "value": "script",
+            "source": "signed",
+            "only": 2,
+            "required": true,
+            "structural": true
+        },
+        { "type": 5, "name": "tap_internal_key", "key": "none", "value": "xonly", "source": "context" },
+        { "type": 6, "name": "tap_tree", "key": "none", "value": "tap_tree", "source": "context" },
+        { "type": 7, "name": "tap_bip32_derivation", "key": "xonly", "value": "tap_key_source", "source": "context" },
+        {
+            "type": 8,
+            "name": "musig2_participant_pubkeys",
+            "key": "opaque",
+            "value": "opaque",
+            "source": "context",
+            "action": "psbt-key-unimplemented"
+        },
+        {
+            "type": 9,
+            "name": "sp_v0_info",
+            "key": "opaque",
+            "value": "opaque",
+            "source": "context",
+            "action": "psbt-key-unimplemented"
+        },
+        {
+            "type": 10,
+            "name": "sp_v0_label",
+            "key": "opaque",
+            "value": "opaque",
+            "source": "context",
+            "action": "psbt-key-unimplemented"
+        },
+        { "type": 53, "name": "dnssec_proof", "key": "none", "value": "dnssec_proof", "source": "context" },
+        { "type": 252, "name": "proprietary", "key": "proprietary", "value": "opaque", "source": "context" }
+    ]
+}

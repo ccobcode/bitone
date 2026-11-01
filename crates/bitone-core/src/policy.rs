@@ -2,6 +2,7 @@
 //!
 //! `assess` 只读树,不修改树,拿不到原始载荷.新内容默认是无法识别,可以签名,不会默认变成普通转账.
 //! 依赖方向由 `tests/architecture.rs` 检查.阈值是初始值,技术方案里校准.
+//! Bitcoin 的类别和告警都在规则表里,`assess_bitcoin` 只算出命中了哪些种类.
 
 use crate::decode::{Decoded, NodeId, SourceKind, Value};
 use crate::{Mode, Network};
@@ -92,11 +93,13 @@ impl From<RuleClass> for Risk {
     }
 }
 
+/// `alert` 进入告警列表,要长按.`note` 只解释这一行.里面的 `{0}`,`{1}` 由信号的参数替换.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct Rule {
     class: RuleClass,
     alert: Option<String>,
+    note: Option<String>,
 }
 
 /// 链的 ID 到动作种类名到规则.
@@ -147,43 +150,65 @@ pub struct Assessment {
 }
 
 pub fn assess(decoded: &Decoded, _facts: &impl Facts) -> Assessment {
-    assess_with(decoded, rules())
+    assess_with(decoded, rules(), &[])
 }
 
-fn assess_with(decoded: &Decoded, rules: &Rules) -> Assessment {
+/// 策略从树和事实里得出的一项判定.种类名在规则表里,类别和告警都来自规则表.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Signal {
+    node: NodeId,
+    kind: &'static str,
+    args: Vec<String>,
+}
+
+impl Signal {
+    fn new(node: NodeId, kind: &'static str, args: Vec<String>) -> Self {
+        Self { node, kind, args }
+    }
+}
+
+fn filled(text: &str, args: &[String]) -> String {
+    args.iter().enumerate().fold(text.to_string(), |text, (index, arg)| {
+        text.replace(&["{", &index.to_string(), "}"].concat(), arg)
+    })
+}
+
+fn assess_with(decoded: &Decoded, rules: &Rules, signals: &[Signal]) -> Assessment {
     let table = rules.get(decoded.chain().id());
     let actions = decoded.actions();
-    let mut findings = BTreeMap::new();
-    let mut alerts = Vec::new();
+    let mut findings: BTreeMap<NodeId, Finding> = BTreeMap::new();
+    let mut alerts: Vec<String> = Vec::new();
     let mut risks = Vec::new();
     let mut unknown = actions.is_empty();
-    for (id, node, kind) in actions {
-        let rule = table
-            .and_then(|table| table.get(kind))
-            .filter(|_| node.source.kind().is_evidence());
-        let Some(rule) = rule else {
+    let actions = actions
+        .into_iter()
+        .map(|(id, node, kind)| (id, kind, node.source.kind().is_evidence(), Vec::new()));
+    let signals = signals
+        .iter()
+        .map(|signal| (signal.node, signal.kind, true, signal.args.clone()));
+    for (id, kind, evidence, args) in actions.chain(signals) {
+        let Some(rule) = table.and_then(|table| table.get(kind)).filter(|_| evidence) else {
             unknown = true;
-            findings.insert(id, unknown_finding());
+            findings.entry(id).or_default().risk = Some(Risk::Unknown);
             continue;
         };
         let risk = Risk::from(rule.class);
         risks.push(risk);
-        alerts.extend(rule.alert.clone());
-        findings.insert(
-            id,
-            Finding {
-                risk: Some(risk),
-                note: rule.alert.clone(),
-                ..Finding::default()
-            },
-        );
+        let alert = rule.alert.as_deref().map(|text| filled(text, &args));
+        let note = rule.note.as_deref().map(|text| filled(text, &args)).or(alert.clone());
+        let finding = findings.entry(id).or_default();
+        finding.risk = finding.risk.max(Some(risk));
+        finding.note = finding.note.take().or(note);
+        if let Some(alert) = alert.filter(|alert| !alerts.contains(alert)) {
+            alerts.push(alert);
+        }
     }
     // 进入签名原文的 `opaque` 字节含义不明,动作的规则不能替它担保.
     for visit in decoded.visits() {
         let opaque = matches!(&visit.node.value, Value::Opaque(bytes) if !bytes.is_empty());
         if opaque && visit.node.source.kind() == SourceKind::Signed {
             unknown = true;
-            findings.insert(visit.id, unknown_finding());
+            findings.entry(visit.id).or_default().risk = Some(Risk::Unknown);
         }
     }
     if unknown {
@@ -205,11 +230,164 @@ fn assess_with(decoded: &Decoded, rules: &Rules) -> Assessment {
     }
 }
 
-fn unknown_finding() -> Finding {
-    Finding {
-        risk: Some(Risk::Unknown),
-        ..Finding::default()
+/// Bitcoin 的一个本账户条目.树里只有声明,`verified` 表示已经用保存的公钥重新算出同一个脚本.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OwnEntry {
+    pub path: String,
+    pub verified: bool,
+    pub usual: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SpendFact {
+    pub own: Option<OwnEntry>,
+    /// 这个签名不绑定全部内容时,sighash 的名字.
+    pub unbound_sighash: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OutputFact {
+    pub own: Option<OwnEntry>,
+    pub sats: u64,
+    /// 标准找零链上的索引.
+    pub change_index: Option<u32>,
+}
+
+/// Bitcoin 的事实.重新派生和前序交易都由 `tx` 层完成,这里不碰密钥和载荷.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BitcoinFacts {
+    pub spends: Vec<SpendFact>,
+    pub outputs: Vec<OutputFact>,
+    pub fee: u64,
+    /// 有输入的金额没有经过前序交易确认,签名也不能替它担保.
+    pub fee_unconfirmed: bool,
+    pub highest_change: u32,
+}
+
+const ROOT: NodeId = 0;
+const INPUT_ACTION: &str = "input";
+const OUTPUT_PREFIX: &str = "output-";
+const FEE_ROW: &str = "fee";
+
+impl BitcoinFacts {
+    fn sent(&self) -> u64 {
+        self.outputs
+            .iter()
+            .filter(|output| !output.is_own())
+            .map(|output| output.sats)
+            .sum()
     }
+
+    /// 手续费和发送额比较,这里的金额都已经过总量上限检查.
+    fn fee_is_high(&self) -> bool {
+        let percent = u128::from(self.fee) * 100 > u128::from(self.sent()) * u128::from(BITCOIN_FEE_PERCENT);
+        percent || u128::from(self.fee) > fee_ceiling(Network::Bitcoin)
+    }
+}
+
+impl OutputFact {
+    /// 用公钥算出来才算本钱包.
+    fn is_own(&self) -> bool {
+        self.own.as_ref().is_some_and(|own| own.verified)
+    }
+}
+
+fn spend_signals(index: usize, node: NodeId, fact: &SpendFact, signals: &mut Vec<Signal>) {
+    let ordinal = (index + 1).to_string();
+    if let Some(own) = &fact.own {
+        if !own.verified {
+            signals.push(Signal::new(
+                node,
+                "input-path-unverified",
+                vec![ordinal.clone(), own.path.clone()],
+            ));
+        } else if !own.usual {
+            signals.push(Signal::new(
+                node,
+                "input-path-unusual",
+                vec![ordinal.clone(), own.path.clone()],
+            ));
+        }
+    }
+    if let Some(sighash) = &fact.unbound_sighash {
+        signals.push(Signal::new(
+            node,
+            "input-sighash-unbound",
+            vec![ordinal, sighash.clone()],
+        ));
+    }
+}
+
+fn output_signals(node: NodeId, fact: &OutputFact, highest: u32, signals: &mut Vec<Signal>) {
+    let Some(own) = &fact.own else {
+        return;
+    };
+    if !own.verified {
+        signals.push(Signal::new(node, "output-claim-unverified", vec![own.path.clone()]));
+    } else if !own.usual {
+        signals.push(Signal::new(node, "change-path-unusual", vec![own.path.clone()]));
+    }
+    if let Some(index) = fact
+        .change_index
+        .filter(|index| *index > highest.saturating_add(CHANGE_GAP))
+    {
+        signals.push(Signal::new(node, "change-index-far", vec![index.to_string()]));
+    }
+}
+
+/// Bitcoin 的策略.输入输出的顺序就是树里动作的顺序,规则都在规则表里.
+pub fn assess_bitcoin(decoded: &Decoded, facts: &BitcoinFacts) -> Assessment {
+    let actions = decoded.actions();
+    let nodes = |matches: &dyn Fn(&str) -> bool| -> Vec<NodeId> {
+        actions
+            .iter()
+            .filter(|(_, _, kind)| matches(kind))
+            .map(|(id, _, _)| *id)
+            .collect()
+    };
+    let inputs = nodes(&|kind| kind == INPUT_ACTION);
+    let outputs = nodes(&|kind| kind.starts_with(OUTPUT_PREFIX));
+    let mut signals = Vec::new();
+    let foreign = facts.spends.iter().filter(|spend| spend.own.is_none()).count();
+    if foreign > 0 {
+        signals.push(Signal::new(ROOT, "input-foreign", vec![foreign.to_string()]));
+    }
+    for (index, (node, fact)) in inputs.iter().zip(&facts.spends).enumerate() {
+        spend_signals(index, *node, fact, &mut signals);
+    }
+    for (node, fact) in outputs.iter().zip(&facts.outputs) {
+        output_signals(*node, fact, facts.highest_change, &mut signals);
+    }
+    let visits = decoded.visits();
+    let fee_row = visits
+        .iter()
+        .find(|visit| visit.node.name == FEE_ROW)
+        .map_or(ROOT, |visit| visit.id);
+    if facts.fee_unconfirmed {
+        signals.push(Signal::new(fee_row, "fee-unconfirmed", Vec::new()));
+    }
+    let recipients = facts.outputs.iter().filter(|output| !output.is_own()).count();
+    if recipients > 1 {
+        signals.push(Signal::new(ROOT, "recipients-many", vec![recipients.to_string()]));
+    }
+    if facts.fee_is_high() {
+        signals.push(Signal::new(fee_row, "fee-high", Vec::new()));
+    }
+    let mut assessment = assess_with(decoded, rules(), &signals);
+    let own_rows = inputs.iter().zip(facts.spends.iter().map(|spend| spend.own.as_ref()));
+    let own_rows = own_rows.chain(
+        outputs
+            .iter()
+            .zip(facts.outputs.iter().map(|output| output.own.as_ref())),
+    );
+    for (node, own) in own_rows {
+        if let Some(own) = own {
+            let finding = assessment.findings.entry(*node).or_default();
+            finding.own = own.verified;
+            finding.display = Some(own.path.clone());
+        }
+    }
+    assessment
 }
 
 /// 找零索引超过已签过的最高索引加这个数时按高风险处理.
@@ -242,7 +420,7 @@ mod tests {
     }
 
     fn assessed(payload: &[u8], rows: &str) -> Assessment {
-        assess_with(&decode(&Records, &input(payload)).unwrap(), &table(rows))
+        assess_with(&decode(&Records, &input(payload)).unwrap(), &table(rows), &[])
     }
 
     const TRANSFER_RULE: &str = "\"transfer\":{\"class\":\"transfer\",\"alert\":null}";
@@ -312,7 +490,7 @@ mod tests {
             ..input(&PAYLOAD)
         };
         let decoded = decode(&Records, &local).unwrap();
-        let assessment = assess_with(&decoded, &table(TRANSFER_RULE));
+        let assessment = assess_with(&decoded, &table(TRANSFER_RULE), &[]);
         assert_eq!((assessment.risk, assessment.confirm), (Risk::Unknown, Confirm::Hold));
         assert_eq!(assessment.alerts, [UNKNOWN_NETWORK_ALERT]);
     }
@@ -320,7 +498,7 @@ mod tests {
     #[test]
     fn a_chain_without_a_table_is_unknown() {
         let decoded = decode(&Records, &input(&PAYLOAD)).unwrap();
-        assert_eq!(assess_with(&decoded, &Rules::new()).risk, Risk::Unknown);
+        assert_eq!(assess_with(&decoded, &Rules::new(), &[]).risk, Risk::Unknown);
     }
 
     #[test]
@@ -382,7 +560,7 @@ mod tests {
             &input(&[1, 2, b'o', b'k']),
         )
         .unwrap();
-        assert_eq!(assess_with(&decoded, &table(TRANSFER_RULE)).risk, Risk::Unknown);
+        assert_eq!(assess_with(&decoded, &table(TRANSFER_RULE), &[]).risk, Risk::Unknown);
     }
 
     #[test]
@@ -391,7 +569,85 @@ mod tests {
     }
 
     #[test]
-    fn nothing_is_migrated_yet_so_the_builtin_table_is_empty() {
-        assert!(rules().values().all(BTreeMap::is_empty));
+    fn only_bitcoin_is_migrated_so_the_other_tables_are_empty() {
+        for (chain, table) in rules() {
+            assert_eq!(table.is_empty(), chain != "bitcoin", "{chain}");
+        }
+    }
+
+    #[test]
+    fn every_bitcoin_kind_has_a_rule() {
+        let table = &rules()["bitcoin"];
+        let scripts = crate::decode::ScriptClass::ALL.map(|class| crate::decode::output_action(class, 0));
+        let burned = crate::decode::output_action(crate::decode::ScriptClass::OpReturn, 1);
+        for kind in scripts.iter().chain([&burned]) {
+            assert!(table.contains_key(kind.as_str()), "{kind}");
+        }
+        for kind in [
+            INPUT_ACTION,
+            "input-foreign",
+            "input-path-unusual",
+            "input-path-unverified",
+            "input-sighash-unbound",
+            "output-claim-unverified",
+            "change-path-unusual",
+            "change-index-far",
+            "fee-unconfirmed",
+            "fee-high",
+            "recipients-many",
+            "tx-modifiable",
+            "psbt-key-unknown",
+            "psbt-key-unimplemented",
+            "version-1",
+            "version-2",
+            "version-3",
+            "version-other",
+            "lock-time-none",
+            "lock-time-height",
+            "lock-time-utc",
+            "lock-time-inactive",
+            "sequence-final",
+            "sequence-no-rbf",
+            "sequence-rbf",
+        ] {
+            assert!(table.contains_key(kind), "{kind}");
+        }
+    }
+
+    #[test]
+    fn the_rule_table_only_lowers_nothing_for_unknown_bitcoin_content() {
+        let table = &rules()["bitcoin"];
+        for kind in [
+            "output-witness-future",
+            "output-unknown",
+            "input-sighash-unbound",
+            "fee-unconfirmed",
+            "psbt-key-unknown",
+        ] {
+            assert_eq!(table[kind].class, RuleClass::Unknown, "{kind}");
+            assert!(table[kind].alert.is_some(), "{kind}");
+        }
+    }
+
+    #[test]
+    fn a_rule_note_stays_on_its_row() {
+        let assessment = assessed(
+            &PAYLOAD,
+            "\"transfer\":{\"class\":\"transfer\",\"alert\":null,\"note\":\"含义\"}",
+        );
+        assert_eq!(assessment.confirm, Confirm::Tap);
+        assert!(assessment.alerts.is_empty());
+        assert_eq!(assessment.findings[&2].note.as_deref(), Some("含义"));
+    }
+
+    #[test]
+    fn signals_fill_their_arguments_and_repeat_only_once() {
+        let decoded = decode(&Records, &input(&PAYLOAD)).unwrap();
+        let rules = table(
+            "\"transfer\":{\"class\":\"transfer\",\"alert\":null},\"s\":{\"class\":\"transfer\",\"alert\":\"第 {0} 个 {1}\"}",
+        );
+        let signal = Signal::new(ROOT, "s", vec!["2".to_string(), "x".to_string()]);
+        let assessment = assess_with(&decoded, &rules, &[signal.clone(), signal]);
+        assert_eq!(assessment.alerts, ["第 2 个 x"]);
     }
 }

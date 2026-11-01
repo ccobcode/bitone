@@ -7,9 +7,9 @@ use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{All, Keypair, Message, Secp256k1, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, TapSighashType};
 use bitcoin::{ScriptBuf, ecdsa, taproot};
-use bitone_core::Network;
 use bitone_core::request::SignRequest;
-use bitone_core::tx::bitcoin::{OwnInput, Sighash, prepare, script_for};
+use bitone_core::tx::bitcoin::{OwnInput, Prepared, Sighash, prepare, script_for};
+use bitone_core::{Mode, Network};
 
 /// RFC 6979 的确定性签名,低 s,末尾带 sighash 字节.
 fn sign_ecdsa(secp: &Secp256k1<All>, key: &SecretKey, digest: [u8; 32], ty: EcdsaSighashType) -> Vec<u8> {
@@ -36,13 +36,16 @@ fn sign_taproot(secp: &Secp256k1<All>, key: &SecretKey, digest: [u8; 32], ty: Ta
 }
 
 impl Wallet {
-    /// 每个输入一项,下标和交易的输入对应,不属于本钱包的输入是空的.
-    pub(crate) fn sign_bitcoin(&self, request: &SignRequest, network: Network) -> Result<Vec<Vec<u8>>, Error> {
+    /// 每个输入一项,下标和交易的输入对应,不属于本钱包的输入是空的.`network` 为空表示本机不认识这个网络.
+    pub(crate) fn sign_bitcoin(&self, request: &SignRequest, network: Option<Network>) -> Result<Vec<Vec<u8>>, Error> {
         let fingerprint = self.fingerprint()?;
         if fingerprint != request.fingerprint {
             return Err(Error::Refused);
         }
+        // 私钥类型只决定扩展私钥的版本前缀,派生结果和它无关.
+        let mode = network.map_or(Mode::Mainnet, Network::mode);
         let prepared = prepare(network, &request.payload, fingerprint).map_err(|_| Error::Refused)?;
+        self.check_own_outputs(&prepared, mode)?;
         let mut signatures = Vec::with_capacity(prepared.inputs.len());
         for (index, input) in prepared.inputs.iter().enumerate() {
             let Some(own) = &input.own else {
@@ -50,19 +53,30 @@ impl Wallet {
                 continue;
             };
             let digest = prepared.sighash(index).map_err(|_| Error::Refused)?;
-            signatures.push(self.sign_input(own, &input.prevout.script_pubkey, digest, network)?);
+            signatures.push(self.sign_input(own, &input.prevout.script_pubkey, digest, mode)?);
         }
         Ok(signatures)
     }
 
-    fn sign_input(
-        &self,
-        own: &OwnInput,
-        script: &ScriptBuf,
-        digest: [u8; 32],
-        network: Network,
-    ) -> Result<Vec<u8>, Error> {
-        let mut xpriv = self.secp_key(&own.path.to_string(), network.mode())?;
+    /// 声明是本钱包的输出,用私钥派生一遍.保存的公钥算不出的路径到这里才有结论.
+    fn check_own_outputs(&self, prepared: &Prepared, mode: Mode) -> Result<(), Error> {
+        let outputs = prepared.psbt.unsigned_tx.output.iter().zip(&prepared.outputs);
+        for (out, own) in outputs {
+            let Some(own) = own else {
+                continue;
+            };
+            let mut xpriv = self.secp_key(&own.path.to_string(), mode)?;
+            let derived = script_for(own.kind, &xpriv.private_key.public_key(self.secp())).ok();
+            xpriv.private_key.non_secure_erase();
+            if derived.as_ref() != Some(&out.script_pubkey) {
+                return Err(Error::Refused);
+            }
+        }
+        Ok(())
+    }
+
+    fn sign_input(&self, own: &OwnInput, script: &ScriptBuf, digest: [u8; 32], mode: Mode) -> Result<Vec<u8>, Error> {
+        let mut xpriv = self.secp_key(&own.path.to_string(), mode)?;
         let key = &xpriv.private_key;
         let derived = script_for(own.kind, &key.public_key(self.secp())).ok();
         let signature = match own.sighash {

@@ -1,6 +1,8 @@
-//! 语料检查.只读入库的快照,不访问网络,见 docs/10-tx-decoding.md 第 8.2 节.
+//! 语料检查和官方向量对照.只读入库的快照,不访问网络,见 docs/10-tx-decoding.md 第 8 节.
 //!
-//! `corpus/corpus.lock` 每行是 `SHA-256 文件名`.语料是空的时候只输出空报告.
+//! `corpus/corpus.lock`,`vectors/vectors.lock` 每行是 `SHA-256 文件名`.语料是空的时候只输出空报告.
+
+mod bitcoin_vectors;
 
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -11,16 +13,17 @@ use std::{fs, io};
 
 const CORPUS: &str = "corpus";
 const LOCK: &str = "corpus.lock";
+const VECTORS: &str = "vectors";
 const SAMPLES: &str = "jsonl";
 
-fn sha256(bytes: &[u8]) -> String {
+pub(crate) fn sha256(bytes: &[u8]) -> String {
     Sha256::digest(bytes).iter().fold(String::new(), |mut hex, byte| {
         write!(hex, "{byte:02x}").expect("写入内存不会失败");
         hex
     })
 }
 
-fn locked(text: &str) -> Result<BTreeMap<String, String>, String> {
+pub(crate) fn locked(text: &str) -> Result<BTreeMap<String, String>, String> {
     let mut entries = BTreeMap::new();
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
         let (digest, file) = line.split_once(' ').ok_or_else(|| format!("{LOCK} 的行无效:{line}"))?;
@@ -57,15 +60,23 @@ fn check(dir: &Path) -> Result<BTreeMap<String, usize>, String> {
     Ok(counts)
 }
 
+fn run() -> Result<(), String> {
+    let counts = check(Path::new(CORPUS))?;
+    println!("语料文件 {} 个", counts.len());
+    counts
+        .iter()
+        .for_each(|(file, samples)| println!("{file}:{samples} 个样本"));
+    let report = bitcoin_vectors::check(Path::new(VECTORS))?;
+    println!(
+        "Bitcoin 向量:{} 个合法 PSBT,{} 个不合法 PSBT,{} 个 sighash",
+        report.valid, report.invalid, report.sighashes
+    );
+    Ok(())
+}
+
 fn main() -> ExitCode {
-    match check(Path::new(CORPUS)) {
-        Ok(counts) => {
-            println!("语料文件 {} 个", counts.len());
-            counts
-                .iter()
-                .for_each(|(file, samples)| println!("{file}:{samples} 个样本"));
-            ExitCode::SUCCESS
-        }
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
         Err(reason) => {
             eprintln!("{reason}");
             ExitCode::FAILURE
@@ -98,6 +109,12 @@ mod tests {
     #[test]
     fn the_checked_in_corpus_is_consistent() {
         check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(CORPUS)).unwrap();
+    }
+
+    #[test]
+    fn the_official_bitcoin_vectors_hold() {
+        let report = bitcoin_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
+        assert!(report.valid > 0 && report.invalid > 0 && report.sighashes > 0);
     }
 
     #[test]

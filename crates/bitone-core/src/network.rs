@@ -30,6 +30,17 @@ impl Chain {
             .into_iter()
             .find(|chain| chain.id() == id)
     }
+
+    /// `SignRequest.chain` 的编号,和二维码协议里的链编号相同.这个版本不认识的编号是 `None`.
+    pub fn from_number(number: u8) -> Option<Self> {
+        match number {
+            0 => Some(Self::Bitcoin),
+            1 => Some(Self::Evm),
+            2 => Some(Self::Tron),
+            3 => Some(Self::Solana),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

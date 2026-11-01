@@ -2,7 +2,7 @@
 //!
 //! 传输层是 BC-UR 喷泉码,载荷是 BitOne 自定义的 CBOR 结构.
 
-use crate::path::{DerivationPath, all_account_specs, validate_for_network};
+use crate::path::{DerivationPath, all_account_specs, classify, validate_for_network};
 use crate::{AccountKind, Chain, Error, Network};
 use minicbor::data::Type;
 use minicbor::{Decode, Decoder, Encode};
@@ -83,15 +83,31 @@ impl AccountsExport {
             if account.key.len() != key_len {
                 return Err(Error::InvalidKey);
             }
-            let listed = specs
-                .iter()
-                .any(|s| s.chain == account.chain && s.kind == account.kind && s.path == account.path);
+            // Bitcoin 账户不设白名单,路径和类型不能自相矛盾.其他链的路径在各自的迁移步骤里放开.
+            let listed = match account.chain {
+                Chain::Bitcoin => bitcoin_account_is_consistent(account),
+                Chain::Evm | Chain::Tron | Chain::Solana => specs
+                    .iter()
+                    .any(|s| s.chain == account.chain && s.kind == account.kind && s.path == account.path),
+            };
             let repeated = self.accounts[..i].iter().any(|a| a.path == account.path);
             if !listed || repeated {
                 return Err(Error::PathNotAllowed);
             }
         }
         Ok(())
+    }
+}
+
+/// 路径认得出来时,地址类型要和路径一致.另一条链的路径不是 Bitcoin 账户.账户路径比地址路径少两层.
+fn bitcoin_account_is_consistent(account: &ExportedAccount) -> bool {
+    let Ok(path) = DerivationPath::parse(&account.path) else {
+        return false;
+    };
+    let address = DerivationPath([path.0.as_slice(), &[0, 0]].concat());
+    match classify(&path).or_else(|_| classify(&address)) {
+        Ok(info) => info.chain == Chain::Bitcoin && info.kind == account.kind,
+        Err(_) => account.kind != AccountKind::Single,
     }
 }
 
@@ -389,11 +405,21 @@ mod tests {
     }
 
     #[test]
-    fn rejects_paths_outside_the_export_list() {
-        let stray = account(Chain::Bitcoin, AccountKind::SegWit, "m/84'/0'/7'", 78);
-        assert_eq!(with_accounts(vec![stray]), Err(Error::PathNotAllowed));
+    fn bitcoin_accounts_import_from_any_path_but_cannot_contradict_it() {
+        for path in ["m/84'/0'/7'", "m/84'/0'/7'/9", "m/9'/1'/2'"] {
+            let any = account(Chain::Bitcoin, AccountKind::SegWit, path, 78);
+            assert!(with_accounts(vec![any]).is_ok(), "{path}");
+        }
         let wrong_kind = account(Chain::Bitcoin, AccountKind::Taproot, "m/84'/0'/0'", 78);
         assert_eq!(with_accounts(vec![wrong_kind]), Err(Error::PathNotAllowed));
+        let other_chain = account(Chain::Bitcoin, AccountKind::SegWit, "m/44'/60'/0'/0/0", 78);
+        assert_eq!(with_accounts(vec![other_chain]), Err(Error::PathNotAllowed));
+    }
+
+    #[test]
+    fn other_chains_keep_the_export_list() {
+        let stray = account(Chain::Evm, AccountKind::Single, "m/44'/60'/1'/0/0", 33);
+        assert_eq!(with_accounts(vec![stray]), Err(Error::PathNotAllowed));
     }
 
     #[test]

@@ -21,23 +21,25 @@
 
 `make test` 跑全部单元测试,构建和格式检查.
 
-| 部分         | 方式                                                                                           |
-| ------------ | ---------------------------------------------------------------------------------------------- |
-| 助记词和派生 | BIP39,BIP84,BIP86,SLIP-0010 官方向量.TRON 和 Solana 地址与独立实现一致                         |
-| Bitcoin      | BIP-143,BIP-341,BIP-174 向量.Bitcoin Core regtest 接受 SegWit,Taproot,混合,旧式,嵌套输入的交易 |
-| EVM          | 编码和签名与 viem 逐字节一致.EIP-712 用规范示例.anvil 上走通广播,回滚和重组                    |
-| TRON         | `raw_data`,txID 和 r,s 与 tronweb 一致.本地 java-tron 接受转账和 TRC-20                        |
-| Solana       | 消息,签名和 ATA 与 web3.js 一致.本地 Agave 验证者走通 nonce 创建(含预存款场景),SOL 和 SPL 转账 |
-| 网关         | 模拟上游加 anvil,bitcoind,java-tron.主网只读数据核对过状态和手续费                             |
-| 网页端       | Chromium 端到端覆盖四条链的配对,构建,签名,核验,广播,取消和加速,严格 CSP 下无违规,无外部请求    |
-| 冷钱包       | Android 模拟器走通扫码,核对,PIN 签名,响应通过 `tx::verify`.真实相机路径用虚拟场景验证过        |
-| 构建         | 同一份代码关掉构建缓存,换目录从干净状态构建两次,开启 R8 的未签名 APK 哈希一致                  |
-| 依赖         | `cargo audit`,`cargo deny`                                                                     |
-| 发布         | `v0.1.0` 走通了完整流程:CI 建草稿,`scripts/release.sh` 本地签名并发布                          |
+| 部分         | 方式                                                                                                                                   |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 助记词和派生 | BIP39,BIP84,BIP86,SLIP-0010 官方向量.TRON 和 Solana 地址与独立实现一致                                                                 |
+| Bitcoin      | BIP-143,174,341,370,371 向量,解码树和 `bitcoin`,`psbt-v2` 逐字段比较.Bitcoin Core regtest 接受 SegWit,Taproot,混合,旧式,嵌套输入的交易 |
+| EVM          | 编码和签名与 viem 逐字节一致.EIP-712 用规范示例.anvil 上走通广播,回滚和重组                                                            |
+| TRON         | `raw_data`,txID 和 r,s 与 tronweb 一致.本地 java-tron 接受转账和 TRC-20                                                                |
+| Solana       | 消息,签名和 ATA 与 web3.js 一致.本地 Agave 验证者走通 nonce 创建(含预存款场景),SOL 和 SPL 转账                                         |
+| 网关         | 模拟上游加 anvil,bitcoind,java-tron.主网只读数据核对过状态和手续费                                                                     |
+| 网页端       | Chromium 端到端覆盖四条链的配对,构建,签名,核验,广播,取消和加速,严格 CSP 下无违规,无外部请求                                            |
+| 冷钱包       | Android 模拟器走通扫码,核对,PIN 签名,响应通过 `tx::verify`.真实相机路径用虚拟场景验证过                                                |
+| 构建         | 同一份代码关掉构建缓存,换目录从干净状态构建两次,开启 R8 的未签名 APK 哈希一致                                                          |
+| 依赖         | `cargo audit`,`cargo deny`                                                                                                             |
+| 发布         | `v0.1.0` 走通了完整流程:CI 建草稿,`scripts/release.sh` 本地签名并发布                                                                  |
 
 ## 3. 尚未验证
 
 - 真机上的实体相机扫码,StrongBox,Android 12 到 14 的 Keystore 行为.
+- 真机上 Bitcoin 的通用字段列表:滚动确认,字段数回传和长按.
+- 真机上用未知网络,非常见路径和 PSBT v2 的请求签名.PSBT v2 的签名只和 v0 逐字节比较过,没有上 regtest.
 - 真机上 Keystore 报错的分类:永久失效和暂时不可用的区分只对照过 SDK 36.1 的源码.
 - 真机上密钥证明没有结果时的重试.
 - Android 12 上的悬浮窗应用探测.

@@ -184,6 +184,8 @@ pub struct Review {
     pub forbidden: Option<Forbid>,
     /// Bitcoin 这笔交易用到的最高找零索引.签名后冷钱包要把它存下来.
     pub change_index: Option<u32>,
+    /// `change_index` 属于测试币账户.本机不认识的网络也有这个值,它来自派生路径.
+    pub change_is_testnet: bool,
 }
 
 impl Review {
@@ -205,6 +207,7 @@ impl Review {
             review_digest: review_digest(&[], Risk::Forbidden, Confirm::Refuse),
             forbidden: Some(reason),
             change_index: None,
+            change_is_testnet: false,
         }
     }
 
@@ -233,7 +236,8 @@ impl Review {
         Self {
             risk,
             confirm,
-            network: decoded.network().to_string(),
+            // 本机不认识的网络名来自请求,显示时不能带控制字符.
+            network: decode::escape_text(decoded.network()),
             title: risk.label().to_string(),
             amount: None,
             counterparty_label: None,
@@ -247,6 +251,7 @@ impl Review {
             fields,
             forbidden: None,
             change_index: None,
+            change_is_testnet: false,
         }
     }
 
@@ -307,6 +312,7 @@ impl ReviewBuilder {
             review_digest: review_digest(&[], risk, confirm),
             forbidden: None,
             change_index: self.change_index,
+            change_is_testnet: false,
         }
     }
 }

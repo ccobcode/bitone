@@ -73,6 +73,7 @@ for (const label of Object.values(JSON.parse(readFileSync("crates/bitone-core/as
 const rules = JSON.parse(readFileSync("crates/bitone-core/assets/rules.json", "utf8"));
 for (const rule of Object.values(rules).flatMap(Object.values)) {
     if (rule.alert) need(rule.alert);
+    if (rule.note) need(rule.note);
 }
 
 for (const key of missing) console.error(`缺少英文:${key}`);

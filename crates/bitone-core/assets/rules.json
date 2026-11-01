@@ -1,5 +1,163 @@
 {
-    "bitcoin": {},
+    "bitcoin": {
+        "input": {
+            "class": "transfer",
+            "alert": null
+        },
+        "input-foreign": {
+            "class": "transfer",
+            "alert": "有 {0} 个输入不属于本钱包"
+        },
+        "input-path-unusual": {
+            "class": "transfer",
+            "alert": "第 {0} 个输入的路径 {1} 不常见,请确认这是你用过的路径"
+        },
+        "input-path-unverified": {
+            "class": "transfer",
+            "alert": "第 {0} 个输入的路径 {1} 不在已导出的账户下,解锁后才能核对,核对不通过时拒绝签名"
+        },
+        "input-sighash-unbound": {
+            "class": "unknown",
+            "alert": "第 {0} 个输入的 sighash 是 {1},这个签名不绑定页面显示的全部收款方和金额,签名后它们可以被改动"
+        },
+        "output-p2pkh": {
+            "class": "transfer",
+            "alert": null
+        },
+        "output-p2sh": {
+            "class": "transfer",
+            "alert": null
+        },
+        "output-p2wpkh": {
+            "class": "transfer",
+            "alert": null
+        },
+        "output-p2wsh": {
+            "class": "transfer",
+            "alert": null
+        },
+        "output-p2tr": {
+            "class": "transfer",
+            "alert": null
+        },
+        "output-p2pk": {
+            "class": "recognized",
+            "alert": "有输出是 P2PK 脚本,没有地址形式,请核对公钥"
+        },
+        "output-bare-multisig": {
+            "class": "recognized",
+            "alert": "有输出是裸多签脚本,没有地址形式,请核对公钥列表"
+        },
+        "output-p2a": {
+            "class": "recognized",
+            "alert": "有输出是 P2A 锚点,任何人都可以花费这笔钱"
+        },
+        "output-op-return": {
+            "class": "recognized",
+            "alert": null
+        },
+        "output-op-return-burn": {
+            "class": "recognized",
+            "alert": "OP_RETURN 输出的金额不为 0,这笔钱会被销毁"
+        },
+        "output-witness-future": {
+            "class": "unknown",
+            "alert": "有输出使用还没有激活的见证版本,请核对操作码"
+        },
+        "output-unknown": {
+            "class": "unknown",
+            "alert": "有输出的脚本无法识别,请核对操作码"
+        },
+        "output-claim-unverified": {
+            "class": "transfer",
+            "alert": "有输出声明路径 {0} 属于本钱包,保存的公钥算不出这个地址,这里按外部收款方显示,解锁后核对不通过时拒绝签名"
+        },
+        "change-path-unusual": {
+            "class": "transfer",
+            "alert": "这个找零地址属于本钱包,但路径 {0} 不常见,资金可能落到不容易找回的位置"
+        },
+        "change-index-far": {
+            "class": "transfer",
+            "alert": "找零索引 {0} 跳得太远,资金可能落到不容易找回的位置"
+        },
+        "fee-unconfirmed": {
+            "class": "unknown",
+            "alert": "有输入没有前序交易,输入金额只是声明,手续费无法确认"
+        },
+        "fee-high": {
+            "class": "transfer",
+            "alert": "手续费明显偏高"
+        },
+        "recipients-many": {
+            "class": "transfer",
+            "alert": "这笔交易有 {0} 个收款方,请逐个核对"
+        },
+        "tx-modifiable": {
+            "class": "transfer",
+            "alert": "这个 PSBT 声明还可以修改,请核对签名后的内容"
+        },
+        "psbt-key-unknown": {
+            "class": "unknown",
+            "alert": "PSBT 里有本机不认识的键,请确认来源"
+        },
+        "psbt-key-unimplemented": {
+            "class": "unknown",
+            "alert": "PSBT 里有本机没有实现的协议的数据,请确认来源"
+        },
+        "version-1": {
+            "class": "transfer",
+            "alert": null,
+            "note": "旧式交易,不支持相对锁定"
+        },
+        "version-2": {
+            "class": "transfer",
+            "alert": null,
+            "note": "支持相对锁定(BIP-68)"
+        },
+        "version-3": {
+            "class": "transfer",
+            "alert": "这是 TRUC 交易(BIP-431),节点按更严格的规则转发"
+        },
+        "version-other": {
+            "class": "transfer",
+            "alert": "交易版本不是标准值,节点可能不转发"
+        },
+        "lock-time-none": {
+            "class": "transfer",
+            "alert": null,
+            "note": "无锁定"
+        },
+        "lock-time-height": {
+            "class": "transfer",
+            "alert": null,
+            "note": "区块高度"
+        },
+        "lock-time-utc": {
+            "class": "transfer",
+            "alert": null,
+            "note": "UTC 时间"
+        },
+        "lock-time-inactive": {
+            "class": "transfer",
+            "alert": null,
+            "note": "全部 sequence 都是 final,这个锁定不生效"
+        },
+        "sequence-final": {
+            "class": "transfer",
+            "alert": null,
+            "note": "final"
+        },
+        "sequence-no-rbf": {
+            "class": "transfer",
+            "alert": null,
+            "note": "不可替换,锁定时间生效"
+        },
+        "sequence-rbf": {
+            "class": "transfer",
+            "alert": null,
+            "note": "可替换(BIP-125)"
+        }
+    },
     "evm": {},
     "solana": {},
     "tron": {}
