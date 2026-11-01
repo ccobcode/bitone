@@ -6,6 +6,7 @@ import { App } from "./App";
 import { initCore } from "./core";
 import { AppProvider } from "./data/app";
 import { PageRouter } from "./ui/PageRouter";
+import { blockZoom } from "./ui/noZoom";
 import "virtual:tokens.css";
 import "./styles/index.css";
 import { t } from "./core/i18n";
@@ -19,6 +20,8 @@ const client = new QueryClient({
         },
     },
 });
+
+blockZoom(window);
 
 async function boot(root: HTMLElement) {
     await initCore();
