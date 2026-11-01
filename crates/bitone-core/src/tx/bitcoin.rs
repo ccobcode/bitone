@@ -3,7 +3,7 @@
 //! PSBT 来自网页端,里面的声明都不可信.`prepare` 只查第 1.1 节的拒绝情况,它是核对,签名,核验共用的入口,
 //! 三处看到的输入不可能不一致.`review` 把树交给策略,路径和地址靠重新派生,金额靠前序交易的 txid.
 
-use crate::decode::{self, Node, NodeId, PsbtWalker, ScriptClass, address_network, parse};
+use crate::decode::{self, NodeId, PsbtWalker, ScriptClass, address_network, parse};
 use crate::keys::PublicKeys;
 use crate::manifest::Asset;
 use crate::path::{
@@ -11,7 +11,7 @@ use crate::path::{
 };
 use crate::policy::{self, BitcoinFacts, OutputFact, OwnEntry, SpendFact};
 use crate::request::{KIND_TRANSACTION, SignRequest, SignResponse};
-use crate::review::{ActionView, AmountView, Forbid, RawLine, Review, Risk, Row};
+use crate::review::{AmountView, Forbid, Review, Summary};
 use crate::tx::{ReviewContext, Verified};
 use crate::units::format_units;
 use crate::{AccountKind, Chain, Error, Mode, Network};
@@ -508,16 +508,6 @@ pub fn signature_hash(
     }
 }
 
-fn kind_label(kind: AccountKind) -> &'static str {
-    match kind {
-        AccountKind::SegWit => "原生 SegWit",
-        AccountKind::Taproot => "Taproot",
-        AccountKind::NestedSegWit => "嵌套 SegWit",
-        AccountKind::Legacy => "旧式",
-        AccountKind::Single => "单地址",
-    }
-}
-
 fn address_text(script: &Script, mode: Mode) -> Option<String> {
     Address::from_script(script, address_network(mode))
         .ok()
@@ -555,16 +545,6 @@ fn estimated_vsize(prepared: &Prepared) -> u64 {
         .iter()
         .map(|input| input.prevout.script_pubkey.as_script());
     decode::estimated_vsize(&prepared.psbt.unsigned_tx, spent)
-}
-
-fn joined(labels: impl Iterator<Item = String>) -> String {
-    let mut unique: Vec<String> = Vec::new();
-    for label in labels {
-        if !unique.contains(&label) {
-            unique.push(label);
-        }
-    }
-    unique.join(",")
 }
 
 /// 重新派生之后的事实.策略只看它和树.
@@ -626,146 +606,59 @@ fn facts(prepared: &Prepared, ctx: &ReviewContext, mode: Mode) -> Result<Bitcoin
     })
 }
 
-/// 旧的摘要字段,第 9 节删除.类别和告警都来自策略,这里只把内容排成行.
-struct Summary {
-    amount: AmountView,
-    counterparty: Option<String>,
-    actions: Vec<ActionView>,
-    rows: Vec<Row>,
-}
-
-/// 第 `index` 个输出节点的类别.
-fn output_risk(decoded: &decode::Decoded, findings: &BTreeMap<NodeId, policy::Finding>, index: usize) -> Risk {
-    let outputs: Vec<(NodeId, &Node, &str)> = decoded
-        .actions()
-        .into_iter()
-        .filter(|(_, _, kind)| kind.starts_with("output-"))
-        .collect();
-    outputs
-        .get(index)
-        .and_then(|(id, _, _)| findings.get(id))
-        .and_then(|finding| finding.risk)
-        .unwrap_or(Risk::Unknown)
-}
-
+/// 页面顶部.发送额是全部外部输出之和,没有转给别人时是转回本钱包的金额,它们的行在 `field_ids` 里.
 fn summary(
     prepared: &Prepared,
     facts: &BitcoinFacts,
     native: &Asset,
     known: Option<Network>,
     mode: Mode,
-    network_label: &str,
-    risk_of: impl Fn(usize) -> Risk,
+    outputs: &[NodeId],
 ) -> Result<Summary, Forbid> {
+    let own_inputs = prepared.inputs.iter().filter(|input| input.own.is_some());
+    let payers = own_inputs
+        .map(|input| address_text(&input.prevout.script_pubkey, mode).ok_or(Forbid::AddressMismatch))
+        .collect::<Result<Vec<String>, Forbid>>()?;
     let tx = &prepared.psbt.unsigned_tx;
-    let coin = |value: u64| {
-        format!(
-            "{} {}",
-            format_units(&value.to_string(), native.decimals),
-            native.symbol
-        )
-    };
-    let amount_view = |value: u64| AmountView {
-        text: format_units(&value.to_string(), native.decimals),
-        symbol: Some(native.symbol.clone()),
-        asset: known.map(|_| native.key()),
-        unlimited: false,
-    };
-
-    let mut foreign = Vec::new();
-    let mut payer_rows = Vec::new();
-    let mut unbound_actions = Vec::new();
-    for input in &prepared.inputs {
-        let Some(own) = &input.own else {
-            foreign.push(input.prevout.value.to_sat());
-            continue;
-        };
-        if !own.sighash.commits_everything() {
-            unbound_actions.push(ActionView {
-                risk: Risk::Unknown,
-                title: "签名不绑定全部内容".to_string(),
-                rows: vec![Row::text("sighash", own.sighash.label())],
-            });
-        }
-        let address = address_text(&input.prevout.script_pubkey, mode).ok_or(Forbid::AddressMismatch)?;
-        payer_rows.push(Row::mono("付款账户", address));
-        payer_rows.push(Row::mono("派生路径", own.path.to_string()));
-        payer_rows.push(Row::text("输入金额", coin(input.prevout.value.to_sat())));
-    }
-
     let mut sent = 0u64;
     let mut returned = 0u64;
     let mut external = Vec::new();
-    let mut change_actions = Vec::new();
-    for (index, (out, fact)) in tx.output.iter().zip(&facts.outputs).enumerate() {
+    let mut own = Vec::new();
+    for ((out, fact), node) in tx.output.iter().zip(&facts.outputs).zip(outputs) {
         let value = out.value.to_sat();
         let text = address_text(&out.script_pubkey, mode).filter(|_| ScriptClass::of(&out.script_pubkey).has_address());
         if fact.own.as_ref().is_some_and(|own| own.verified) {
             returned += value;
-            let address = text.ok_or(Forbid::AddressMismatch)?;
-            change_actions.push(ActionView {
-                risk: Risk::Transfer,
-                title: "找零".to_string(),
-                rows: vec![Row::mono("找零地址", address), Row::text("金额", coin(value))],
-            });
+            text.ok_or(Forbid::AddressMismatch)?;
+            own.push(*node);
         } else {
             sent += value;
             let shown = text.unwrap_or_else(|| out.script_pubkey.as_bytes().to_lower_hex_string());
-            let risk = risk_of(index);
-            external.push(ActionView {
-                risk,
-                title: risk.label().to_string(),
-                rows: vec![Row::mono("收款地址", shown), Row::text("金额", coin(value))],
-            });
+            external.push((*node, shown));
         }
     }
-
     let counterparty = match external.as_slice() {
-        [only] => Some(only.rows[0].value.clone()),
+        [(_, only)] => Some(only.clone()),
         [] | [_, _, ..] => None,
     };
-    let amount = amount_view(if external.is_empty() { returned } else { sent });
-    let mut actions = Vec::new();
-    if external.is_empty() {
-        actions.push(ActionView {
-            risk: Risk::Transfer,
-            title: "转给自己".to_string(),
-            rows: vec![Row::text("金额", coin(returned))],
-        });
-    }
-    actions.append(&mut external);
-    actions.append(&mut change_actions);
-    actions.append(&mut unbound_actions);
-
-    let owns = || prepared.inputs.iter().filter_map(|input| input.own.as_ref());
-    let mut rows = vec![Row::text("网络", network_label)];
-    rows.append(&mut payer_rows);
-    rows.push(Row::text(
-        "地址类型",
-        joined(owns().map(|own| kind_label(own.kind).to_string())),
-    ));
-    if !foreign.is_empty() {
-        let value = foreign.iter().sum::<u64>();
-        rows.push(Row::text(
-            "其他钱包的输入",
-            format!("{} 个,共 {}", foreign.len(), coin(value)),
-        ));
-    }
-    rows.push(Row::text("手续费", coin(facts.fee)));
-    let rate = u128::from(facts.fee) * 100 / u128::from(estimated_vsize(prepared));
-    rows.push(Row::text(
-        "费率",
-        format!("{} sat/vB", format_units(&rate.to_string(), 2)),
-    ));
-    rows.push(Row::text("sighash", joined(owns().map(|own| own.sighash.label()))));
-    if tx.lock_time != absolute::LockTime::ZERO {
-        rows.push(Row::text("锁定时间", tx.lock_time.to_consensus_u32().to_string()));
-    }
+    let value = if external.is_empty() { returned } else { sent };
+    let field_ids = if external.is_empty() {
+        own
+    } else {
+        external.iter().map(|(node, _)| *node).collect()
+    };
     Ok(Summary {
-        amount,
+        amount: Some(AmountView {
+            text: format_units(&value.to_string(), native.decimals),
+            symbol: Some(native.symbol.clone()),
+            asset: known.map(|_| native.key()),
+            unlimited: false,
+        }),
+        counterparty_label: counterparty.as_ref().map(|_| "收款地址".to_string()),
         counterparty,
-        actions,
-        rows,
+        field_ids,
+        payer: payers.into_iter().next(),
+        ..Summary::default()
     })
 }
 
@@ -784,7 +677,8 @@ pub fn review(network: Option<Network>, request: &SignRequest, ctx: &ReviewConte
         mode: Some(mode),
         network: &request.network,
         kind: request.kind,
-        paths: &request.paths,
+        // 派生路径在 PSBT 里,解码后逐条核对.`request.paths` 没有校验,不能进树.
+        paths: &[],
         payload: &request.payload,
         signer: None,
     };
@@ -795,35 +689,24 @@ pub fn review(network: Option<Network>, request: &SignRequest, ctx: &ReviewConte
     let prepared = prepared?;
     let facts = facts(&prepared, ctx, mode)?;
     let assessment = policy::assess_bitcoin(&decoded, &facts);
-    let findings = assessment.findings.clone();
     let native = network.map_or_else(
         || Cow::Owned(Asset::plain_native(Network::Bitcoin)),
         |network| ctx.native(network),
     );
-    let label = network.map_or_else(|| decode::escape_text(&request.network), |n| n.label().to_string());
-    let summary = summary(&prepared, &facts, &native, network, mode, &label, |index| {
-        output_risk(&decoded, &findings, index)
-    })?;
-    let change_index = facts.outputs.iter().filter_map(|output| output.change_index).max();
-    let raw = serialize(&prepared.psbt.unsigned_tx)
-        .chunks(32)
-        .map(|c| RawLine {
-            text: c.to_lower_hex_string(),
-            note: None,
-        })
+    let outputs: Vec<NodeId> = decoded
+        .actions()
+        .into_iter()
+        .filter(|(_, _, kind)| kind.starts_with(policy::OUTPUT_PREFIX))
+        .map(|(id, _, _)| id)
         .collect();
-    let counterparty_label = summary.counterparty.as_ref().map(|_| "收款地址".to_string());
-    Ok(Review {
-        amount: Some(summary.amount),
-        counterparty_label,
-        counterparty: summary.counterparty,
-        actions: summary.actions,
-        rows: summary.rows,
-        raw,
+    let summary = summary(&prepared, &facts, &native, network, mode, &outputs)?;
+    let change_index = facts.outputs.iter().filter_map(|output| output.change_index).max();
+    let review = Review {
         change_index,
         change_is_testnet: mode == Mode::Testnet,
         ..Review::assessed(&decoded, assessment)
-    })
+    };
+    Ok(review.summarized(summary))
 }
 
 fn output_weight(kind: AccountKind) -> Result<u64, Error> {

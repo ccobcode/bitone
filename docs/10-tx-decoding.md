@@ -4,7 +4,7 @@
 
 协议能承载什么,需求就是什么,和网页端当前发送什么无关.用户确认之前,必须能看到这笔交易的全部字段.
 
-版本和上游状态核实于 2026-11-01.事实来源和假设分开列在第 10 节.
+版本和上游状态核实于 2026-11-01.事实来源和假设分开列在第 9 节.
 
 ## 1. 范围边界
 
@@ -147,7 +147,7 @@ assess(Decoded, manifest, keys, highest_change) -> Assessment
 
 `decode` 是纯函数,不读清单和密钥.`assess` 不修改树,只按节点 ID 追加发现:风险,告警,展示值,本账户标记.
 
-请求信封的检查顺序不变,见[系统设计 §6](03-system.md).网络和派生路径不在载荷里,作为 `derived` 节点进树.
+请求信封的检查顺序不变,见[系统设计 §6](03-system.md).网络和派生路径不在载荷里,作为 `derived` 节点进树.Bitcoin 的路径在 PSBT 里,请求的 `paths` 没有校验,不进树.
 
 1. 策略只读树,拿不到原始载荷.`crates/bitone-core/tests/architecture.rs` 检查 `policy` 只依赖模型,`decode` 不依赖 `policy`,`manifest`,`review`.
 2. 规则是白名单.规则表按节点种类给类别,种类名来自 schema.没有规则的节点是无法识别,普通转账只能由规则显式给出.
@@ -155,6 +155,7 @@ assess(Decoded, manifest, keys, highest_change) -> Assessment
 4. 一笔交易取全部动作里最高的类别.告警只升级确认方式,不降低类别.
 5. 规则表是核心库内置的数据文件.清单和描述文件都不能修改规则,描述文件也不能降低类别.
 6. CI 检查三方一致:官方枚举,第 5 节矩阵对应的规则表,语料样本.重新生成 schema 后出现新类型时 CI 失败,补上规则才能合并.
+7. 第一屏也来自树和规则表.规则的 `summary` 写明动作的字段在哪里,`tx/summary.rs` 只按路径读树,不按指令或合约类型写代码.路径是节点名,用点分隔,`repeated` 字段的每一项都算.测试检查路径都在官方 schema 里.
 
 | 顺序 | 类别     | 含义                                              | 确认                                                                        |
 | ---- | -------- | ------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -166,6 +167,19 @@ assess(Decoded, manifest, keys, highest_change) -> Assessment
 | 1    | 普通转账 | 白名单内的原生币和清单内代币转账                  | 点按,有告警时长按                                                           |
 
 无法识别排在权限变更之上,一笔同时含授权和未知调用的交易按无法识别告警.
+
+| `summary` 的键     | 含义                                                                   |
+| ------------------ | ---------------------------------------------------------------------- |
+| `amount`           | 金额                                                                   |
+| `asset`,`decimals` | 金额的资产和指令写明的小数位.清单里有这个资产时显示符号,否则是原始整数 |
+| `unlimited`        | 金额是 64 位最大值时表示无限额度                                       |
+| `party`,`label`    | 对方和它的标签.有多个对方时都进 `parties`,顶部留空                     |
+| `owner`            | `party` 是代币账户时的所有者,没有这一行就是所有者没有确认              |
+| `next`,`current`   | 新控制方和当前控制方                                                   |
+| `none`             | `next` 的值写明没有时的含义                                            |
+| `holders`          | 新权限的全部持有人,有 `next` 之外的地址时告警                          |
+
+TRON 的调用数据不在树的字段里,`TriggerSmartContract` 的金额和对方来自第 7 节.
 
 ## 4. 渲染和 FFI
 
@@ -189,19 +203,30 @@ record FieldRow
   note: string?
   own: bool
 
-record Summary
+record ReviewController
+  current: string?
+  next: string?
+
+record ReviewParty
+  label: string
+  value: string
+
+record ReviewSummary
   title: string
   amount: ReviewAmount?
   counterparty_label: string?
   counterparty: string?
   field_ids: list<u32>
+  controllers: list<ReviewController>
+  parties: list<ReviewParty>
+  payer: string?
 
 record ReviewResult
   risk: RiskLevel
   confirm: ConfirmMode
   network: string
   mainnet: bool
-  summary: Summary
+  summary: ReviewSummary
   alerts: list<string>
   fields: list<FieldRow>
   field_count: u32
@@ -211,12 +236,16 @@ record ReviewResult
   request_fingerprint: string?
 ```
 
+通用列表不按字段名分支,所以"谁是当前控制方"这类含义 `fields` 表达不了.`controllers`,`parties`,`payer` 只给 A6d 的控制方卡片,权限变更页第一屏的对方和 A8 的签名账户,页面的其余内容都来自 `fields`.网页端的 `previewRequest` 是同一个结构的 serde 输出.
+
+权限变更都写进 `controllers`.`next` 为空表示这笔变更没有新控制方,卡片写明这一点,不拿 `counterparty` 顶替.
+
 ### 4.2 渲染规则
 
 1. 手机只有一个通用列表,不按链,不按字段名分支.分组只看 `parent` 和 `depth`,`INPUT_LABELS`,`PARTY_LABELS`,`FIRST_SCREEN_LABELS` 这类按标签分组的逻辑不再存在.
 2. `value` 由核心库按 `kind` 格式化,完整不截断.手机不做格式化.
 3. `label` 来自核心库的数据文件,键是 `name`.CI 检查没有缺失,运行时缺失就显示 `name`.
-4. 摘要在列表上方,不能代替列表.摘要的每个值都引用 `field_ids`,所以摘要不可能显示树里没有的内容.
+4. 摘要在列表上方,不能代替列表.摘要的每个值都引用 `field_ids`,所以摘要不可能显示树里没有的内容.文字和某一行相同时引用那一行,算出来的值引用它的来源:Bitcoin 的发送额是外部输出的行,全部资产授权的"无限"是 `data` 这一行.有多个动作时顶部是唯一类别最高的动作,顺序在 `headline_rank`,无法识别排在授权之下.最高的不止一个,或者没有内容可放的动作不低于它时顶部留空.
 5. `signed` 行不可折叠,`context` 行可以折叠.
 6. 列表滚到底之前,确认控件不可用.
 7. `field_count` 等于节点数.`review_digest` 是全部行,风险和确认方式的 SHA-256.手机把它,已渲染行数和二次确认的结果传回 `sign_request`,核心库重新解码算出相同结果才签名,要二次确认而没有确认时拒绝.
@@ -229,7 +258,7 @@ record ReviewResult
 | `jniLibs`   | 同上                | 无                                                                                                               |
 | WASM 和类型 | `make wasm`         | `apps/web/src/core/index.ts`,`chains/transfer.ts`,`pages/Sign.tsx`                                               |
 
-绑定和 `jniLibs` 都被 Git 忽略,由 CI 生成.Kotlin 的 `Risk` 枚举和 `risk >= Risk.Approval` 这类比较要随第 3 节的新顺序一起改.
+绑定和 `jniLibs` 都被 Git 忽略,由 CI 生成.
 
 ## 5. 各链标准
 
@@ -319,49 +348,49 @@ record ReviewResult
 - 字段的名字,编号,类型来自官方 proto,显示方式和动作在 `schemas/tron-fields.json`,类别和告警在 `assets/rules.json`.
 - 编号 20,32,51 是原表缺少的类型.
 
-| 编号 | 合约类型                        | 类别             | 说明                                                                |
-| ---- | ------------------------------- | ---------------- | ------------------------------------------------------------------- |
-| 0    | AccountCreateContract           | 已识别           |                                                                     |
-| 1    | TransferContract                | 普通转账         |                                                                     |
-| 2    | TransferAssetContract           | 普通转账或已识别 | 清单内的 TRC-10 是普通转账.清单外告警,金额显示原始整数              |
-| 3    | VoteAssetContract               | 无法识别         | 有消息定义,没有执行器                                               |
-| 4    | VoteWitnessContract             | 已识别           | 列出全部投票对象                                                    |
-| 5    | WitnessCreateContract           | 已识别,告警      | 扣账户升级费                                                        |
-| 6    | AssetIssueContract              | 已识别,告警      | 扣发行费                                                            |
-| 8    | WitnessUpdateContract           | 已识别           |                                                                     |
-| 9    | ParticipateAssetIssueContract   | 已识别,告警      | 用 TRX 换 TRC-10                                                    |
-| 10   | AccountUpdateContract           | 已识别           |                                                                     |
-| 11   | FreezeBalanceContract           | 已识别           | `receiver_address` 不是本账户时告警                                 |
-| 12   | UnfreezeBalanceContract         | 已识别           | 同上                                                                |
-| 13   | WithdrawBalanceContract         | 已识别           |                                                                     |
-| 14   | UnfreezeAssetContract           | 已识别           |                                                                     |
-| 15   | UpdateAssetContract             | 已识别           |                                                                     |
-| 16   | ProposalCreateContract          | 已识别           | `parameters` 是 map,按线上顺序显示.键重复,缺键或缺值时拒绝          |
-| 17   | ProposalApproveContract         | 已识别           |                                                                     |
-| 18   | ProposalDeleteContract          | 已识别           |                                                                     |
-| 19   | SetAccountIdContract            | 已识别           |                                                                     |
-| 20   | CustomContract                  | 无法识别         | 只有枚举值,没有消息和执行器                                         |
-| 30   | CreateSmartContract             | 无法识别         | `bytecode` 是应用层.其余字段,包括 `call_token_value`,全部解码       |
-| 31   | TriggerSmartContract            | 按第 7 节        | `data` 是应用层.`call_value`,`call_token_value`,`token_id` 全部显示 |
-| 32   | GetContract                     | 无法识别         | 只有枚举值,没有消息和执行器                                         |
-| 33   | UpdateSettingContract           | 已识别           |                                                                     |
-| 41   | ExchangeCreateContract          | 已识别,告警      | 资产转入交易对                                                      |
-| 42   | ExchangeInjectContract          | 已识别,告警      | 同上                                                                |
-| 43   | ExchangeWithdrawContract        | 已识别           |                                                                     |
-| 44   | ExchangeTransactionContract     | 已识别,告警      | 显示 `quant`,`expected`                                             |
-| 45   | UpdateEnergyLimitContract       | 已识别           |                                                                     |
-| 46   | AccountPermissionUpdateContract | 权限变更         | 全部 `Permission` 和 `Key` 展开,`operations` 按合约类型编号解码位图 |
-| 48   | ClearABIContract                | 已识别           |                                                                     |
-| 49   | UpdateBrokerageContract         | 已识别           |                                                                     |
-| 51   | ShieldedTransferContract        | 无法识别         | 冷钱包没有屏蔽密钥,`transparent_from_address` 可以为空              |
-| 52   | MarketSellAssetContract         | 已识别,告警      | 挂单卖出资产                                                        |
-| 53   | MarketCancelOrderContract       | 已识别           |                                                                     |
-| 54   | FreezeBalanceV2Contract         | 已识别           |                                                                     |
-| 55   | UnfreezeBalanceV2Contract       | 已识别           |                                                                     |
-| 56   | WithdrawExpireUnfreezeContract  | 已识别           |                                                                     |
-| 57   | DelegateResourceContract        | 授权             | 显示 `receiver_address`,`lock`,`lock_period`                        |
-| 58   | UnDelegateResourceContract      | 已识别           |                                                                     |
-| 59   | CancelAllUnfreezeV2Contract     | 已识别           |                                                                     |
+| 编号 | 合约类型                        | 类别             | 说明                                                                                           |
+| ---- | ------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------- |
+| 0    | AccountCreateContract           | 已识别           |                                                                                                |
+| 1    | TransferContract                | 普通转账         |                                                                                                |
+| 2    | TransferAssetContract           | 普通转账或已识别 | 清单内的 TRC-10 是普通转账.`asset_name` 只和清单的 TRC-10 条目比较.清单外告警,金额显示原始整数 |
+| 3    | VoteAssetContract               | 无法识别         | 有消息定义,没有执行器                                                                          |
+| 4    | VoteWitnessContract             | 已识别           | 列出全部投票对象                                                                               |
+| 5    | WitnessCreateContract           | 已识别,告警      | 扣账户升级费                                                                                   |
+| 6    | AssetIssueContract              | 已识别,告警      | 扣发行费                                                                                       |
+| 8    | WitnessUpdateContract           | 已识别           |                                                                                                |
+| 9    | ParticipateAssetIssueContract   | 已识别,告警      | 用 TRX 换 TRC-10                                                                               |
+| 10   | AccountUpdateContract           | 已识别           |                                                                                                |
+| 11   | FreezeBalanceContract           | 已识别           | `receiver_address` 不是本账户时告警                                                            |
+| 12   | UnfreezeBalanceContract         | 已识别           | 同上                                                                                           |
+| 13   | WithdrawBalanceContract         | 已识别           |                                                                                                |
+| 14   | UnfreezeAssetContract           | 已识别           |                                                                                                |
+| 15   | UpdateAssetContract             | 已识别           |                                                                                                |
+| 16   | ProposalCreateContract          | 已识别           | `parameters` 是 map,按线上顺序显示.键重复,缺键或缺值时拒绝                                     |
+| 17   | ProposalApproveContract         | 已识别           |                                                                                                |
+| 18   | ProposalDeleteContract          | 已识别           |                                                                                                |
+| 19   | SetAccountIdContract            | 已识别           |                                                                                                |
+| 20   | CustomContract                  | 无法识别         | 只有枚举值,没有消息和执行器                                                                    |
+| 30   | CreateSmartContract             | 无法识别         | `bytecode` 是应用层.其余字段,包括 `call_token_value`,全部解码                                  |
+| 31   | TriggerSmartContract            | 按第 7 节        | `data` 是应用层.`call_value`,`call_token_value`,`token_id` 全部显示                            |
+| 32   | GetContract                     | 无法识别         | 只有枚举值,没有消息和执行器                                                                    |
+| 33   | UpdateSettingContract           | 已识别           |                                                                                                |
+| 41   | ExchangeCreateContract          | 已识别,告警      | 资产转入交易对                                                                                 |
+| 42   | ExchangeInjectContract          | 已识别,告警      | 同上                                                                                           |
+| 43   | ExchangeWithdrawContract        | 已识别           |                                                                                                |
+| 44   | ExchangeTransactionContract     | 已识别,告警      | 显示 `quant`,`expected`                                                                        |
+| 45   | UpdateEnergyLimitContract       | 已识别           |                                                                                                |
+| 46   | AccountPermissionUpdateContract | 权限变更         | 全部 `Permission` 和 `Key` 展开,`operations` 按合约类型编号解码位图                            |
+| 48   | ClearABIContract                | 已识别           |                                                                                                |
+| 49   | UpdateBrokerageContract         | 已识别           |                                                                                                |
+| 51   | ShieldedTransferContract        | 无法识别         | 冷钱包没有屏蔽密钥,`transparent_from_address` 可以为空                                         |
+| 52   | MarketSellAssetContract         | 已识别,告警      | 挂单卖出资产                                                                                   |
+| 53   | MarketCancelOrderContract       | 已识别           |                                                                                                |
+| 54   | FreezeBalanceV2Contract         | 已识别           |                                                                                                |
+| 55   | UnfreezeBalanceV2Contract       | 已识别           |                                                                                                |
+| 56   | WithdrawExpireUnfreezeContract  | 已识别           |                                                                                                |
+| 57   | DelegateResourceContract        | 授权             | 显示 `receiver_address`,`lock`,`lock_period`                                                   |
+| 58   | UnDelegateResourceContract      | 已识别           |                                                                                                |
+| 59   | CancelAllUnfreezeV2Contract     | 已识别           |                                                                                                |
 
 TRON 的消息和裸哈希都可以签,结果只有签名,`signature_only` 为真.路径规则和交易相同,`owner_address` 的检查不适用.
 
@@ -395,7 +424,7 @@ TRON 的消息和裸哈希都可以签,结果只有签名,`signature_only` 为�
 - **账户**:每个账户节点带 IDL 里的账户名,签名者和可写标记.账户数少于 IDL 必需账户时解码失败,程序本身不会执行.IDL 的 `remainingAccounts` 有名字,要求签名的一组只收签名者.多出的账户程序通常忽略,作为 `opaque` 节点显示,类别是无法识别.
 - **尾部字节**:程序本身会忽略尾部字节,链接受这种交易,所以不拒绝.它们作为 `opaque` 节点显示,类别是无法识别,C1 照常成立.
 - **数据不完整**:数据比 IDL 短,或枚举,option,布尔的标签不认识时,程序以后可能改变格式,所以整段 `data` 是 `opaque`,类别是无法识别.只有文本不是合法 UTF-8 时解码失败,程序一定拒绝.
-- **第三方程序**:程序 ID 不在下表时,按第 7 节处理.
+- **第三方程序**:程序 ID 不在下表时,按第 7.3 节处理.
 - **Token-2022**:mint 的扩展是链上状态,转账时的费用和 hook 看不到.清单条目的 `extensions` 声明过的 mint 才能是普通转账,其余的 `transfer`,`transferChecked`,`transferCheckedWithFee` 是无法识别,金额显示原始整数.
 - **没有广播形式**:链下消息,未知版本和未知掩码位的交易,`verify` 只返回核验过的签名,`signature_only` 为真.
 
@@ -426,35 +455,39 @@ TRON 的消息和裸哈希都可以签,结果只有签名,`signature_only` 为�
 | Vote                 | `Vote111111111111111111111111111111111111111`                                                                                             | 20     | 官方没有 IDL,见下                                        |
 | Address Lookup Table | `AddressLookupTab1e1111111111111111111111111`                                                                                             | 5      | `solana-program/address-lookup-table`                    |
 
-| 程序                 | 类别        | 指令                                                                                                                                                                                                                                                                                                           |
-| -------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| System               | 普通转账    | `transferSol`                                                                                                                                                                                                                                                                                                  |
-| System               | 权限变更    | `assign`,`assignWithSeed`,`authorizeNonceAccount`                                                                                                                                                                                                                                                              |
-| System               | 已识别,告警 | `transferSolWithSeed`,`withdrawNonceAccount`                                                                                                                                                                                                                                                                   |
-| System               | 无法识别    | `advanceNonceAccount` 不在第一条或 nonce 账户不属于本钱包.`initializeNonceAccount` 和给本钱包 nonce 地址的 `allocateWithSeed` 不属于完整的本钱包 nonce 创建                                                                                                                                                    |
-| System               | 已识别      | `createAccount`,`createAccountWithSeed`,`createAccountAllowPrefund`,`allocate`,`allocateWithSeed`,`initializeNonceAccount`,`upgradeNonceAccount`.`advanceNonceAccount` 在第一条且属于本钱包时不算动作,只有这一条指令时是取消交易,告警                                                                          |
-| SPL Token            | 普通转账    | `transferChecked`,mint 在清单内,小数位一致,账户恰好 4 个                                                                                                                                                                                                                                                       |
-| SPL Token            | 授权        | `approve`,`approveChecked`                                                                                                                                                                                                                                                                                     |
-| SPL Token            | 权限变更    | `setAuthority`                                                                                                                                                                                                                                                                                                 |
-| SPL Token            | 已识别,告警 | `transfer`,清单外的 `transferChecked`,`burn`,`burnChecked`,`closeAccount`,`unwrapLamports`,`withdrawExcessLamports`                                                                                                                                                                                            |
-| SPL Token            | 已识别      | `initializeMint`,`initializeMint2`,`initializeAccount`,`initializeAccount2`,`initializeAccount3`,`initializeMultisig`,`initializeMultisig2`,`revoke`,`mintTo`,`mintToChecked`,`freezeAccount`,`thawAccount`,`syncNative`,`getAccountDataSize`,`initializeImmutableOwner`,`amountToUiAmount`,`uiAmountToAmount` |
-| SPL Token            | 无法识别    | 小数位和清单不符的 `transferChecked`                                                                                                                                                                                                                                                                           |
-| SPL Token            | 取内部最高  | `batch`.内部每条指令按同一 IDL 解码.嵌套 `batch` 解码失败                                                                                                                                                                                                                                                      |
-| Associated Token     | 已识别      | `create`,`createIdempotent`,`createWithArgs`.地址不是由所有者,mint,程序推导得出时是无法识别.空数据等于 `create`                                                                                                                                                                                                |
-| Associated Token     | 已识别,告警 | `recoverNested`                                                                                                                                                                                                                                                                                                |
-| Compute Budget       | 已识别      | `requestHeapFrame`,`setComputeUnitLimit`,`setComputeUnitPrice`,`setLoadedAccountsDataSizeLimit`.不算动作,进入手续费节点                                                                                                                                                                                        |
-| Compute Budget       | 无法识别    | `requestUnits`,已废弃                                                                                                                                                                                                                                                                                          |
-| Memo                 | 已识别      | `addMemo`.非法 UTF-8 解码失败                                                                                                                                                                                                                                                                                  |
-| Stake                | 权限变更    | `authorize`,`authorizeChecked`,`authorizeWithSeed`,`authorizeCheckedWithSeed`,`setLockup`,`setLockupChecked`                                                                                                                                                                                                   |
-| Stake                | 已识别,告警 | `withdraw`                                                                                                                                                                                                                                                                                                     |
-| Stake                | 已识别      | `initialize`,`initializeChecked`,`delegateStake`,`split`,`deactivate`,`merge`,`getMinimumDelegation`,`deactivateDelinquent`,`moveStake`,`moveLamports`                                                                                                                                                         |
-| Stake                | 无法识别    | `redelegate`,已废弃,不在 IDL 里,命中时按 `opaque` 显示                                                                                                                                                                                                                                                         |
-| Vote                 | 权限变更    | `authorize`,`authorizeChecked`,`authorizeWithSeed`,`authorizeCheckedWithSeed`,`updateValidatorIdentity`                                                                                                                                                                                                        |
-| Vote                 | 已识别,告警 | `withdraw`                                                                                                                                                                                                                                                                                                     |
-| Vote                 | 已识别      | `initializeAccount`,`initializeAccountV2`,`updateCommission`,`updateCommissionCollector`,`updateCommissionBps`,`depositDelegatorRewards`                                                                                                                                                                       |
-| Vote                 | 无法识别    | `vote`,`voteSwitch`,`updateVoteState`,`updateVoteStateSwitch`,`compactUpdateVoteState`,`compactUpdateVoteStateSwitch`,`towerSync`,`towerSyncSwitch`                                                                                                                                                            |
-| Address Lookup Table | 已识别      | `createLookupTable`,`extendLookupTable`,`deactivateLookupTable`,`closeLookupTable`                                                                                                                                                                                                                             |
-| Address Lookup Table | 已识别,告警 | `freezeLookupTable`,不可逆                                                                                                                                                                                                                                                                                     |
+| 程序                 | 类别        | 指令                                                                                                                                                                                                                                                                                  |
+| -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| System               | 普通转账    | `transferSol`                                                                                                                                                                                                                                                                         |
+| System               | 权限变更    | `assign`,`assignWithSeed`,`authorizeNonceAccount`                                                                                                                                                                                                                                     |
+| System               | 已识别,告警 | `transferSolWithSeed`,`withdrawNonceAccount`,`createAccount`,`createAccountWithSeed`,`createAccountAllowPrefund`,`allocateWithSeed`.本钱包的 nonce 创建里证明过的 `allocateWithSeed` 不告警                                                                                           |
+| System               | 无法识别    | `advanceNonceAccount` 不在第一条或 nonce 账户不属于本钱包.`initializeNonceAccount` 和给本钱包 nonce 地址的 `allocateWithSeed` 不属于完整的本钱包 nonce 创建                                                                                                                           |
+| System               | 已识别      | `allocate`,`initializeNonceAccount`,`upgradeNonceAccount`.`advanceNonceAccount` 在第一条且属于本钱包时不算动作,只有这一条指令时是取消交易,告警                                                                                                                                        |
+| SPL Token            | 普通转账    | `transferChecked`,mint 在清单内,小数位一致,账户恰好 4 个                                                                                                                                                                                                                              |
+| SPL Token            | 授权        | `approve`,`approveChecked`                                                                                                                                                                                                                                                            |
+| SPL Token            | 权限变更    | `setAuthority`                                                                                                                                                                                                                                                                        |
+| SPL Token            | 已识别,告警 | `transfer`,清单外的 `transferChecked`,`mintTo`,`mintToChecked`,`burn`,`burnChecked`,`closeAccount`,`unwrapLamports`,`withdrawExcessLamports`                                                                                                                                          |
+| SPL Token            | 已识别      | `initializeMint`,`initializeMint2`,`initializeAccount`,`initializeAccount2`,`initializeAccount3`,`initializeMultisig`,`initializeMultisig2`,`revoke`,`freezeAccount`,`thawAccount`,`syncNative`,`getAccountDataSize`,`initializeImmutableOwner`,`amountToUiAmount`,`uiAmountToAmount` |
+| SPL Token            | 无法识别    | 小数位和清单不符的 `transferChecked`                                                                                                                                                                                                                                                  |
+| SPL Token            | 取内部最高  | `batch`.内部每条指令按同一 IDL 解码.嵌套 `batch` 解码失败.内部指令的第一屏,事实,所有者确认,动作数和无限额度都和消息里的指令相同                                                                                                                                                       |
+| Associated Token     | 已识别      | `create`,`createIdempotent`,`createWithArgs`.地址不是由所有者,mint,程序推导得出时是无法识别.空数据等于 `create`                                                                                                                                                                       |
+| Associated Token     | 已识别,告警 | `recoverNested`                                                                                                                                                                                                                                                                       |
+| Compute Budget       | 已识别      | `requestHeapFrame`,`setComputeUnitLimit`,`setComputeUnitPrice`,`setLoadedAccountsDataSizeLimit`.不算动作,进入手续费节点                                                                                                                                                               |
+| Compute Budget       | 无法识别    | `requestUnits`,已废弃                                                                                                                                                                                                                                                                 |
+| Memo                 | 已识别      | `addMemo`.非法 UTF-8 解码失败                                                                                                                                                                                                                                                         |
+| Stake                | 权限变更    | `authorize`,`authorizeChecked`,`authorizeWithSeed`,`authorizeCheckedWithSeed`,`setLockup`,`setLockupChecked`                                                                                                                                                                          |
+| Stake                | 已识别,告警 | `withdraw`,`initialize`,`initializeChecked`,`split`,`merge`,`moveStake`,`moveLamports`                                                                                                                                                                                                |
+| Stake                | 已识别      | `delegateStake`,`deactivate`,`getMinimumDelegation`,`deactivateDelinquent`                                                                                                                                                                                                            |
+| Stake                | 无法识别    | `redelegate`,已废弃,不在 IDL 里,命中时按 `opaque` 显示                                                                                                                                                                                                                                |
+| Vote                 | 权限变更    | `authorize`,`authorizeChecked`,`authorizeWithSeed`,`authorizeCheckedWithSeed`,`updateValidatorIdentity`                                                                                                                                                                               |
+| Vote                 | 已识别,告警 | `withdraw`,`initializeAccount`,`initializeAccountV2`,`updateCommissionCollector`,`depositDelegatorRewards`                                                                                                                                                                            |
+| Vote                 | 已识别      | `updateCommission`,`updateCommissionBps`                                                                                                                                                                                                                                              |
+| Vote                 | 无法识别    | `vote`,`voteSwitch`,`updateVoteState`,`updateVoteStateSwitch`,`compactUpdateVoteState`,`compactUpdateVoteStateSwitch`,`towerSync`,`towerSyncSwitch`                                                                                                                                   |
+| Address Lookup Table | 已识别      | `createLookupTable`,`extendLookupTable`,`deactivateLookupTable`                                                                                                                                                                                                                       |
+| Address Lookup Table | 已识别,告警 | `freezeLookupTable`,不可逆.`closeLookupTable`                                                                                                                                                                                                                                         |
+
+把 SOL 或代币转给本机确认不了的账户,或者把控制权交给这样的账户时,金额和目标都在第一屏,类别不变,告警要求长按.
+
+**Stake**:官方 IDL 去掉了指令里的系统变量账户,官方程序正在移除对它们的依赖,现有钱包的交易还带着它们.旧布局写在 `schemas/solana/stake-older.json`,来自 `solana-stake-interface` 4.4.0,它是最后一个带系统变量的版本,和 `@solana/web3.js` 1.99.0 的 `StakeProgram` 核对过.解码只看交易里的地址:旧布局的第一个系统变量所在的位置上是这个系统变量时按旧布局读,否则按 IDL 读.`hint` 和请求的其他字节都不参与.这个位置的地址来自查找表时看不出是哪种布局,账户都叫 `account`,不命名.两种布局除了系统变量逐个相同,所以规则表的路径都能用.
 
 **Vote**:官方没有 IDL,管理类指令写在 `schemas/solana/vote.json`,字节和账户标记都和 `solana-vote-interface` 的构建函数比较.8 条共识投票指令用了 Codama 表达不了的变长编码,不进 IDL,命中时按 `opaque` 显示,类别是无法识别.这是本标准已知的缺口.
 
@@ -462,7 +495,8 @@ Token-2022 的 0 到 25 号,38,45,255 号和 SPL Token 同名指令规则相同,
 
 | 前缀   | 扩展                    | 类别                 | 指令                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ------ | ----------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 26     | TransferFee             | 已识别               | `initializeTransferFeeConfig`,`withdrawWithheldTokensFromMint`,`withdrawWithheldTokensFromAccounts`,`harvestWithheldTokensToMint`,`setTransferFee`                                                                                                                                                                                                                                                                                                                                                  |
+| 26     | TransferFee             | 已识别               | `initializeTransferFeeConfig`,`harvestWithheldTokensToMint`,`setTransferFee`                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 26     | TransferFee             | 已识别,告警          | `withdrawWithheldTokensFromMint`,`withdrawWithheldTokensFromAccounts`                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | 26     | TransferFee             | 同 `transferChecked` | `transferCheckedWithFee`,显示 `fee`                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 27     | ConfidentialTransfer    | 无法识别             | `initializeConfidentialTransferMint`,`updateConfidentialTransferMint`,`configureConfidentialTransferAccount`,`approveConfidentialTransferAccount`,`emptyConfidentialTransferAccount`,`confidentialDeposit`,`confidentialWithdraw`,`confidentialTransfer`,`applyConfidentialPendingBalance`,`enableConfidentialCredits`,`disableConfidentialCredits`,`enableNonConfidentialCredits`,`disableNonConfidentialCredits`,`confidentialTransferWithFee`,`configureConfidentialTransferAccountWithRegistry` |
 | 28     | DefaultAccountState     | 已识别               | `initializeDefaultAccountState`,`updateDefaultAccountState`                                                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -520,7 +554,7 @@ Token-2022 的 0 到 25 号,38,45,255 号和 SPL Token 同名指令规则相同,
 - 键的编号,名字,格式和来源都在 `crates/bitone-core/assets/psbt-schema.json`,遍历器只认容器格式.
 - 键序不固定.重复的键,非规范的长度,版本要排除的键,版本要求却缺失的键都解码失败.
 - `PROPRIETARY` 的值是 `opaque`.`psbt-v2` 没有 MuSig2 和 `DNSSEC_PROOF` 的常量,这些键由 PSBT 键值遍历器命名.
-- `psbt-v2` 0.3.0 和 BIP-370 有三处不符,PSBT 进入它之前处理.`INPUT_COUNT` 排在 `OUTPUT_COUNT` 之后时它报重复键,所以键先按编号排序.金额 0 和空脚本它按缺失处理,所以换成占位值,字段的值以遍历器为准.`SEQUENCE` 缺失时它取 0,BIP-370 规定是 final,所以交易由遍历器拼出.
+- `psbt-v2` 0.3.0 和 BIP-370 有三处不符,PSBT 进入它之前处理.`INPUT_COUNT` 排在 `OUTPUT_COUNT` 之后时它报重复键,所以键先按编号排序.金额 0 和空脚本它按缺失处理,所以换成占位值,字段的值以遍历器为准.输出的脚本只取 `SCRIPT` 这个键,`REDEEM_SCRIPT`,`WITNESS_SCRIPT` 的取值格式相同,但不进交易.`SEQUENCE` 缺失时它取 0,BIP-370 规定是 final,所以交易由遍历器拼出.
 
 | 交易字段    | 显示                                                                       | 规则                                                                              |
 | ----------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
@@ -543,13 +577,13 @@ Token-2022 的 0 到 25 号,38,45,255 号和 SPL Token 同名指令规则相同,
 
 `redeem_script`,`witness_script` 同样解码成操作码列表.花费路径不是本钱包地址类型时,解码照常完成,策略按安全设计处理.
 
-`decode` 不读密钥,树里的派生路径只是声明.`tx/bitcoin.rs` 重新派生后把本账户事实交给 `policy::assess_bitcoin`,它算出命中了哪些种类,类别和告警都来自 `assets/rules.json`.`version`,`lock_time`,`sequence` 的含义是规则表里的 `note`.
+`decode` 不读密钥,树里的派生路径只是声明,都来自 PSBT.`tx/bitcoin.rs` 重新派生后把本账户事实交给 `policy::assess_bitcoin`,它算出命中了哪些种类,类别和告警都来自 `assets/rules.json`.`version`,`lock_time`,`sequence` 的含义是规则表里的 `note`.
 
 ## 6. 依赖
 
 ### 6.1 运行时依赖
 
-列的含义:依赖量来自 `cargo tree -e normal`,是该组在目标平台上的 crate 总数,"新增"是当前 `Cargo.lock` 没有的 crate 数.这些数字没有编译过,见第 10 节.
+列的含义:依赖量来自 `cargo tree -e normal`,是该组在目标平台上的 crate 总数,"新增"是当前 `Cargo.lock` 没有的 crate 数.这些数字没有编译过,见第 9 节.
 
 | 链      | crate                                                         | 版本     | 许可              | wasm32-unknown-unknown                  | Android    | 依赖量                                                            |
 | ------- | ------------------------------------------------------------- | -------- | ----------------- | --------------------------------------- | ---------- | ----------------------------------------------------------------- |
@@ -573,21 +607,22 @@ Token-2022 的 0 到 25 号,38,45,255 号和 SPL Token 同名指令规则相同,
 
 这些依赖不进 wasm 和 Android 的构建图.
 
-| 用途           | crate 或工具                                                                                                                                                                                                                                                                         | 版本                                                        | 许可                         | 说明                                                               |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
-| 生成 TRON 类型 | `prost-build`,`protox`                                                                                                                                                                                                                                                               | 0.14.4,0.10.0                                               | Apache-2.0,MIT OR Apache-2.0 | `protox` 是纯 Rust,不需要 `protoc`.`tools/protogen` 共 68 个 crate |
-| Solana 对照    | `solana-vote-interface`,`solana-hash`,`solana-pubkey`,`solana-instruction`,`tools/crosscheck` 的 dev 依赖 | 7.3.0,4.7.0,4.4.0,4.0.0              | Apache-2.0                   | Vote 的 IDL 是手写的,只有它要和 interface crate 比较  |
-| Solana 对照    | `@codama/dynamic-parsers`,`@codama/dynamic-codecs`,`codama`,RPC 的 `jsonParsed` 输出                      | 1.4.2,1.3.0,1.11.0                   | MIT                          | 不需要编译 Agave                                      |
-| EVM,TRON 对照  | `viem`,`tronweb`                                                                                                                                                                                                                                                                     | 沿用 `apps/web` 锁定的版本或单独固定                        | MIT                          | 运行时已用 alloy 和 prost,对照必须是另一套实现                     |
-| Bitcoin 对照   | Bitcoin Core `decodepsbt`,`decoderawtransaction`                                                                                                                                                                                                                                     | CI 固定版本                                                 | MIT                          | 已用于 regtest 验证                                                |
-| 模糊测试       | `cargo-fuzz`                                                                                                                                                                                                                                                                         | CI 固定版本和 nightly                                       | MIT OR Apache-2.0            | 只在 CI                                                            |
+| 用途           | crate 或工具                                                                                              | 版本                                 | 许可                         | 说明                                                               |
+| -------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------ | ---------------------------- | ------------------------------------------------------------------ |
+| 生成 TRON 类型 | `prost-build`,`protox`                                                                                    | 0.14.4,0.10.0                        | Apache-2.0,MIT OR Apache-2.0 | `protox` 是纯 Rust,不需要 `protoc`.`tools/protogen` 共 68 个 crate |
+| Solana 对照    | `solana-vote-interface`,`solana-hash`,`solana-pubkey`,`solana-instruction`,`tools/crosscheck` 的 dev 依赖 | 7.3.0,4.7.0,4.4.0,4.0.0              | Apache-2.0                   | Vote 的 IDL 是手写的,要和 interface crate 比较                     |
+| Solana 对照    | `solana-stake-interface`,`tools/crosscheck` 的 dev 依赖                                                   | 4.4.0,5.1.1                          | Apache-2.0                   | Stake 两种账户布局的字节来自这两个版本的构建函数                   |
+| Solana 对照    | `@codama/dynamic-parsers`,`@codama/dynamic-codecs`,`codama`,RPC 的 `jsonParsed` 输出                      | 1.4.2,1.3.0,1.11.0                   | MIT                          | 不需要编译 Agave                                                   |
+| EVM,TRON 对照  | `viem`,`tronweb`                                                                                          | 沿用 `apps/web` 锁定的版本或单独固定 | MIT                          | 运行时已用 alloy 和 prost,对照必须是另一套实现                     |
+| Bitcoin 对照   | Bitcoin Core `decodepsbt`,`decoderawtransaction`                                                          | CI 固定版本                          | MIT                          | 已用于 regtest 验证                                                |
+| 模糊测试       | `cargo-fuzz`                                                                                              | CI 固定版本和 nightly                | MIT OR Apache-2.0            | 只在 CI                                                            |
 
 官方 interface crate 不进产物,原因是:
 
 - 新增 84 个 crate,比另外三条链的总和还多.`solana-address`,`solana-instruction`,`solana-instruction-error`,`solana-pubkey`,`solana-serialize-utils` 各解析出两个版本.
 - `spl-token-2022-interface` 在 wasm 上引入 `getrandom 0.2`(`js`),`js-sys`,`wasm-bindgen`,`curve25519-dalek 4`.
 - 它们没有字节范围,`unpack` 丢弃尾部字节,`unpack_with_rest` 是 `pub(crate)`.System,Stake,Vote 还要额外启用 `wincode` 或 `bincode`.
-- 官方 Codama IDL 已经是机器可读的格式定义,核对过:System 14,Token 28,Token-2022 100,Compute Budget 5,Address Lookup Table 5 都和 interface crate 的枚举一一对应.IDL 用到的类型节点只有 23 种.同一个遍历器还能读第三方程序的描述文件.
+- 官方 Codama IDL 已经是机器可读的格式定义,核对过:System 14,Token 28,Token-2022 100,Compute Budget 5,Address Lookup Table 5 都和 interface crate 的枚举一一对应.IDL 用到的类型节点只有 23 种.
 
 ### 6.3 Schema 来源
 
@@ -595,6 +630,7 @@ Token-2022 的 0 到 25 号,38,45,255 号和 SPL Token 同名指令规则相同,
 | ------------------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------- |
 | java-tron `protocol/src/main/protos/core/`,在 `schemas/tron/` | tag `GreatVoyage-v4.8.2.4`,commit `4e8389f159d0782f1ebcd9dab2fd88388c0e6fe9` | 仓库 LGPL-3.0,`account_contract.proto` 文件头是 GPLv3 |
 | `solana-program/*` 的 `idl.json`                              | commit 和 SHA-256                                                            | Apache-2.0                                            |
+| Stake 的旧布局,在 `schemas/solana/stake-older.json`           | `solana-program/stake` 的 commit 和 SHA-256                                  | Apache-2.0                                            |
 | ERC-7730 描述文件,在 `schemas/erc7730/`                       | `ethereum/clear-signing-erc7730-registry` 的 commit 和 SHA-256               | CC0-1.0                                               |
 
 ### 6.4 固定方法
@@ -629,28 +665,24 @@ Token-2022 的 0 到 25 号,38,45,255 号和 SPL Token 同名指令规则相同,
 
 格式是 ERC-7730,schema 主版本 2(当前 2.1.0).ERC-7730 仍是草案.主版本不符的描述文件按无效处理.
 
-| 规则   | 内容                                                                                                                                                                                                                  |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 绑定   | 调用数据按链,目标地址,选择器匹配,选择器由函数签名算出.EIP-712 按链,`verifyingContract`,`primaryType`,类型串匹配                                                                                                       |
-| 解码   | 按描述里的 ABI 用 `alloy-dyn-abi` 解码,重新编码必须等于 `data`.不相等按没有描述处理,选择器是标准函数时告警写明这一点                                                                                                  |
-| 类别   | 描述文件只决定字段名和展示.类别由策略按解码出的动作判定,不能降低.清单的描述文件给的类别是已识别,附带原生币时是无法识别,标准函数按规则表,种类名是 `fn:` 加规范签名                                                     |
-| 字段   | 每个 ABI 参数都进树,描述文件没写的参数显示 ABI 名字,所以描述文件不能隐藏参数.`path` 只认顶层参数,嵌套字段显示 ABI 名字                                                                                                |
-| 嵌套   | `calldata` 格式的参数按同一合约递归解码,最多 3 层,每层 32 条.超过时这一层按没有描述处理                                                                                                                               |
-| 内置   | `transfer`,`approve`,Permit 来自注册表的 `ercs/calldata-erc20-tokens.json`,`ercs/eip712-erc2612-permit.json`,其余标准函数在 `schemas/erc7730/bitone-calldata.json`,`bitone-eip712.json`,格式相同.内置描述不随清单改变 |
-| 清单外 | 标准函数在任何合约上都解码显示,用户才看得到被授权方和额度,这是钓鱼的主要入口.类别是无法识别,告警写明合约不在清单,不一定遵守标准.无限额度的告警保留                                                                    |
-| 优先级 | 标准函数的选择器不看清单的描述文件,解不开时也一样,所以描述文件不能替换授权和转账的解读                                                                                                                                |
-| 升级   | 描述绑定地址,不绑定代码.合约升级后含义可能改变,离线设备无法发现,所以描述文件给不出普通转账,普通转账只给清单内的代币                                                                                                   |
+| 规则   | 内容                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 绑定   | 调用数据按链,目标地址,选择器匹配,选择器由函数签名算出.EIP-712 按链,`verifyingContract`,`primaryType`,类型串匹配                                                                                                                                                                                                                                                                                    |
+| 解码   | 按描述里的 ABI 用 `alloy-dyn-abi` 解码.描述文件的函数重新编码必须等于 `data`,值也要在类型范围内,窄整数,定长字节的多余位不算相等.不相等按没有描述处理                                                                                                                                                                                                                                               |
+| 类别   | 描述文件只决定字段名和展示.类别由策略按解码出的动作判定,不能降低.清单的描述文件给的类别是已识别,附带原生币时是无法识别,标准函数按规则表,种类名是 `fn:` 加规范签名                                                                                                                                                                                                                                  |
+| 字段   | 每个 ABI 参数都进树,描述文件没写的参数显示 ABI 名字,所以描述文件不能隐藏参数.`path` 只认顶层参数,嵌套字段显示 ABI 名字                                                                                                                                                                                                                                                                             |
+| 嵌套   | `calldata` 格式的参数按同一合约递归解码,最多 3 层,每层 32 条.超过时这一层按没有描述处理                                                                                                                                                                                                                                                                                                            |
+| 内置   | `transfer`,`approve`,Permit 来自注册表的 `ercs/calldata-erc20-tokens.json`,`ercs/eip712-erc2612-permit.json`,其余标准函数在 `schemas/erc7730/bitone-calldata.json`,`bitone-eip712.json`,格式相同.内置描述不随清单改变                                                                                                                                                                              |
+| 清单外 | 标准函数在任何合约上都解码显示,用户才看得到被授权方和额度,这是钓鱼的主要入口.类别是无法识别,告警写明合约不在清单,不一定遵守标准.无限额度的告警保留                                                                                                                                                                                                                                                 |
+| 优先级 | 标准函数的选择器不看清单的描述文件,数据不规范时也一样,所以描述文件不能替换授权和转账的解读                                                                                                                                                                                                                                                                                                         |
+| 不规范 | 标准函数的数据不规范时合约照样执行,Solidity 忽略尾部字节,旧版编译器屏蔽高位,缺的字节读成 0,钓鱼者可以故意这样构造.所以按这些编译器的读法取参数:地址取低 20 字节,整数取低位,定长字节取高位,布尔值非 0 即真,缺的字节是 0.方法,被授权方或收款方,金额都照常显示,对方在页面顶部,无限额度的告警保留.多余字节是 `opaque` 字段.类别是无法识别,告警写明数据不规范和合约会读到什么,可以签.EVM 和 TRC-20 相同 |
+| 升级   | 描述绑定地址,不绑定代码.合约升级后含义可能改变,离线设备无法发现,所以描述文件给不出普通转账,普通转账只给清单内的代币                                                                                                                                                                                                                                                                                |
 
 TRON 的 TRC-20 调用使用同一份 ABI 规则,地址按 TRON 的格式显示.
 
 ### 7.3 Solana
 
-ERC-7730 没有 Solana 绑定.BitOne 的 Solana 描述文件由两部分组成:
-
-- **结构**:Codama IDL,和第 5.3 节用同一个遍历器.Anchor IDL 用 `@codama/nodes-from-anchor` 转换.
-- **展示**:和 ERC-7730 `display.formats` 同构的一段,键是指令名.
-
-绑定是网络,程序 ID,判别值.程序 ID 可以升级,规则同 7.2 的"升级".
+Solana 的第三方程序没有描述文件.程序 ID 不在第 5.3 节的表里时按第 7.4 节显示,类别是无法识别.
 
 ### 7.4 没有描述文件
 
@@ -660,7 +692,7 @@ ERC-7730 没有 Solana 绑定.BitOne 的 Solana 描述文件由两部分组成:
 | TRON   | 同上,加 `call_token_value`,`token_id`                     |
 | Solana | 程序 ID,账户列表和签名者,可写标记,`data` 的长度和十六进制 |
 
-类别是无法识别,长按签名.不按固定偏移切分参数,第 2.4 节禁止手算偏移.函数签名数据库不是可信来源,不用来猜测方法名.
+类别是无法识别,长按签名.不按固定偏移切分参数,第 2.4 节禁止手算偏移.唯一的例外是标准函数的不规范数据,见第 7.2 节.函数签名数据库不是可信来源,不用来猜测方法名.
 
 ### 7.5 清单格式
 
@@ -686,6 +718,8 @@ ERC-7730 没有 Solana 绑定.BitOne 的 Solana 描述文件由两部分组成:
 Bitcoin 的官方向量在 `tools/crosscheck/vectors/bitcoin.json`,`vectors.lock` 记录哈希,文件里写明 `bitcoin/bips` 的 commit.BIP-174,370,371 的 PSBT 向量和 `bitcoin`,`psbt-v2` 直接解出的结果逐字段比较,BIP-143,341 的向量比较 sighash.
 
 Solana 的向量在 `tools/crosscheck/vectors/solana.json`,由 `tools/crosscheck/codama/generate.mjs` 生成.运行时用自己的遍历器解码,所以字段的期望值来自 `@codama/dynamic-parsers`,指令的字节由 `@codama/dynamic-codecs` 从 IDL 编码.每条 IDL 指令都放进 legacy,v0,v1 三种消息,检查 C1,C2,C4,字段和账户名逐个相同,没有 `opaque` 节点,显示文字没有缺失.少一个必需账户时必须解码失败.Vote 的 IDL 是手写的,另外和 `solana-vote-interface` 比较.语料没有 Solana 样本之前,这些向量证明的是遍历器和 IDL 一致,不是 IDL 和程序一致.
+
+Stake 的两种账户布局在 `tools/crosscheck/vectors/stake.json`,由 `solana-stake-interface` 4.4.0 和 5.1.1 的构建函数生成,账户名来自调用时传入的角色,不来自 `schemas/solana/`.`tools/crosscheck/src/stake_interface.rs` 检查文件和构建函数一致,`bitone-signer` 的测试检查账户行和第一屏.
 
 EVM 的向量在 `tools/crosscheck/vectors/evm.json`,由 `tools/crosscheck/viem/generate.mjs` 生成,viem 的版本固定,名字映射表是 `tools/crosscheck/viem/names.json`.运行时用 alloy 解码,所以字段的期望值来自 viem.类型 0 到 4 用测试私钥由 viem 构建,`ethereum/tests` 的合法向量由 viem 解开,生成时核对官方的哈希和发送方.树里的字段,未签名编码,装回签名的字节,交易哈希,恢复出的发送方和授权人都要相同.官方的不合法向量去掉签名三项后必须解码失败.类型 3,4 没有官方向量进入快照.
 
@@ -718,74 +752,35 @@ TRON 的向量在 `tools/crosscheck/vectors/tron.json`,由 `tools/crosscheck/tro
 - 性质:不崩溃,不超时.解码成功时 C1,C2 成立.解码成功时对照工具也必须接受,字段相同.
 - 崩溃样本作为构件上传,修复后进回归测试.发布配置是 `panic = "abort"`,解码器不允许 panic.
 
-## 9. 迁移顺序
+## 9. 事实和假设
 
-前提:进行中的 sighash,收款告警,Permit2 工作先合并,它们的规则进入策略表.
+### 9.1 已核实
 
-新旧链路并存.`tx::review` 按链分发,`ReviewResult` 先增加 `fields`,保留旧字段.`fields` 非空时手机用通用列表,所以每条链可以单独发布.
-
-| 步骤 | 内容                                                                                                   | 依赖 | 单独发布    |
-| ---- | ------------------------------------------------------------------------------------------------------ | ---- | ----------- |
-| 0    | 模型,C1 到 C4,风险顺序,`fields`,通用列表,CI 里的 wasm 和 Android 依赖构建,`tools/crosscheck/`,语料任务 | 无   | 是,行为不变 |
-| 1    | Bitcoin:PSBT 键值遍历器,PSBT v0,脚本,`sequence`,`version`,`OP_RETURN`                                  | 0    | 是          |
-| 2    | Bitcoin:PSBT v2                                                                                        | 1    | 是          |
-| 3    | TRON:生成器,41 个合约类型,备注,`Permission_id`.`TriggerSmartContract` 暂走旧分类                       | 0    | 是          |
-| 4    | EVM:类型 0 到 4,访问列表,授权列表.合约调用暂走旧分类                                                   | 0    | 是          |
-| 5    | 应用层:清单 `descriptors`,ERC-20,TRC-20 内置描述,无描述按无法识别.删除 `abi.rs` 的手写分类             | 3,4  | 是          |
-| 6    | EIP-712 通用解码                                                                                       | 4,5  | 是          |
-| 7    | Solana:legacy,v0,v1,IDL 遍历器,System,Compute Budget,SPL Token,Token-2022 基础指令,Associated Token    | 0    | 是          |
-| 8    | Solana:Memo,Address Lookup Table,Stake,Vote,Token-2022 扩展                                            | 7    | 是,按程序   |
-| 9    | Solana 第三方描述文件                                                                                  | 5,7  | 是          |
-| 10   | 删除 `Row`,`ActionView`,`RawLine`,`raw_lines` 和旧 FFI 字段,更新 `docs/03`,`04`,`07`,`08` 和文档索引   | 全部 | 是          |
-
-- 第 7 步一次带上现有转账用到的全部程序,否则 SPL 转账会被当成第三方程序.
-- 内置描述必须先于手写分类的删除.
-- 每一步都走 CI 构建,不在开发机上跑批量测试.
-
-| 位置                                     | 处理                                                                                                                                                                                                                                                        |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tx/tron.rs`,`decode/tron.rs`            | `varint_is_strict`,`round_trip`,重复字段,字段顺序,`exactly_one_contract`,`type_url`,地址前缀保留.未知字段,未知合约类型改为 `opaque`.负数改为无法识别,有效期改为告警.`permission_id_is_refused`,`call_token_value_is_refused` 改为解码并显示                 |
-| `tx/solana.rs`,16 个                     | 消息层的全部保留.`unsupported_versions_are_refused` 改为未知版本可签,要二次确认                                                                                                                                                                             |
-| `tx/abi.rs`,18 个                        | 输入保留,改成对内置描述运行.`approvals_are_red_on_any_contract` 换成 `approvals_show_the_spender_on_any_contract`:清单外仍解码显示被授权方和额度,类别无法识别,告警写明合约不在清单.参数不合规的授权按没有描述处理,告警写明方法                              |
-| `tx/evm/typed.rs`,2 个                   | 保留                                                                                                                                                                                                                                                        |
-| `tx/bitcoin.rs`,18 个                    | BIP-143,BIP-174,BIP-341 向量和选币测试保留                                                                                                                                                                                                                  |
-| `review.rs`,4 个                         | `risk_is_the_highest_of_all_actions`,`forbidden_cannot_be_signed` 保留.`no_actions_is_never_treated_as_safe` 改为无法识别                                                                                                                                   |
-| `bitone-signer/src/sign/evm.rs`,24 个    | 与 viem 的逐字节对比和第 1.1 节的拒绝保留.`unknown_contract_shows_raw_data`,`contract_creation_is_unknown` 保留.`other_typed_messages_decode_and_sign_as_unknown` 解码后可签                                                                                |
-| `bitone-signer/src/sign/tron.rs`         | 与 tronweb 的对比保留.`other_system_contracts_are_unknown_and_show_raw_fields` 换成逐类型断言.`mutated_payloads_never_panic` 保留                                                                                                                           |
-| `bitone-signer/src/sign/solana.rs`,67 个 | 与 web3.js 的对比,nonce,查找表,手续费保留.`revoke_and_close_are_unknown`,`legacy_token_transfer_is_unknown`,`other_system_instructions_are_unknown`,`token_outside_the_manifest_is_unknown_with_a_raw_amount` 改类别.尾部字节类测试改为 `opaque` 加无法识别 |
-| `bitone-signer/src/sign/bitcoin.rs`,3 个 | 保留                                                                                                                                                                                                                                                        |
-| `bitone-ffi/src/lib.rs`                  | `review_needs_no_pin_and_sign_rechecks`,`garbage_is_refused_not_an_error` 保留,断言改到新字段                                                                                                                                                               |
-| Kotlin                                   | `SignFlowTest.kt`,`Fakes.kt` 随 `ReviewResult` 更新                                                                                                                                                                                                         |
-
-## 10. 事实和假设
-
-### 10.1 已核实
-
-| 事实                                                                                           | 来源                                                                                                           |
-| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `ContractType` 有 41 个值,`raw` 和 `Contract` 的字段如第 5.2 节                                | java-tron `Tron.proto`,tag 和 master 一致,`develop` 的枚举相同                                                 |
-| 节点比较 `expiration` 和区块时间,不看 `timestamp`,上限 24 小时                                 | java-tron `Manager.validateCommon`,`Constant.java`                                                             |
-| 节点用 protobuf-java 3.25.8,未知字段写在已知字段之后,`Any.value` 是字节,不重新序列化           | java-tron `protocol/build.gradle`,protobuf-java 的 `UnknownFieldSet`                                           |
-| 20,32 没有消息定义和执行器,3 有消息没有执行器,51 有执行器                                      | java-tron `protos/core/contract/`,`actuator/` 目录                                                             |
-| 备注按 `getMemoFee` 扣费,合约数必须为 1,哈希取 `getRawData().toByteArray()`                    | java-tron `Manager.java`,`TransactionCapsule.java`                                                             |
-| 协议文件的许可                                                                                 | GitHub API,`account_contract.proto` 文件头                                                                     |
-| SIMD-0385 状态 `Activated`,v1 的格式和限制,feature 公钥在 Agave 里                             | `solana-foundation/solana-improvement-documents`,`anza-xyz/agave` 的 `feature-set`                             |
+| 事实                                                                                           | 来源                                                                                                                         |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `ContractType` 有 41 个值,`raw` 和 `Contract` 的字段如第 5.2 节                                | java-tron `Tron.proto`,tag 和 master 一致,`develop` 的枚举相同                                                               |
+| 节点比较 `expiration` 和区块时间,不看 `timestamp`,上限 24 小时                                 | java-tron `Manager.validateCommon`,`Constant.java`                                                                           |
+| 节点用 protobuf-java 3.25.8,未知字段写在已知字段之后,`Any.value` 是字节,不重新序列化           | java-tron `protocol/build.gradle`,protobuf-java 的 `UnknownFieldSet`                                                         |
+| 20,32 没有消息定义和执行器,3 有消息没有执行器,51 有执行器                                      | java-tron `protos/core/contract/`,`actuator/` 目录                                                                           |
+| 备注按 `getMemoFee` 扣费,合约数必须为 1,哈希取 `getRawData().toByteArray()`                    | java-tron `Manager.java`,`TransactionCapsule.java`                                                                           |
+| 协议文件的许可                                                                                 | GitHub API,`account_contract.proto` 文件头                                                                                   |
+| SIMD-0385 状态 `Activated`,v1 的格式和限制,feature 公钥在 Agave 里                             | `solana-foundation/solana-improvement-documents`,`anza-xyz/agave` 的 `feature-set`                                           |
 | 链下消息的三种格式,v1 的掩码和签名位置                                                         | `anza-xyz/solana-sdk` 的 `offchain-message`,`message`,`transaction`,`anza-xyz/kit` 的 `packages/offchain-messages`,SIMD-0385 |
 | Vote 的 20 条指令和 12 条管理指令的字段,账户                                                   | `solana-vote-interface` 7.3.0 的源码                                                                                         |
-| Solana 指令集合和 IDL 指令数                                                                   | `solana-program/*` 的 `idl.json`,对应 interface crate 的源码                                                   |
-| EIP-7702 是 Final,EIP-8141 是 Draft,类型 0x06.`TxEip8141` 不是 `TxEnvelope` 的成员             | `ethereum/EIPs`,`alloy-consensus` 2.5.0 源码                                                                   |
-| `TxLegacy::decode`,`TokenInstruction::unpack`,`prost` 的行为                                   | 对应 crate 的源码                                                                                              |
-| crate 版本,许可,Rust 版本要求                                                                  | crates.io API                                                                                                  |
-| 依赖量                                                                                         | `cargo tree`,工具链 1.95.0,只解析依赖,没有编译                                                                 |
-| 上游 wasm 构建情况                                                                             | `alloy-rs/alloy`,`alloy-rs/core`,`anza-xyz/solana-sdk`,`solana-program/token-2022`,`tokio-rs/prost` 的 CI 文件 |
-| ERC-7730 是 Draft,schema 版本 2.1.0,注册表已迁到 `ethereum/clear-signing-erc7730-registry`,CC0 | `ethereum/ERCs`,GitHub API                                                                                     |
-| TIP-191 的前缀和长度,TIP-712 的地址,`trcToken`,`chainId`                                       | `tronprotocol/tips`,tronweb 6.5.1 的 `utils/message.js`,`utils/typedData.js`                                   |
-| TRON 的 `eth_chainId`,Shasta 0x94a9059e,Nile 0xcd8690dc                                        | TronGrid 的 JSON-RPC,TIP-712 只列出主网和 Nile                                                                 |
-| `TypedData` 的域哈希不看声明的类型,`Resolver::resolve` 拒绝自引用类型                          | `alloy-dyn-abi` 1.7.3 源码                                                                                     |
-| UniFFI 0.32.0 起支持递归记录                                                                   | `mozilla/uniffi-rs` 的 `CHANGELOG.md`                                                                          |
-| PSBT 键的集合                                                                                  | BIP-174,370,371,373,375,353,127 和 `psbt-v2` 的 `consts.rs`.BIP-431,433 目前是 Draft                           |
+| Solana 指令集合和 IDL 指令数                                                                   | `solana-program/*` 的 `idl.json`,对应 interface crate 的源码                                                                 |
+| EIP-7702 是 Final,EIP-8141 是 Draft,类型 0x06.`TxEip8141` 不是 `TxEnvelope` 的成员             | `ethereum/EIPs`,`alloy-consensus` 2.5.0 源码                                                                                 |
+| `TxLegacy::decode`,`TokenInstruction::unpack`,`prost` 的行为                                   | 对应 crate 的源码                                                                                                            |
+| crate 版本,许可,Rust 版本要求                                                                  | crates.io API                                                                                                                |
+| 依赖量                                                                                         | `cargo tree`,工具链 1.95.0,只解析依赖,没有编译                                                                               |
+| 上游 wasm 构建情况                                                                             | `alloy-rs/alloy`,`alloy-rs/core`,`anza-xyz/solana-sdk`,`solana-program/token-2022`,`tokio-rs/prost` 的 CI 文件               |
+| ERC-7730 是 Draft,schema 版本 2.1.0,注册表已迁到 `ethereum/clear-signing-erc7730-registry`,CC0 | `ethereum/ERCs`,GitHub API                                                                                                   |
+| TIP-191 的前缀和长度,TIP-712 的地址,`trcToken`,`chainId`                                       | `tronprotocol/tips`,tronweb 6.5.1 的 `utils/message.js`,`utils/typedData.js`                                                 |
+| TRON 的 `eth_chainId`,Shasta 0x94a9059e,Nile 0xcd8690dc                                        | TronGrid 的 JSON-RPC,TIP-712 只列出主网和 Nile                                                                               |
+| `TypedData` 的域哈希不看声明的类型,`Resolver::resolve` 拒绝自引用类型                          | `alloy-dyn-abi` 1.7.3 源码                                                                                                   |
+| UniFFI 0.32.0 起支持递归记录                                                                   | `mozilla/uniffi-rs` 的 `CHANGELOG.md`                                                                                        |
+| PSBT 键的集合                                                                                  | BIP-174,370,371,373,375,353,127 和 `psbt-v2` 的 `consts.rs`.BIP-431,433 目前是 Draft                                         |
 
-### 10.2 假设,未验证
+### 9.2 假设,未验证
 
 1. **构建**:`alloy-consensus`,`alloy-eips`,`alloy-primitives`,`alloy-rlp`,`psbt-v2` 已在 `bitone-core` 里构建.其余候选依赖的 wasm 和 Android 结论来自上游 CI 和依赖图,图里没有新增的 C 依赖.`prost` 已进入 `bitone-core`,开发机上只构建了宿主机,wasm 和 Android 由 CI 构建.`solana-message` 在 wasm 上没有直接的上游证据.
 2. **体积**:没有测量 WASM 和 `.so` 的体积增长.
@@ -793,7 +788,6 @@ TRON 的向量在 `tools/crosscheck/vectors/tron.json`,由 `tools/crosscheck/tro
 4. **规范编码**:假设主网 TRON 交易都是规范字段顺序,`auths`,`scripts`,`provider`,`ContractName`,`ref_block_num` 没有合法用途.语料会验证,不成立时调整规则.
 5. **类别**:矩阵里的风险类别是本标准的判断,不来自官方.
 6. **IDL 准确性**:假设 IDL 和程序行为一致.`batch` 的内部指令在 IDL 里是字节数组,递归解码是遍历器的规则,不是 IDL 给出的.对照测试会验证.
-7. **Solana 描述**:没有查到 Solana 上和 ERC-7730 对应的通用标准,这不等于不存在.
-8. **其他链**:BSC,Polygon 对各交易类型的支持没有逐一核实,规则按 Chain ID 一视同仁.
-9. **语料**:公开 RPC 的可用性和限流按现有实测估计,CI 上没有验证过.
-10. **许可**:第 6 节的许可判断不是法律意见.
+7. **其他链**:BSC,Polygon 对各交易类型的支持没有逐一核实,规则按 Chain ID 一视同仁.
+8. **语料**:公开 RPC 的可用性和限流按现有实测估计,CI 上没有验证过.
+9. **许可**:第 6 节的许可判断不是法律意见.

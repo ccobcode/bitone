@@ -42,6 +42,7 @@ struct Irregular {
     case: String,
     data: String,
     signature: String,
+    fields: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -143,8 +144,16 @@ fn check_call(style: &Style, contract: &[u8; 20], vector: &Call) -> Result<(), S
 
 fn check_irregular(style: &Style, vector: &Irregular) -> Result<(), String> {
     let result = classify(style, &USDT, &bytes(&vector.data)?, false);
-    if result.fact.shape != CallShape::Irregular(vector.signature.clone()) || !result.fields.is_empty() {
-        return Err(format!("{} 不能读出字段", vector.case));
+    if result.fact.shape != CallShape::Irregular(vector.signature.clone()) {
+        return Err(format!("{} 没有按不规范调用处理", vector.case));
+    }
+    let mut shown = Vec::new();
+    leaves(&result.fields, &mut shown);
+    if shown != vector.fields {
+        return Err(format!(
+            "{} 的字段:树里是 {shown:?},向量是 {:?}",
+            vector.case, vector.fields
+        ));
     }
     Ok(())
 }

@@ -6,6 +6,9 @@ mod bitcoin_vectors;
 mod evm_vectors;
 mod solana_vectors;
 #[cfg(test)]
+mod stake_interface;
+mod stake_vectors;
+#[cfg(test)]
 mod vote_interface;
 mod message_vectors;
 mod tron_vectors;
@@ -87,6 +90,8 @@ fn run() -> Result<(), String> {
         "Solana 向量:{} 个程序,{} 条指令,{} 条消息,{} 个字段,{} 个账户不足的消息被拒绝",
         report.programs, report.instructions, report.messages, report.fields, report.refused
     );
+    let report = stake_vectors::check(Path::new(VECTORS))?;
+    println!("Stake 向量:{} 种布局,{} 笔指令", report.layouts, report.cases);
     let report = tron_vectors::check(Path::new(VECTORS))?;
     println!(
         "TRON 向量:{} 笔交易,覆盖 {} 个合约类型,{} 个不合法载荷",
@@ -154,6 +159,13 @@ mod tests {
         let report = solana_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
         assert_eq!(report.programs, 9);
         assert!(report.instructions > 0 && report.fields > 0 && report.refused > 0);
+    }
+
+    #[test]
+    fn the_stake_vectors_hold() {
+        let report = stake_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
+        assert_eq!(report.layouts, 2);
+        assert!(report.cases > 0);
     }
 
     #[test]

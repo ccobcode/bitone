@@ -18,8 +18,6 @@ enum class ConfirmMode {
     Refuse,
 }
 
-class ReviewRow(val label: String, val value: String, val mono: Boolean)
-
 /** 金额.[asset] 是内置清单的条目,[icon] 是这一条的图标名,核心库按网络加合约查到才有.查不到时 [symbol] 也为空,[text] 是原始整数. */
 class ReviewAmount(
     val text: String,
@@ -29,10 +27,22 @@ class ReviewAmount(
     val unlimited: Boolean,
 )
 
-class ReviewAction(val risk: Risk, val title: String, val rows: List<ReviewRow>)
+/** A6d 的一组控制方.[current] 为空时当前控制方就是付款账户,[next] 为空时这笔权限变更没有新控制方. */
+class ReviewController(val current: String?, val next: String?)
 
-/** 原始数据的一行.[note] 是核心库分析出的提示,比如疑似地址. */
-class RawLine(val text: String, val note: String?)
+/** 权限变更打包的转账或调用的对方. */
+class ReviewParty(val label: String, val value: String)
+
+/** 页面顶部,在字段列表上方,不能代替列表.[controllers],[parties],[payer] 给 A6d 和 A8,通用列表不按字段名分支,表达不了这些. */
+class ReviewSummary(
+    val title: String,
+    val amount: ReviewAmount?,
+    val counterpartyLabel: String?,
+    val counterparty: String?,
+    val controllers: List<ReviewController>,
+    val parties: List<ReviewParty>,
+    val payer: String?,
+)
 
 enum class FieldKind {
     Bool,
@@ -84,15 +94,9 @@ class ReviewResult(
     val network: String,
     /** 页面顶部显示主网提示.不能确认是测试网时都是 true. */
     val mainnet: Boolean,
-    val title: String,
-    val amount: ReviewAmount?,
-    val counterpartyLabel: String?,
-    val counterparty: String?,
+    val summary: ReviewSummary,
     val alerts: List<String>,
-    val actions: List<ReviewAction>,
-    val rows: List<ReviewRow>,
-    val raw: List<RawLine>,
-    /** 不为空时核对页用通用字段列表.还没迁移的链是空的. */
+    /** 解码树的全部节点.只有拒绝时才是空的. */
     val fields: List<FieldRow>,
     /** 签名时原样传回核心库. */
     val reviewDigest: ByteArray,

@@ -46,9 +46,19 @@ pub(super) struct Batch {
 pub(super) struct Instruction {
     pub(super) name: String,
     pub(super) accounts: Vec<Account>,
+    pub(super) older: Option<OlderLayout>,
     pub(super) arguments: Vec<Argument>,
     discriminators: Vec<Discriminator>,
     pub(super) remaining: Vec<Remaining>,
+}
+
+/// 官方 IDL 去掉的系统变量账户还在现有钱包的交易里.`slot` 上是 `sysvar` 这个地址时按 `accounts` 读.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct OlderLayout {
+    pub(super) slot: usize,
+    pub(super) sysvar: String,
+    pub(super) accounts: Vec<Account>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -258,10 +268,6 @@ impl Instruction {
                 let end = field.offset + field.bytes.len();
                 data.get(field.offset..end) == Some(field.bytes.as_slice())
             })
-    }
-
-    pub(super) fn required_accounts(&self) -> usize {
-        self.accounts.iter().filter(|account| !account.optional).count()
     }
 }
 

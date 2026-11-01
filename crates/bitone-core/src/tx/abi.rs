@@ -2,15 +2,16 @@
 //!
 //! 标准函数内置,任何合约都解码,用户才看得到被授权方和额度.清单外的合约不一定遵守标准,类别是无法识别.
 //! 清单的描述文件只用于标准函数之外的选择器,所以描述文件不能改变授权和转账的类别.
-//! 解不开或重新编码不等于 `data` 时按没有描述处理,不按偏移取字段.
+//! 描述文件的函数解不开或重新编码不等于 `data` 时按没有描述处理.标准函数的数据不规范时合约照样执行,
+//! 所以按旧版编译器的读法取参数,类别是无法识别,见第 7.2 节.
 
 use crate::Chain;
 use crate::decode::{AddressText, Amount, Node, Source, Value, abi_node};
 use crate::manifest::{DisplayField, DisplayFormat, Manifest};
 use crate::policy::{self, CallFact, CallShape};
-use crate::review::{ActionView, AmountView, Risk, Row, field_label};
+use crate::review::{AmountView, Party, Risk, field_label};
 use crate::units::format_units;
-use alloy_dyn_abi::{DynSolValue, JsonAbiExt};
+use alloy_dyn_abi::{DynSolType, DynSolValue, JsonAbiExt, Specifier};
 use alloy_json_abi::Function;
 use alloy_primitives::{Selector, U160, U256};
 use bitcoin::hex::DisplayHex;
@@ -33,6 +34,8 @@ const EMBEDDED_CALL: &str = "calldata";
 /// 布尔值为真时对方能动用这个合约的全部资产,`bitone-calldata.json` 用它.
 const ALL_ASSETS: &str = "allAssets";
 const CALLS_ROW: &str = "calls";
+const TRAILING_ROW: &str = "trailing_data";
+const WORD: usize = 32;
 
 /// 注册表文件和本仓库的补充,见 `schemas/lock.toml`.
 const STANDARD_FILES: [&str; 2] = [
@@ -93,10 +96,97 @@ fn manifest_entry(style: &Style, contract: &str, selector: Selector) -> Option<D
         })
 }
 
+/// 官方解码器不检查窄类型的高位,带着高位重新编码也回到原样,所以要比较值的范围.
+fn fits_its_type(value: &DynSolValue) -> bool {
+    match value {
+        DynSolValue::Uint(number, bits) => number.bit_len() <= *bits,
+        DynSolValue::Int(number, bits) => {
+            let shift = 256usize.saturating_sub(*bits);
+            number.wrapping_shl(shift).asr(shift) == *number
+        }
+        DynSolValue::FixedBytes(word, size) => word.get(*size..).is_some_and(|rest| rest.iter().all(|byte| *byte == 0)),
+        DynSolValue::Array(items) | DynSolValue::FixedArray(items) | DynSolValue::Tuple(items) => {
+            items.iter().all(fits_its_type)
+        }
+        DynSolValue::CustomStruct { tuple, .. } => tuple.iter().all(fits_its_type),
+        DynSolValue::Bool(_)
+        | DynSolValue::Address(_)
+        | DynSolValue::Function(_)
+        | DynSolValue::Bytes(_)
+        | DynSolValue::String(_) => true,
+    }
+}
+
 /// 第 7.2 节:重新编码必须等于 `data`,不相等按没有描述处理.
 fn decoded_args(function: &Function, args: &[u8]) -> Option<Vec<DynSolValue>> {
     let values = function.abi_decode_input(args).ok()?;
-    (function.abi_encode_input_raw(&values).ok()? == args).then_some(values)
+    let regular = values.iter().all(fits_its_type) && function.abi_encode_input_raw(&values).ok()? == args;
+    regular.then_some(values)
+}
+
+/// 一个参数字,读到数据末尾之后的字节是 0.
+fn loose_word(args: &[u8], index: usize) -> [u8; WORD] {
+    let tail = args.get(index * WORD..).unwrap_or_default();
+    let len = tail.len().min(WORD);
+    let mut word = [0; WORD];
+    word[..len].copy_from_slice(&tail[..len]);
+    word
+}
+
+/// 旧版编译器读到的值:地址和短整数取低位,定长字节取高位,布尔值只要不是 0 就是真.
+fn cleaned(ty: &DynSolType, mut word: [u8; WORD]) -> [u8; WORD] {
+    let keep = match ty {
+        DynSolType::Address => 20,
+        DynSolType::Uint(bits) => bits / 8,
+        DynSolType::Bool => {
+            let on = word != [0; WORD];
+            word = [0; WORD];
+            word[WORD - 1] = u8::from(on);
+            1
+        }
+        DynSolType::FixedBytes(size) => {
+            word[*size..].fill(0);
+            WORD
+        }
+        _ => WORD,
+    };
+    word[..WORD - keep].fill(0);
+    word
+}
+
+fn is_single_word(ty: &DynSolType) -> bool {
+    matches!(
+        ty,
+        DynSolType::Address | DynSolType::Uint(_) | DynSolType::Bool | DynSolType::FixedBytes(_)
+    )
+}
+
+/// 第 7.2 节:标准函数按旧版编译器的读法取参数,返回参数和多余的字节.
+/// 参数都占一个字时按字取值,动态类型交给官方解码器,解不开时参数都算多余的字节,页面照样显示方法.
+fn loose_args(function: &Function, args: &[u8]) -> (Vec<DynSolValue>, Vec<u8>) {
+    let types: Vec<DynSolType> = function
+        .inputs
+        .iter()
+        .filter_map(|param| param.resolve().ok())
+        .collect();
+    if types.len() == function.inputs.len() && types.iter().all(is_single_word) {
+        let words = types
+            .iter()
+            .enumerate()
+            .flat_map(|(index, ty)| cleaned(ty, loose_word(args, index)));
+        let clean: Vec<u8> = words.collect();
+        let values = function.abi_decode_input(&clean).unwrap_or_default();
+        return (values, args.get(clean.len()..).unwrap_or_default().to_vec());
+    }
+    let mut padded = args.to_vec();
+    padded.resize(args.len().next_multiple_of(WORD).max(function.inputs.len() * WORD), 0);
+    let Ok(values) = function.abi_decode_input(&padded) else {
+        return (Vec::new(), args.to_vec());
+    };
+    let used = function
+        .abi_encode_input_raw(&values)
+        .map_or(0, |rebuilt| rebuilt.len());
+    (values, args.get(used..).unwrap_or_default().to_vec())
 }
 
 /// 地址的写法随链不同,比如 TRON 用 Base58.
@@ -114,7 +204,8 @@ pub struct Classified {
     pub amount: Option<AmountView>,
     pub counterparty_label: Option<String>,
     pub counterparty: Option<String>,
-    pub rows: Vec<Row>,
+    /// 方法和合约,写在 `data` 这一行的备注里.
+    pub details: Vec<(&'static str, String)>,
     /// 这次调用交给策略的事实.
     pub fact: CallFact,
     /// 解出的参数,挂在 `data` 下面,来源是 `descriptor`.
@@ -131,43 +222,67 @@ impl Classified {
             .collect()
     }
 
-    /// 金额和对方写进行里,给列表展示用.单个动作时这些内容在页面顶部,不用重复.
-    pub fn detailed(&self) -> ActionView {
-        let mut rows = Vec::new();
-        if let Some(amount) = &self.amount {
-            let symbol = amount.symbol.as_deref().map(|s| format!(" {s}")).unwrap_or_default();
-            let text = if amount.unlimited {
-                "无限".to_string()
-            } else {
-                amount.text.clone()
-            };
-            rows.push(Row::text("金额", format!("{text}{symbol}")));
-        }
-        if let (Some(label), Some(party)) = (&self.counterparty_label, &self.counterparty) {
-            rows.push(Row::mono(label, party.clone()));
-        }
-        rows.extend(self.rows.iter().cloned());
-        ActionView {
-            risk: self.risk,
-            title: self.title.clone(),
-            rows,
-        }
+    /// 这笔调用和嵌入调用的对方.
+    pub fn parties(&self) -> Vec<Party> {
+        let own = self.counterparty_label.iter().zip(&self.counterparty);
+        own.map(|(label, value)| Party {
+            label: label.clone(),
+            value: value.clone(),
+        })
+        .chain(self.inner.iter().flat_map(Self::parties))
+        .collect()
     }
 
-    pub fn actions(&self) -> Vec<ActionView> {
-        let mut list = vec![ActionView {
-            risk: self.risk,
-            title: self.title.clone(),
-            rows: self.rows.clone(),
-        }];
-        for call in &self.inner {
-            if call.inner.is_empty() {
-                list.push(call.detailed());
+    fn line(&self, details: &[(String, String)]) -> String {
+        let rows: Vec<String> = details
+            .iter()
+            .map(|(label, value)| [label.as_str(), value].join(" "))
+            .collect();
+        [self.title.as_str(), rows.join(",").as_str()].join(":")
+    }
+
+    fn own_details(&self) -> Vec<(String, String)> {
+        self.details
+            .iter()
+            .map(|(label, value)| (label.to_string(), value.clone()))
+            .collect()
+    }
+
+    /// 嵌入调用不在页面顶部,金额和对方也写进备注.
+    fn inner_line(&self) -> String {
+        let amount = self.amount.iter().map(|amount| {
+            let symbol = amount
+                .symbol
+                .iter()
+                .map(|symbol| [" ", symbol].concat())
+                .collect::<String>();
+            let text = if amount.unlimited {
+                "无限"
             } else {
-                list.extend(call.actions());
+                amount.text.as_str()
+            };
+            ("金额".to_string(), [text, symbol.as_str()].concat())
+        });
+        let party = self.counterparty_label.iter().zip(&self.counterparty);
+        let party = party.map(|(label, value)| (label.clone(), value.clone()));
+        let details: Vec<(String, String)> = amount.chain(party).chain(self.own_details()).collect();
+        self.line(&details)
+    }
+
+    fn lines(&self) -> Vec<String> {
+        let inner = self.inner.iter().flat_map(|call| {
+            if call.inner.is_empty() {
+                vec![call.inner_line()]
+            } else {
+                call.lines()
             }
-        }
-        list
+        });
+        std::iter::once(self.line(&self.own_details())).chain(inner).collect()
+    }
+
+    /// `data` 这一行的备注.嵌入调用各占一行.
+    pub fn note(&self) -> String {
+        self.lines().join("\n")
     }
 }
 
@@ -221,10 +336,7 @@ fn unknown(style: &Style, contract: &str, data: &[u8], shape: CallShape) -> Clas
         amount: None,
         counterparty_label: Some("目标合约".into()),
         counterparty: Some(contract.to_string()),
-        rows: vec![
-            Row::mono("方法选择器", selector),
-            Row::text("数据长度", format!("{} 字节", data.len())),
-        ],
+        details: vec![("方法选择器", selector), ("数据长度", format!("{} 字节", data.len()))],
         fact,
         fields: Vec::new(),
         inner: Vec::new(),
@@ -376,12 +488,28 @@ fn read(style: &Style, call: &Call, entry: &Described, values: &[DynSolValue]) -
     Some(reading)
 }
 
+/// 不规范的调用类别是无法识别,页面顶部仍按它读出来的方法排序,被授权方才不会被藏起来.
+fn lead_risk(style: &Style, call: &Classified) -> Risk {
+    match &call.fact.shape {
+        CallShape::Irregular(signature) => {
+            let regular = CallFact {
+                shape: CallShape::Standard(signature.clone()),
+                listed: true,
+                ..call.fact.clone()
+            };
+            policy::call_risk(style.chain, &regular)
+        }
+        CallShape::Undecoded | CallShape::Standard(_) | CallShape::Described => call.risk,
+    }
+}
+
 /// 只有一个动作是最高风险时才放到页面顶部,否则金额和对方会误导用户.
-fn lead_with(result: &mut Classified) {
-    let top = result.inner.iter().map(|c| c.risk).max_by_key(|r| r.legacy_rank());
-    let mut leaders = result.inner.iter().filter(|c| Some(c.risk) == top);
+fn lead_with(style: &Style, result: &mut Classified) {
+    let ranked = |call: &Classified| lead_risk(style, call).headline_rank();
+    let top = result.inner.iter().map(ranked).max();
+    let mut leaders = result.inner.iter().filter(|call| Some(ranked(call)) == top);
     if let (Some(leader), None) = (leaders.next(), leaders.next())
-        && leader.risk.legacy_rank() > Risk::Unknown.legacy_rank()
+        && ranked(leader) > Risk::Unknown.headline_rank()
     {
         result.amount = leader.amount.clone();
         result.counterparty_label = leader.counterparty_label.clone();
@@ -410,20 +538,18 @@ fn described(style: &Style, call: &Call, entry: &Described, reading: Reading, fa
         amount: reading.amount,
         counterparty_label,
         counterparty,
-        rows: vec![
-            Row::text("调用方法", method),
-            Row::mono("合约", call.text),
-            Row::text("合约清单", listed_text(style, call.text)),
+        details: vec![
+            ("调用方法", method.to_string()),
+            ("合约", call.text.to_string()),
+            ("合约清单", listed_text(style, call.text).to_string()),
         ],
         fact,
         fields: reading.fields,
         inner: reading.inner,
     };
     if !result.inner.is_empty() {
-        result
-            .rows
-            .push(Row::text("内部调用", format!("{} 个", result.inner.len())));
-        lead_with(&mut result);
+        result.details.push(("内部调用", format!("{} 个", result.inner.len())));
+        lead_with(style, &mut result);
     }
     result
 }
@@ -453,22 +579,32 @@ fn classify_at(style: &Style, contract: &[u8; 20], data: &[u8], has_value: bool,
         return unknown(style, &text, data, CallShape::Undecoded);
     };
     let signature = entry.function.signature();
-    let reading = decoded_args(&entry.function, args).and_then(|values| read(style, &call, entry, &values));
-    let Some(reading) = reading else {
-        // 合约照样会执行这种数据,选择器对得上时要说出来.
-        let shape = if known.is_some() {
-            CallShape::Irregular(signature)
-        } else {
-            CallShape::Undecoded
+    let strict = decoded_args(&entry.function, args);
+    let regular = strict.is_some();
+    let (values, extra) = match (strict, known) {
+        (Some(values), _) => (values, Vec::new()),
+        (None, Some(_)) => loose_args(&entry.function, args),
+        (None, None) => return unknown(style, &text, data, CallShape::Undecoded),
+    };
+    let shape = match known {
+        Some(_) if regular => CallShape::Standard(signature),
+        Some(_) => CallShape::Irregular(signature),
+        None => CallShape::Described,
+    };
+    let Some(mut reading) = read(style, &call, entry, &values) else {
+        // 嵌入调用超过上限,这一层按没有描述处理.
+        let shape = match shape {
+            CallShape::Irregular(_) => shape,
+            _ => CallShape::Undecoded,
         };
         return unknown(style, &text, data, shape);
     };
+    if !extra.is_empty() {
+        let row = Node::new(TRAILING_ROW, Value::Opaque(extra), Source::Descriptor);
+        reading.fields.push(row);
+    }
     let fact = CallFact {
-        shape: if known.is_some() {
-            CallShape::Standard(signature)
-        } else {
-            CallShape::Described
-        },
+        shape,
         contract: text.clone(),
         listed: listed(style, &text),
         has_value,
@@ -480,7 +616,7 @@ fn classify_at(style: &Style, contract: &[u8; 20], data: &[u8], has_value: bool,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::address::evm_text;
+    use crate::address::{evm_text, parse_tron_address, tron_text};
     use crate::decode::display;
     use crate::manifest::Descriptor;
     use sha3::{Digest, Keccak256};
@@ -631,23 +767,24 @@ mod tests {
         assert_eq!(result.risk, Risk::Unknown);
     }
 
+    /// 合约照样按这些字节转账,所以金额和收款方都要显示,类别不能是普通转账.
     #[test]
     fn trailing_bytes_are_not_a_plain_transfer() {
         let mut data = call(TRANSFER, &[addr(PEER), uint(1)]);
-        data.push(0);
+        data.push(0xaa);
         let result = classify(&style(), &USDT, &data, false);
         assert_eq!(result.risk, Risk::Unknown);
-        assert_eq!(result.amount, None);
+        assert_eq!(result.counterparty, Some(evm_text(&PEER)));
+        assert_eq!(result.amount.unwrap().symbol.as_deref(), Some("USDT"));
     }
 
     #[test]
-    fn dirty_address_word_is_rejected() {
+    fn a_dirty_address_word_reads_its_low_bytes() {
         let mut word = addr(PEER);
         word[0] = 1;
-        assert_eq!(
-            classify(&style(), &USDT, &call(TRANSFER, &[word, uint(1)]), false).risk,
-            Risk::Unknown
-        );
+        let result = classify(&style(), &USDT, &call(TRANSFER, &[word, uint(1)]), false);
+        assert_eq!(result.risk, Risk::Unknown);
+        assert_eq!(result.counterparty, Some(evm_text(&PEER)));
     }
 
     /// 清单外的合约不一定遵守标准,类别是无法识别,但被授权方和额度不能丢.
@@ -724,30 +861,134 @@ mod tests {
         assert!(!revoke.fact.unlimited);
     }
 
-    /// 合约可能照样执行这种数据,所以要说出选择器.参数不解读,不按偏移取字段.
-    #[test]
-    fn irregular_approvals_are_unknown_and_named() {
-        let mut trailing = call(APPROVE, &[addr(PEER), uint(1)]);
-        trailing.push(0);
-        let mut dirty = addr(PEER);
-        dirty[0] = 1;
-        for data in [trailing, call(APPROVE, &[dirty, uint(1)])] {
-            let result = classify(&style(), &USDT, &data, false);
-            assert_eq!(result.risk, Risk::Unknown);
-            assert_eq!(
-                result.fact.shape,
-                CallShape::Irregular("approve(address,uint256)".to_string())
-            );
-            assert_eq!(result.amount, None);
-            assert!(result.fields.is_empty());
+    fn tron_style() -> Style<'static> {
+        Style {
+            chain: Chain::Tron,
+            network: "tron",
+            manifest: Manifest::builtin(),
+            format: &tron_text,
         }
-        let usdt = classify(
+    }
+
+    fn tron_usdt() -> [u8; 20] {
+        parse_tron_address("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t").unwrap()
+    }
+
+    /// 第 7.2 节:Solidity 忽略尾部字节,旧版编译器屏蔽地址高位,缺的字节读成 0.
+    /// 合约照样执行,所以方法,被授权方,额度都要显示,无限额度的事实也不能丢.
+    #[test]
+    fn an_irregular_approve_shows_what_the_contract_reads_on_both_chains() {
+        let cases = [
+            (style(), USDT),
+            (style(), OTHER),
+            (tron_style(), tron_usdt()),
+            (tron_style(), OTHER),
+        ];
+        let mut dirty = addr(PEER);
+        dirty[..12].fill(0xee);
+        for (style, contract) in cases {
+            let spender = (style.format)(&PEER);
+            let mut trailing = call(APPROVE, &[addr(PEER), [0xff; 32]]);
+            trailing.push(0xaa);
+            let dirty = call(APPROVE, &[dirty, [0xff; 32]]);
+            let full = call(APPROVE, &[addr(PEER), uint(0x0102)]);
+            for (data, unlimited) in [(trailing, true), (dirty, true), (full[..67].to_vec(), false)] {
+                let result = classify(&style, &contract, &data, false);
+                assert_eq!(result.risk, Risk::Unknown);
+                assert_eq!(result.title, "授权");
+                assert_eq!(
+                    result.fact.shape,
+                    CallShape::Irregular("approve(address,uint256)".to_string())
+                );
+                assert_eq!(result.counterparty.as_deref(), Some(spender.as_str()));
+                assert_eq!(result.counterparty_label.as_deref(), Some("被授权方"));
+                assert_eq!(display(&field(&result, "Spender").value), spender);
+                assert_eq!(result.fact.unlimited, unlimited);
+                let amount = result.amount.clone().unwrap();
+                assert_eq!(amount.unlimited, unlimited);
+                assert_eq!(amount.symbol.is_some(), contract != OTHER);
+                assert!(result.note().contains("调用方法 approve"));
+            }
+        }
+    }
+
+    #[test]
+    fn extra_bytes_are_an_opaque_row_and_missing_bytes_read_as_zero() {
+        let mut data = call(APPROVE, &[addr(PEER), uint(1)]);
+        data.extend_from_slice(&[0xaa, 0xbb]);
+        let result = classify(&style(), &OTHER, &data, false);
+        let row = field(&result, TRAILING_ROW);
+        assert_eq!(row.value, Value::Opaque(vec![0xaa, 0xbb]));
+        assert_eq!(row.source, Source::Descriptor);
+        let short = call(APPROVE, &[addr(PEER), uint(0x0102)]);
+        let result = classify(&style(), &OTHER, &short[..short.len() - 1], false);
+        assert_eq!(result.amount.unwrap().text, "256");
+        assert!(result.fields.iter().all(|node| node.name != TRAILING_ROW));
+        // 地址只剩 19 字节,合约读到的地址低位是 0.
+        let result = classify(&style(), &OTHER, &short[..35], false);
+        let mut cut = PEER;
+        cut[19] = 0;
+        assert_eq!(result.counterparty, Some(evm_text(&cut)));
+        assert_eq!(result.amount.unwrap().text, "0");
+    }
+
+    /// 标准函数的参数都要读出来,尾部字节单独一行.
+    #[test]
+    fn every_builtin_function_survives_a_trailing_byte() {
+        for entry in standard() {
+            let function = &entry.function;
+            let values: Vec<DynSolValue> = function
+                .inputs
+                .iter()
+                .map(|param| match param.resolve().unwrap() {
+                    DynSolType::Address => DynSolValue::Address(PEER.into()),
+                    DynSolType::Bool => DynSolValue::Bool(true),
+                    DynSolType::Uint(bits) => DynSolValue::Uint(U256::from(1), bits),
+                    DynSolType::FixedBytes(size) => DynSolValue::FixedBytes([1; 32].into(), size),
+                    DynSolType::Array(_) => DynSolValue::Array(vec![DynSolValue::Bytes(vec![1])]),
+                    other => panic!("{other:?}"),
+                })
+                .collect();
+            let mut data = function.abi_encode_input(&values).unwrap();
+            assert_eq!(classify(&style(), &OTHER, &data, false).fields.len(), values.len());
+            data.push(0xaa);
+            let result = classify(&style(), &OTHER, &data, false);
+            let signature = function.signature();
+            assert_eq!(result.risk, Risk::Unknown, "{signature}");
+            assert_eq!(result.fact.shape, CallShape::Irregular(signature.clone()));
+            assert_eq!(result.fields.len(), values.len() + 1, "{signature}");
+            assert_eq!(field(&result, TRAILING_ROW).value, Value::Opaque(vec![0xaa]));
+        }
+    }
+
+    #[test]
+    fn set_approval_for_all_with_a_dirty_flag_counts_as_granted() {
+        let mut flag = [0; 32];
+        flag[0] = 1;
+        let result = classify(
             &style(),
-            &USDT,
-            &call(increase_approval(), &[addr(PEER), uint(1)]),
+            &OTHER,
+            &call(set_approval_for_all(), &[addr(PEER), flag]),
             false,
         );
-        assert_eq!(usdt.risk, Risk::Approval);
+        assert!(result.fact.unlimited);
+        assert!(result.amount.unwrap().unlimited);
+        assert_eq!(result.counterparty, Some(evm_text(&PEER)));
+    }
+
+    #[test]
+    fn permit_and_permit2_read_their_narrow_integers_by_the_low_bits() {
+        let mut amount = uint(7);
+        amount[0] = 0xee;
+        let result = classify(
+            &style(),
+            &OTHER,
+            &call(permit2_approve(), &[addr(USDT), addr(PEER), amount, uint(9)]),
+            false,
+        );
+        assert!(matches!(result.fact.shape, CallShape::Irregular(_)));
+        assert_eq!(display(&field(&result, "Amount").value), "0.000007 USDT");
+        assert_eq!(result.counterparty, Some(evm_text(&PEER)));
     }
 
     #[test]
@@ -779,16 +1020,9 @@ mod tests {
                 let result = classify(&style(), &OTHER, &data[..len], false);
                 assert_eq!(result.risk, Risk::Unknown, "{len}");
                 assert!(matches!(result.fact.shape, CallShape::Irregular(_)), "{len}");
+                assert!(result.counterparty.is_some(), "{len}");
             }
         }
-    }
-
-    #[test]
-    fn a_short_approve_is_not_read_by_offset() {
-        let data = call(APPROVE, &[addr(PEER), uint(0x0102)]);
-        let result = classify(&style(), &OTHER, &data[..data.len() - 1], false);
-        assert_eq!(result.amount, None);
-        assert_eq!(result.counterparty, Some(evm_text(&OTHER)));
     }
 
     fn multicall(calls: &[Vec<u8>]) -> Vec<u8> {
@@ -830,15 +1064,12 @@ mod tests {
             call(APPROVE, &[addr(attacker), [0xff; 32]]),
         ];
         let result = classify(&style(), &USDT, &multicall(&inner), false);
-        let actions = result.actions();
-        assert_eq!(actions.len(), 4);
-        assert_eq!(actions[0].risk, Risk::Unknown);
-        assert!(
-            actions
-                .iter()
-                .any(|a| a.rows.iter().any(|r| r.value == evm_text(&attacker)))
-        );
-        assert!(actions.iter().any(|a| a.rows.iter().any(|r| r.value == "无限 USDT")));
+        assert_eq!(result.risk, Risk::Unknown);
+        let note = result.note();
+        assert_eq!(note.lines().count(), 4);
+        assert!(note.contains(&evm_text(&attacker)));
+        assert!(note.contains("金额 无限 USDT"));
+        assert_eq!(result.parties().len(), 3);
         // 两个授权并列最高,顶部不能只显示其中一个.
         assert_eq!(result.counterparty, None);
         assert_eq!(result.amount, None);
@@ -856,10 +1087,20 @@ mod tests {
     }
 
     #[test]
+    fn an_irregular_approval_in_a_multicall_leads_the_page() {
+        let mut approve = call(APPROVE, &[addr(PEER), [0xff; 32]]);
+        approve.push(0xaa);
+        let result = classify(&style(), &USDT, &multicall(&[approve]), false);
+        assert_eq!(result.counterparty, Some(evm_text(&PEER)));
+        assert!(result.amount.as_ref().unwrap().unlimited);
+        assert!(result.facts().iter().any(|fact| fact.unlimited));
+    }
+
+    #[test]
     fn transfers_in_a_multicall_keep_the_summary_risk() {
         let inner = vec![call(TRANSFER, &[addr(PEER), uint(1)])];
-        let actions = classify(&style(), &USDT, &multicall(&inner), false).actions();
-        assert_eq!(actions.iter().map(|a| a.risk).max(), Some(Risk::Unknown));
+        let result = classify(&style(), &USDT, &multicall(&inner), false);
+        assert_eq!(result.risk, Risk::Unknown);
     }
 
     #[test]
@@ -892,6 +1133,27 @@ mod tests {
         assert_eq!(result.risk, Risk::Unknown);
         assert!(result.inner.is_empty());
         assert!(result.fields.is_empty());
+    }
+
+    #[test]
+    fn a_multicall_with_trailing_bytes_still_shows_its_inner_calls() {
+        let mut data = multicall(&[call(APPROVE, &[addr(PEER), [0xff; 32]])]);
+        data.push(0xaa);
+        let result = classify(&style(), &USDT, &data, false);
+        assert_eq!(result.risk, Risk::Unknown);
+        assert!(matches!(result.fact.shape, CallShape::Irregular(_)));
+        assert_eq!(result.inner.len(), 1);
+        assert!(result.facts().iter().any(|fact| fact.unlimited));
+        assert_eq!(field(&result, TRAILING_ROW).value, Value::Opaque(vec![0xaa]));
+    }
+
+    /// 解不开时方法还在,参数整段作为 `opaque` 显示.
+    #[test]
+    fn an_unreadable_multicall_keeps_the_method_and_the_bytes() {
+        let data = call(multicall_selector(), &[uint(32), uint(1), uint(u64::MAX)]);
+        let result = classify(&style(), &USDT, &data, false);
+        assert!(matches!(result.fact.shape, CallShape::Irregular(_)));
+        assert_eq!(field(&result, TRAILING_ROW).value, Value::Opaque(data[4..].to_vec()));
     }
 
     #[test]
@@ -944,6 +1206,74 @@ mod tests {
         assert_eq!(approve.risk, Risk::Unknown);
         assert_eq!(classify(&style, &OTHER, &data, true).risk, Risk::Unknown);
         assert_eq!(classify(&style, &USDT, &data, false).risk, Risk::Unknown);
+    }
+
+    /// 第 7.2 节:描述文件的函数重新编码必须等于 `data`,否则按没有描述处理.
+    #[test]
+    fn a_descriptor_stays_strict() {
+        let manifest = with_descriptors(&["stake(uint256 amount,uint256 lock)"]);
+        let style = Style {
+            manifest: &manifest,
+            ..style()
+        };
+        let data = call(selector("stake(uint256,uint256)"), &[uint(5), uint(6)]);
+        let mut trailing = data.clone();
+        trailing.push(0xaa);
+        for bad in [trailing, data[..data.len() - 1].to_vec()] {
+            let result = classify(&style, &OTHER, &bad, false);
+            assert_eq!(result.fact.shape, CallShape::Undecoded);
+            assert!(result.fields.is_empty());
+        }
+    }
+
+    /// 窄类型的高位不干净时重新编码也回到原样,这里同样算不规范.
+    #[test]
+    fn a_descriptor_rejects_values_wider_than_their_type() {
+        let manifest = with_descriptors(&[
+            "stake(uint8 amount,bytes4 tag)",
+            "lock(int8 amount)",
+            "batch(uint8[] amount)",
+        ]);
+        let style = Style {
+            manifest: &manifest,
+            ..style()
+        };
+        let mut tag = [0; 32];
+        tag[31] = 1;
+        let stake = selector("stake(uint8,bytes4)");
+        assert_eq!(
+            classify(&style, &OTHER, &call(stake, &[uint(0x100), [0; 32]]), false)
+                .fact
+                .shape,
+            CallShape::Undecoded
+        );
+        assert_eq!(
+            classify(&style, &OTHER, &call(stake, &[uint(1), tag]), false)
+                .fact
+                .shape,
+            CallShape::Undecoded
+        );
+        assert_eq!(
+            classify(&style, &OTHER, &call(stake, &[uint(1), [0; 32]]), false)
+                .fact
+                .shape,
+            CallShape::Described
+        );
+        let lock = selector("lock(int8)");
+        for (word, shape) in [
+            (uint(0x7f), CallShape::Described),
+            ([0xff; 32], CallShape::Described),
+            (uint(0x80), CallShape::Undecoded),
+        ] {
+            assert_eq!(classify(&style, &OTHER, &call(lock, &[word]), false).fact.shape, shape);
+        }
+        let batch = selector("batch(uint8[])");
+        assert_eq!(
+            classify(&style, &OTHER, &call(batch, &[uint(32), uint(1), uint(0x100)]), false)
+                .fact
+                .shape,
+            CallShape::Undecoded
+        );
     }
 
     /// 描述文件没写的参数也要显示,描述文件不能藏字段.

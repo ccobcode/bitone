@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -27,16 +26,16 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import com.ccobcode.bitone.flow.CURRENT_CONTROLLER
 import com.ccobcode.bitone.flow.NEW_CONTROLLER
 import com.ccobcode.bitone.flow.NO_CONTROLLER
+import com.ccobcode.bitone.flow.NO_NEW_CONTROLLER
 import com.ccobcode.bitone.flow.Network
-import com.ccobcode.bitone.flow.PARTY_LABELS
 import com.ccobcode.bitone.flow.ReviewStyle
 import com.ccobcode.bitone.flow.WalletFlow
-import com.ccobcode.bitone.flow.actionRows
 import com.ccobcode.bitone.flow.controllerCard
 import com.ccobcode.bitone.flow.fieldBlocks
 import com.ccobcode.bitone.flow.isHighRisk
@@ -46,10 +45,8 @@ import com.ccobcode.bitone.flow.shortAddress
 import com.ccobcode.bitone.platform.ConfirmMode
 import com.ccobcode.bitone.platform.FieldKind
 import com.ccobcode.bitone.platform.FieldRow
-import com.ccobcode.bitone.platform.RawLine
 import com.ccobcode.bitone.platform.ReviewAmount
 import com.ccobcode.bitone.platform.ReviewResult
-import com.ccobcode.bitone.platform.ReviewRow
 import com.ccobcode.bitone.platform.Risk
 import com.ccobcode.bitone.ui.components.ActionArea
 import com.ccobcode.bitone.ui.components.AddressCard
@@ -74,7 +71,6 @@ import com.ccobcode.bitone.ui.components.rememberLatest
 import com.ccobcode.bitone.ui.components.stateSpec
 import com.ccobcode.bitone.ui.theme.BitOneTheme
 import com.ccobcode.bitone.ui.theme.FontSize
-import com.ccobcode.bitone.ui.theme.LineHeight
 import com.ccobcode.bitone.ui.theme.Radius
 import com.ccobcode.bitone.ui.theme.Space
 
@@ -85,18 +81,12 @@ private const val TARGET_CONTRACT = "目标合约"
 private const val MAX_INDENT = 4
 private val MONO_KINDS = setOf(FieldKind.Address, FieldKind.Hash, FieldKind.Bytes, FieldKind.Script, FieldKind.Opaque)
 
-/** 每个输入固定这几行,A6e 要把它们从详情里分出来. */
-private val INPUT_LABELS = setOf("付款账户", "派生路径", "输入金额")
-
-/** 第一屏直接显示的字段,其余进"详情".这只是展示分组. */
-internal val FIRST_SCREEN_LABELS = setOf("网络", "手续费上限", "手续费", "基础费", "优先费", "fee_limit")
-
 /**
  * A6 到 A6e.分类全部来自核心库,这里按 [reviewStyle] 选样式,字段原样画出来.
  *
- * 第一屏只放金额,对方地址,风险,网络和手续费,进入时不做错开,只随页面一起出现.其余字段放在"详情"里,一项都不省略,普通交易默认折叠,高风险样式默认展开.分组只看标签,风险判断全在核心库.
+ * 第一屏只放金额,对方地址,风险和网络,进入时不做错开,只随页面一起出现.下面是通用字段列表,一项都不省略,风险判断全在核心库.
  *
- * 主网请求在最上面提示,网络名在金额上方.内容滚到底之后确认按钮才可用.`fields` 不为空时,金额和对方下面只有通用字段列表.
+ * 主网请求在最上面提示,网络名在金额上方.内容滚到底之后确认按钮才可用.
  */
 @Composable
 fun ReviewScreen(flow: WalletFlow) {
@@ -125,15 +115,15 @@ fun ReviewScreen(flow: WalletFlow) {
                 Counterparty(review)
             }
             ReviewStyle.Unknown -> {
-                if (review.amount != null) InlineAmount(review, network?.icon)
-                val contract = review.counterpartyLabel == TARGET_CONTRACT
+                if (review.summary.amount != null) InlineAmount(review, network?.icon)
+                val contract = review.summary.counterpartyLabel == TARGET_CONTRACT
                 Counterparty(review, leading = { UnlistedIcon(24.dp) }) {
                     if (contract) Chip("未知合约", c.warnSoft, c.warn)
                 }
             }
             ReviewStyle.Permission -> {
                 // 权限变更可以和转账打包在一笔交易里,金额不能藏起来.
-                if (review.amount != null) InlineAmount(review, network?.icon)
+                if (review.summary.amount != null) InlineAmount(review, network?.icon)
                 PackedParties(review)
                 Controllers(review)
             }
@@ -142,17 +132,8 @@ fun ReviewScreen(flow: WalletFlow) {
                 Counterparty(review)
             }
         }
-        if (review.fields.isNotEmpty()) {
-            flow.report?.warnings?.forEach { RiskBanner(it.label, listOf(it.value), warn = true) }
-            FieldList(flow, review.fields, style)
-        } else {
-            val inline = Actions(review, style)
-            Rows(review.rows.filter { it.label in FIRST_SCREEN_LABELS })
-            flow.report?.warnings?.forEach { RiskBanner(it.label, listOf(it.value), warn = true) }
-            val rest = inline + review.rows.filterNot { it.label in FIRST_SCREEN_LABELS }
-            Details(rest, style, bitcoin = network?.icon == Network.Bitcoin)
-            RawData(review.raw, initiallyOpen = style == ReviewStyle.Unknown)
-        }
+        flow.report?.warnings?.forEach { RiskBanner(it.label, listOf(it.value), warn = true) }
+        FieldList(flow, review.fields, style)
     }
 }
 
@@ -224,9 +205,9 @@ private fun StyleChip(review: ReviewResult, style: ReviewStyle) {
 
 private fun kindLabel(review: ReviewResult): String? =
     when {
-        review.risk != Risk.Transfer -> review.title
-        review.amount?.asset?.endsWith(":native") == true -> "原生币转账"
-        review.amount != null -> "代币转账"
+        review.risk != Risk.Transfer -> review.summary.title
+        review.summary.amount?.asset?.endsWith(":native") == true -> "原生币转账"
+        review.summary.amount != null -> "代币转账"
         else -> null
     }
 
@@ -237,8 +218,8 @@ private fun Banner(review: ReviewResult, style: ReviewStyle) {
     when (style) {
         ReviewStyle.Plain -> Unit
         ReviewStyle.Approval -> {
-            val symbol = review.amount?.symbol
-            val unlimited = review.amount?.unlimited == true
+            val symbol = review.summary.amount?.symbol
+            val unlimited = review.summary.amount?.unlimited == true
             RiskBanner(
                 title = if (unlimited) "无限额度授权" else "授权交易",
                 lines =
@@ -247,7 +228,7 @@ private fun Banner(review: ReviewResult, style: ReviewStyle) {
                             unlimited && symbol != null -> "对方可随时转走你全部的 $symbol."
                             unlimited -> "对方可随时转走你全部的这种资产."
                             else -> "对方可以动用授权额度内的资产."
-                        },
+                        }
                     ) + review.alerts,
             )
         }
@@ -298,10 +279,10 @@ private fun AmountBlock(
     danger: Boolean = false,
 ) {
     val c = BitOneTheme.colors
-    val amount = review.amount
+    val amount = review.summary.amount
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
         if (amount == null) {
-            Txt(review.title, size = FontSize.t5, weight = SemiBold)
+            Txt(review.summary.title, size = FontSize.t5, weight = SemiBold)
             if (kind != null) KindChip(kind, danger)
         } else {
             Row(
@@ -322,7 +303,7 @@ private fun AmountBlock(
 @Composable
 private fun InlineAmount(review: ReviewResult, network: Network?) {
     val c = BitOneTheme.colors
-    val amount = review.amount ?: return
+    val amount = review.summary.amount ?: return
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
         AssetIcon(amount.icon, network, 32.dp)
         Box(Modifier.weight(1f, fill = false)) { AmountText(amount, FontSize.t7, danger = false) }
@@ -376,18 +357,17 @@ private fun Counterparty(
     leading: @Composable (() -> Unit)? = null,
     badge: @Composable (() -> Unit)? = null,
 ) {
-    val address = review.counterparty ?: return
-    AddressCard(review.counterpartyLabel.orEmpty(), address, leading = leading, badge = badge)
+    val address = review.summary.counterparty ?: return
+    AddressCard(review.summary.counterpartyLabel.orEmpty(), address, leading = leading, badge = badge)
 }
 
 /** 权限变更打包了转账或调用时,对方要放在第一屏."长按签名"一直在屏幕上,不能让用户滚动后才看到收款方. */
 @Composable
 private fun PackedParties(review: ReviewResult) {
-    val parties = review.actions.flatMap { it.rows }.filter { it.label in PARTY_LABELS }
-    parties.forEach { AddressCard(it.label, it.value) }
+    review.summary.parties.forEach { AddressCard(it.label, it.value) }
 }
 
-/** A6d.当前控制方在动作的行里,没有时就是付款账户.控制方不止一组时没有卡片,都在下面的动作里. */
+/** A6d.当前控制方来自核心库的摘要,没有时就是付款账户.控制方不止一组时没有卡片,都在下面的字段列表里. */
 @Composable
 private fun Controllers(review: ReviewResult) {
     val c = BitOneTheme.colors
@@ -395,75 +375,21 @@ private fun Controllers(review: ReviewResult) {
     if (card.current != null) {
         AddressCard(CURRENT_CONTROLLER, card.current) { if (card.own) Chip("本账户", c.okSoft, c.ok) }
     }
-    if (card.next != null) {
-        AddressCard(NEW_CONTROLLER, card.next, c.dangerSoft) {
-            if (card.next != NO_CONTROLLER) Chip("外部地址", c.surface, c.danger)
-        }
+    when (card.next) {
+        null -> ControllerNote(NO_NEW_CONTROLLER, c.surface)
+        NO_CONTROLLER -> ControllerNote(NO_CONTROLLER, c.dangerSoft)
+        else -> AddressCard(NEW_CONTROLLER, card.next, c.dangerSoft) { Chip("外部地址", c.surface, c.danger) }
     }
 }
 
-/** 全部动作.Bitcoin 的动作就是全部输出,多个动作也都留在第一屏,不能折叠起来.只有一个动作时不用标题,返回它的字段,放进"详情". */
+/** 新控制方不是地址时的卡片.文字要翻译,不按地址分组. */
 @Composable
-private fun Actions(review: ReviewResult, style: ReviewStyle): List<ReviewRow> {
-    val bitcoin = networkInfo(review.network)?.icon == Network.Bitcoin
-    val shown = actionRows(review, style)
-    if (bitcoin || review.actions.size > 1) {
-        Section(if (bitcoin) "全部输出" else "全部动作") {
-            review.actions.forEachIndexed { index, action -> ActionBlock(action.title, action.risk, shown[index]) }
+private fun ControllerNote(text: String, tint: Color) {
+    Card(color = tint) {
+        Column(Modifier.padding(Space.s4), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+            Txt(NEW_CONTROLLER, size = FontSize.t2, color = BitOneTheme.colors.text3)
+            Txt(text)
         }
-        return emptyList()
-    }
-    return shown.flatten()
-}
-
-/** 分组标题在外,内容是一块列表组,组内靠行距分开,没有分隔线. */
-@Composable
-private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-        Txt(title, size = FontSize.t2, color = BitOneTheme.colors.text3)
-        Card {
-            Column(Modifier.padding(Space.s4), verticalArrangement = Arrangement.spacedBy(Space.s5), content = content)
-        }
-    }
-}
-
-@Composable
-private fun ActionBlock(title: String, risk: Risk, rows: List<ReviewRow>) {
-    val c = BitOneTheme.colors
-    Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-            Txt(title, Modifier.weight(1f), weight = Medium)
-            when {
-                risk == Risk.Unknown || isHighRisk(risk) -> RiskChip(risk)
-                title == "找零" -> Chip("本钱包", c.okSoft, c.ok)
-            }
-        }
-        rows.forEach { row -> DetailRow(row.label, row.value, row.mono) }
-    }
-}
-
-/** 普通交易默认折叠,无法识别,授权,权限变更和 A6e 默认展开.A6e 的 Bitcoin 输入单独分组. */
-@Composable
-private fun Details(rows: List<ReviewRow>, style: ReviewStyle, bitcoin: Boolean) {
-    if (rows.isEmpty()) return
-    Disclosure("详情", initiallyOpen = style != ReviewStyle.Plain) {
-        if (style == ReviewStyle.HighRisk && bitcoin) {
-            val inputs = rows.filter { it.label in INPUT_LABELS }
-            if (inputs.isNotEmpty()) Txt("全部输入", size = FontSize.t2, color = BitOneTheme.colors.text3)
-            inputs.chunked(INPUT_LABELS.size).forEach { group -> Rows(group) }
-            Rows(rows.filterNot { it.label in INPUT_LABELS })
-        } else {
-            Rows(rows)
-        }
-    }
-}
-
-/** 标签和值分行,比上面的金额和地址都轻. */
-@Composable
-private fun Rows(rows: List<ReviewRow>) {
-    if (rows.isEmpty()) return
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-        rows.forEach { row -> DetailRow(row.label, row.value, row.mono) }
     }
 }
 
@@ -488,27 +414,6 @@ private fun Disclosure(title: String, initiallyOpen: Boolean, content: @Composab
                 verticalArrangement = Arrangement.spacedBy(Space.s3),
                 content = content,
             )
-        }
-    }
-}
-
-/** 原始数据.A6c 默认展开,其他折叠. */
-@Composable
-private fun RawData(lines: List<RawLine>, initiallyOpen: Boolean) {
-    val c = BitOneTheme.colors
-    val visible = lines.filter { it.text.isNotEmpty() }
-    Disclosure("原始数据", initiallyOpen) {
-        if (visible.isEmpty()) Txt("没有附加数据", size = FontSize.t2, color = c.text3)
-        visible.forEachIndexed { index, line ->
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
-                Txt(index.toString().padStart(2, '0'), Modifier.width(20.dp), size = FontSize.t1, color = c.text3)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
-                    Txt(line.text, size = FontSize.t1, color = c.text2, mono = true, lineHeight = LineHeight.t2)
-                    line.note?.let { note ->
-                        if (note == "大额数值") Chip(note, c.warnSoft, c.warn) else Chip(note, c.accentSoft, c.accentText)
-                    }
-                }
-            }
         }
     }
 }
@@ -551,13 +456,13 @@ private fun ReviewActions(flow: WalletFlow, review: ReviewResult) {
 @Composable
 internal fun SignSummary(review: ReviewResult) {
     val c = BitOneTheme.colors
-    val amount = review.amount
+    val amount = review.summary.amount
     Card {
         ListRow {
             AssetIcon(amount?.icon, networkInfo(review.network)?.icon, 32.dp)
             Column(Modifier.weight(1f)) {
-                Txt(amountLine(review).ifEmpty { review.title }, weight = Medium)
-                review.counterparty?.let { address ->
+                Txt(amountLine(review).ifEmpty { review.summary.title }, weight = Medium)
+                review.summary.counterparty?.let { address ->
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.s1)) {
                         Txt("至", size = FontSize.t2, color = c.text3)
                         Txt(shortAddress(address), size = FontSize.t2, color = c.text2, mono = true)
@@ -570,7 +475,7 @@ internal fun SignSummary(review: ReviewResult) {
 
 /** 无限额度用文字说明. */
 internal fun amountLine(review: ReviewResult): String {
-    val amount = review.amount ?: return ""
+    val amount = review.summary.amount ?: return ""
     val text = if (amount.unlimited) "无限" else amount.text
     return listOfNotNull(text, amount.symbol).joinToString(" ")
 }

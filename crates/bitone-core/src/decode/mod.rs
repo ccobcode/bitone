@@ -37,8 +37,8 @@ pub use protobuf::read_varint;
 pub use psbt::{Parsed, PsbtWalker, is_psbt, parse};
 pub use script::{ScriptClass, address_network, estimated_vsize, output_action, spend_weight};
 pub use tron::{
-    TronPersonalWalker, TronWalker, tron_actions, tron_contracts, tron_field_names, tron_message_hash, tron_owner,
-    tron_permission_id, tron_signed, tron_type_url,
+    TronPersonalWalker, TronWalker, tron_actions, tron_contract, tron_contracts, tron_field_names, tron_message_hash,
+    tron_owner, tron_permission_id, tron_signed, tron_type_url,
 };
 pub use typed::{TypedFlavor, TypedMessage, TypedWalker, parse_typed, permit_types, typed_member};
 

@@ -49,6 +49,15 @@ commit = "511afd3a7794f543be3028b333df0353ed113c64"
 path = "idl.json"
 sha256 = "9527f716b5f449ce809ad6d3c05b4d4e743dff6c80242531df6a2f24067a6b9a"
 
+# 官方 IDL 已经去掉 Stake 指令里的系统变量账户,现有钱包的交易还带着它们.这份按最后一个带系统变量的 interface 写成,
+# 和 @solana/web3.js 1.99.0 的 StakeProgram 核对过.
+[[schema]]
+file = "solana/stake-older.json"
+repository = "solana-program/stake"
+commit = "07d1a01960e3ee89ce899cb26186db82f874fb61"
+path = "interface/src/instruction.rs"
+sha256 = "3c0d5e7e8d2b957f74e6886afd4c0bd2cb8c8016203efd47bfb73faae6ab8f32"
+
 [[schema]]
 file = "solana/address-lookup-table.json"
 repository = "solana-program/address-lookup-table"

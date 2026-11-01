@@ -41,32 +41,6 @@ pub enum Forbid {
     Unsupported,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Row {
-    pub label: String,
-    pub value: String,
-    pub mono: bool,
-}
-
-impl Row {
-    pub fn text(label: &str, value: impl Into<String>) -> Self {
-        Self {
-            label: label.into(),
-            value: value.into(),
-            mono: false,
-        }
-    }
-
-    pub fn mono(label: &str, value: impl Into<String>) -> Self {
-        Self {
-            label: label.into(),
-            value: value.into(),
-            mono: true,
-        }
-    }
-}
-
 /// 金额.`symbol` 为空表示不在内置清单,`text` 是原始整数.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -78,21 +52,68 @@ pub struct AmountView {
     pub unlimited: bool,
 }
 
-/// 一个动作:一次调用,一条指令或一个输出.
+/// A6d 的一组控制方.`current` 为空时当前控制方就是付款账户,`next` 为空时这笔权限变更没有新控制方.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ActionView {
-    pub risk: Risk,
-    pub title: String,
-    pub rows: Vec<Row>,
+pub struct Controller {
+    pub current: Option<String>,
+    pub next: Option<String>,
 }
 
-/// 原始数据的一行.`note` 是分析出的提示,比如疑似地址.
+/// 权限变更打包的转账或调用的对方.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RawLine {
-    pub text: String,
-    pub note: Option<String>,
+pub struct Party {
+    pub label: String,
+    pub value: String,
+}
+
+/// 页面顶部,在字段列表上方,不能代替列表.每个值都引用 `field_ids` 里的行,见 docs/10-tx-decoding.md 第 4.2 节.
+/// `controllers`,`parties`,`payer` 给 A6d,通用列表不按字段名分支,表达不了"谁是当前控制方".
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Summary {
+    pub title: String,
+    pub amount: Option<AmountView>,
+    /// 收款地址,被授权方,新控制方等.
+    pub counterparty_label: Option<String>,
+    pub counterparty: Option<String>,
+    pub field_ids: Vec<NodeId>,
+    pub controllers: Vec<Controller>,
+    pub parties: Vec<Party>,
+    pub payer: Option<String>,
+}
+
+impl Summary {
+    /// 顶部显示的文字.金额文字和行的值相同时才算找到,算出来的金额由 `field_ids` 预先给出行.
+    fn values(&self) -> Vec<String> {
+        let amount = self.amount.iter().map(|amount| match &amount.symbol {
+            Some(symbol) => [amount.text.as_str(), symbol].join(" "),
+            None => amount.text.clone(),
+        });
+        let controllers = self
+            .controllers
+            .iter()
+            .flat_map(|controller| controller.current.iter().chain(&controller.next).cloned());
+        let parties = self.parties.iter().map(|party| party.value.clone());
+        amount
+            .chain(self.counterparty.iter().cloned())
+            .chain(controllers)
+            .chain(parties)
+            .chain(self.payer.iter().cloned())
+            .collect()
+    }
+
+    fn linked(mut self, fields: &[FieldRow]) -> Self {
+        let values = self.values();
+        let found = values
+            .iter()
+            .filter_map(|value| fields.iter().find(|row| row.value == *value));
+        self.field_ids.extend(found.map(|row| row.id));
+        self.field_ids.sort_unstable();
+        self.field_ids.dedup();
+        self
+    }
 }
 
 /// 字段列表的一行.`value` 已经按种类格式化,手机不做格式化.见 docs/10-tx-decoding.md 第 4 节.
@@ -177,17 +198,10 @@ pub struct Review {
     pub network: String,
     /// 页面顶部显示"主网,真实资产".
     pub mainnet: bool,
-    pub title: String,
-    pub amount: Option<AmountView>,
-    /// 收款地址,被授权方,新控制方等.
-    pub counterparty_label: Option<String>,
-    pub counterparty: Option<String>,
+    pub summary: Summary,
     /// 高风险原因.不为空时要长按.
     pub alerts: Vec<String>,
-    pub actions: Vec<ActionView>,
-    pub rows: Vec<Row>,
-    pub raw: Vec<RawLine>,
-    /// 解码树的全部节点.不为空时手机用通用列表,还没迁移的链是空的.
+    /// 解码树的全部节点.只有拒绝时才是空的.
     pub fields: Vec<FieldRow>,
     pub field_count: u32,
     pub review_digest: [u8; 32],
@@ -205,14 +219,11 @@ impl Review {
             confirm: Confirm::Refuse,
             network: network.to_string(),
             mainnet: is_mainnet(network),
-            title: Risk::Forbidden.label().to_string(),
-            amount: None,
-            counterparty_label: None,
-            counterparty: None,
+            summary: Summary {
+                title: Risk::Forbidden.label().to_string(),
+                ..Summary::default()
+            },
             alerts: vec![reason.to_string()],
-            actions: Vec::new(),
-            rows: Vec::new(),
-            raw: Vec::new(),
             fields: Vec::new(),
             field_count: 0,
             review_digest: review_digest(&[], Risk::Forbidden, Confirm::Refuse),
@@ -250,14 +261,11 @@ impl Review {
             // 本机不认识的网络名来自请求,显示时不能带控制字符.
             network: decode::escape_text(decoded.network()),
             mainnet: is_mainnet(decoded.network()),
-            title: risk.label().to_string(),
-            amount: None,
-            counterparty_label: None,
-            counterparty: None,
+            summary: Summary {
+                title: risk.label().to_string(),
+                ..Summary::default()
+            },
             alerts,
-            actions: Vec::new(),
-            rows: Vec::new(),
-            raw: Vec::new(),
             field_count: fields.len() as u32,
             review_digest: review_digest(&fields, risk, confirm),
             fields,
@@ -265,6 +273,15 @@ impl Review {
             change_index: None,
             change_is_testnet: false,
         }
+    }
+
+    /// 页面顶部.`title` 留空时是类别的名字.顶部的值都要落到列表的行上.
+    pub fn summarized(mut self, mut summary: Summary) -> Self {
+        if summary.title.is_empty() {
+            summary.title.clone_from(&self.summary.title);
+        }
+        self.summary = summary.linked(&self.fields);
+        self
     }
 
     /// 加一条告警.告警只升级确认方式,类别不变,摘要要跟着确认方式重算.
@@ -287,51 +304,6 @@ impl Review {
     }
 }
 
-/// 收集动作,最后统一算出风险和确认方式,页面不用自己判断.
-#[derive(Default)]
-pub struct ReviewBuilder {
-    pub amount: Option<AmountView>,
-    pub counterparty_label: Option<String>,
-    pub counterparty: Option<String>,
-    pub alerts: Vec<String>,
-    pub actions: Vec<ActionView>,
-    pub rows: Vec<Row>,
-    pub raw: Vec<RawLine>,
-    pub change_index: Option<u32>,
-}
-
-impl ReviewBuilder {
-    pub fn finish(self, network: &str) -> Review {
-        let risk = self
-            .actions
-            .iter()
-            .map(|a| a.risk)
-            .max_by_key(|r| r.legacy_rank())
-            .unwrap_or(Risk::Unknown);
-        let confirm = Confirm::of(risk, !self.alerts.is_empty());
-        Review {
-            risk,
-            confirm,
-            network: network.to_string(),
-            mainnet: is_mainnet(network),
-            title: risk.label().to_string(),
-            amount: self.amount,
-            counterparty_label: self.counterparty_label,
-            counterparty: self.counterparty,
-            alerts: self.alerts,
-            actions: self.actions,
-            rows: self.rows,
-            raw: self.raw,
-            fields: Vec::new(),
-            field_count: 0,
-            review_digest: review_digest(&[], risk, confirm),
-            forbidden: None,
-            change_index: self.change_index,
-            change_is_testnet: false,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,47 +323,9 @@ mod tests {
         Review::assessed(&decode(&Records, &input(payload)).unwrap(), assessment(Risk::Transfer))
     }
 
-    fn action(risk: Risk) -> ActionView {
-        ActionView {
-            risk,
-            title: String::new(),
-            rows: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn risk_is_the_highest_of_all_actions() {
-        let builder = ReviewBuilder {
-            actions: vec![action(Risk::Transfer), action(Risk::Approval), action(Risk::Recognized)],
-            ..Default::default()
-        };
-        let review = builder.finish("ethereum");
-        assert_eq!(review.risk, Risk::Approval);
-        assert_eq!(review.confirm, Confirm::Hold);
-    }
-
-    #[test]
-    fn alerts_raise_a_plain_transfer_to_hold() {
-        let plain = ReviewBuilder {
-            actions: vec![action(Risk::Transfer)],
-            ..Default::default()
-        };
-        assert_eq!(plain.finish("bitcoin").confirm, Confirm::Tap);
-        let alerted = ReviewBuilder {
-            actions: vec![action(Risk::Transfer)],
-            alerts: vec!["手续费偏高".into()],
-            ..Default::default()
-        };
-        assert_eq!(alerted.finish("bitcoin").confirm, Confirm::Hold);
-    }
-
     #[test]
     fn an_added_alert_raises_the_confirmation_and_changes_the_digest() {
-        let builder = ReviewBuilder {
-            actions: vec![action(Risk::Transfer)],
-            ..Default::default()
-        };
-        let plain = builder.finish("bitcoin");
+        let plain = reviewed(&PAYLOAD);
         let alerted = plain.clone().alerted("提示");
         assert_eq!((plain.confirm, alerted.confirm), (Confirm::Tap, Confirm::Hold));
         assert_ne!(plain.review_digest, alerted.review_digest);
@@ -409,32 +343,43 @@ mod tests {
     }
 
     #[test]
-    fn no_actions_is_never_treated_as_safe() {
-        assert_eq!(ReviewBuilder::default().finish("ethereum").risk, Risk::Unknown);
-    }
-
-    #[test]
     fn forbidden_cannot_be_signed() {
         let review = Review::forbidden("tron", Forbid::ParseFailed);
         assert!(!review.is_signable());
-    }
-
-    #[test]
-    fn a_mix_on_the_old_path_keeps_its_headline() {
-        let builder = ReviewBuilder {
-            actions: vec![action(Risk::Unknown), action(Risk::Approval)],
-            ..Default::default()
-        };
-        let review = builder.finish("ethereum");
-        assert_eq!((review.risk, review.confirm), (Risk::Approval, Confirm::Hold));
-    }
-
-    #[test]
-    fn the_old_path_has_no_fields() {
-        let review = ReviewBuilder::default().finish("ethereum");
         assert!(review.fields.is_empty());
-        assert_eq!(review.field_count, 0);
-        assert!(Review::forbidden("tron", Forbid::ParseFailed).fields.is_empty());
+        assert_eq!(review.summary.title, Risk::Forbidden.label());
+    }
+
+    #[test]
+    fn the_title_defaults_to_the_class() {
+        assert_eq!(reviewed(&PAYLOAD).summary.title, Risk::Transfer.label());
+        let named = reviewed(&PAYLOAD).summarized(Summary {
+            title: "创建 nonce 账户".to_string(),
+            ..Summary::default()
+        });
+        assert_eq!(named.summary.title, "创建 nonce 账户");
+    }
+
+    /// 第 4.2 节:摘要的每个值都引用列表里的行.
+    #[test]
+    fn every_summary_value_points_at_a_row() {
+        let memo = reviewed(&PAYLOAD).fields[3].value.clone();
+        let review = reviewed(&PAYLOAD).summarized(Summary {
+            amount: Some(AmountView {
+                text: "256".to_string(),
+                symbol: None,
+                asset: None,
+                unlimited: false,
+            }),
+            counterparty: Some(memo),
+            ..Summary::default()
+        });
+        assert_eq!(review.summary.field_ids, [2, 3]);
+        let seeded = reviewed(&PAYLOAD).summarized(Summary {
+            field_ids: vec![1, 1],
+            ..Summary::default()
+        });
+        assert_eq!(seeded.summary.field_ids, [1]);
     }
 
     #[test]

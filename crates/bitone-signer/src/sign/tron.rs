@@ -28,13 +28,16 @@ mod tests {
     use crate::Error;
     use crate::keys::Wallet;
     use bitone_core::keys::PublicKeys;
-    use bitone_core::manifest::Manifest;
+    use bitone_core::manifest::{Asset, Manifest};
     use bitone_core::protocol::VERSION;
     use bitone_core::request::{
         KIND_PERSONAL_SIGN, KIND_RAW_HASH, KIND_TRANSACTION, KIND_TYPED_DATA, SignRequest, SignResponse,
     };
     use bitone_core::review::{Confirm, Forbid, Review, Risk};
-    use bitone_core::tx::tron::types::{Any, Contract, ContractType, Raw, TransferContract, TriggerSmartContract};
+    use bitone_core::tx::tron::types::{
+        Any, Contract, ContractType, Raw, TransferAssetContract, TransferContract, TriggerSmartContract,
+        VoteWitnessContract, vote_witness_contract,
+    };
     use bitone_core::tx::tron::{TransferParams, UnsignedTx, build_transfer};
     use bitone_core::tx::{self, HighestChange, ReviewContext};
     use bitone_core::{DerivationPath, Mode, Network};
@@ -134,12 +137,19 @@ mod tests {
         review.alerts.iter().any(|alert| alert.contains(wanted))
     }
 
-    fn action_has(review: &Review, label: &str, wanted: &str) -> bool {
+    fn shown(review: &Review, wanted: &str) -> bool {
         review
-            .actions
+            .fields
             .iter()
-            .flat_map(|a| &a.rows)
-            .any(|r| r.label == label && r.value.contains(wanted))
+            .any(|r| r.value.contains(wanted) || r.note.as_deref().is_some_and(|note| note.contains(wanted)))
+    }
+
+    fn controlled_by(review: &Review, wanted: &str) -> bool {
+        review
+            .summary
+            .controllers
+            .iter()
+            .any(|c| c.current.as_deref() == Some(wanted))
     }
 
     fn params<'a>(amount: &'a str, contract: Option<&'a str>, fee_limit: u64) -> TransferParams<'a> {
@@ -273,9 +283,9 @@ mod tests {
         let s = setup();
         let review = review(&s, &main_request(&s, native()));
         assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Tap));
-        let amount = review.amount.as_ref().unwrap();
+        let amount = review.summary.amount.as_ref().unwrap();
         assert_eq!((amount.text.as_str(), amount.symbol.as_deref()), ("1.5", Some("TRX")));
-        assert_eq!(review.counterparty.as_deref(), Some(PEER));
+        assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
         assert_eq!(field(&review, "network"), "tron");
         assert_eq!(field(&review, "signer"), OWNER);
         assert_eq!(field(&review, "derivation_path"), PATH);
@@ -286,7 +296,7 @@ mod tests {
         assert_eq!(field(&review, "to_address"), PEER);
         assert!(review.alerts.is_empty());
         assert_eq!(review.field_count as usize, review.fields.len());
-        assert_eq!(review.rows[0].value, OWNER);
+        assert_eq!(review.summary.payer.as_deref(), Some(OWNER));
         let owner = review.fields.iter().find(|row| row.name == "owner_address").unwrap();
         assert!(owner.own);
     }
@@ -296,16 +306,14 @@ mod tests {
         let s = setup();
         let review = review(&s, &main_request(&s, token()));
         assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Tap));
-        let amount = review.amount.as_ref().unwrap();
+        let amount = review.summary.amount.as_ref().unwrap();
         assert_eq!((amount.text.as_str(), amount.symbol.as_deref()), ("1.25", Some("USDT")));
-        assert_eq!(review.counterparty.as_deref(), Some(PEER));
+        assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
         assert_eq!(field(&review, "type"), "TriggerSmartContract");
         assert_eq!(field(&review, "fee_limit"), "100 TRX");
-        assert!(action_has(&review, "调用方法", "transfer"));
-        assert!(action_has(&review, "合约", USDT));
-        assert!(action_has(&review, "合约清单", "在内置清单"));
-        assert_eq!(review.raw[0].note.as_deref(), Some("方法选择器"));
-        assert_eq!(review.raw.len(), 3);
+        assert!(shown(&review, "调用方法 transfer"));
+        assert!(shown(&review, USDT));
+        assert!(shown(&review, "合约清单 在内置清单"));
     }
 
     #[test]
@@ -314,7 +322,7 @@ mod tests {
         let data = abi(TRANSFER, &[word(&PEER_BYTES[1..]), word(&[0x12, 0xd6, 0x90])]);
         let review = review(&s, &main_request(&s, trigger(FAKE, 0, data).encode_to_vec()));
         assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
-        let amount = review.amount.unwrap();
+        let amount = review.summary.amount.unwrap();
         assert_eq!((amount.text.as_str(), amount.symbol), ("1234576", None));
     }
 
@@ -324,9 +332,9 @@ mod tests {
         let data = abi(APPROVE, &[word(&PEER_BYTES[1..]), vec![0xff; 32]]);
         let review = review(&s, &main_request(&s, trigger(USDT_BYTES, 0, data).encode_to_vec()));
         assert_eq!((review.risk, review.confirm), (Risk::Approval, Confirm::Hold));
-        assert!(review.amount.unwrap().unlimited);
-        assert_eq!(review.counterparty_label.as_deref(), Some("被授权方"));
-        assert_eq!(review.counterparty.as_deref(), Some(PEER));
+        assert!(review.summary.amount.unwrap().unlimited);
+        assert_eq!(review.summary.counterparty_label.as_deref(), Some("被授权方"));
+        assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
     }
 
     #[test]
@@ -336,10 +344,32 @@ mod tests {
         let reviewed = review(&s, &main_request(&s, trigger(FAKE, 0, data).encode_to_vec()));
         assert_eq!((reviewed.risk, reviewed.confirm), (Risk::Unknown, Confirm::Hold));
         assert_eq!(field(&reviewed, "Spender"), PEER);
-        assert_eq!(reviewed.counterparty.as_deref(), Some(PEER));
+        assert_eq!(reviewed.summary.counterparty.as_deref(), Some(PEER));
         assert!(alerted(&reviewed, "不在内置清单"));
         assert!(alerted(&reviewed, "额度是无限"));
-        assert!(reviewed.amount.unwrap().unlimited);
+        assert!(reviewed.summary.amount.unwrap().unlimited);
+    }
+
+    /// 合约照样执行不规范的数据,被授权方和额度都要显示,告警说出方法,可以签.
+    #[test]
+    fn an_irregular_approval_still_shows_the_spender() {
+        let s = setup();
+        for contract in [USDT_BYTES, FAKE] {
+            let mut data = abi(APPROVE, &[word(&PEER_BYTES[1..]), [0xff; 32].to_vec()]);
+            data.push(0xaa);
+            let payload = trigger(contract, 0, data).encode_to_vec();
+            let review = review(&s, &main_request(&s, payload));
+            assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+            assert!(review.is_signable());
+            assert!(alerted(&review, "调用数据不规范"));
+            assert!(alerted(&review, "approve(address,uint256)"));
+            assert!(alerted(&review, "额度是无限"));
+            assert_eq!(review.summary.counterparty_label.as_deref(), Some("被授权方"));
+            assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
+            assert!(review.summary.amount.as_ref().is_some_and(|amount| amount.unlimited));
+            assert_eq!(field(&review, "Spender"), PEER);
+            assert_eq!(field(&review, "trailing_data"), "aa");
+        }
     }
 
     #[test]
@@ -363,7 +393,7 @@ mod tests {
             &main_request(&s, trigger(FAKE, 0, hex!("deadbeef").to_vec()).encode_to_vec()),
         );
         assert_eq!(unknown.risk, Risk::Unknown);
-        assert_eq!(unknown.raw[0].text, "deadbeef");
+        assert_eq!(field(&unknown, "data"), "deadbeef");
         let empty = review(
             &s,
             &main_request(&s, trigger(USDT_BYTES, 1, Vec::new()).encode_to_vec()),
@@ -698,11 +728,11 @@ mod tests {
         let s = setup();
         let review = review(&s, &main_request(&s, unhex(TRONWEB_PERMISSION)));
         assert_eq!((review.risk, review.confirm), (Risk::PermissionChange, Confirm::Hold));
-        assert_eq!(review.counterparty_label.as_deref(), Some("新控制方"));
-        assert_eq!(review.counterparty.as_deref(), Some(PEER));
-        assert!(action_has(&review, "当前控制方", OWNER));
-        assert!(action_has(&review, "新控制方", PEER));
-        assert!(action_has(&review, "active 权限地址", PEER));
+        assert_eq!(review.summary.counterparty_label.as_deref(), Some("新控制方"));
+        assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
+        assert!(controlled_by(&review, OWNER));
+        assert!(shown(&review, PEER));
+        assert!(shown(&review, PEER));
         assert_eq!(field(&review, "type"), "AccountPermissionUpdateContract");
         assert!(review.alerts.is_empty());
     }
@@ -712,10 +742,10 @@ mod tests {
         let s = setup();
         let review = review(&s, &main_request(&s, unhex(TRONWEB_PERMISSION_HIDDEN)));
         assert_eq!(review.risk, Risk::PermissionChange);
-        assert_eq!(review.counterparty.as_deref(), Some(OWNER));
+        assert_eq!(review.summary.counterparty.as_deref(), Some(OWNER));
         assert_eq!(review.alerts.len(), 1);
-        assert!(action_has(&review, "owner 权限地址", PEER));
-        assert!(action_has(&review, "active 权限地址", PEER));
+        assert!(shown(&review, PEER));
+        assert!(shown(&review, PEER));
     }
 
     /// 第 5.2 节的矩阵,逐类型.样本写了 `receiver_address` 和 `call_value`,所以这两种合约要长按.
@@ -767,12 +797,165 @@ mod tests {
             let (response, _) = sign(&s, &req);
             let verified = tx::verify(&req, &response, &public_key(&s)).unwrap();
             assert_eq!(verified.hash, case["txid"].as_str().unwrap(), "{name}");
-            assert_eq!(reviewed.actions.len(), 1, "{name}");
-            // 原始数据是 raw_data,不是 ABI,不能标方法选择器.
-            if name != "TriggerSmartContract" {
-                assert_eq!(reviewed.raw[0].note, None, "{name}");
-            }
+            assert_eq!(reviewed.field_count as usize, reviewed.fields.len(), "{name}");
         }
+    }
+
+    /// 第一屏来自解码树.样本的每个合约类型,规则表写明的字段都要到第一屏.
+    #[test]
+    fn every_contract_with_such_fields_fills_the_first_screen() {
+        let s = setup();
+        let vectors: Value = serde_json::from_str(VECTORS).unwrap();
+        // (合约,金额行,对方的标签,对方行).
+        let cases = [
+            ("AccountCreateContract", None, Some("新账户"), Some("account_address")),
+            ("TransferContract", Some("amount"), Some("收款地址"), Some("to_address")),
+            (
+                "TransferAssetContract",
+                Some("amount"),
+                Some("收款地址"),
+                Some("to_address"),
+            ),
+            (
+                "ParticipateAssetIssueContract",
+                Some("amount"),
+                Some("收款地址"),
+                Some("to_address"),
+            ),
+            (
+                "FreezeBalanceContract",
+                Some("frozen_balance"),
+                Some("接收方"),
+                Some("receiver_address"),
+            ),
+            (
+                "UnfreezeBalanceContract",
+                None,
+                Some("接收方"),
+                Some("receiver_address"),
+            ),
+            (
+                "UpdateSettingContract",
+                None,
+                Some("目标合约"),
+                Some("contract_address"),
+            ),
+            (
+                "UpdateEnergyLimitContract",
+                None,
+                Some("目标合约"),
+                Some("contract_address"),
+            ),
+            ("ClearABIContract", None, Some("目标合约"), Some("contract_address")),
+            ("FreezeBalanceV2Contract", Some("frozen_balance"), None, None),
+            ("UnfreezeBalanceV2Contract", Some("unfreeze_balance"), None, None),
+            (
+                "DelegateResourceContract",
+                Some("balance"),
+                Some("接收方"),
+                Some("receiver_address"),
+            ),
+            (
+                "UnDelegateResourceContract",
+                Some("balance"),
+                Some("接收方"),
+                Some("receiver_address"),
+            ),
+            ("ExchangeInjectContract", Some("quant"), None, None),
+            ("ExchangeWithdrawContract", Some("quant"), None, None),
+            ("ExchangeTransactionContract", Some("quant"), None, None),
+            ("MarketSellAssetContract", Some("sell_token_quantity"), None, None),
+            ("AssetIssueContract", Some("total_supply"), None, None),
+            ("ExchangeCreateContract", Some("first_token_balance"), None, None),
+        ];
+        let transactions = vectors["transactions"].as_array().unwrap();
+        for (name, amount, label, party) in cases {
+            let case = transactions
+                .iter()
+                .find(|case| case["case"] == name && case["contract"] == name)
+                .unwrap();
+            let reviewed = review(&s, &main_request(&s, unhex(case["raw"].as_str().unwrap())));
+            let shown = reviewed.summary.amount.as_ref().map(|view| match &view.symbol {
+                Some(symbol) => [view.text.as_str(), symbol].join(" "),
+                None => view.text.clone(),
+            });
+            assert_eq!(shown.as_deref(), amount.map(|row| field(&reviewed, row)), "{name}");
+            assert_eq!(reviewed.summary.counterparty_label.as_deref(), label, "{name}");
+            assert_eq!(
+                reviewed.summary.counterparty.as_deref(),
+                party.map(|row| field(&reviewed, row)),
+                "{name}"
+            );
+        }
+    }
+
+    /// 投票对象有几个就列几个,不能只把第一个放在顶部.
+    #[test]
+    fn several_vote_targets_leave_the_headline_empty() {
+        let s = setup();
+        let vote = |address: [u8; 21]| VoteWitnessContract {
+            owner_address: OWNER_BYTES.to_vec(),
+            votes: vec![vote_witness_contract::Vote {
+                vote_address: address.to_vec(),
+                vote_count: 1,
+            }],
+            support: false,
+        };
+        let one = wrap(ContractType::VoteWitnessContract, vote(PEER_BYTES).encode_to_vec());
+        let reviewed = review(&s, &main_request(&s, one.encode_to_vec()));
+        assert_eq!(reviewed.summary.counterparty.as_deref(), Some(PEER));
+        let mut both = vote(PEER_BYTES);
+        both.votes.extend(vote(USDT_BYTES).votes);
+        let both = wrap(ContractType::VoteWitnessContract, both.encode_to_vec());
+        let reviewed = review(&s, &main_request(&s, both.encode_to_vec()));
+        assert_eq!(reviewed.summary.counterparty, None);
+        assert_eq!(reviewed.summary.parties.len(), 2);
+    }
+
+    fn asset_transfer(name: &[u8]) -> Vec<u8> {
+        let asset = TransferAssetContract {
+            asset_name: name.to_vec(),
+            owner_address: OWNER_BYTES.to_vec(),
+            to_address: PEER_BYTES.to_vec(),
+            amount: 5_000_000,
+        };
+        wrap(ContractType::TransferAssetContract, asset.encode_to_vec()).encode_to_vec()
+    }
+
+    /// TRC-10 的编号不是合约地址.`native` 和 TRC-20 的地址都不能显示成清单里的资产.
+    #[test]
+    fn an_asset_name_only_matches_a_trc10_entry() {
+        let s = setup();
+        for name in [&b"native"[..], USDT.as_bytes(), b"1002000"] {
+            let reviewed = review(&s, &main_request(&s, asset_transfer(name)));
+            assert_eq!((reviewed.risk, reviewed.confirm), (Risk::Recognized, Confirm::Hold));
+            let amount = reviewed.summary.amount.clone().unwrap();
+            assert_eq!((amount.text.as_str(), amount.symbol), ("5000000", None));
+            assert_eq!(field(&reviewed, "amount"), "5000000");
+        }
+    }
+
+    #[test]
+    fn a_listed_trc10_shows_its_symbol() {
+        let s = setup();
+        let mut manifest = Manifest::builtin().clone();
+        let usdt = manifest.lookup("tron", USDT).unwrap().clone();
+        manifest.assets.push(Asset {
+            contract: "1002000".to_string(),
+            symbol: "BTT".to_string(),
+            standard: "TRC-10".to_string(),
+            ..usdt
+        });
+        let ctx = ReviewContext {
+            keys: &s.keys,
+            manifest: &manifest,
+            highest_change: HighestChange::default(),
+        };
+        let reviewed = tx::review(&main_request(&s, asset_transfer(b"1002000")), &ctx);
+        assert_eq!((reviewed.risk, reviewed.confirm), (Risk::Transfer, Confirm::Tap));
+        let amount = reviewed.summary.amount.clone().unwrap();
+        assert_eq!((amount.text.as_str(), amount.symbol.as_deref()), ("5", Some("BTT")));
+        assert_eq!(field(&reviewed, "amount"), "5 BTT");
     }
 
     fn message_request(s: &Setup, kind: u8, payload: Vec<u8>) -> SignRequest {
@@ -855,7 +1038,7 @@ mod tests {
         let bytes = serde_json::to_vec(&data).unwrap();
         let reviewed = review(&s, &message_request(&s, KIND_TYPED_DATA, bytes));
         assert_eq!((reviewed.risk, reviewed.confirm), (Risk::Approval, Confirm::Hold));
-        assert_eq!(reviewed.counterparty.as_deref(), Some(PEER));
+        assert_eq!(reviewed.summary.counterparty.as_deref(), Some(PEER));
         assert!(reviewed.mainnet);
     }
 

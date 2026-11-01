@@ -135,7 +135,7 @@ export function pastedRequest(draft: RawDraft, values: RawValues) {
     if (payload.length === 0) throw new TransferError("invalid", t("要填写待签名数据."));
     const head = header(draft.wallet, draft.network);
     const request = buildPayloadRequest({ ...head, path: draft.account.path, payload });
-    const to = reviewRequest(request, draft.accounts)?.counterparty ?? "";
+    const to = reviewRequest(request, draft.accounts)?.summary.counterparty ?? "";
     return { head, payload, request, target: { ...draft, asset: "native", to } };
 }
 

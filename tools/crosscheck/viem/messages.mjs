@@ -52,6 +52,7 @@ const irregular = samples.irregular.map((call) => ({
     case: call.case,
     data: plain(encoded(call)) + call.suffix,
     signature: toFunctionSignature(parseAbi([call.abi])[0]),
+    fields: [...leaves(call).map(shown), call.suffix],
 }));
 
 function digest({ case: label, types, primaryType, domain, message }) {

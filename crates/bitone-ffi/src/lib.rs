@@ -6,7 +6,7 @@ use bitone_core::keys::PublicKeys;
 use bitone_core::manifest::{Manifest, VENDOR_KEY};
 use bitone_core::protocol::{AddressCheck, DEFAULT_FRAGMENT_BYTES, FrameDecoder, FrameEncoder, UR_ACCOUNTS};
 use bitone_core::request::SignRequest;
-use bitone_core::review::{Confirm, Forbid, Review, Risk};
+use bitone_core::review::{Confirm, Forbid, Review, Risk, Summary};
 use bitone_core::tx::{self, HighestChange, ReviewContext};
 use bitone_core::{AccountKind, qr};
 use bitone_signer::{keys::Wallet, mnemonic, vault};
@@ -83,13 +83,6 @@ pub enum ConfirmMode {
 }
 
 #[derive(uniffi::Record)]
-pub struct ReviewRow {
-    pub label: String,
-    pub value: String,
-    pub mono: bool,
-}
-
-#[derive(uniffi::Record)]
 pub struct ReviewAmount {
     pub text: String,
     pub symbol: Option<String>,
@@ -99,17 +92,31 @@ pub struct ReviewAmount {
     pub unlimited: bool,
 }
 
+/// A6d 的一组控制方.`current` 为空时当前控制方就是付款账户,`next` 为空时这笔权限变更没有新控制方.
 #[derive(uniffi::Record)]
-pub struct ReviewAction {
-    pub risk: RiskLevel,
-    pub title: String,
-    pub rows: Vec<ReviewRow>,
+pub struct ReviewController {
+    pub current: Option<String>,
+    pub next: Option<String>,
 }
 
+/// 权限变更打包的转账或调用的对方.
 #[derive(uniffi::Record)]
-pub struct ReviewRawLine {
-    pub text: String,
-    pub note: Option<String>,
+pub struct ReviewParty {
+    pub label: String,
+    pub value: String,
+}
+
+/// 页面顶部,在字段列表上方.每个值都引用 `field_ids` 里的行.见 docs/10-tx-decoding.md 第 4.1 节.
+#[derive(uniffi::Record)]
+pub struct ReviewSummary {
+    pub title: String,
+    pub amount: Option<ReviewAmount>,
+    pub counterparty_label: Option<String>,
+    pub counterparty: Option<String>,
+    pub field_ids: Vec<u32>,
+    pub controllers: Vec<ReviewController>,
+    pub parties: Vec<ReviewParty>,
+    pub payer: Option<String>,
 }
 
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,19 +173,15 @@ pub struct ReviewResult {
     pub network: String,
     /// 页面顶部显示主网提示.
     pub mainnet: bool,
-    pub title: String,
-    pub amount: Option<ReviewAmount>,
-    pub counterparty_label: Option<String>,
-    pub counterparty: Option<String>,
+    pub summary: ReviewSummary,
     pub alerts: Vec<String>,
-    pub actions: Vec<ReviewAction>,
-    pub rows: Vec<ReviewRow>,
-    pub raw: Vec<ReviewRawLine>,
-    /// 不为空时手机用通用字段列表.还没迁移的链是空的.
+    /// 解码树的全部节点.只有拒绝时才是空的.
     pub fields: Vec<FieldRow>,
     pub field_count: u32,
     /// 手机把它和已渲染行数传回 `sign_request`.
     pub review_digest: Vec<u8>,
+    /// 拒绝的原因,可以签名时为空.
+    pub refusal: Option<String>,
     /// 指纹对不上,要提示检查 BIP39 密码.
     pub fingerprint_mismatch: bool,
     /// 请求里的主密钥指纹.解析失败时为空.
@@ -244,21 +247,44 @@ fn field_row(row: bitone_core::review::FieldRow) -> FieldRow {
     }
 }
 
-fn rows(list: Vec<bitone_core::review::Row>) -> Vec<ReviewRow> {
-    list.into_iter()
-        .map(|r| ReviewRow {
-            label: r.label,
-            value: r.value,
-            mono: r.mono,
-        })
-        .collect()
-}
-
-fn review_result(review: Review, manifest: &Manifest, request_fingerprint: Option<String>) -> ReviewResult {
+fn review_summary(summary: Summary, manifest: &Manifest) -> ReviewSummary {
     let icon = |asset: &Option<String>| {
         let key = asset.as_deref()?;
         manifest.assets.iter().find(|a| a.key() == key).map(|a| a.icon.clone())
     };
+    ReviewSummary {
+        title: summary.title,
+        amount: summary.amount.map(|a| ReviewAmount {
+            icon: icon(&a.asset),
+            text: a.text,
+            symbol: a.symbol,
+            asset: a.asset,
+            unlimited: a.unlimited,
+        }),
+        counterparty_label: summary.counterparty_label,
+        counterparty: summary.counterparty,
+        field_ids: summary.field_ids,
+        controllers: summary
+            .controllers
+            .into_iter()
+            .map(|c| ReviewController {
+                current: c.current,
+                next: c.next,
+            })
+            .collect(),
+        parties: summary
+            .parties
+            .into_iter()
+            .map(|p| ReviewParty {
+                label: p.label,
+                value: p.value,
+            })
+            .collect(),
+        payer: summary.payer,
+    }
+}
+
+fn review_result(review: Review, manifest: &Manifest, request_fingerprint: Option<String>) -> ReviewResult {
     ReviewResult {
         risk: risk_level(review.risk),
         confirm: match review.confirm {
@@ -269,38 +295,12 @@ fn review_result(review: Review, manifest: &Manifest, request_fingerprint: Optio
         },
         network: review.network,
         mainnet: review.mainnet,
-        title: review.title,
-        amount: review.amount.map(|a| ReviewAmount {
-            icon: icon(&a.asset),
-            text: a.text,
-            symbol: a.symbol,
-            asset: a.asset,
-            unlimited: a.unlimited,
-        }),
-        counterparty_label: review.counterparty_label,
-        counterparty: review.counterparty,
+        summary: review_summary(review.summary, manifest),
         alerts: review.alerts,
-        actions: review
-            .actions
-            .into_iter()
-            .map(|a| ReviewAction {
-                risk: risk_level(a.risk),
-                title: a.title,
-                rows: rows(a.rows),
-            })
-            .collect(),
-        rows: rows(review.rows),
-        raw: review
-            .raw
-            .into_iter()
-            .map(|l| ReviewRawLine {
-                text: l.text,
-                note: l.note,
-            })
-            .collect(),
         fields: review.fields.into_iter().map(field_row).collect(),
         field_count: review.field_count,
         review_digest: review.review_digest.to_vec(),
+        refusal: review.forbidden.map(|reason| reason.to_string()),
         fingerprint_mismatch: review.forbidden == Some(Forbid::FingerprintMismatch),
         request_fingerprint,
     }

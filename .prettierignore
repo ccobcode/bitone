@@ -13,6 +13,7 @@ tools/crosscheck/vectors/solana.json
 # 生成物,内容的哈希和格式由生成器决定.
 crates/bitone-core/assets/tron-schema.json
 tools/crosscheck/vectors/tron.json
+tools/crosscheck/vectors/stake.json
 tools/crosscheck/vectors/evm-messages.json
 tools/crosscheck/vectors/tron-messages.json
 # 下载的数据,内容的哈希在 schemas/lock.toml.

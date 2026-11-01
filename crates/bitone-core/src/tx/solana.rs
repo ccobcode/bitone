@@ -1,22 +1,26 @@
-//! Solana 交易:核对,构建和核验.解码在 `decode::solana`,这里算出策略要的事实和旧字段.
+//! Solana 交易:核对,构建和核验.解码在 `decode::solana`,这里从解码树算出策略要的事实和页面顶部.
 //! 标准见 docs/10-tx-decoding.md 第 5.3 节.载荷的 ed25519 签名原文就是载荷本身.
 
 use crate::address::parse_solana_address;
-use crate::decode::solana::{self as format, SolanaPayload, SolanaWalker, is_token_program, parse_solana, put_len};
-use crate::decode::{self, Coin, Decoded, Node, NodeId, Value};
+use crate::decode::solana::{
+    self as format, SolanaPayload, SolanaWalker, is_batch, is_token_program, parse_solana, put_len,
+};
+use crate::decode::{self, Coin, Decoded, Node, NodeId, Value, display};
 use crate::manifest::{Asset, Manifest};
 use crate::path::{DerivationPath, check_solana_path, is_usual_solana_path, solana_path_mode};
-use crate::policy::{self, SolanaFacts, SolanaFinding};
+use crate::policy::{self, Finding, SolanaFacts, SolanaFinding};
 use crate::request::{KIND_TRANSACTION, SignRequest, SignResponse};
-use crate::review::{ActionView, AmountView, Forbid, RawLine, Review, Risk, Row};
+use crate::review::{Forbid, Review, Risk};
 use crate::tx::evm::MAX_PATH_DEPTH;
-use crate::tx::{ReviewContext, Verified, raw_lines};
+use crate::tx::summary::{self, Effect, number_of};
+use crate::tx::{ReviewContext, Verified};
 use crate::units::format_units;
 use crate::{Chain, Error, Mode, Network};
 use bitcoin::hex::DisplayHex;
 use ed25519_dalek::{Signature, VerifyingKey};
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::ops::Range;
 
 pub use crate::decode::solana::{Instruction, Lookup, Message, V1Config, Version};
@@ -50,15 +54,16 @@ pub const RENT_SYSVAR: [u8; 32] = [
 const NONCE_SEED: &str = "bitone-nonce";
 const CREATE_NONCE_TITLE: &str = "创建 nonce 账户";
 const ADVANCE_NONCE_TITLE: &str = "作废已签名的交易";
-const CREATE_TOKEN_ACCOUNT_TITLE: &str = "创建代币账户";
+const NONCE_ACCOUNT_LABEL: &str = "nonce 账户";
 /// nonce 账户的数据长度.
 const NONCE_SPACE: u64 = 80;
 /// 规格化的 `transferChecked` 的账户数.
 const PLAIN_TOKEN_ACCOUNTS: usize = 4;
+const PROGRAM_ROW: &str = "program_id";
+const LOOKUP_TABLE_ROW: &str = "lookup_table";
 const BASE_FEE_ROW: &str = "base_fee";
 const PRIORITY_FEE_ROW: &str = "priority_fee";
 const INSTRUCTION_ROW: &str = "instruction";
-const INSTRUCTIONS_DEPTH: u32 = 2;
 const ACCOUNTS_ROW: &str = "accounts";
 const DATA_ROW: &str = "data";
 const AMOUNT_ROW: &str = "amount";
@@ -66,12 +71,19 @@ const DECIMALS_ROW: &str = "decimals";
 const MINT_ROW: &str = "mint";
 const TOKEN_ACTIONS: &str = "token.";
 const TOKEN_2022_ACTIONS: &str = "token2022.";
+const ADVANCE_ACTION: &str = "system.advanceNonceAccount";
+const TRANSFER_SOL_ACTION: &str = "system.transferSol";
 const TRANSFER: &str = "transfer";
 const CHECKED_TRANSFERS: [&str; 2] = ["transferChecked", "transferCheckedWithFee"];
 const ASSOCIATED_ACTIONS: [&str; 3] = [
     "associatedTokenAccount.create",
     "associatedTokenAccount.createIdempotent",
     "associatedTokenAccount.createWithArgs",
+];
+/// 空数据和判别值 0 都是 `create`.`createWithArgs` 不算规范形式.
+const PLAIN_ASSOCIATED_ACTIONS: [&str; 2] = [
+    "associatedTokenAccount.create",
+    "associatedTokenAccount.createIdempotent",
 ];
 const ASSOCIATED_ACCOUNT_ROW: &str = "associatedTokenAccount";
 const WALLET_ROW: &str = "wallet";
@@ -111,21 +123,6 @@ pub fn associated_token_address(owner: &[u8; 32], mint: &[u8; 32], program: &[u8
     format::associated_token_address(owner, mint, program).ok_or(Error::InvalidParams)
 }
 
-fn le_u64(bytes: &[u8]) -> Option<u64> {
-    Some(u64::from_le_bytes(*bytes.first_chunk::<8>()?))
-}
-
-fn key_at(bytes: &[u8]) -> Option<[u8; 32]> {
-    bytes.first_chunk::<32>().copied()
-}
-
-/// AssignWithSeed 的数据依次是 base,seed,新所有者.seed 是 8 字节长度加内容.
-fn seeded_owner(rest: &[u8]) -> Option<[u8; 32]> {
-    let seed = rest.get(32..)?;
-    let len = usize::try_from(le_u64(seed)?).ok()?;
-    key_at(seed.get(8..)?.get(len..)?)
-}
-
 /// AllocateWithSeed.派生地址是公开的,任何人都能往里转一点钱,那样 CreateAccountWithSeed 就会失败,
 /// 这个钱包再也发不出交易.所以分三步:先转入租金,再分配空间,最后初始化.
 /// 分配要付款账户签名,攻击者只能存钱,抢不走这个地址.
@@ -145,46 +142,71 @@ fn initialize_nonce_data(authority: &[u8; 32]) -> Vec<u8> {
     data
 }
 
-/// 一条指令分析出来的结果.
-struct Effect {
-    risk: Risk,
-    title: String,
-    rows: Vec<Row>,
-    amount: Option<AmountView>,
-    counterparty: Option<(&'static str, String)>,
-    /// 代币收款方的所有者没有确认.
-    unconfirmed_owner: bool,
+/// 消息里的一条指令.`batch` 的内部指令和消息里的指令一样算,它们的 `id` 和规则都是自己的.
+#[derive(Clone, Copy)]
+struct Step<'a> {
+    id: NodeId,
+    node: &'a Node,
+    kind: &'a str,
 }
 
-impl Effect {
-    fn new(risk: Risk, title: &str) -> Self {
-        Self {
-            risk,
-            title: title.to_string(),
-            rows: Vec::new(),
-            amount: None,
-            counterparty: None,
-            unconfirmed_owner: false,
-        }
-    }
+fn steps(decoded: &Decoded) -> Vec<Step<'_>> {
+    decoded
+        .visits()
+        .into_iter()
+        .filter(|visit| visit.node.name == INSTRUCTION_ROW)
+        .map(|visit| Step {
+            id: visit.id,
+            node: visit.node,
+            kind: visit.node.action.as_deref().unwrap_or_default(),
+        })
+        .collect()
+}
 
-    fn unknown(title: &str) -> Self {
-        Self::new(Risk::Unknown, title)
+fn argument_text(node: &Node, name: &str) -> Option<String> {
+    let found = section(node, DATA_ROW).iter().find(|child| child.name == name)?;
+    Some(display(&found.value))
+}
+
+/// 没有多余账户和多余字节,数据都读懂了.
+fn is_exact(node: &Node) -> bool {
+    let rows = section(node, DATA_ROW).iter().chain(section(node, ACCOUNTS_ROW));
+    rows.into_iter().all(|row| !matches!(row.value, Value::Opaque(_)))
+}
+
+fn uses_lookup(node: &Node) -> bool {
+    section(node, ACCOUNTS_ROW)
+        .iter()
+        .any(|account| account.children.iter().any(|child| child.name == LOOKUP_TABLE_ROW))
+}
+
+fn accounts_are(node: &Node, expected: &[&str]) -> bool {
+    let accounts = section(node, ACCOUNTS_ROW);
+    accounts.len() == expected.len()
+        && accounts
+            .iter()
+            .zip(expected)
+            .all(|(account, key)| matches!(&account.value, Value::Address(text) if text == key))
+}
+
+fn program_of(node: &Node) -> Option<&str> {
+    let found = node.children.iter().find(|child| child.name == PROGRAM_ROW)?;
+    if let Value::Address(text) = &found.value {
+        Some(text)
+    } else {
+        None
     }
 }
 
-/// 一遍扫完全部指令.ComputeBudget 和本钱包的 AdvanceNonceAccount 不算动作,其余每条都有一个 `Effect`.
-struct Scan<'a> {
-    message: &'a Message,
+/// 从解码树读出页面顶部和 nonce 的事实.不算动作的指令和本钱包的 AdvanceNonceAccount 没有 `Effect`,其余每条都有一个.
+struct Reader<'a> {
     /// 请求里的网络,本机不一定认识.
     network: &'a str,
     known: Option<Network>,
     manifest: &'a Manifest,
     native: Option<&'a Asset>,
     /// 本账户和它的 nonce 账户.路径没有导出时公钥算不出来,要解锁后才能核对.
-    own: Option<([u8; 32], [u8; 32])>,
-    /// 网页端声明的代币收款方所有者.只有推导得出目标账户时才采信.
-    hint: Option<[u8; 32]>,
+    own: Option<(String, String)>,
     /// 本钱包的 nonce 创建占用的指令.
     creation: Option<Range<usize>>,
     /// 不在第一条,或者不属于本钱包的 AdvanceNonceAccount.
@@ -192,185 +214,68 @@ struct Scan<'a> {
     deposit_high: bool,
 }
 
-impl Scan<'_> {
-    fn program(&self, ix: &Instruction) -> [u8; 32] {
-        self.message.keys[ix.program as usize]
+impl<'a> Reader<'a> {
+    /// 只有规范形式才显示清单里的符号.Token-2022 的扩展能改变实际效果,清单声明过才算,
+    /// 账户多余,数据有尾部字节或地址来自查找表时节点照样执行,金额用原始整数.
+    fn listed(&self, step: Step<'_>, mint: &str, decimals: Option<u64>) -> Option<&'a Asset> {
+        let asset = self.manifest.lookup(self.network, mint)?;
+        let declared = step.kind.starts_with(TOKEN_ACTIONS) || asset.extensions.is_some();
+        let plain = declared && is_exact(step.node) && !uses_lookup(step.node);
+        (plain && decimals == Some(u64::from(asset.decimals))).then_some(asset)
     }
 
-    /// 查找表里的地址没有结果.
-    fn account(&self, ix: &Instruction, position: usize) -> Option<[u8; 32]> {
-        ix.accounts
-            .get(position)
-            .and_then(|&index| self.message.keys.get(index as usize))
-            .copied()
+    fn read(&self, step: Step<'_>) -> Effect {
+        summary::effect(
+            Chain::Solana,
+            step.kind,
+            step.id,
+            step.node,
+            self.native,
+            |mint, decimals| self.listed(step, mint, decimals),
+        )
     }
 
-    fn shown(&self, ix: &Instruction, position: usize) -> String {
-        match ix.accounts.get(position) {
-            None => "缺失".to_string(),
-            Some(&index) => self
-                .message
-                .keys
-                .get(index as usize)
-                .map_or_else(|| "查找表地址".to_string(), base58),
-        }
-    }
-
-    fn uses_lookup(&self, ix: &Instruction) -> bool {
-        ix.accounts
-            .iter()
-            .any(|&index| index as usize >= self.message.keys.len())
-    }
-
-    fn accounts_are(&self, ix: &Instruction, expected: &[[u8; 32]]) -> bool {
-        ix.accounts.len() == expected.len()
-            && expected
-                .iter()
-                .enumerate()
-                .all(|(i, key)| self.account(ix, i).as_ref() == Some(key))
-    }
-
-    /// 本机不认识的网络没有原生币,金额显示原始整数.
-    fn sol(&self, lamports: u64) -> String {
-        match self.native {
-            Some(native) => format!(
-                "{} {}",
-                format_units(&lamports.to_string(), native.decimals),
-                native.symbol
-            ),
-            None => lamports.to_string(),
-        }
-    }
-
-    fn sol_view(&self, lamports: u64) -> AmountView {
-        match self.native {
-            Some(native) => AmountView {
-                text: format_units(&lamports.to_string(), native.decimals),
-                symbol: Some(native.symbol.clone()),
-                asset: Some(native.key()),
-                unlimited: false,
-            },
-            None => AmountView {
-                text: lamports.to_string(),
-                symbol: None,
-                asset: None,
-                unlimited: false,
-            },
-        }
-    }
-
-    /// 不在清单或小数位对不上时显示原始整数,不显示符号.
-    fn token_view(&self, mint: Option<&[u8; 32]>, decimals: Option<u8>, amount: u64) -> AmountView {
-        let asset = mint
-            .and_then(|mint| self.manifest.lookup(self.network, &base58(mint)))
-            .filter(|asset| Some(asset.decimals) == decimals);
-        match asset {
-            Some(asset) => AmountView {
-                text: format_units(&amount.to_string(), asset.decimals),
-                symbol: Some(asset.symbol.clone()),
-                asset: Some(asset.key()),
-                unlimited: false,
-            },
-            None => AmountView {
-                text: amount.to_string(),
-                symbol: None,
-                asset: None,
-                unlimited: false,
-            },
-        }
-    }
-
-    fn details(&self, ix: &Instruction) -> Vec<Row> {
-        let mut rows = vec![Row::mono("程序 ID", base58(&self.program(ix)))];
-        for (position, &index) in ix.accounts.iter().enumerate() {
-            let index = index as usize;
-            let mut marks = Vec::new();
-            if self.message.is_signer(index) {
-                marks.push("签名者");
-            }
-            marks.push(if self.message.is_writable(index) {
-                "可写"
-            } else {
-                "只读"
-            });
-            let label = format!("账户 {}({})", position + 1, marks.join(","));
-            rows.push(Row::mono(&label, self.shown(ix, position)));
-        }
-        rows.push(Row::text("数据长度", format!("{} 字节", ix.data.len())));
-        rows.push(Row::mono("数据", ix.data.to_lower_hex_string()));
-        rows
-    }
-
-    fn permission_change(&self, title: &str, current: String, new: String) -> Effect {
-        let mut effect = Effect::new(Risk::PermissionChange, title);
-        effect.rows = vec![Row::mono("当前控制方", current), Row::mono("新控制方", new.clone())];
-        effect.counterparty = Some(("新控制方", new));
-        effect
-    }
-
-    /// 只有规范的形式才算普通转账.账户多余或数据有尾部字节时节点照样转账,所以金额和收款方都要显示.
-    fn transfer_sol(&self, ix: &Instruction) -> Option<Effect> {
-        let lamports = le_u64(ix.data.get(4..)?)?;
-        let plain = ix.data.len() == 12 && ix.accounts.len() == 2 && !self.uses_lookup(ix);
-        let to = self.shown(ix, 1);
-        let mut effect = if plain {
-            Effect::new(Risk::Transfer, Risk::Transfer.label())
-        } else {
-            Effect::unknown("不规范的转账")
-        };
-        effect.rows = vec![
-            Row::text("金额", self.sol(lamports)),
-            Row::mono("付款账户", self.shown(ix, 0)),
-            Row::mono("收款地址", to.clone()),
-        ];
-        effect.amount = Some(self.sol_view(lamports));
-        effect.counterparty = Some(("收款地址", to));
-        Some(effect)
-    }
-
-    /// 系统程序用 bincode 解码,多余的尾部字节会被忽略.权限类指令按前缀判断,不能因为尾部字节降级.
-    fn system(&self, ix: &Instruction) -> Effect {
-        let Some((tag, rest)) = ix.data.split_first_chunk::<4>() else {
-            return Effect::unknown("未知系统指令");
-        };
-        let tag = u32::from_le_bytes(*tag);
-        let key = if tag == 10 { seeded_owner(rest) } else { key_at(rest) };
-        match (tag, key) {
-            (1, Some(owner)) => self.permission_change("Assign", self.shown(ix, 0), base58(&owner)),
-            (10, Some(owner)) => self.permission_change("AssignWithSeed", self.shown(ix, 0), base58(&owner)),
-            (2, _) => self.transfer_sol(ix).unwrap_or_else(|| Effect::unknown("系统转账")),
-            (7, Some(authority)) => {
-                let mut effect = self.permission_change("AuthorizeNonceAccount", self.shown(ix, 1), base58(&authority));
-                effect.rows.push(Row::mono("nonce 账户", self.shown(ix, 0)));
-                effect
-            }
-            _ => Effect::unknown("其他系统指令"),
-        }
+    fn own_advance(&self, index: usize, step: Step<'_>) -> bool {
+        self.own.as_ref().is_some_and(|(payer, nonce)| {
+            let sysvar = base58(&RECENT_BLOCKHASHES_SYSVAR);
+            index == 0
+                && step.kind == ADVANCE_ACTION
+                && is_exact(step.node)
+                && accounts_are(step.node, &[nonce, &sysvar, payer])
+        })
     }
 
     /// 转入租金,分配空间,初始化三步,地址和 authority 都必须是本钱包的.
     /// 这个标题是点按确认,所以交易里除了优先费不能有别的指令,否则转账会藏在标题后面.
-    fn nonce_creation(&mut self, index: usize) -> Option<Effect> {
-        let (payer, nonce) = self.own?;
-        let instructions = &self.message.instructions;
-        let fund = instructions.get(index)?;
-        let allocate = instructions.get(index + 1)?;
-        let initialize = instructions.get(index + 2)?;
-        let amount = fund.data.strip_prefix(&2u32.to_le_bytes()[..])?;
-        let lamports = le_u64(amount).filter(|_| amount.len() == 8)?;
-        let alone = instructions
-            .iter()
-            .enumerate()
-            .all(|(i, ix)| (index..index + 3).contains(&i) || self.program(ix) == COMPUTE_BUDGET_PROGRAM);
+    /// `batch` 本身没有效果,它的内部指令都是单独的一条.
+    fn nonce_creation(&mut self, steps: &[Step<'_>], index: usize) -> Option<Effect> {
+        let (payer, nonce) = self.own.clone()?;
+        let [fund, allocate, initialize] = *steps.get(index..index + 3)? else {
+            return None;
+        };
+        let lamports = argument_of(fund.node, AMOUNT_ROW)?;
+        let budget = base58(&COMPUTE_BUDGET_PROGRAM);
+        let system = base58(&SYSTEM_PROGRAM);
+        let alone = steps.iter().enumerate().all(|(i, step)| {
+            (index..index + 3).contains(&i) || program_of(step.node) == Some(budget.as_str()) || is_batch(step.kind)
+        });
+        let blockhashes = base58(&RECENT_BLOCKHASHES_SYSVAR);
+        let rent = base58(&RENT_SYSVAR);
+        let argument =
+            |step: Step<'_>, name: &str, wanted: &str| argument_text(step.node, name).as_deref() == Some(wanted);
         let own = alone
-            && self.program(fund) == SYSTEM_PROGRAM
-            && self.program(allocate) == SYSTEM_PROGRAM
-            && self.program(initialize) == SYSTEM_PROGRAM
-            && allocate.data == allocate_nonce_data(&payer)
-            && initialize.data == initialize_nonce_data(&payer)
-            && self.accounts_are(fund, &[payer, nonce])
-            && self.accounts_are(allocate, &[nonce, payer])
-            && self.accounts_are(initialize, &[nonce, RECENT_BLOCKHASHES_SYSVAR, RENT_SYSVAR]);
+            && fund.kind == TRANSFER_SOL_ACTION
+            && allocate.kind == ALLOCATE_ACTION
+            && initialize.kind == INITIALIZE_ACTION
+            && [fund, allocate, initialize].iter().all(|step| is_exact(step.node))
+            && argument(allocate, "base", &payer)
+            && argument(allocate, "seed", NONCE_SEED)
+            && argument(allocate, "programAddress", &system)
+            && argument_of(allocate.node, "space") == Some(NONCE_SPACE)
+            && argument(initialize, "nonceAuthority", &payer)
+            && accounts_are(fund.node, &[&payer, &nonce])
+            && accounts_are(allocate.node, &[&nonce, &payer])
+            && accounts_are(initialize.node, &[&nonce, &blockhashes, &rent]);
         if !own {
             return None;
         }
@@ -378,254 +283,46 @@ impl Scan<'_> {
         self.deposit_high = self
             .known
             .is_some_and(|network| lamports as u128 > policy::fee_ceiling(network));
-        let mut effect = Effect::new(Risk::Recognized, CREATE_NONCE_TITLE);
-        effect.rows = vec![
-            Row::mono("nonce 账户", base58(&nonce)),
-            Row::text("存入金额", self.sol(lamports)),
-        ];
-        effect.amount = Some(self.sol_view(lamports));
-        effect.counterparty = Some(("nonce 账户", base58(&nonce)));
-        Some(effect)
-    }
-
-    fn own_advance(&self, index: usize, ix: &Instruction) -> bool {
-        self.own.is_some_and(|(payer, nonce)| {
-            index == 0 && ix.data.len() == 4 && self.accounts_are(ix, &[nonce, RECENT_BLOCKHASHES_SYSVAR, payer])
+        Some(Effect {
+            counterparty: Some((NONCE_ACCOUNT_LABEL.to_string(), nonce)),
+            parties: Vec::new(),
+            ..self.read(fund)
         })
     }
 
-    fn recipient_owner(&self, program: &[u8; 32], mint: &[u8; 32], destination: &[u8; 32]) -> Option<[u8; 32]> {
-        self.hint
-            .filter(|owner| associated_token_address(owner, mint, program).as_ref() == Ok(destination))
-    }
-
-    /// 只有规范形式才显示清单里的符号.Token-2022 的扩展能改变实际效果,清单声明过才算,
-    /// 账户多余,数据有尾部字节或地址来自查找表时节点照样转账,所以金额和目标都要显示,金额用原始整数.
-    fn transfer_checked(&self, ix: &Instruction, program: &[u8; 32], rest: &[u8]) -> Option<Effect> {
-        let amount = le_u64(rest)?;
-        let decimals = *rest.get(8)?;
-        let (mint, destination) = (self.account(ix, 1), self.account(ix, 2));
-        let declared = mint
-            .and_then(|mint| self.manifest.lookup(self.network, &base58(&mint)))
-            .is_some_and(|asset| asset.extensions.is_some());
-        let plain_program = *program == TOKEN_PROGRAM || declared;
-        let exact = plain_program && rest.len() == 9 && ix.accounts.len() == 4 && !self.uses_lookup(ix);
-        let view = self.token_view(mint.as_ref().filter(|_| exact), Some(decimals), amount);
-        let listed = view.symbol.is_some();
-        let mut effect = if listed {
-            Effect::new(Risk::Transfer, Risk::Transfer.label())
-        } else {
-            Effect::unknown("未知代币的转账")
-        };
-        let owner = mint
-            .zip(destination)
-            .and_then(|(mint, destination)| self.recipient_owner(program, &mint, &destination));
-        let shown = owner.map_or_else(|| self.shown(ix, 2), |owner| base58(&owner));
-        let symbol = view.symbol.as_deref().map(|s| format!(" {s}")).unwrap_or_default();
-        effect.rows = vec![
-            Row::text("金额", format!("{}{symbol}", view.text)),
-            Row::mono("代币", self.shown(ix, 1)),
-            Row::text(
-                "合约清单",
-                if listed {
-                    "在内置清单"
-                } else {
-                    "不在内置清单"
-                },
-            ),
-            Row::mono("付款账户", self.shown(ix, 3)),
-            Row::mono("来源代币账户", self.shown(ix, 0)),
-            Row::mono("目标代币账户", self.shown(ix, 2)),
-        ];
-        match owner {
-            Some(owner) => effect.rows.push(Row::mono("收款地址", base58(&owner))),
-            None => {
-                effect.rows.push(Row::text("收款地址", "无法确认所有者"));
-                effect.unconfirmed_owner = true;
+    fn effect(&mut self, steps: &[Step<'_>], index: usize) -> (Option<Effect>, usize) {
+        let step = steps[index];
+        if step.kind == ADVANCE_ACTION {
+            if self.own_advance(index, step) {
+                return (None, 1);
             }
+            self.foreign_advances.push(index);
+            return (Some(self.read(step)), 1);
         }
-        effect.amount = Some(view);
-        effect.counterparty = Some(("收款地址", shown));
-        Some(effect)
-    }
-
-    fn approval(
-        &self,
-        ix: &Instruction,
-        title: &str,
-        mint: Option<[u8; 32]>,
-        decimals: Option<u8>,
-        amount: u64,
-    ) -> Effect {
-        // ApproveChecked 的账户表比 Approve 多一个 mint.
-        let shift = usize::from(mint.is_some() || decimals.is_some());
-        let delegate = self.shown(ix, 1 + shift);
-        let mut view = self.token_view(mint.as_ref(), decimals, amount);
-        view.unlimited = amount == u64::MAX;
-        let symbol = view.symbol.as_deref().map(|s| format!(" {s}")).unwrap_or_default();
-        let mut effect = Effect::new(Risk::Approval, title);
-        effect.rows = vec![
-            Row::mono("被授权方", delegate.clone()),
-            Row::text("额度", format!("{}{symbol}", view.text)),
-            Row::mono("代币账户", self.shown(ix, 0)),
-            Row::mono("授权人", self.shown(ix, 2 + shift)),
-        ];
-        if shift == 1 {
-            effect.rows.push(Row::mono("代币", self.shown(ix, 1)));
+        if let Some(effect) = self.nonce_creation(steps, index) {
+            return (Some(effect), 3);
         }
-        effect.amount = Some(view);
-        effect.counterparty = Some(("被授权方", delegate));
-        effect
+        // 形式不规范的指令按无法识别展示,手续费由解码树算出.
+        let passive = policy::is_passive(Chain::Solana, step.kind) && is_exact(step.node);
+        ((!passive).then(|| self.read(step)), 1)
     }
 
-    fn set_authority(&self, ix: &Instruction, rest: &[u8]) -> Option<Effect> {
-        let (&kind, rest) = rest.split_first()?;
-        let new = match rest.split_first()? {
-            (0, _) => "无,权限被永久移除".to_string(),
-            (1, key) => base58(&key_at(key)?),
-            _ => return None,
-        };
-        let kind = match kind {
-            0 => "MintTokens".to_string(),
-            1 => "FreezeAccount".to_string(),
-            2 => "AccountOwner".to_string(),
-            3 => "CloseAccount".to_string(),
-            other => format!("类型 {other}"),
-        };
-        let mut effect = self.permission_change("SetAuthority", self.shown(ix, 1), new);
-        effect.rows.push(Row::text("权限类型", kind));
-        effect.rows.push(Row::mono("账户", self.shown(ix, 0)));
-        Some(effect)
-    }
-
-    /// 代币程序解码时也忽略尾部字节,规则同 `system`.低风险的类别才要求长度完全一致.
-    fn token(&self, ix: &Instruction, program: &[u8; 32]) -> Effect {
-        let Some((&tag, rest)) = ix.data.split_first() else {
-            return Effect::unknown("未知代币指令");
-        };
-        let approve_checked = || {
-            let amount = le_u64(rest)?;
-            Some(self.approval(ix, "ApproveChecked", self.account(ix, 1), Some(*rest.get(8)?), amount))
-        };
-        let effect = match tag {
-            3 => le_u64(rest).map(|amount| {
-                let mut effect = Effect::unknown("旧版代币转账");
-                let view = self.token_view(None, None, amount);
-                let destination = self.shown(ix, 1);
-                effect.rows = vec![
-                    Row::text("原始数额", view.text.clone()),
-                    Row::mono("目标代币账户", destination.clone()),
-                ];
-                effect.amount = Some(view);
-                effect.counterparty = Some(("目标代币账户", destination));
-                effect
-            }),
-            4 => le_u64(rest).map(|amount| self.approval(ix, "Approve", None, None, amount)),
-            5 => Some(Effect::unknown("Revoke")),
-            6 => self.set_authority(ix, rest),
-            9 => Some(Effect::unknown("CloseAccount")),
-            12 => self.transfer_checked(ix, program, rest),
-            13 => approve_checked(),
-            _ => None,
-        };
-        effect.unwrap_or_else(|| Effect::unknown("其他代币指令"))
-    }
-
-    fn associated_token(&self, ix: &Instruction) -> Effect {
-        let recognized = || {
-            if !(ix.data.is_empty() || ix.data == [0] || ix.data == [1]) || ix.accounts.len() != 6 {
-                return None;
-            }
-            let (account, owner, mint) = (self.account(ix, 1)?, self.account(ix, 2)?, self.account(ix, 3)?);
-            let program = self.account(ix, 5)?;
-            let valid = self.account(ix, 4)? == SYSTEM_PROGRAM
-                && (program == TOKEN_PROGRAM || program == TOKEN_2022_PROGRAM)
-                && associated_token_address(&owner, &mint, &program).as_ref() == Ok(&account);
-            valid.then(|| {
-                let mut effect = Effect::new(Risk::Recognized, CREATE_TOKEN_ACCOUNT_TITLE);
-                effect.rows = vec![
-                    Row::mono("所有者", base58(&owner)),
-                    Row::mono("代币", base58(&mint)),
-                    Row::mono("代币账户", base58(&account)),
-                ];
-                effect
-            })
-        };
-        recognized().unwrap_or_else(|| Effect::unknown("其他关联代币账户指令"))
-    }
-
-    /// 不算动作.形式不规范的指令按无法识别展示,手续费由解码树算出.
-    fn compute_budget(&self, ix: &Instruction) -> Option<Effect> {
-        let width = match ix.data.first() {
-            Some(1 | 2 | 4) => 4,
-            Some(3) => 8,
-            Some(_) | None => return Some(Effect::unknown("ComputeBudget 指令")),
-        };
-        (ix.data.len() != width + 1 || !ix.accounts.is_empty()).then(|| Effect::unknown("ComputeBudget 指令"))
-    }
-
-    fn run(&mut self) -> Vec<Effect> {
-        let message = self.message;
+    fn run(&mut self, steps: &[Step<'_>]) -> Vec<Effect> {
         let mut effects = Vec::new();
         let mut index = 0;
-        while let Some(ix) = message.instructions.get(index) {
-            let program = self.program(ix);
-            let effect = if program == SYSTEM_PROGRAM {
-                if ix.data.starts_with(&4u32.to_le_bytes()) {
-                    if self.own_advance(index, ix) {
-                        None
-                    } else {
-                        self.foreign_advances.push(index);
-                        Some(Effect::unknown("AdvanceNonceAccount"))
-                    }
-                } else if let Some(effect) = self.nonce_creation(index) {
-                    index += 2;
-                    Some(effect)
-                } else {
-                    Some(self.system(ix))
-                }
-            } else if program == TOKEN_PROGRAM || program == TOKEN_2022_PROGRAM {
-                Some(self.token(ix, &program))
-            } else if program == ASSOCIATED_TOKEN_PROGRAM {
-                Some(self.associated_token(ix))
-            } else if program == COMPUTE_BUDGET_PROGRAM {
-                self.compute_budget(ix)
-            } else {
-                Some(Effect::unknown(Risk::Unknown.label()))
-            };
-            if let Some(mut effect) = effect {
-                if self.uses_lookup(ix) {
-                    effect.risk = [effect.risk, Risk::Unknown]
-                        .into_iter()
-                        .max_by_key(|r| r.legacy_rank())
-                        .unwrap_or(Risk::Unknown);
-                }
-                if effect.risk.legacy_rank() >= Risk::Unknown.legacy_rank() {
-                    effect.rows.extend(self.details(ix));
-                }
-                effects.push(effect);
-            }
-            index += 1;
+        while index < steps.len() {
+            let (effect, used) = self.effect(steps, index);
+            effects.extend(effect);
+            index += used;
         }
         effects
     }
 }
 
-/// 消息不是 ABI 编码,方法选择器和疑似地址这些提示不适用.
-fn plain_lines(bytes: &[u8]) -> Vec<RawLine> {
-    let mut lines = raw_lines(bytes);
-    lines.iter_mut().for_each(|line| line.note = None);
-    lines
-}
-
-/// 页面顶部的摘要和旧字段,第 9 节删除.类别和告警都来自策略.
+/// 解码之后算好的内容.类别和告警都来自策略.
 #[derive(Default)]
-struct Summary {
-    amount: Option<AmountView>,
-    counterparty_label: Option<String>,
-    counterparty: Option<String>,
-    actions: Vec<ActionView>,
-    rows: Vec<Row>,
+struct Prepared {
+    effects: Vec<Effect>,
     title: Option<&'static str>,
     facts: SolanaFacts,
 }
@@ -649,20 +346,6 @@ fn account_of<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
 
 fn account_key(node: &Node, name: &str) -> Option<[u8; 32]> {
     parse_solana_address(account_of(node, name)?).ok()
-}
-
-fn number_of(value: &Value) -> Option<u64> {
-    let raw = if let Value::Uint(raw) = value {
-        raw
-    } else if let Value::Amount(amount) = value {
-        &amount.raw
-    } else {
-        return None;
-    };
-    let mut wide = [0u8; 8];
-    let start = wide.len().checked_sub(raw.len())?;
-    wide[start..].copy_from_slice(raw);
-    Some(u64::from_be_bytes(wide))
 }
 
 fn argument_of(node: &Node, name: &str) -> Option<u64> {
@@ -743,21 +426,28 @@ fn token_facts(decoded: &Decoded, manifest: &Manifest, network: &str, facts: &mu
     }
 }
 
+/// 地址由所有者,mint,程序推导得出.
+fn ata_is_derived(node: &Node) -> bool {
+    let derived = || {
+        let program = account_key(node, TOKEN_PROGRAM_ROW)?;
+        let owner = account_key(node, WALLET_ROW)?;
+        let mint = account_key(node, MINT_ROW)?;
+        let derived = format::associated_token_address(&owner, &mint, &program)?;
+        let system = account_key(node, SYSTEM_PROGRAM_ROW)? == SYSTEM_PROGRAM;
+        Some(system && is_token_program(&program) && account_key(node, ASSOCIATED_ACCOUNT_ROW)? == derived)
+    };
+    derived() == Some(true)
+}
+
+/// 规范的 `create` 和 `createIdempotent`,地址由所有者,mint,程序推导得出.
+fn creates_token_account(step: Step<'_>) -> bool {
+    PLAIN_ASSOCIATED_ACTIONS.contains(&step.kind) && is_exact(step.node) && ata_is_derived(step.node)
+}
+
 /// `create` 系列的地址必须由所有者,mint,程序推导得出.
 fn associated_facts(decoded: &Decoded, facts: &mut SolanaFacts) {
     for (id, node, kind) in decoded.actions() {
-        if !ASSOCIATED_ACTIONS.contains(&kind) {
-            continue;
-        }
-        let valid = (|| {
-            let program = account_key(node, TOKEN_PROGRAM_ROW)?;
-            let owner = account_key(node, WALLET_ROW)?;
-            let mint = account_key(node, MINT_ROW)?;
-            let derived = format::associated_token_address(&owner, &mint, &program)?;
-            let system = account_key(node, SYSTEM_PROGRAM_ROW)? == SYSTEM_PROGRAM;
-            Some(system && is_token_program(&program) && account_key(node, ASSOCIATED_ACCOUNT_ROW)? == derived)
-        })();
-        if valid != Some(true) {
+        if ASSOCIATED_ACTIONS.contains(&kind) && !ata_is_derived(node) {
             facts.findings.push(finding(id, "ata-underived"));
         }
     }
@@ -779,27 +469,23 @@ fn budget_facts(decoded: &Decoded, facts: &mut SolanaFacts) {
 }
 
 /// 本钱包的 nonce 创建之外,初始化 nonce 账户或者给本钱包的 nonce 地址分配空间都不算已识别.
-fn nonce_facts(decoded: &Decoded, scan: &Scan, facts: &mut SolanaFacts) {
-    let visits = decoded.visits();
-    let instructions: Vec<NodeId> = visits
-        .iter()
-        .filter(|visit| visit.node.name == INSTRUCTION_ROW && visit.depth == INSTRUCTIONS_DEPTH)
-        .map(|visit| visit.id)
-        .collect();
+fn nonce_facts(decoded: &Decoded, reader: &Reader, facts: &mut SolanaFacts) {
+    let instructions = steps(decoded);
     facts.findings.extend(
-        scan.foreign_advances
+        reader
+            .foreign_advances
             .iter()
             .filter_map(|index| instructions.get(*index))
-            .map(|id| finding(*id, "nonce-advance-foreign")),
+            .map(|step| finding(step.id, "nonce-advance-foreign")),
     );
-    let own_nonce = scan.own.map(|(_, nonce)| base58(&nonce));
+    let own_nonce = reader.own.as_ref().map(|(_, nonce)| nonce.as_str());
     let in_creation = |id: NodeId| {
-        let position = instructions.iter().position(|row| *row == id);
-        position.is_some_and(|position| scan.creation.as_ref().is_some_and(|range| range.contains(&position)))
+        let position = instructions.iter().position(|step| step.id == id);
+        position.is_some_and(|position| reader.creation.as_ref().is_some_and(|range| range.contains(&position)))
     };
     for (id, node, kind) in decoded.actions() {
-        let step = kind == INITIALIZE_ACTION
-            || (kind == ALLOCATE_ACTION && account_of(node, ALLOCATED_ROW) == own_nonce.as_deref());
+        let step =
+            kind == INITIALIZE_ACTION || (kind == ALLOCATE_ACTION && account_of(node, ALLOCATED_ROW) == own_nonce);
         if step && !in_creation(id) {
             facts.findings.push(finding(id, "nonce-step-foreign"));
         }
@@ -823,22 +509,33 @@ fn signer_facts(payload: &SolanaPayload, signer: Option<&[u8; 32]>, decoded: &De
     }
 }
 
-fn summarize(message: &Message, scan: &mut Scan, decoded: &Decoded) -> Summary {
-    let mut effects = scan.run();
-    // 只推进 nonce:之前用这个 nonce 值签名的交易全部作废.这是 Solana 上取消交易的写法.
-    let cancels = effects.is_empty()
-        && message.instructions.first().is_some_and(|ix| {
-            scan.program(ix) == SYSTEM_PROGRAM && ix.data.starts_with(&4u32.to_le_bytes()) && scan.own_advance(0, ix)
-        });
-    if cancels {
-        let mut effect = Effect::new(Risk::Recognized, ADVANCE_NONCE_TITLE);
-        effect.rows = scan
-            .own
-            .iter()
-            .map(|(_, nonce)| Row::mono("nonce 账户", base58(nonce)))
-            .collect();
-        effects.push(effect);
+/// 每条指令的类别,页面顶部按它选动作.指令的字段上的发现都算,比如查找表里的账户和多余的字节,
+/// `batch` 的内部指令是单独的一条.
+fn ranks(decoded: &Decoded, findings: &BTreeMap<NodeId, Finding>) -> BTreeMap<NodeId, u8> {
+    let visits = decoded.visits();
+    let mut ranks = BTreeMap::new();
+    for (id, finding) in findings {
+        let mut at = Some(*id);
+        while let Some(visit) = at.and_then(|id| visits.get(id as usize)) {
+            if visit.node.name == INSTRUCTION_ROW {
+                let rank = finding.risk.map_or(0, |risk| risk.headline_rank());
+                ranks
+                    .entry(visit.id)
+                    .and_modify(|top: &mut u8| *top = rank.max(*top))
+                    .or_insert(rank);
+                break;
+            }
+            at = visit.parent;
+        }
     }
+    ranks
+}
+
+fn prepared(reader: &mut Reader, decoded: &Decoded) -> Prepared {
+    let instructions = steps(decoded);
+    let effects = reader.run(&instructions);
+    // 只推进 nonce:之前用这个 nonce 值签名的交易全部作废.这是 Solana 上取消交易的写法.
+    let cancels = effects.is_empty() && instructions.first().is_some_and(|step| reader.own_advance(0, *step));
 
     let mut facts = SolanaFacts::default();
     let root = 0;
@@ -848,62 +545,21 @@ fn summarize(message: &Message, scan: &mut Scan, decoded: &Decoded) -> Summary {
             .findings
             .push(finding(row_id(decoded, INSTRUCTION_ROW), "nonce-cancel"));
     }
-    if scan.deposit_high {
+    if reader.deposit_high {
         facts.findings.push(finding(root, "nonce-deposit-high"));
     }
-    let nonce_creation = effects.iter().any(|e| e.title == CREATE_NONCE_TITLE);
-    let token_accounts = effects.iter().filter(|e| e.title == CREATE_TOKEN_ACCOUNT_TITLE).count();
-
-    // 页面顶部只显示一个动作,用户看的就是它,所以它必须是唯一风险最高的动作.
-    // 最高的有多个,或者无法识别的指令没有金额和对方时,顶部留空,不能让小额动作盖住真正的动作.
-    // 全部动作都在 `actions` 里.
-    let named: Vec<&Effect> = effects.iter().filter(|e| e.counterparty.is_some()).collect();
-    let named_count = named.len();
-    let top = named.iter().map(|e| e.risk).max_by_key(|r| r.legacy_rank());
-    let tied = named.iter().filter(|e| Some(e.risk) == top).count();
-    let unnamed = effects
-        .iter()
-        .filter(|e| e.counterparty.is_none() && e.risk.legacy_rank() >= Risk::Unknown.legacy_rank())
-        .map(|e| e.risk.legacy_rank())
-        .max();
-    let headline = tied == 1 && unnamed.is_none_or(|rank| Some(rank) < top.map(Risk::legacy_rank));
-
-    let mut summary = Summary::default();
-    let mut unconfirmed = false;
-    for effect in effects {
-        if headline && effect.counterparty.is_some() && Some(effect.risk) == top {
-            summary.amount = effect.amount;
-            summary.counterparty_label = effect.counterparty.as_ref().map(|(label, _)| label.to_string());
-            summary.counterparty = effect.counterparty.map(|(_, value)| value);
-        }
-        unconfirmed |= effect.unconfirmed_owner;
-        summary.actions.push(ActionView {
-            risk: effect.risk,
-            title: effect.title,
-            rows: effect.rows,
-        });
-    }
-
-    let lookup_row = (!message.lookups.is_empty())
-        .then(|| Row::text("地址查找表", format!("{} 个地址无法离线解析", message.lookup_count())));
-    if let Some(row) = &lookup_row {
-        summary.actions.push(ActionView {
-            risk: Risk::Unknown,
-            title: "地址查找表".to_string(),
-            rows: vec![row.clone()],
-        });
-    }
-
-    if named_count > 1 {
+    let named = effects.iter().filter(|effect| effect.is_named()).count();
+    if named > 1 {
         facts.findings.push(SolanaFinding {
             node: root,
             kind: "actions-many",
-            args: vec![named_count.to_string()],
+            args: vec![named.to_string()],
         });
     }
-    if unconfirmed {
+    if effects.iter().any(|effect| effect.owner_unconfirmed) {
         facts.findings.push(finding(root, "owner-unconfirmed"));
     }
+    let token_accounts = instructions.iter().filter(|step| creates_token_account(**step)).count();
     if token_accounts > 1 {
         facts.findings.push(SolanaFinding {
             node: root,
@@ -916,52 +572,28 @@ fn summarize(message: &Message, scan: &mut Scan, decoded: &Decoded) -> Summary {
         lamports_row(decoded, BASE_FEE_ROW),
         lamports_row(decoded, PRIORITY_FEE_ROW),
     );
-    facts.fee_high = scan
+    facts.fee_high = reader
         .known
         .is_some_and(|network| (base_fee as u128 + priority_fee as u128) > policy::fee_ceiling(network));
-    nonce_facts(decoded, scan, &mut facts);
-    token_facts(decoded, scan.manifest, scan.network, &mut facts);
+    nonce_facts(decoded, reader, &mut facts);
+    token_facts(decoded, reader.manifest, reader.network, &mut facts);
     associated_facts(decoded, &mut facts);
     budget_facts(decoded, &mut facts);
 
-    let signers: Vec<String> = message.keys[..message.required_signatures as usize]
-        .iter()
-        .map(base58)
-        .collect();
-    let nonce_account = message
-        .instructions
-        .first()
-        .filter(|ix| scan.program(ix) == SYSTEM_PROGRAM && ix.data.starts_with(&4u32.to_le_bytes()))
-        .map_or_else(|| "无".to_string(), |ix| scan.shown(ix, 0));
-    summary.rows.push(Row::mono("手续费支付者", base58(&message.keys[0])));
-    summary.rows.push(Row::mono("全部签名者", signers.join("\n")));
-    summary.rows.push(Row::mono("nonce 账户", nonce_account));
-    summary.rows.push(Row::text(
-        "消息版本",
-        match message.version {
-            Version::Legacy => "legacy",
-            Version::V0 => "v0",
-            Version::V1(_) => "v1",
-        },
-    ));
-    summary
-        .rows
-        .push(Row::text("指令数", message.instructions.len().to_string()));
-    summary.rows.push(Row::text("基础费", scan.sol(base_fee)));
-    summary.rows.push(Row::text("优先费", scan.sol(priority_fee)));
-    summary.rows.extend(lookup_row);
-    if unconfirmed {
-        summary.rows.push(Row::text("收款地址", "无法确认所有者"));
+    if let Some(range) = &reader.creation {
+        facts.proven = instructions[range.clone()].iter().map(|step| step.id).collect();
     }
-    summary.title = if cancels {
-        Some(ADVANCE_NONCE_TITLE)
-    } else if nonce_creation {
-        Some(CREATE_NONCE_TITLE)
-    } else {
-        None
-    };
-    summary.facts = facts;
-    summary
+    Prepared {
+        effects,
+        title: if cancels {
+            Some(ADVANCE_NONCE_TITLE)
+        } else if reader.creation.is_some() {
+            Some(CREATE_NONCE_TITLE)
+        } else {
+            None
+        },
+        facts,
+    }
 }
 
 /// 路径不设白名单,只有全部硬化才能派生 ed25519 私钥.
@@ -1033,61 +665,43 @@ pub fn review(declared: Option<Network>, request: &SignRequest, ctx: &ReviewCont
     let payload = parsed.map_err(|_| Forbid::ParseFailed)?;
     let native: Option<Cow<'_, Asset>> = declared.map(|network| ctx.native(network));
     let own = signer
-        .map(|key| Ok((key, nonce_account_address(&key)?)))
+        .map(|key| Ok((base58(&key), base58(&nonce_account_address(&key)?))))
         .transpose()
         .map_err(|_: Error| Forbid::AddressMismatch)?;
-    let mut summary = match &payload {
-        SolanaPayload::Message(message) => {
-            let mut scan = Scan {
-                message,
+    let mut prepared = match &payload {
+        SolanaPayload::Message(_) => {
+            let mut reader = Reader {
                 network,
                 known: declared,
                 manifest: ctx.manifest,
                 native: native.as_deref(),
                 own,
-                hint,
                 creation: None,
                 foreign_advances: Vec::new(),
                 deposit_high: false,
             };
-            summarize(message, &mut scan, &decoded)
+            prepared(&mut reader, &decoded)
         }
-        SolanaPayload::Partial { .. } | SolanaPayload::Offchain { .. } | SolanaPayload::Unknown => Summary::default(),
+        SolanaPayload::Partial { .. } | SolanaPayload::Offchain { .. } | SolanaPayload::Unknown => Prepared::default(),
     };
-    signer_facts(&payload, signer.as_ref(), &decoded, &mut summary.facts);
-    summary.facts.signer = address;
-    summary.facts.unusual_path = (!is_usual_solana_path(&path)).then(|| path.to_string());
-    let label = declared.map_or_else(
-        || decode::escape_text(&request.network),
-        |network| network.label().to_string(),
-    );
-    let mut rows = vec![Row::text("网络", label), Row::mono("派生路径", path.to_string())];
-    rows.append(&mut summary.rows);
-    let Summary {
-        amount,
-        counterparty_label,
-        counterparty,
-        actions,
-        rows: _,
-        title,
-        facts,
-    } = summary;
+    signer_facts(&payload, signer.as_ref(), &decoded, &mut prepared.facts);
+    prepared.facts.signer = address;
+    prepared.facts.unusual_path = (!is_usual_solana_path(&path)).then(|| path.to_string());
+    let Prepared { effects, title, facts } = prepared;
     let assessment = policy::assess_solana(&decoded, &facts);
+    let ranks = ranks(&decoded, &assessment.findings);
+    let ranked = effects.into_iter().map(|effect| {
+        let rank = ranks.get(&effect.node).copied().unwrap_or(0);
+        (effect, rank)
+    });
+    let mut summary = summary::headline(ranked.collect());
+    summary.payer = facts.signer;
     let assessed = Review::assessed(&decoded, assessment);
-    let review = Review {
-        amount,
-        counterparty_label,
-        counterparty,
-        actions,
-        rows,
-        raw: plain_lines(&request.payload),
-        title: title
-            .filter(|_| assessed.risk == Risk::Recognized)
-            .map_or_else(|| assessed.title.clone(), str::to_string),
-        ..assessed
-    };
+    if let Some(title) = title.filter(|_| assessed.risk == Risk::Recognized) {
+        summary.title = title.to_string();
+    }
     // `tx::review` 只给本机认识的网络检查清单.
-    Ok(review)
+    Ok(assessed.summarized(summary))
 }
 
 /// 构建指令时用的账户.

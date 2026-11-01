@@ -7,18 +7,18 @@ pub mod abi;
 pub mod bitcoin;
 pub mod evm;
 pub mod solana;
+mod summary;
 pub mod tron;
 
 use crate::decode::solana::{SolanaPayload, parse_solana};
 use crate::decode::{Decoded, EvmPayload, Failure, is_psbt, parse_evm};
-use crate::hex::DisplayHex;
 use crate::keys::PublicKeys;
 use crate::manifest::{Asset, Manifest};
 use crate::path::{DerivationPath, classify, is_all_hardened, solana_path_mode, validate_for_network};
 use crate::policy::{self, AssetFact, Facts};
 use crate::protocol::{AddressCheck, VERSION};
 use crate::request::{SignRequest, SignResponse};
-use crate::review::{Forbid, RawLine, Review};
+use crate::review::{Forbid, Review};
 use crate::{AccountKind, Chain, Error, Mode, Network};
 use std::borrow::Cow;
 
@@ -77,7 +77,7 @@ pub fn review(request: &SignRequest, ctx: &ReviewContext) -> Review {
     }
 }
 
-/// 迁移到解码标准的链从这里出结果.解码失败只有格式已识别而字节不合规一种情况.
+/// 解码失败只有格式已识别而字节不合规一种情况.
 pub fn review_decoded(decoded: Result<Decoded, Failure>, network: &str, ctx: &ReviewContext) -> Review {
     match decoded {
         Ok(decoded) => Review::assessed(&decoded, policy::assess(&decoded, ctx)),
@@ -148,7 +148,6 @@ fn try_review(request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forb
         return Err(Forbid::FingerprintMismatch);
     }
     let Some(network) = Network::from_id(&request.network) else {
-        // 其他链在各自的迁移步骤里接入.
         return match request_chain(request) {
             Some(Chain::Bitcoin) => bitcoin::review(None, request, ctx),
             Some(Chain::Evm) => evm::review(None, request, ctx),
@@ -248,19 +247,6 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
     }
 }
 
-/// Solana 的请求取出并校验路径.
-pub(crate) fn signer_path(request: &SignRequest, network: Network) -> Result<DerivationPath, Forbid> {
-    let [path] = request.paths.as_slice() else {
-        return Err(Forbid::PathNotAllowed);
-    };
-    let path = DerivationPath::parse(path).map_err(|_| Forbid::PathNotAllowed)?;
-    validate_for_network(&path, network).map_err(|e| match e {
-        Error::PathNetworkMismatch => Forbid::PathNetworkMismatch,
-        _ => Forbid::PathNotAllowed,
-    })?;
-    Ok(path)
-}
-
 /// 验证 65 字节的 r,s,恢复位,要求低 s.EVM 和 TRON 都不接受高 s.
 pub(crate) fn check_signature(hash: &[u8; 32], signature: &[u8; 65], signer: &[u8]) -> Result<(), Error> {
     use ::bitcoin::secp256k1::{Message, PublicKey, Secp256k1, ecdsa};
@@ -280,32 +266,6 @@ pub(crate) fn check_signature(hash: &[u8; 32], signature: &[u8; 65], signer: &[u
         return Err(Error::BadSignature);
     }
     Ok(())
-}
-
-/// 原始数据分行:选择器一行,之后每 32 字节一行,标出疑似地址和大额数值.
-pub fn raw_lines(data: &[u8]) -> Vec<RawLine> {
-    let hex = |bytes: &[u8]| bytes.to_lower_hex_string();
-    if data.len() < 4 {
-        return vec![RawLine {
-            text: hex(data),
-            note: None,
-        }];
-    }
-    let mut lines = vec![RawLine {
-        text: hex(&data[..4]),
-        note: Some("方法选择器".into()),
-    }];
-    for chunk in data[4..].chunks(32) {
-        let note = if chunk.len() == 32 && chunk[..12] == [0; 12] && chunk[12..16] != [0; 4] {
-            Some("疑似地址".to_string())
-        } else if chunk.len() == 32 && chunk[0] == 0xff {
-            Some("大额数值".to_string())
-        } else {
-            None
-        };
-        lines.push(RawLine { text: hex(chunk), note });
-    }
-    lines
 }
 
 #[cfg(test)]

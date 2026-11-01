@@ -30,7 +30,7 @@
             "Memo4c2pN8afCj432Lb7RMVKi9PbQnnW7ewFFaV3oAH"
         ]
     },
-    { "file": "stake.json" },
+    { "file": "stake.json", "older": "stake-older.json" },
     { "file": "vote.json" },
     { "file": "address-lookup-table.json" }
 ]

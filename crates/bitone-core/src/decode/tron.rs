@@ -19,6 +19,7 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 const CONTRACT_ROW: &str = "contract";
+const TYPE_ROW: &str = "type";
 const PARAMETER_ROW: &str = "parameter";
 const VALUE_ROW: &str = "value";
 const DATA_ROW: &str = "data";
@@ -532,6 +533,13 @@ pub fn tron_owner(root: &Node) -> Option<&str> {
     } else {
         None
     }
+}
+
+/// 这笔交易的合约:规则表里的种类名和合约的字段.未知的合约类型没有字段.
+pub fn tron_contract(root: &Node) -> Option<(&str, &Node)> {
+    let contract = contract_node(root)?;
+    let kind = child(contract, TYPE_ROW)?.action.as_deref()?;
+    Some((kind, child(child(contract, PARAMETER_ROW)?, VALUE_ROW)?))
 }
 
 /// `Permission_id`.0 不上线,就是账户的 owner 权限.

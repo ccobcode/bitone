@@ -157,9 +157,9 @@ mod tests {
         let s = setup();
         let review = review(&s, &request(&s, "ethereum", native(7).encode()));
         assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Tap));
-        let amount = review.amount.unwrap();
+        let amount = review.summary.amount.unwrap();
         assert_eq!((amount.text.as_str(), amount.symbol.as_deref()), ("1.5", Some("ETH")));
-        assert_eq!(review.counterparty.as_deref(), Some(PEER));
+        assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
     }
 
     #[test]
@@ -167,8 +167,8 @@ mod tests {
         let s = setup();
         let review = review(&s, &request(&s, "ethereum", token().encode()));
         assert_eq!(review.risk, Risk::Transfer);
-        assert_eq!(review.amount.unwrap().symbol.as_deref(), Some("USDT"));
-        assert_eq!(review.counterparty.as_deref(), Some(PEER));
+        assert_eq!(review.summary.amount.unwrap().symbol.as_deref(), Some("USDT"));
+        assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
     }
 
     /// 期望值由 viem 用同一助记词算出,是独立实现.
@@ -271,9 +271,9 @@ mod tests {
         let req = request(&s, "ethereum", call_to(PEER, approve_data(&[0xff; 32])));
         let result = review(&s, &req);
         assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
-        assert_eq!(result.counterparty.as_deref(), Some(PEER));
-        assert_eq!(result.counterparty_label.as_deref(), Some("被授权方"));
-        assert!(result.amount.as_ref().unwrap().unlimited);
+        assert_eq!(result.summary.counterparty.as_deref(), Some(PEER));
+        assert_eq!(result.summary.counterparty_label.as_deref(), Some("被授权方"));
+        assert!(result.summary.amount.as_ref().unwrap().unlimited);
         assert!(alerted(&result, "不在内置清单"));
         assert!(alerted(&result, "额度是无限"));
         let spender = field(&result, "Spender");
@@ -307,17 +307,38 @@ mod tests {
         assert!(result.alerts.is_empty());
     }
 
-    /// 选择器对得上,参数解不开时不按偏移读,告警说出方法.
+    /// 第 4.2 节:摘要的值都在列表里,全部资产授权的"无限"落到 `data` 这一行.
     #[test]
-    fn an_irregular_approval_names_the_method() {
+    fn the_summary_points_at_its_rows() {
         let s = setup();
-        let mut data = approve_data(&[1]);
-        data.push(0);
-        let result = review(&s, &request(&s, "ethereum", call_to(USDT, data)));
-        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
-        assert!(alerted(&result, "approve(address,uint256)"));
-        assert_eq!(result.counterparty.as_deref(), Some(USDT));
-        assert!(result.fields.iter().all(|row| row.name != "Spender"));
+        let approve = review(&s, &request(&s, "ethereum", call_to(USDT, approve_data(&[0xff; 32]))));
+        let ids = &approve.summary.field_ids;
+        assert!(ids.contains(&field(&approve, "data").id));
+        assert!(ids.contains(&field(&approve, "Spender").id));
+        let native = review(&s, &request(&s, "ethereum", changed(|_| {})));
+        assert!(native.summary.field_ids.contains(&field(&native, "to").id));
+        assert!(native.summary.field_ids.contains(&field(&native, "value").id));
+    }
+
+    /// 合约照样执行不规范的数据,所以被授权方和额度都要显示,告警说出方法,可以签.
+    #[test]
+    fn an_irregular_approval_still_shows_the_spender() {
+        let s = setup();
+        for contract in [USDT, "0x1111111111111111111111111111111111111111"] {
+            let mut data = approve_data(&[0xff; 32]);
+            data.push(0xaa);
+            let result = review(&s, &request(&s, "ethereum", call_to(contract, data)));
+            assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
+            assert!(result.is_signable());
+            assert!(alerted(&result, "调用数据不规范"));
+            assert!(alerted(&result, "approve(address,uint256)"));
+            assert!(alerted(&result, "额度是无限"));
+            assert_eq!(result.summary.counterparty_label.as_deref(), Some("被授权方"));
+            assert_eq!(result.summary.counterparty.as_deref(), Some(PEER));
+            assert!(result.summary.amount.as_ref().is_some_and(|amount| amount.unlimited));
+            assert_eq!(field(&result, "Spender").value, PEER);
+            assert_eq!(field(&result, "trailing_data").value, "aa");
+        }
     }
 
     /// 普通类型的每一种都要能装回可以广播的字节.
@@ -577,7 +598,7 @@ mod tests {
         assert_eq!(result.network, "ethereum");
         assert_eq!(field(&result, "network").value, "ethereum");
         assert!(result.mainnet);
-        assert_eq!(result.amount.as_ref().unwrap().symbol.as_deref(), Some("ETH"));
+        assert_eq!(result.summary.amount.as_ref().unwrap().symbol.as_deref(), Some("ETH"));
         assert_eq!((result.risk, result.confirm), (Risk::Transfer, Confirm::Hold));
         assert!(alerted(&result, "made-up-mainnet"));
         assert!(sign(&s, &req).is_ok());
@@ -625,7 +646,7 @@ mod tests {
         assert!(alerted(&result, "Chain ID 31337"));
         assert!(alerted(&result, "local-debug"));
         assert_eq!(field(&result, "value").value, "1500000000000000000");
-        assert_eq!(result.amount.as_ref().unwrap().symbol, None);
+        assert_eq!(result.summary.amount.as_ref().unwrap().symbol, None);
         let (response, _) = sign(&s, &req).unwrap();
         assert!(tx::verify(&req, &response, &account_key(&s)).is_ok());
     }
@@ -747,7 +768,7 @@ mod tests {
             .unwrap();
         assert_eq!(review.confirm, Confirm::Hold);
         assert_eq!(review.alerts, ["清单里没有这个网络的原生币,金额按链本身的数据显示"]);
-        assert_eq!(review.amount.unwrap().symbol.as_deref(), Some("ETH"));
+        assert_eq!(review.summary.amount.unwrap().symbol.as_deref(), Some("ETH"));
     }
 
     #[test]
@@ -844,7 +865,6 @@ mod tests {
         let payload = changed(|tx| tx.input = data.clone().into());
         let review = review(&s, &request(&s, "ethereum", payload));
         assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
-        assert_eq!(review.raw.len(), 2);
         assert_eq!(field(&review, "data").value, hex(&data));
         assert_eq!(field(&review, "value").value, "1.5 ETH");
         assert_eq!(field(&review, "data").risk, Some(Risk::Unknown));
@@ -870,14 +890,14 @@ mod tests {
             });
             let result = review(&s, &request(&s, "ethereum", payload));
             assert_eq!(result.risk, Risk::Unknown);
-            assert_eq!(result.amount.as_ref().unwrap().text, "1.5");
+            assert_eq!(result.summary.amount.as_ref().unwrap().text, "1.5");
             assert_eq!(field(&result, "value").value, "1.5 ETH");
         }
         let free = changed(|tx| {
             tx.to = TxKind::Create;
             tx.value = U256::ZERO;
         });
-        assert_eq!(review(&s, &request(&s, "ethereum", free)).amount, None);
+        assert_eq!(review(&s, &request(&s, "ethereum", free)).summary.amount, None);
     }
 
     /// 本钱包给 `delegate` 的授权,放在一笔发给 `PEER` 的交易里.
@@ -916,7 +936,7 @@ mod tests {
         let s = setup();
         let review = review(&s, &request(&s, "ethereum", with_authorization(&s, 1)));
         assert_eq!((review.risk, review.confirm), (Risk::PermissionChange, Confirm::Hold));
-        assert_eq!(review.counterparty_label.as_deref(), Some("新控制方"));
+        assert_eq!(review.summary.counterparty_label.as_deref(), Some("新控制方"));
         assert_eq!(field(&review, "authority").value, field(&review, "signer").value);
         assert!(field(&review, "authority").own);
     }
@@ -940,9 +960,10 @@ mod tests {
     fn eip7702_keeps_the_outer_transfer_visible() {
         let s = setup();
         let review = review(&s, &request(&s, "ethereum", with_authorization(&s, 1)));
-        let shown = |value: &str| review.actions.iter().any(|a| a.rows.iter().any(|r| r.value == value));
+        let shown = |value: &str| review.fields.iter().any(|r| r.value == value);
         assert!(shown(PEER));
         assert!(shown("1.5 ETH"));
+        assert!(review.summary.parties.iter().any(|party| party.value == PEER));
     }
 
     #[test]
@@ -1009,7 +1030,7 @@ mod tests {
         let s = setup();
         let review = review(&s, &typed(&s, "Permit", 1.into()));
         assert_eq!((review.risk, review.confirm), (Risk::Approval, Confirm::Hold));
-        assert!(review.amount.unwrap().unlimited);
+        assert!(review.summary.amount.unwrap().unlimited);
     }
 
     /// 第 5.1 节:这个签名在别的链上有效,所以只告警,不拒绝.
@@ -1020,8 +1041,8 @@ mod tests {
         let result = review(&s, &req);
         assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
         assert!(alerted(&result, "chainId 137"));
-        assert!(result.amount.unwrap().unlimited);
-        assert_eq!(result.counterparty.as_deref(), Some(PEER));
+        assert!(result.summary.amount.unwrap().unlimited);
+        assert_eq!(result.summary.counterparty.as_deref(), Some(PEER));
         assert!(sign(&s, &req).is_ok());
     }
 
@@ -1178,22 +1199,13 @@ mod tests {
         serde_json::json!({"token": token, "amount": amount, "expiration": 1, "nonce": 0})
     }
 
-    fn row<'a>(review: &'a Review, label: &str) -> &'a str {
-        review
-            .rows
-            .iter()
-            .chain(review.actions.iter().flat_map(|a| &a.rows))
-            .find(|r| r.label == label)
-            .map_or("", |r| r.value.as_str())
-    }
-
     #[test]
     fn permit2_is_an_approval() {
         let s = setup();
         let data = permit2("PermitSingle", "PermitDetails", grant(USDT, "1000000"));
         let review = review(&s, &typed_request(&s, &data));
         assert_eq!((review.risk, review.confirm), (Risk::Approval, Confirm::Hold));
-        assert_eq!(review.amount.as_ref().unwrap().text, "1");
+        assert_eq!(review.summary.amount.as_ref().unwrap().text, "1");
         assert!(review.alerts.is_empty());
     }
 
@@ -1204,9 +1216,8 @@ mod tests {
         let data = permit2("PermitBatch", "PermitDetails[]", details);
         let review = review(&s, &typed_request(&s, &data));
         assert_eq!(review.risk, Risk::Approval);
-        assert_eq!(review.amount, None);
-        assert_eq!(review.counterparty.as_deref(), Some(PEER));
-        assert_eq!(review.actions.len(), 2);
+        assert_eq!(review.summary.amount, None);
+        assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
         assert_eq!(review.alerts, vec!["这笔签名包含 2 个授权,请逐个核对"]);
     }
 
@@ -1216,7 +1227,7 @@ mod tests {
         let details = serde_json::json!([grant(USDT, "1"), grant(PEER, UINT160_MAX)]);
         let data = permit2("PermitBatch", "PermitDetails[]", details);
         let review = review(&s, &typed_request(&s, &data));
-        assert_eq!(review.amount, None);
+        assert_eq!(review.summary.amount, None);
         assert_eq!(
             review.alerts,
             vec![
@@ -1227,26 +1238,26 @@ mod tests {
     }
 
     #[test]
-    fn typed_rows_show_the_contract_and_the_deadlines() {
+    fn typed_fields_show_the_contract_and_the_deadlines() {
         let s = setup();
         let result = review(&s, &typed(&s, "Permit", 1.into()));
-        assert_eq!(row(&result, "验证合约"), USDT);
-        assert_eq!(row(&result, "签名截止时间"), "1970-01-01 00:00:01 UTC");
+        assert_eq!(field(&result, "verifyingContract").value, USDT);
+        assert_eq!(field(&result, "deadline").value, "1");
 
         let single = permit2("PermitSingle", "PermitDetails", grant(USDT, "1000000"));
         let result = review(&s, &typed_request(&s, &single));
-        assert_eq!(row(&result, "验证合约"), PERMIT2);
-        assert_eq!(row(&result, "签名截止时间"), "1970-01-01 00:00:02 UTC");
-        assert_eq!(row(&result, "额度过期时间"), "1970-01-01 00:00:01 UTC");
+        assert_eq!(field(&result, "verifyingContract").value, PERMIT2);
+        assert_eq!(field(&result, "sigDeadline").value, "2");
+        assert_eq!(field(&result, "expiration").value, "1");
     }
 
     #[test]
-    fn deadlines_without_a_date_stay_raw_integers() {
+    fn deadlines_stay_integers_at_any_size() {
         let s = setup();
         let mut data = typed_data("Permit", 1.into());
         data["message"]["deadline"] = UINT160_MAX.into();
         let result = review(&s, &typed_request(&s, &data));
-        assert_eq!(row(&result, "签名截止时间"), UINT160_MAX);
+        assert_eq!(field(&result, "deadline").value, UINT160_MAX);
     }
 
     /// DAI 的 Permit 同名不同字段,`allowed` 才是实际授权.类型串不符,所以不走 Permit 的页面,额度不会显示错.
@@ -1267,7 +1278,7 @@ mod tests {
         let req = typed_request(&s, &data);
         let result = review(&s, &req);
         assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
-        assert_eq!(result.amount, None);
+        assert_eq!(result.summary.amount, None);
         assert_eq!(field(&result, "allowed").value, "true");
         assert!(sign(&s, &req).is_ok());
     }
@@ -1365,7 +1376,7 @@ mod tests {
         req.paths = vec!["m/44'/60'/0'/0/1".into()];
         let result = review(&s, &req);
         assert_eq!(result.risk, Risk::Approval);
-        assert!(result.rows.iter().all(|row| row.label != "付款账户"));
+        assert_eq!(result.summary.payer, None);
         assert!(alerted(&result, "m/44'/60'/0'/0/1"));
     }
 
@@ -1373,11 +1384,9 @@ mod tests {
     fn public_keys_review_without_unlocking() {
         let s = setup();
         let review = review(&s, &request(&s, "ethereum", native(7).encode()));
-        assert!(
-            review
-                .rows
-                .iter()
-                .any(|r| r.value == "0x9858EfFD232B4033E47d90003D41EC34EcaEda94")
+        assert_eq!(
+            review.summary.payer.as_deref(),
+            Some("0x9858EfFD232B4033E47d90003D41EC34EcaEda94")
         );
     }
 }

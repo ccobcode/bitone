@@ -28,10 +28,11 @@ import com.ccobcode.bitone.platform.Platform
 import com.ccobcode.bitone.platform.QrMatrix
 import com.ccobcode.bitone.platform.QrScanner
 import com.ccobcode.bitone.platform.QuizItem
-import com.ccobcode.bitone.platform.ReviewAction
 import com.ccobcode.bitone.platform.ReviewAmount
+import com.ccobcode.bitone.platform.ReviewController
+import com.ccobcode.bitone.platform.ReviewParty
 import com.ccobcode.bitone.platform.ReviewResult
-import com.ccobcode.bitone.platform.ReviewRow
+import com.ccobcode.bitone.platform.ReviewSummary
 import com.ccobcode.bitone.platform.Risk
 import com.ccobcode.bitone.platform.ScreenGuard
 import com.ccobcode.bitone.platform.SecureStore
@@ -104,8 +105,9 @@ fun reviewOf(
     alerts: List<String> = emptyList(),
     mismatch: Boolean = false,
     requestFingerprint: String? = null,
-    actions: List<ReviewAction> = emptyList(),
-    rows: List<ReviewRow> = emptyList(),
+    controllers: List<ReviewController> = emptyList(),
+    parties: List<ReviewParty> = emptyList(),
+    payer: String? = null,
     counterparty: String = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
     fields: List<FieldRow> = emptyList(),
 ) =
@@ -114,14 +116,17 @@ fun reviewOf(
         confirm = confirm,
         network = "ethereum",
         mainnet = true,
-        title = "普通转账",
-        amount = ReviewAmount("1", "ETH", "ethereum:native", "eth", false),
-        counterpartyLabel = "收款地址",
-        counterparty = counterparty,
+        summary =
+            ReviewSummary(
+                title = "普通转账",
+                amount = ReviewAmount("1", "ETH", "ethereum:native", "eth", false),
+                counterpartyLabel = "收款地址",
+                counterparty = counterparty,
+                controllers = controllers,
+                parties = parties,
+                payer = payer,
+            ),
         alerts = alerts,
-        actions = actions,
-        rows = rows,
-        raw = emptyList(),
         fields = fields,
         reviewDigest = REVIEW_DIGEST,
         fingerprintMismatch = mismatch,

@@ -7,7 +7,7 @@ import { solanaNonceAddress } from "../chains/solana/core";
 import { NONCE_RENT, SOLANA_BLOCKHASH_WINDOW } from "../chains/solana/transfer";
 import { QUOTE_LIFETIME, TransferError, reviewRequest } from "../chains/transfer";
 import { TRON_DEFAULT_FEE_LIMIT, TRON_LIFETIME, tronCost, tronFeeLimit } from "../chains/tron/transfer";
-import { accountKeyList, previewRequest } from "../core";
+import { accountKeyList, previewRequest, type Review } from "../core";
 import {
     BTC_ADDRESS,
     EVM_ADDRESS,
@@ -56,6 +56,13 @@ function evmGateway(pending = 7, extra: Record<string, Route> = {}) {
 
 const keys = () => accountKeyList(fixture.accounts);
 
+/** 全部输出都回到本钱包.前序交易的输出也叫这个名字,嵌套得更深. */
+function ownOutputsOnly(review: Review): boolean {
+    const outputs = review.fields.filter((row) => row.name === "output");
+    const depth = Math.min(...outputs.map((row) => row.depth));
+    return outputs.filter((row) => row.depth === depth).every((row) => row.own);
+}
+
 const side = (path: string) => ({ wallet: fixture.wallet, accounts: fixture.accounts, account: fixture.account(path) });
 
 beforeAll(initCore);
@@ -82,7 +89,11 @@ describe("EVM 构建", () => {
         expect(tx.hardExpiry).toBe(false);
         expect(tx.expiresAt).toBeGreaterThanOrEqual(before + QUOTE_LIFETIME);
         const review = previewRequest(tx.request, keys());
-        expect(review).toMatchObject({ risk: "transfer", confirm: "tap", counterparty: PEER_EVM });
+        expect(review).toMatchObject({
+            risk: "transfer",
+            confirm: "tap",
+            summary: { counterparty: PEER_EVM },
+        });
         expect(await db.reservations.toArray()).toMatchObject([{ type: "nonce", value: "7", txIds: [tx.id] }]);
     });
 
@@ -270,7 +281,7 @@ describe("EVM 构建", () => {
         expect(call.to).toBe(USDT);
         expect(call.data).toMatch(/^0xa9059cbb0{24}70997970c51812dc3a010c7d01b50e0d17dc79c8/);
         expect(planOf(tx, "evm").gasLimit).toBe(60_000);
-        expect(previewRequest(tx.request, keys()).amount).toMatchObject({ symbol: "USDT" });
+        expect(previewRequest(tx.request, keys()).summary.amount).toMatchObject({ symbol: "USDT" });
     });
 
     it("本机预览判定禁止时照样写入,二维码交给冷钱包判断", async () => {
@@ -491,8 +502,8 @@ describe("Bitcoin 构建", () => {
             expect(plan.change + plan.fee).toBe(100_000);
             expect(plan.fee).toBeGreaterThan(old.fee);
             const review = previewRequest(next.request, keys());
-            expect(review.counterparty ?? null).toBeNull();
-            expect(review.actions.some((action) => action.title === "转给自己")).toBe(true);
+            expect(review.summary.counterparty ?? null).toBeNull();
+            expect(ownOutputsOnly(review)).toBe(true);
             expect(bitcoinFeeInfo(next.request).fee).toBe(plan.fee);
             expect(await db.reservations.count()).toBe(2);
         });
@@ -529,9 +540,7 @@ describe("Bitcoin 构建", () => {
             expect(faster).toMatchObject({ amount: "0", to: cancel.to });
             expect(plan.fee).toBeGreaterThan(planOf(cancel, "bitcoin").fee);
             expect(plan.change + plan.fee).toBe(100_000);
-            expect(previewRequest(faster.request, keys()).actions.some((action) => action.title === "转给自己")).toBe(
-                true,
-            );
+            expect(ownOutputsOnly(previewRequest(faster.request, keys()))).toBe(true);
         });
 
         it("输入不够付取消的手续费时拒绝", async () => {
@@ -590,7 +599,7 @@ describe("TRON 构建", () => {
         tronGateway();
         const tx = await createTransfer(draft("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"));
         expect(planOf(tx, "tron").feeLimit).toBe(Number(tronFeeLimit(65_000n, 420n)));
-        expect(previewRequest(tx.request, keys()).amount).toMatchObject({ symbol: "USDT" });
+        expect(previewRequest(tx.request, keys()).summary.amount).toMatchObject({ symbol: "USDT" });
     });
 
     it("估算失败不拦截,TRC-20 用默认 fee_limit", async () => {
@@ -780,7 +789,7 @@ describe("Solana 构建", () => {
         const next = await createReplacement(tx, "rebuild", side(PATHS.solana));
         expect(next).toMatchObject({ kind: "rebuild", to: PEER, amount: tx.amount });
         expect(planOf(next, "solana").nonceValue).toBe(NONCE);
-        expect(previewRequest(next.request, keys()).counterparty).toBe(PEER);
+        expect(previewRequest(next.request, keys()).summary.counterparty).toBe(PEER);
     });
 
     it("取消交易重建时还是推进 nonce", async () => {

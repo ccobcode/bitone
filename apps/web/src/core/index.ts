@@ -212,21 +212,40 @@ export function manifestPackageVersion(bytes: Uint8Array): number {
 
 export type Risk = "transfer" | "recognized" | "unknown" | "approval" | "permission-change" | "forbidden";
 
+/** 字段列表的一行,解码树的一个节点.`value` 已经由核心库格式化. */
+export interface FieldRow {
+    id: number;
+    depth: number;
+    name: string;
+    kind: string;
+    value: string;
+    own: boolean;
+}
+
+/** 页面顶部,不能代替字段列表. */
+export interface ReviewSummary {
+    title: string;
+    amount?: { text: string; symbol?: string; asset?: string; unlimited: boolean } | null;
+    counterpartyLabel?: string | null;
+    counterparty?: string | null;
+}
+
 export interface Review {
     risk: Risk;
     confirm: "tap" | "hold" | "hold-confirm" | "refuse";
-    title: string;
-    amount?: { text: string; symbol?: string; asset?: string; unlimited: boolean } | null;
-    counterparty?: string | null;
+    summary: ReviewSummary;
     alerts: string[];
-    actions: { title: string }[];
-    raw: { text: string }[];
+    fields: FieldRow[];
 }
 
 /** 用和冷钱包相同的代码预览.结果只用于提示,判断以冷钱包屏幕为准. */
 export function previewRequest(request: Uint8Array, keys: KeyEntry[]): Review {
     const review = wasmPreview(request, keys) as Review;
-    return { ...review, title: translate(review.title), alerts: review.alerts.map(translate) };
+    return {
+        ...review,
+        summary: { ...review.summary, title: translate(review.summary.title) },
+        alerts: review.alerts.map(translate),
+    };
 }
 
 export interface Verified {

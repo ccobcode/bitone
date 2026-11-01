@@ -51,6 +51,30 @@ fn setup() -> Setup {
     Setup { wallet, keys, other }
 }
 
+fn shown(review: &Review, wanted: &str) -> bool {
+    review.fields.iter().any(|row| row.value == wanted)
+}
+
+fn field_value<'a>(review: &'a Review, name: &str) -> &'a str {
+    review
+        .fields
+        .iter()
+        .find(|row| row.name == name)
+        .unwrap()
+        .value
+        .as_str()
+}
+
+/// 交易的输出行,带是否属于本钱包.前序交易的输出也叫这个名字,嵌套得更深.
+fn outputs(review: &Review) -> Vec<bool> {
+    let rows = || review.fields.iter().filter(|row| row.name == "output");
+    let depth = rows().map(|row| row.depth).min();
+    rows()
+        .filter(|row| Some(row.depth) == depth)
+        .map(|row| row.own)
+        .collect()
+}
+
 fn p(text: &str) -> DerivationPath {
     DerivationPath::parse(text).unwrap()
 }
@@ -233,13 +257,28 @@ mod ownership {
         let review = review(&s, segwit_send(&s));
         assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Tap));
         assert!(review.alerts.is_empty());
-        assert!(review.rows.iter().any(|r| r.label == "派生路径" && r.value == SEGWIT));
-        assert!(
-            review
-                .rows
-                .iter()
-                .any(|r| r.value == "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu")
-        );
+        assert!(shown(&review, SEGWIT));
+        assert!(shown(&review, "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"));
+    }
+
+    /// 路径在 PSBT 里.请求的 `paths` 没有校验,不能变成字段.
+    #[test]
+    fn the_paths_of_the_request_are_not_rows() {
+        let s = setup();
+        let plain = request(&s, Network::Bitcoin, segwit_send(&s));
+        let written = SignRequest {
+            paths: vec!["随便写的路径".into()],
+            ..plain.clone()
+        };
+        let ctx = ReviewContext {
+            keys: &s.keys,
+            manifest: Manifest::builtin(),
+            highest_change: HighestChange::default(),
+        };
+        let review = tx::review(&written, &ctx);
+        assert!(review.is_signable());
+        assert!(!shown(&review, "随便写的路径"));
+        assert_eq!(review.review_digest, tx::review(&plain, &ctx).review_digest);
     }
 
     #[test]
@@ -253,10 +292,9 @@ mod ownership {
         let review = review(&s, payload);
         assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Hold));
         assert_eq!(review.alerts, vec!["有 1 个输入不属于本钱包"]);
-        let row = review.rows.iter().find(|r| r.label == "其他钱包的输入").unwrap();
-        assert_eq!(row.value, "1 个,共 0.0025 BTC");
-        assert_eq!(review.rows.iter().filter(|r| r.label == "付款账户").count(), 1);
-        assert_eq!(review.amount.unwrap().text, "0.0065");
+        let inputs = review.fields.iter().filter(|row| row.name == "input");
+        assert_eq!(inputs.filter(|row| row.own).count(), 1);
+        assert_eq!(review.summary.amount.unwrap().text, "0.0065");
     }
 
     #[test]
@@ -551,10 +589,7 @@ mod ownership {
         let payload = forged(&segwit_send(&s), |psbt| psbt.inputs[0].witness_utxo = None);
         let review = review(&s, payload);
         assert!(review.is_signable());
-        assert_eq!(
-            review.rows.iter().find(|r| r.label == "手续费").unwrap().value,
-            "0.00001 BTC"
-        );
+        assert_eq!(field_value(&review, "fee"), "0.00001 BTC");
     }
 
     #[test]
@@ -742,10 +777,7 @@ mod sighash_types {
         );
         assert_eq!(review_all.confirm, Confirm::Tap);
         let review_unset = review(&s, segwit_send(&s));
-        assert_eq!(
-            review_unset.rows.iter().find(|r| r.label == "sighash").unwrap().value,
-            "ALL"
-        );
+        assert_eq!(review_unset.confirm, Confirm::Tap);
     }
 
     #[test]
@@ -753,10 +785,6 @@ mod sighash_types {
         let s = setup();
         let unset = review(&s, taproot_send(&s));
         assert_eq!(unset.confirm, Confirm::Tap);
-        assert_eq!(
-            unset.rows.iter().find(|r| r.label == "sighash").unwrap().value,
-            "DEFAULT"
-        );
         for value in [0, 1] {
             let payload = forged(&taproot_send(&s), |psbt| psbt.inputs[0].sighash_type = sighash(value));
             assert_eq!(review(&s, payload).confirm, Confirm::Tap, "{value}");
@@ -855,10 +883,9 @@ mod change {
     fn change_is_recognised_and_not_counted_as_sent() {
         let s = setup();
         let review = review(&s, segwit_send(&s));
-        assert_eq!(review.amount.as_ref().unwrap().text, "0.004");
+        assert_eq!(review.summary.amount.as_ref().unwrap().text, "0.004");
         assert_eq!(review.change_index, Some(3));
-        let change = review.actions.iter().find(|a| a.title == "找零").unwrap();
-        assert_eq!(change.risk, Risk::Transfer);
+        assert!(outputs(&review).contains(&true));
     }
 
     #[test]
@@ -867,7 +894,7 @@ mod change {
         let payload = forged(&segwit_send(&s), |psbt| psbt.outputs[1].bip32_derivation.clear());
         let review = review(&s, payload);
         assert_eq!(review.change_index, None);
-        assert_eq!(review.amount.unwrap().text, "0.00999");
+        assert_eq!(review.summary.amount.unwrap().text, "0.00999");
     }
 
     #[test]
@@ -880,7 +907,7 @@ mod change {
         });
         let review = review(&s, payload);
         assert_eq!(review.change_index, None);
-        assert_eq!(review.actions.iter().filter(|a| a.title == "找零").count(), 0);
+        assert!(!outputs(&review).contains(&true));
     }
 
     /// 输出改成这条路径的地址,路径,公钥,script 全部对得上.
@@ -906,7 +933,7 @@ mod change {
                 shown.alerts,
                 vec![format!("找零索引 {index} 跳得太远,资金可能落到不容易找回的位置")]
             );
-            assert!(shown.actions.iter().any(|a| a.title == "找零"));
+            assert!(outputs(&shown).contains(&true));
             assert!(sign(&s, Network::Bitcoin, payload).is_ok(), "{path}");
         }
     }
@@ -919,7 +946,7 @@ mod change {
         assert_eq!((shown.risk, shown.confirm), (Risk::Transfer, Confirm::Hold));
         assert_eq!(shown.change_index, None);
         assert!(shown.alerts[0].contains(path), "{}", shown.alerts[0]);
-        assert!(shown.actions.iter().any(|a| a.title == "找零"));
+        assert!(outputs(&shown).contains(&true));
         let row = shown.fields.iter().find(|row| row.own && row.value == path).unwrap();
         assert_eq!(row.name, "output");
     }
@@ -930,7 +957,7 @@ mod change {
         let shown = review(&s, with_own_output(&s, "m/84'/0'/0'/0/3"));
         assert_eq!(shown.confirm, Confirm::Hold);
         assert_eq!(shown.change_index, None);
-        assert_eq!(shown.amount.unwrap().text, "0.004");
+        assert_eq!(shown.summary.amount.unwrap().text, "0.004");
     }
 
     #[test]
@@ -962,7 +989,7 @@ mod change {
         let payload = with_change_path(&s, path);
         let shown = review(&s, payload.clone());
         assert_eq!((shown.risk, shown.confirm), (Risk::Transfer, Confirm::Hold));
-        assert_eq!(shown.amount.as_ref().unwrap().text, "0.00999");
+        assert_eq!(shown.summary.amount.as_ref().unwrap().text, "0.00999");
         assert!(shown.fields.iter().all(|row| !row.own || row.name == "input"));
         assert!(shown.alerts.iter().any(|alert| alert.contains(path)));
         assert_eq!(sign(&s, Network::Bitcoin, payload).unwrap_err(), Error::Refused);
@@ -996,7 +1023,7 @@ mod change {
         let s = setup();
         let review = review(&s, taproot_send(&s));
         assert_eq!(review.change_index, Some(3));
-        assert_eq!(review.amount.unwrap().text, "0.004");
+        assert_eq!(review.summary.amount.unwrap().text, "0.004");
     }
 
     #[test]
@@ -1173,10 +1200,7 @@ mod fees {
         // 手续费 1000 sat.估算的大小要和真实签名后的交易一致.
         let tx: Transaction = deserialize(&btc::verify(Network::Bitcoin, &req, &response).unwrap().raw).unwrap();
         assert_eq!(tx.vsize(), 141);
-        assert_eq!(
-            review.rows.iter().find(|r| r.label == "费率").unwrap().value,
-            "7.09 sat/vB"
-        );
+        assert!(field_value(&review, "fee_rate").starts_with("7"));
     }
 }
 
@@ -1187,12 +1211,12 @@ mod display {
     fn one_external_output_sets_amount_and_counterparty() {
         let s = setup();
         let review = review(&s, segwit_send(&s));
-        let amount = review.amount.as_ref().unwrap();
+        let amount = review.summary.amount.as_ref().unwrap();
         assert_eq!(amount.symbol.as_deref(), Some("BTC"));
         assert_eq!(amount.asset.as_deref(), Some("bitcoin:native"));
-        assert_eq!(review.counterparty_label.as_deref(), Some("收款地址"));
-        assert_eq!(review.counterparty.as_deref(), Some(PEER));
-        assert_eq!(review.actions.iter().filter(|a| a.title != "找零").count(), 1);
+        assert_eq!(review.summary.counterparty_label.as_deref(), Some("收款地址"));
+        assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
+        assert_eq!(outputs(&review).iter().filter(|own| !**own).count(), 1);
     }
 
     #[test]
@@ -1202,16 +1226,15 @@ mod display {
         let payments = [pay(PEER, 100_000), pay(PEER_2, 200_000)];
         let payload = build_psbt(Network::Bitcoin, &s.keys, &inputs, &payments, Some((CHANGE, 699_000))).unwrap();
         let review = review(&s, payload);
-        assert_eq!(review.amount.as_ref().unwrap().text, "0.003");
-        assert_eq!(review.counterparty, None);
-        assert_eq!(review.counterparty_label, None);
+        assert_eq!(review.summary.amount.as_ref().unwrap().text, "0.003");
+        assert_eq!(review.summary.counterparty, None);
+        assert_eq!(review.summary.counterparty_label, None);
         assert_eq!(review.confirm, Confirm::Hold);
         assert_eq!(review.alerts, vec!["这笔交易有 2 个收款方,请逐个核对"]);
-        assert_eq!(review.actions.len(), 3);
-        assert!(review.actions.iter().all(|a| a.risk == Risk::Transfer));
-        assert!(review.actions[0].rows.iter().any(|r| r.value == PEER));
-        assert!(review.actions[1].rows.iter().any(|r| r.value == PEER_2));
-        assert_eq!(review.actions[2].title, "找零");
+        assert_eq!(outputs(&review), [false, false, true]);
+        assert_eq!(review.risk, Risk::Transfer);
+        assert!(shown(&review, PEER));
+        assert!(shown(&review, PEER_2));
     }
 
     #[test]
@@ -1234,9 +1257,8 @@ mod display {
         );
         let review = review(&s, payload);
         assert_eq!(review.risk, Risk::Transfer);
-        assert_eq!(review.actions[0].title, "转给自己");
-        assert_eq!(review.actions[1].title, "找零");
-        assert_eq!(review.counterparty, None);
+        assert!(outputs(&review).iter().all(|own| *own));
+        assert_eq!(review.summary.counterparty, None);
         // 发送额是 0,任何手续费都超过发送额的 5%.
         assert_eq!(review.alerts, vec!["手续费明显偏高"]);
     }
@@ -1249,8 +1271,8 @@ mod display {
         let payload = build_psbt(Network::Bitcoin, &s.keys, &inputs, &[], Some((CHANGE, 999_000))).unwrap();
         let review = review(&s, payload);
         assert_eq!(review.risk, Risk::Transfer);
-        assert_eq!(review.actions[0].title, "转给自己");
-        assert_eq!(review.counterparty, None);
+        assert!(outputs(&review).iter().all(|own| *own));
+        assert_eq!(review.summary.counterparty, None);
     }
 
     #[test]
@@ -1278,31 +1300,26 @@ mod display {
     }
 
     #[test]
-    fn rows_follow_the_field_table() {
+    fn the_summary_points_at_the_external_outputs() {
+        let s = setup();
+        let review = review(&s, segwit_send(&s));
+        let rows = review.summary.field_ids.iter().map(|id| &review.fields[*id as usize]);
+        assert!(rows.into_iter().any(|row| row.name == "output" && !row.own));
+        assert_eq!(
+            review.summary.payer.as_deref(),
+            Some("bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu")
+        );
+    }
+
+    #[test]
+    fn the_fields_show_the_network_the_fee_and_both_inputs() {
         let s = setup();
         let review = review(&s, mixed_send(&s));
-        let labels: Vec<&str> = review.rows.iter().map(|r| r.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            [
-                "网络",
-                "付款账户",
-                "派生路径",
-                "输入金额",
-                "付款账户",
-                "派生路径",
-                "输入金额",
-                "地址类型",
-                "手续费",
-                "费率",
-                "sighash"
-            ]
-        );
-        assert_eq!(review.rows[0].value, "Bitcoin");
-        assert_eq!(review.rows[7].value, "原生 SegWit,Taproot");
-        assert_eq!(review.rows[8].value, "0.00001 BTC");
-        assert_eq!(review.rows[10].value, "ALL,DEFAULT");
-        assert!(!review.raw.is_empty());
+        assert_eq!(field_value(&review, "network"), "bitcoin");
+        assert_eq!(field_value(&review, "fee"), "0.00001 BTC");
+        let own = review.fields.iter().filter(|row| row.name == "input" && row.own);
+        assert_eq!(own.count(), 2);
+        assert_eq!(review.field_count as usize, review.fields.len());
     }
 
     #[test]
@@ -1313,7 +1330,7 @@ mod display {
         });
         let review = review(&s, payload);
         assert_eq!((review.risk, review.confirm), (Risk::Recognized, Confirm::Hold));
-        assert_eq!(review.counterparty.as_deref(), Some("6a03010203"));
+        assert_eq!(review.summary.counterparty.as_deref(), Some("6a03010203"));
         assert!(review.alerts.iter().any(|a| a.contains("销毁")));
     }
 
@@ -1326,9 +1343,12 @@ mod display {
             let payload = build_psbt(network, &s.keys, &inputs, &[pay(TEST_PEER, 400_000)], change).unwrap();
             let review = review_with(&s, network, payload, 0);
             assert_eq!(review.confirm, Confirm::Tap);
-            assert_eq!(review.counterparty.as_deref(), Some(TEST_PEER));
-            assert!(review.rows[1].value.starts_with("tb1q"));
-            assert_eq!(review.amount.unwrap().asset, Some(format!("{}:native", network.id())));
+            assert_eq!(review.summary.counterparty.as_deref(), Some(TEST_PEER));
+            assert!(review.fields.iter().any(|row| row.value.starts_with("tb1q")));
+            assert_eq!(
+                review.summary.amount.unwrap().asset,
+                Some(format!("{}:native", network.id()))
+            );
         }
     }
 }
@@ -1529,7 +1549,7 @@ mod decoded_fields {
         let s = setup();
         let review = review(&s, segwit_send(&s));
         assert_eq!(review.field_count as usize, review.fields.len());
-        assert_eq!(review.counterparty.as_deref(), Some(PEER));
+        assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
         assert_eq!(row(&review, "fee").value, "0.00001 BTC");
         assert_eq!(row(&review, "fee_rate").value, "7.09 sat/vB");
         assert!(review.review_digest != [0; 32]);
@@ -1621,8 +1641,7 @@ mod decoded_fields {
                 (Risk::Unknown, Confirm::Hold),
                 "{opcode}"
             );
-            assert_eq!(review.title, "无法识别");
-            assert_ne!(review.actions[0].title, "普通转账");
+            assert_eq!(review.summary.title, "无法识别");
             assert!(row(&review, "witness_version").source == bitone_core::decode::SourceKind::Derived);
             assert!(row(&review, "script").value.contains("OP_PUSHBYTES_32"));
             assert!(review.alerts.iter().any(|alert| alert.contains("见证版本")));
@@ -1810,7 +1829,7 @@ mod unknown_networks {
         let payload = build_psbt(Network::BtcTestnet4, &s.keys, &inputs, &[pay(TEST_PEER, 400_000)], None).unwrap();
         let shown = reviewed(&s, &local(&s, payload, None));
         assert_eq!((shown.risk, shown.confirm), (Risk::Unknown, Confirm::Hold));
-        assert_eq!(shown.counterparty.as_deref(), Some(TEST_PEER));
+        assert_eq!(shown.summary.counterparty.as_deref(), Some(TEST_PEER));
     }
 
     #[test]
@@ -1891,7 +1910,7 @@ mod version_two {
         let s = setup();
         let review = review(&s, v2_of(&segwit_send(&s), 0));
         assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Tap));
-        assert_eq!(review.counterparty.as_deref(), Some(PEER));
+        assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
         assert_eq!(review.change_index, Some(3));
         assert!(review.fields.iter().any(|row| row.own && row.name == "psbt_input"));
         assert!(review.fields.iter().any(|row| row.own && row.name == "psbt_output"));

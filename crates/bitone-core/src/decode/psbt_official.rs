@@ -141,7 +141,7 @@ fn placeholder_for_psbt_v2(record: &Record<'_>) -> Option<Vec<u8>> {
     if record.has_codec(ValueCodec::Amount) && deserialize::<u64>(bytes).is_ok_and(|sats| sats == 0) {
         return Some(serialize(&1u64));
     }
-    if record.has_codec(ValueCodec::Script) && bytes.is_empty() {
+    if record.is_output_script() && bytes.is_empty() {
         return Some(ScriptBuf::new_op_return([]).into_bytes());
     }
     None
@@ -342,7 +342,7 @@ pub(super) fn decode_v2(
 
 fn txout_from_records(map: &Map<'_>) -> Result<TxOut, Reject> {
     let amount = map.value_of(ValueCodec::Amount).ok_or(Reject::Malformed)?;
-    let script = map.value_of(ValueCodec::Script).ok_or(Reject::Malformed)?;
+    let script = map.output_script().ok_or(Reject::Malformed)?;
     Ok(TxOut {
         value: Amount::from_sat(deserialize(amount).map_err(|_| Reject::Malformed)?),
         script_pubkey: Script::from_bytes(script).to_owned(),

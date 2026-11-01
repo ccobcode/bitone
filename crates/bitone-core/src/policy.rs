@@ -34,8 +34,8 @@ impl Risk {
         }
     }
 
-    /// 旧链路的排序,无法识别在授权之下.旧链路的页面按这个顺序选样式,删除旧链路时一起删除.
-    pub(crate) fn legacy_rank(self) -> u8 {
+    /// 页面顶部放哪个动作的排序,无法识别在授权之下:无法识别的指令没有金额和对方,不能盖住授权.
+    pub(crate) fn headline_rank(self) -> u8 {
         match self {
             Risk::Transfer => 0,
             Risk::Recognized => 1,
@@ -110,6 +110,32 @@ struct Rule {
     /// 不算动作,不影响类别.只有这种节点的交易和没有动作一样是无法识别.
     #[serde(default)]
     passive: bool,
+    summary: Option<SummaryFields>,
+}
+
+/// 一种动作的页面顶部要读哪些字段.路径是节点名,用点分隔,见 docs/10-tx-decoding.md 第 3 节.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SummaryFields {
+    pub amount: Option<String>,
+    /// 金额的资产:Solana 是 mint,TRON 是 TRC-10 的编号.没有时金额按字段自己的单位显示.
+    pub asset: Option<String>,
+    /// 指令写明的小数位,和清单不一致时显示原始整数.
+    pub decimals: Option<String>,
+    /// 金额是 64 位最大值时表示无限额度.
+    #[serde(default)]
+    pub unlimited: bool,
+    pub party: Option<String>,
+    pub label: Option<String>,
+    /// `party` 是代币账户时,它的所有者.没有这一行就是所有者没有确认.
+    pub owner: Option<String>,
+    pub next: Option<String>,
+    pub current: Option<String>,
+    /// `next` 的值写明没有时的含义.
+    pub none: Option<String>,
+    /// 新权限的全部持有人.有 `next` 之外的地址时要逐个核对.
+    #[serde(default)]
+    pub holders: Vec<String>,
 }
 
 /// 链的 ID 到动作种类名到规则.
@@ -120,6 +146,17 @@ static RULES: OnceLock<Rules> = OnceLock::new();
 /// 规则表是内置数据,清单和描述文件都改不了.
 fn rules() -> &'static Rules {
     RULES.get_or_init(|| serde_json::from_str(include_str!("../assets/rules.json")).expect("内置规则表有效"))
+}
+
+/// 这种动作的页面顶部要读的字段.
+pub(crate) fn summary_fields(chain: Chain, kind: &str) -> Option<&'static SummaryFields> {
+    rules().get(chain.id())?.get(kind)?.summary.as_ref()
+}
+
+/// 规则说这种节点不算动作.
+pub(crate) fn is_passive(chain: Chain, kind: &str) -> bool {
+    let rule = rules().get(chain.id()).and_then(|table| table.get(kind));
+    rule.is_some_and(|rule| rule.passive)
 }
 
 /// 没有规则,或者内容不认识时的告警.
@@ -184,6 +221,11 @@ fn filled(text: &str, args: &[String]) -> String {
 }
 
 fn assess_with(decoded: &Decoded, rules: &Rules, signals: &[Signal]) -> Assessment {
+    assess_quiet(decoded, rules, signals, &[])
+}
+
+/// `proven` 是 `tx` 层证明属于本钱包的节点,它们的规则告警不适用,类别不变.
+fn assess_quiet(decoded: &Decoded, rules: &Rules, signals: &[Signal], proven: &[NodeId]) -> Assessment {
     let table = rules.get(decoded.chain().id());
     let actions = decoded.actions();
     let mut findings: BTreeMap<NodeId, Finding> = BTreeMap::new();
@@ -210,7 +252,8 @@ fn assess_with(decoded: &Decoded, rules: &Rules, signals: &[Signal]) -> Assessme
         let risk = Risk::from(rule.class);
         risks.push(risk);
         second |= rule.second;
-        let alert = rule.alert.as_deref().map(|text| filled(text, &args));
+        let alert = rule.alert.as_deref().filter(|_| !proven.contains(&id));
+        let alert = alert.map(|text| filled(text, &args));
         let note = rule.note.as_deref().map(|text| filled(text, &args)).or(alert.clone());
         let finding = findings.entry(id).or_default();
         finding.risk = finding.risk.max(Some(risk));
@@ -288,7 +331,7 @@ pub struct BitcoinFacts {
 
 const ROOT: NodeId = 0;
 const INPUT_ACTION: &str = "input";
-const OUTPUT_PREFIX: &str = "output-";
+pub(crate) const OUTPUT_PREFIX: &str = "output-";
 const FEE_ROW: &str = "fee";
 
 impl BitcoinFacts {
@@ -412,7 +455,7 @@ pub fn assess_bitcoin(decoded: &Decoded, facts: &BitcoinFacts) -> Assessment {
     assessment
 }
 
-const CALL_ACTION: &str = "call";
+pub(crate) const CALL_ACTION: &str = "call";
 const FEE_CAP_ROW: &str = "fee_cap";
 const NETWORK_ROW: &str = "network";
 const PATH_ROW: &str = "derivation_path";
@@ -425,7 +468,7 @@ pub enum CallShape {
     /// 没有描述,或者按没有描述处理.
     #[default]
     Undecoded,
-    /// 选择器是这个标准函数,参数不是规范编码.
+    /// 选择器是这个标准函数,调用数据不是规范编码,参数按旧版编译器的读法取值.
     Irregular(String),
     /// 这个标准函数,里面是规范签名.
     Standard(String),
@@ -499,9 +542,10 @@ fn plain_class(chain: Chain, kind: &str) -> bool {
 fn call_kinds(chain: Chain, call: &CallFact) -> Vec<(&'static str, Vec<String>)> {
     let mut kinds = match &call.shape {
         CallShape::Undecoded => vec![("call-unknown", Vec::new())],
+        CallShape::Irregular(signature) if call.listed => vec![("call-irregular", vec![signature.clone()])],
         CallShape::Irregular(signature) => vec![
-            ("call-unknown", Vec::new()),
             ("call-irregular", vec![signature.clone()]),
+            ("call-unlisted", vec![call.contract.clone()]),
         ],
         CallShape::Described if call.has_value => vec![("call-with-value", Vec::new())],
         CallShape::Described => vec![("call-recognized", Vec::new())],
@@ -518,7 +562,7 @@ fn call_kinds(chain: Chain, call: &CallFact) -> Vec<(&'static str, Vec<String>)>
     kinds
 }
 
-/// 一次调用的类别,给还在用动作列表的旧字段.
+/// 一次调用的类别,页面顶部按它选动作.
 pub fn call_risk(chain: Chain, call: &CallFact) -> Risk {
     let table = rules().get(chain.id());
     let classes = call_kinds(chain, call).into_iter().map(|(kind, _)| {
@@ -588,8 +632,8 @@ fn mark_own(assessment: &mut Assessment, visits: &[Visit<'_>], signer: Option<&S
     }
 }
 
-const TRIGGER_ACTION: &str = "TriggerSmartContract";
-const ASSET_ACTION: &str = "TransferAssetContract";
+pub(crate) const TRIGGER_ACTION: &str = "TriggerSmartContract";
+pub(crate) const ASSET_ACTION: &str = "TransferAssetContract";
 const AMOUNT_ROW: &str = "amount";
 const EXPIRATION_ROW: &str = "expiration";
 const TIMESTAMP_ROW: &str = "timestamp";
@@ -740,6 +784,8 @@ pub struct SolanaFacts {
     pub findings: Vec<SolanaFinding>,
     /// 清单内代币的金额,带符号.
     pub displays: Vec<(NodeId, String)>,
+    /// 本钱包 nonce 创建的指令,地址和 authority 都核对过.
+    pub proven: Vec<NodeId>,
 }
 
 /// Solana 的策略.类别和告警都在规则表里.
@@ -762,7 +808,7 @@ pub fn assess_solana(decoded: &Decoded, facts: &SolanaFacts) -> Assessment {
     if let Some(path) = &facts.unusual_path {
         signals.push(Signal::new(row(PATH_ROW), PATH_KIND, vec![path.clone()]));
     }
-    let mut assessment = assess_with(decoded, rules(), &signals);
+    let mut assessment = assess_quiet(decoded, rules(), &signals, &facts.proven);
     for (node, display) in &facts.displays {
         assessment.findings.entry(*node).or_default().display = Some(display.clone());
     }
@@ -824,7 +870,7 @@ mod tests {
     }
 
     #[test]
-    fn the_old_path_keeps_its_order() {
+    fn the_headline_prefers_a_known_approval_to_an_unknown_action() {
         let order = [
             Risk::Transfer,
             Risk::Recognized,
@@ -836,7 +882,7 @@ mod tests {
         assert!(
             order
                 .windows(2)
-                .all(|pair| pair[0].legacy_rank() < pair[1].legacy_rank())
+                .all(|pair| pair[0].headline_rank() < pair[1].headline_rank())
         );
     }
 
@@ -1149,6 +1195,137 @@ mod tests {
         }
     }
 
+    /// 规则表写的路径都要落在官方定义上,重新生成 IDL 后字段改名时这里失败.
+    #[test]
+    fn every_solana_summary_path_is_in_the_idl() {
+        let idl: serde_json::Value = serde_json::from_str(include_str!("../assets/solana-idl.json")).unwrap();
+        for program in idl["programs"].as_array().unwrap() {
+            for instruction in program["instructions"].as_array().unwrap() {
+                let kind = [program["name"].as_str().unwrap(), instruction["name"].as_str().unwrap()].join(".");
+                let Some(fields) = rules()["solana"][&kind].summary.as_ref() else {
+                    continue;
+                };
+                for path in summary_paths(fields) {
+                    let found = match path.split('.').collect::<Vec<_>>().as_slice() {
+                        ["accounts", name] => named(&instruction["accounts"], name).is_some(),
+                        ["data", "recipient_owner"] => kind.contains("transferChecked"),
+                        ["data", name] => named(&instruction["arguments"], name).is_some(),
+                        ["data", name, field] => named(&instruction["arguments"], name)
+                            .and_then(|argument| {
+                                let link = argument["type"]["name"].as_str()?;
+                                named(&program["definedTypes"][link]["fields"], field)
+                            })
+                            .is_some(),
+                        _ => false,
+                    };
+                    assert!(found, "{kind}: {path}");
+                }
+            }
+        }
+    }
+
+    fn summary_paths(fields: &SummaryFields) -> Vec<&String> {
+        let single = [
+            &fields.amount,
+            &fields.asset,
+            &fields.decimals,
+            &fields.party,
+            &fields.owner,
+            &fields.next,
+            &fields.current,
+        ];
+        single.into_iter().flatten().chain(&fields.holders).collect()
+    }
+
+    fn named<'a>(list: &'a serde_json::Value, name: &str) -> Option<&'a serde_json::Value> {
+        list.as_array()?.iter().find(|item| item["name"] == name)
+    }
+
+    #[test]
+    fn every_tron_summary_path_is_in_the_schema() {
+        let schema: serde_json::Value = serde_json::from_str(include_str!("../assets/tron-schema.json")).unwrap();
+        let contract = |name: &str| {
+            let contracts = schema["contracts"].as_object().unwrap().values();
+            let found = contracts.into_iter().find(|contract| contract["name"] == name);
+            found.and_then(|contract| contract["message"].as_str())
+        };
+        for (kind, rule) in &rules()["tron"] {
+            let Some(fields) = rule.summary.as_ref() else {
+                continue;
+            };
+            let message = contract(kind).unwrap_or_else(|| panic!("{kind}"));
+            for path in summary_paths(fields) {
+                let mut at = message;
+                let mut names = path.split('.').peekable();
+                while let Some(name) = names.next() {
+                    let spec = named(&schema["messages"][at], name).unwrap_or_else(|| panic!("{kind}: {path}"));
+                    // `repeated` 字段的每一项和列表同名.
+                    if spec["repeated"] == true {
+                        assert_eq!(names.next(), Some(name), "{kind}: {path}");
+                    }
+                    at = spec["of"].as_str().unwrap_or_default();
+                }
+            }
+        }
+    }
+
+    /// 第 3 节:权限变更的控制方都来自规则表写明的字段,手机没有别的来源.
+    #[test]
+    fn every_permission_change_names_its_controllers() {
+        for chain in ["solana", "tron"] {
+            for (kind, rule) in &rules()[chain] {
+                if rule.class == RuleClass::PermissionChange {
+                    let fields = rule.summary.as_ref().unwrap_or_else(|| panic!("{kind}"));
+                    assert!(fields.next.is_some() && fields.current.is_some(), "{kind}");
+                }
+            }
+        }
+    }
+
+    /// 协议里的金额和收款方都要到第一屏,重新生成 IDL 后出现新指令时这里失败.
+    #[test]
+    fn every_solana_value_field_reaches_the_first_screen() {
+        const RECIPIENTS: [&str; 7] = [
+            "destination",
+            "recipient",
+            "recipientAccount",
+            "newAccount",
+            "delegate",
+            "feeReceiver",
+            "destinationStake",
+        ];
+        let idl: serde_json::Value = serde_json::from_str(include_str!("../assets/solana-idl.json")).unwrap();
+        for program in idl["programs"].as_array().unwrap() {
+            for instruction in program["instructions"].as_array().unwrap() {
+                let kind = [program["name"].as_str().unwrap(), instruction["name"].as_str().unwrap()].join(".");
+                let fields = rules()["solana"][&kind].summary.as_ref();
+                let party = fields.and_then(|fields| fields.party.as_deref()).unwrap_or_default();
+                let accounts = instruction["accounts"].as_array().unwrap();
+                let recipient = accounts.iter().find_map(|account| {
+                    let name = account["name"].as_str()?;
+                    RECIPIENTS.contains(&name).then_some(name)
+                });
+                // 分配空间不转钱,`newAccount` 不是收款方.
+                let allocation = ["system.allocate", "system.allocateWithSeed"].contains(&kind.as_str());
+                if let Some(name) = recipient.filter(|_| !allocation) {
+                    assert_eq!(party, ["accounts.", name].concat(), "{kind}");
+                }
+                if program["name"] == "computeBudget" {
+                    continue;
+                }
+                for argument in instruction["arguments"].as_array().unwrap() {
+                    let display = &argument["type"]["display"];
+                    let optional = &argument["type"]["item"]["display"];
+                    if display["unit"] == "SOL" || optional["unit"] == "SOL" {
+                        let name = argument["name"].as_str().unwrap();
+                        let amount = fields.and_then(|fields| fields.amount.as_deref());
+                        assert_eq!(amount, Some(["data.", name].concat().as_str()), "{kind}");
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn only_blind_solana_payloads_ask_for_the_second_confirmation() {
         let second: Vec<&str> = rules()["solana"]
@@ -1215,6 +1392,30 @@ mod tests {
         );
         let kinds = call_kinds(Chain::Evm, &call);
         assert_eq!(kinds, [("call-unlisted", vec!["0xabc".to_string()])]);
+    }
+
+    /// 不规范的调用不管合约在不在清单都是无法识别,告警写明这一点,无限额度的告警保留.
+    #[test]
+    fn an_irregular_call_is_unknown_and_keeps_its_other_alerts() {
+        let call = CallFact {
+            shape: CallShape::Irregular("approve(address,uint256)".to_string()),
+            contract: "0xabc".to_string(),
+            unlimited: true,
+            ..CallFact::default()
+        };
+        assert_eq!(call_risk(Chain::Evm, &call), Risk::Unknown);
+        let kinds: Vec<&str> = call_kinds(Chain::Evm, &call)
+            .into_iter()
+            .map(|(kind, _)| kind)
+            .collect();
+        assert_eq!(kinds, ["call-irregular", "call-unlisted", "call-unlimited"]);
+        let listed = CallFact { listed: true, ..call };
+        assert_eq!(call_risk(Chain::Tron, &listed), Risk::Unknown);
+        let kinds: Vec<&str> = call_kinds(Chain::Tron, &listed)
+            .into_iter()
+            .map(|(kind, _)| kind)
+            .collect();
+        assert_eq!(kinds, ["call-irregular", "call-unlimited"]);
     }
 
     #[test]

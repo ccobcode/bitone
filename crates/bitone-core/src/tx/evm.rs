@@ -8,11 +8,11 @@ use crate::decode::{
     TypedMessage, TypedWalker, parse_evm, parse_typed,
 };
 use crate::path::{DerivationPath, check_foreign_path, is_usual_evm_path};
-use crate::policy::{self, CallFact, EvmFacts};
+use crate::policy::{self, EvmFacts};
 use crate::request::{KIND_PERSONAL_SIGN, KIND_RAW_HASH, KIND_TRANSACTION, KIND_TYPED_DATA, SignRequest, SignResponse};
-use crate::review::{ActionView, AmountView, Forbid, RawLine, Review, Risk, Row};
+use crate::review::{AmountView, Controller, Forbid, Party, Review, Summary};
 use crate::tx::abi::{self, Style};
-use crate::tx::{ReviewContext, Verified, check_signature, native_alert, raw_lines};
+use crate::tx::{ReviewContext, Verified, check_signature, native_alert};
 use crate::units::format_units;
 use crate::{Chain, Error, Mode, Network};
 use alloy_consensus::{SignableTransaction, Transaction};
@@ -187,33 +187,13 @@ fn mode_of(binding: Binding) -> Mode {
     }
 }
 
-/// 页面顶部的摘要和旧字段,第 9 节删除.类别和告警都来自策略.
+/// 解码之前算好的内容.解码器不读清单,调用数据的字段要先解出来.类别和告警都来自策略.
 #[derive(Default)]
-struct Summary {
-    amount: Option<AmountView>,
-    counterparty_label: Option<String>,
-    counterparty: Option<String>,
-    actions: Vec<ActionView>,
-    rows: Vec<Row>,
-    raw: Vec<RawLine>,
+struct Prepared {
+    summary: Summary,
     /// 描述文件解出的字段.
     call: Vec<Node>,
     facts: EvmFacts,
-}
-
-pub(super) fn call_note(actions: &[ActionView]) -> Option<String> {
-    let lines: Vec<String> = actions
-        .iter()
-        .map(|action| {
-            let rows: Vec<String> = action
-                .rows
-                .iter()
-                .map(|row| [row.label.as_str(), row.value.as_str()].join(" "))
-                .collect();
-            [action.title.as_str(), rows.join(",").as_str()].join(":")
-        })
-        .collect();
-    (!lines.is_empty()).then(|| lines.join("\n"))
 }
 
 fn native_amount(target: &Target<'_>, ctx: &ReviewContext, value: U256) -> AmountView {
@@ -237,20 +217,17 @@ fn native_amount(target: &Target<'_>, ctx: &ReviewContext, value: U256) -> Amoun
     }
 }
 
-fn delegation(authorization: &SignedAuthorization, signer: Option<&str>) -> ActionView {
+fn delegation(authorization: &SignedAuthorization, signer: Option<&str>) -> Controller {
     let current = decode::authority(authorization)
         .map(|address| address.to_string())
         .or(signer.map(str::to_string));
-    let mut rows: Vec<Row> = current.iter().map(|text| Row::mono("当前控制方", text)).collect();
-    rows.push(Row::mono("新控制方", authorization.address.to_string()));
-    ActionView {
-        risk: Risk::PermissionChange,
-        title: "EIP-7702 账户委托".to_string(),
-        rows,
+    Controller {
+        current,
+        next: Some(authorization.address.to_string()),
     }
 }
 
-fn summarize(tx: &Tx, target: &Target<'_>, ctx: &ReviewContext, signer: Option<&str>) -> Summary {
+fn prepared(tx: &Tx, target: &Target<'_>, ctx: &ReviewContext, signer: Option<&str>) -> Prepared {
     let value = tx.value();
     let data: &Bytes = tx.input();
     let style = Style {
@@ -260,60 +237,55 @@ fn summarize(tx: &Tx, target: &Target<'_>, ctx: &ReviewContext, signer: Option<&
         format: &evm_text,
     };
     let mut facts = EvmFacts::default();
-    let classified = match (tx.kind(), data.is_empty()) {
-        (TxKind::Call(to), true) => abi::Classified {
-            risk: Risk::Transfer,
-            title: Risk::Transfer.label().to_string(),
-            amount: Some(native_amount(target, ctx, value)),
-            counterparty_label: Some("收款地址".into()),
-            counterparty: Some(to.to_string()),
-            fact: CallFact::default(),
-            fields: Vec::new(),
-            inner: Vec::new(),
-            rows: Vec::new(),
-        },
+    let (amount, label, party, parties, call) = match (tx.kind(), data.is_empty()) {
+        (TxKind::Call(to), true) => {
+            let label = "收款地址".to_string();
+            let party = Party {
+                label: label.clone(),
+                value: to.to_string(),
+            };
+            let amount = Some(native_amount(target, ctx, value));
+            (amount, Some(label), Some(to.to_string()), vec![party], Vec::new())
+        }
         (TxKind::Call(to), false) => {
             let classified = abi::classify(&style, &to.into_array(), data, !value.is_zero());
             facts.calls = classified.facts();
-            facts.call_note = call_note(&classified.actions());
-            classified
+            facts.call_note = Some(classified.note());
+            let parties = classified.parties();
+            (
+                classified.amount,
+                classified.counterparty_label,
+                classified.counterparty,
+                parties,
+                classified.fields,
+            )
         }
-        (TxKind::Create, _) => abi::Classified {
-            risk: Risk::Unknown,
-            title: "创建合约".to_string(),
-            amount: (!value.is_zero()).then(|| native_amount(target, ctx, value)),
-            counterparty_label: None,
-            counterparty: None,
-            fact: CallFact::default(),
-            fields: Vec::new(),
-            inner: Vec::new(),
-            rows: Vec::new(),
-        },
+        (TxKind::Create, _) => {
+            let amount = (!value.is_zero()).then(|| native_amount(target, ctx, value));
+            (amount, None, None, Vec::new(), Vec::new())
+        }
     };
     let authorizations = tx.authorization_list().unwrap_or_default();
-    let mut actions = classified.actions();
-    // 有账户委托时页面顶部是新控制方,这笔交易本身的金额和收款方要放进列表.
-    if !authorizations.is_empty() {
-        actions[0] = classified.detailed();
-    }
-    actions.extend(
-        authorizations
-            .iter()
-            .map(|authorization| delegation(authorization, signer)),
-    );
+    let controllers: Vec<Controller> = authorizations
+        .iter()
+        .map(|authorization| delegation(authorization, signer))
+        .collect();
     let new_controller = authorizations.last().map(|authorization| authorization.address);
     facts.fee_high = target
         .network()
         .is_some_and(|network| decode::fee_cap(tx) > U256::from(policy::fee_ceiling(network)));
-    Summary {
-        amount: classified.amount,
-        counterparty_label: new_controller.map_or(classified.counterparty_label, |_| Some("新控制方".to_string())),
-        counterparty: new_controller.map_or(classified.counterparty, |address: Address| Some(address.to_string())),
-        actions,
-        raw: raw_lines(data),
-        call: classified.fields,
+    Prepared {
+        summary: Summary {
+            amount,
+            counterparty_label: new_controller.map_or(label, |_| Some("新控制方".to_string())),
+            counterparty: new_controller.map_or(party, |address: Address| Some(address.to_string())),
+            // 有账户委托时页面顶部是新控制方,这笔交易本身的对方也要在第一屏.
+            parties: if controllers.is_empty() { Vec::new() } else { parties },
+            controllers,
+            ..Summary::default()
+        },
+        call,
         facts,
-        ..Summary::default()
     }
 }
 
@@ -348,45 +320,45 @@ impl Reviewing<'_> {
         )
     }
 
-    fn rows(&self, extra: Vec<Row>) -> Vec<Row> {
-        let signer = self.signer.iter().map(|signer| Row::mono("付款账户", signer));
-        signer.chain(extra).collect()
-    }
-
     fn finish(
         &self,
         decoded: Result<Decoded, decode::Failure>,
         target: &Target<'_>,
         binding: Binding,
         declared: Option<Network>,
-        mut summary: Summary,
+        prepared: Prepared,
     ) -> Review {
+        let Prepared {
+            mut summary, mut facts, ..
+        } = prepared;
         let decoded = match decoded {
             Ok(decoded) => decoded,
             Err(failure) => return Review::undecodable(&self.request.network, &failure),
         };
         let name = decode::escape_text(&self.request.network);
-        summary.facts.signer.clone_from(&self.signer);
-        summary.facts.unusual_path = (!is_usual_evm_path(&self.path)).then(|| self.path.to_string());
-        summary.facts.renamed = match (declared, target.network()) {
+        facts.signer.clone_from(&self.signer);
+        facts.unusual_path = (!is_usual_evm_path(&self.path)).then(|| self.path.to_string());
+        facts.renamed = match (declared, target.network()) {
             (None, Some(network)) => Some((name.clone(), network.label().to_string())),
             (Some(_) | None, Some(_) | None) => None,
         };
-        summary.facts.unknown_chain = match (target, binding.required.or(binding.bound)) {
+        facts.unknown_chain = match (target, binding.required.or(binding.bound)) {
             (Target::Foreign(_), Some(chain_id)) => Some((chain_id.to_string(), name)),
             (Target::Foreign(_) | Target::Known(_), Some(_) | None) => None,
         };
-        let assessment = policy::assess_evm(&decoded, &summary.facts);
+        let assessment = policy::assess_evm(&decoded, &facts);
+        summary.payer.clone_from(&self.signer);
+        // `data` 这一行装着解出的参数,全部资产授权的"无限"不在别的行里.
+        let call = decoded
+            .actions()
+            .into_iter()
+            .find(|(_, _, kind)| *kind == policy::CALL_ACTION);
+        summary.field_ids.extend(call.map(|(id, _, _)| id));
         let review = Review {
-            amount: summary.amount,
-            counterparty_label: summary.counterparty_label,
-            counterparty: summary.counterparty,
-            actions: summary.actions,
-            rows: self.rows(summary.rows),
-            raw: summary.raw,
             mainnet: mode_of(binding) == Mode::Mainnet,
             ..Review::assessed(&decoded, assessment)
-        };
+        }
+        .summarized(summary);
         // 请求没有说明网络时清单还没查过.
         match (declared, target.network()) {
             (None, Some(network)) => native_alert(review, network, self.ctx),
@@ -398,17 +370,19 @@ impl Reviewing<'_> {
         let parsed = parse_evm(&self.request.payload);
         let binding = parsed.as_ref().map_or_else(|_| Binding::default(), binding_of);
         let target = resolve(declared, &self.request.network, binding)?;
-        let summary = match &parsed {
-            Ok(EvmPayload::Transaction(tx)) => summarize(tx, &target, self.ctx, self.signer.as_deref()),
-            Ok(EvmPayload::Authorization(_) | EvmPayload::Message | EvmPayload::Unknown) | Err(_) => Summary::default(),
+        let prepared = match &parsed {
+            Ok(EvmPayload::Transaction(tx)) => prepared(tx, &target, self.ctx, self.signer.as_deref()),
+            Ok(EvmPayload::Authorization(_) | EvmPayload::Message | EvmPayload::Unknown) | Err(_) => {
+                Prepared::default()
+            }
         };
         let walker = EvmWalker {
             coin: coin_of(&target),
             chain_id: target.network().and_then(Network::evm_chain_id),
-            call: &summary.call,
+            call: &prepared.call,
         };
         let decoded = self.decoded(&walker, &target, mode_of(binding));
-        Ok(self.finish(decoded, &target, binding, declared, summary))
+        Ok(self.finish(decoded, &target, binding, declared, prepared))
     }
 
     /// 第 5.1 节:任何消息都能解码和签名,域没有绑定的内容由规则告警.
@@ -434,19 +408,20 @@ impl Reviewing<'_> {
             labels: labels.as_deref(),
         };
         let decoded = self.decoded(&walker, &target, mode_of(binding));
-        let summary = Summary {
-            amount: view.amount,
-            counterparty_label: view.counterparty_label,
-            counterparty: view.counterparty,
-            actions: view.actions,
-            rows: view.rows,
+        let prepared = Prepared {
+            summary: Summary {
+                amount: view.amount,
+                counterparty_label: view.counterparty_label,
+                counterparty: view.counterparty,
+                ..Summary::default()
+            },
             facts: EvmFacts {
                 permit: view.permit,
                 ..EvmFacts::default()
             },
-            ..Summary::default()
+            ..Prepared::default()
         };
-        Ok(self.finish(decoded, &target, binding, declared, summary))
+        Ok(self.finish(decoded, &target, binding, declared, prepared))
     }
 
     fn refused(&self, reason: Reject) -> Review {
@@ -462,7 +437,7 @@ impl Reviewing<'_> {
         let target = declared.map_or(Target::Foreign(&self.request.network), Target::Known);
         let binding = Binding::default();
         let decoded = self.decoded(decoder, &target, mode_of(binding));
-        self.finish(decoded, &target, binding, declared, Summary::default())
+        self.finish(decoded, &target, binding, declared, Prepared::default())
     }
 }
 

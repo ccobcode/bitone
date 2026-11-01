@@ -4,7 +4,7 @@
 
 use super::psbt::Cursor;
 use super::psbt_values::Field;
-use super::solana_idl::{self, Instruction as IdlInstruction, Program, TypeWalk};
+use super::solana_idl::{self, Account, Instruction as IdlInstruction, Program, TypeWalk};
 use super::{Amount, Coin, Decoder, Extent, Input, Node, Reject, RoundTrip, Source, Span, Value, Walked};
 use bitcoin::base58;
 use ed25519_dalek::VerifyingKey;
@@ -148,6 +148,19 @@ pub fn idl_sources() -> &'static std::collections::BTreeMap<String, String> {
 
 fn action_name(program: &Program, instruction: &IdlInstruction) -> String {
     [program.name.as_str(), instruction.name.as_str()].join(".")
+}
+
+/// 这个种类是 `batch` 本身,它的效果都在内部指令上.
+pub fn is_batch(kind: &str) -> bool {
+    solana_idl::programs().iter().any(|program| {
+        let name = program.batch.as_ref().map(|batch| batch.instruction.as_str());
+        name.is_some_and(|name| kind == [program.name.as_str(), name].join("."))
+    })
+}
+
+/// 这个值是 option 写明的"没有".
+pub fn is_absent(value: &Value) -> bool {
+    matches!(value, Value::Enum(text) if *text == schema().none)
 }
 
 /// v1 的配置.缺失的值节点按最小值处理,见 SIMD-0385.
@@ -1149,13 +1162,31 @@ impl<'a> Walk<'a> {
         own("extra_account", Value::Opaque(vec![slot.index]), slot.span).children(children)
     }
 
+    /// 账户按哪种布局读,只看这个位置上的地址.`None` 表示地址在查找表里,看不出来.
+    fn layout<'i>(&self, instruction: &'i IdlInstruction, slots: &[AccountSlot]) -> Option<&'i [Account]> {
+        let older = instruction.older.as_ref();
+        let marked = older.and_then(|older| Some((older, slots.get(older.slot)?)));
+        let Some((older, slot)) = marked else {
+            return Some(&instruction.accounts);
+        };
+        let key = self.message.keys.get(slot.index as usize)?;
+        Some(if base58::encode(key) == older.sysvar {
+            &older.accounts
+        } else {
+            &instruction.accounts
+        })
+    }
+
     /// 账户数少于 IDL 必需的数量时解码失败,程序本身不会执行.
     fn named_accounts(&self, instruction: &IdlInstruction, slots: &[AccountSlot]) -> Result<Vec<Node>, Reject> {
-        let required = instruction.required_accounts();
+        let Some(accounts) = self.layout(instruction, slots) else {
+            return Ok(self.opaque_accounts(slots));
+        };
+        let required = accounts.iter().filter(|account| !account.optional).count();
         let mut spare = slots.len().checked_sub(required).ok_or(Reject::Malformed)?;
         let mut rest = slots.iter().copied().peekable();
         let mut nodes = Vec::new();
-        for account in &instruction.accounts {
+        for account in accounts {
             if account.optional {
                 if spare == 0 {
                     continue;
@@ -2428,7 +2459,8 @@ mod tests {
         assert_eq!(count("stake"), Some(17));
         assert_eq!(count("vote"), Some(12));
         assert_eq!(count("addressLookupTable"), Some(5));
-        assert_eq!(idl_sources().len(), 9);
+        // 9 个程序的 IDL 加 Stake 的旧布局.
+        assert_eq!(idl_sources().len(), 10);
     }
 
     #[test]

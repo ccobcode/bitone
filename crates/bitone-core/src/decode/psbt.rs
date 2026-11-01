@@ -226,6 +226,11 @@ impl<'a> Record<'a> {
         self.entry.is_some_and(|entry| entry.value == codec)
     }
 
+    /// 输出的 `SCRIPT`.`redeem_script`,`witness_script` 的取值格式相同,但它们不进交易.
+    pub(super) fn is_output_script(&self) -> bool {
+        self.structural() && self.has_codec(ValueCodec::Script)
+    }
+
     pub(super) fn raw_key(&self) -> &'a [u8] {
         self.raw_key
     }
@@ -251,6 +256,11 @@ impl<'a> Map<'a> {
             .iter()
             .find(|record| record.has_codec(codec))
             .map(Record::value_bytes)
+    }
+
+    pub(super) fn output_script(&self) -> Option<&'a [u8]> {
+        let record = self.records.iter().find(|record| record.is_output_script());
+        record.map(Record::value_bytes)
     }
 
     /// 官方解码器放进键值表的条目数.
@@ -629,7 +639,7 @@ mod tests {
     use bitcoin::consensus::encode::serialize;
     use bitcoin::hashes::Hash;
     use bitcoin::script::{Builder, PushBytesBuf};
-    use bitcoin::{OutPoint, ScriptBuf, Transaction, TxIn, Txid, Witness, absolute, opcodes, transaction};
+    use bitcoin::{OutPoint, Script, ScriptBuf, Transaction, TxIn, Txid, Witness, absolute, opcodes, transaction};
 
     const UNSIGNED_TX: u8 = 0;
     const GLOBAL_VERSION: u8 = 0xfb;
@@ -640,6 +650,8 @@ mod tests {
     const REDEEM_SCRIPT: u8 = 4;
     const PREVIOUS_TXID: u8 = 0x0e;
     const OUTPUT_INDEX: u8 = 0x0f;
+    const OUT_REDEEM_SCRIPT: u8 = 0;
+    const OUT_WITNESS_SCRIPT: u8 = 1;
     const OUT_AMOUNT: u8 = 3;
     const OUT_SCRIPT: u8 = 4;
 
@@ -882,6 +894,48 @@ mod tests {
             );
             assert!(run(&payload).is_ok());
         }
+    }
+
+    fn script_of(decoded: &Parsed<'_>) -> ScriptBuf {
+        decoded.psbt.unsigned_tx.output[0].script_pubkey.clone()
+    }
+
+    /// `redeem_script`,`witness_script` 和 `SCRIPT` 的取值格式相同,先出现的不能当成输出脚本.
+    #[test]
+    fn v2_takes_the_script_of_the_output_whatever_comes_first() {
+        let script = ScriptBuf::new_p2wsh(&Hash::all_zeros());
+        for sats in [0u64, 5000] {
+            for other in [OUT_REDEEM_SCRIPT, OUT_WITNESS_SCRIPT] {
+                let output = [
+                    record(other, &[0x51]),
+                    record(OUT_AMOUNT, &serialize(&sats)),
+                    record(OUT_SCRIPT, script.as_bytes()),
+                ];
+                let payload = psbt(&[&v2_global(), &v2_input(), &output]);
+                let parsed = parse(&payload).unwrap().unwrap();
+                assert_eq!(script_of(&parsed), script, "{other} {sats}");
+                let decoded = run(&payload).unwrap();
+                let rows = values(&decoded, "script");
+                assert_eq!(rows, [Script::from_bytes(script.as_bytes()).to_asm_string()]);
+                assert!(
+                    actions(&decoded).contains(&"output-p2wsh".to_string()),
+                    "{other} {sats}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn v2_keeps_an_empty_redeem_script_empty() {
+        let script = ScriptBuf::new_p2wsh(&Hash::all_zeros());
+        let output = [
+            record(OUT_REDEEM_SCRIPT, &[]),
+            record(OUT_AMOUNT, &serialize(&5000u64)),
+            record(OUT_SCRIPT, script.as_bytes()),
+        ];
+        let payload = psbt(&[&v2_global(), &v2_input(), &output]);
+        let parsed = parse(&payload).unwrap().unwrap();
+        assert_eq!(script_of(&parsed), script);
     }
 
     #[test]

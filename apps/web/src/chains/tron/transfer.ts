@@ -45,7 +45,7 @@ export function tronCallData(draft: Omit<TransferDraft, "tier">): string {
         feeLimit: 1_000_000,
     });
     const review = reviewRequest(request, draft.accounts);
-    return review?.raw.map((line) => line.text).join("") ?? "";
+    return review?.fields.find((row) => row.name === "data")?.value ?? "";
 }
 
 export interface TronCost {

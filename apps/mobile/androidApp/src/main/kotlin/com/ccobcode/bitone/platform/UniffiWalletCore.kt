@@ -109,18 +109,23 @@ private fun uniffi.bitone_ffi.ReviewResult.shared() =
             },
         network = network,
         mainnet = mainnet,
-        title = title,
-        amount = amount?.let { ReviewAmount(it.text, it.symbol, it.asset, it.icon, it.unlimited) },
-        counterpartyLabel = counterpartyLabel,
-        counterparty = counterparty,
+        summary = summary.shared(),
         alerts = alerts,
-        actions = actions.map { ReviewAction(it.risk.shared(), it.title, it.rows.shared()) },
-        rows = rows.shared(),
-        raw = raw.map { RawLine(it.text, it.note) },
         fields = fields.map { it.shared() },
         reviewDigest = reviewDigest,
         fingerprintMismatch = fingerprintMismatch,
         requestFingerprint = requestFingerprint,
+    )
+
+private fun uniffi.bitone_ffi.ReviewSummary.shared() =
+    ReviewSummary(
+        title = title,
+        amount = amount?.let { ReviewAmount(it.text, it.symbol, it.asset, it.icon, it.unlimited) },
+        counterpartyLabel = counterpartyLabel,
+        counterparty = counterparty,
+        controllers = controllers.map { ReviewController(it.current, it.next) },
+        parties = parties.map { ReviewParty(it.label, it.value) },
+        payer = payer,
     )
 
 private fun uniffi.bitone_ffi.RiskLevel.shared() =
@@ -177,8 +182,6 @@ private fun uniffi.bitone_ffi.FieldSource.shared() =
         uniffi.bitone_ffi.FieldSource.DESCRIPTOR -> FieldSource.Descriptor
         uniffi.bitone_ffi.FieldSource.HINT -> FieldSource.Hint
     }
-
-private fun List<uniffi.bitone_ffi.ReviewRow>.shared() = map { ReviewRow(it.label, it.value, it.mono) }
 
 private class Draft(private val inner: uniffi.bitone_ffi.WalletDraft) : WalletDraft {
     override val imported: Boolean

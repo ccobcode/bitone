@@ -1,19 +1,17 @@
-//! EIP-712 和 TIP-712 的页面顶部和旧字段,第 9 节删除.解码和摘要在 `decode::parse_typed`,类别和告警都来自策略.
+//! EIP-712 和 TIP-712 的页面顶部.解码和摘要在 `decode::parse_typed`,类别和告警都来自策略.
 
 use crate::decode::{TypedMessage, typed_member};
 use crate::policy::PermitFact;
-use crate::review::{ActionView, AmountView, Risk, Row};
+use crate::review::AmountView;
 use crate::tx::abi::Style;
-use crate::tx::tron::utc_time;
 use crate::units::format_units;
 use alloy_dyn_abi::DynSolValue;
 use alloy_primitives::U256;
 
-/// 代币,额度和额度的过期时间.
+/// 代币和额度.
 struct Grant {
     token: Option<String>,
     amount: U256,
-    expiration: Option<U256>,
 }
 
 fn uint(value: &DynSolValue) -> Option<U256> {
@@ -26,7 +24,6 @@ fn grant_of(style: &Style, entry: &DynSolValue) -> Option<Grant> {
             .as_address()
             .map(|address| (style.format)(&address.into_array())),
         amount: uint(typed_member(entry, "amount")?)?,
-        expiration: typed_member(entry, "expiration").and_then(uint),
     })
 }
 
@@ -47,7 +44,6 @@ fn permit_grants(parsed: &TypedMessage, style: &Style) -> Option<(String, Vec<Gr
                 .verifying_contract()
                 .map(|address| (style.format)(&address.into_array())),
             amount: uint(typed_member(message, "value")?)?,
-            expiration: None,
         }],
         "PermitSingle" | "PermitBatch" => grants_of(style, typed_member(message, "details")?)?,
         "PermitTransferFrom" | "PermitBatchTransferFrom" => grants_of(style, typed_member(message, "permitted")?)?,
@@ -56,96 +52,52 @@ fn permit_grants(parsed: &TypedMessage, style: &Style) -> Option<(String, Vec<Gr
     Some(((style.format)(&spender.into_array()), grants))
 }
 
-/// 单位是秒.换算不到日期的值显示原始整数.
-fn time_text(value: U256) -> String {
-    let seconds = u64::try_from(value).ok();
-    match seconds.and_then(|seconds| seconds.checked_mul(1000)) {
-        Some(ms) => utc_time(ms),
-        None => value.to_string(),
-    }
-}
-
-/// 页面顶部和动作列表.
+/// 页面顶部.
 #[derive(Default)]
 pub(crate) struct TypedView {
     pub amount: Option<AmountView>,
     pub counterparty_label: Option<String>,
     pub counterparty: Option<String>,
-    pub actions: Vec<ActionView>,
-    pub rows: Vec<Row>,
     pub permit: Option<PermitFact>,
 }
 
 fn permit_view(parsed: &TypedMessage, style: &Style) -> Option<TypedView> {
     let (spender, grants) = permit_grants(parsed, style)?;
-    let mut view = TypedView {
+    let shown: Vec<AmountView> = grants
+        .iter()
+        .map(|Grant { token, amount }| {
+            let raw = amount.to_string();
+            let unlimited = *amount >= U256::from(alloy_primitives::U160::MAX);
+            let asset = token
+                .as_ref()
+                .and_then(|token| style.manifest.lookup(style.network, token));
+            match asset {
+                Some(asset) => AmountView {
+                    text: format_units(&raw, asset.decimals),
+                    symbol: Some(asset.symbol.clone()),
+                    asset: Some(asset.key()),
+                    unlimited,
+                },
+                None => AmountView {
+                    text: raw,
+                    symbol: None,
+                    asset: None,
+                    unlimited,
+                },
+            }
+        })
+        .collect();
+    let permit = PermitFact {
+        grants: shown.len(),
+        unlimited: shown.iter().filter(|amount| amount.unlimited).count(),
+    };
+    Some(TypedView {
+        // 多笔时顶部不放金额,否则小额会盖住后面的无限额度.全部额度都在字段列表里.
+        amount: <[AmountView; 1]>::try_from(shown).ok().map(|[only]| only),
         counterparty_label: Some("被授权方".into()),
         counterparty: Some(spender),
-        ..TypedView::default()
-    };
-    let mut unlimited_grants = 0;
-    for Grant {
-        token,
-        amount,
-        expiration,
-    } in &grants
-    {
-        let raw = amount.to_string();
-        let unlimited = *amount >= U256::from(alloy_primitives::U160::MAX);
-        let asset = token
-            .as_ref()
-            .and_then(|token| style.manifest.lookup(style.network, token));
-        let shown = match asset {
-            Some(asset) => AmountView {
-                text: format_units(&raw, asset.decimals),
-                symbol: Some(asset.symbol.clone()),
-                asset: Some(asset.key()),
-                unlimited,
-            },
-            None => AmountView {
-                text: raw,
-                symbol: None,
-                asset: None,
-                unlimited,
-            },
-        };
-        let listed = if asset.is_some() {
-            "在内置清单"
-        } else {
-            "不在内置清单"
-        };
-        let mut rows: Vec<Row> = token.iter().map(|token| Row::mono("代币合约", token)).collect();
-        rows.push(Row::text("合约清单", listed));
-        rows.push(Row::text(
-            "额度",
-            if unlimited {
-                "无限".to_string()
-            } else {
-                shown.text.clone()
-            },
-        ));
-        rows.extend(expiration.map(|time| Row::text("额度过期时间", time_text(time))));
-        view.actions.push(ActionView {
-            risk: Risk::Approval,
-            title: parsed.primary.clone(),
-            rows,
-        });
-        unlimited_grants += usize::from(unlimited);
-        // 多笔时顶部不放金额,否则小额会盖住后面的无限额度.全部额度都在动作里.
-        if grants.len() == 1 {
-            view.amount = Some(shown);
-        }
-    }
-    view.permit = Some(PermitFact {
-        grants: grants.len(),
-        unlimited: unlimited_grants,
-    });
-    for field in ["deadline", "sigDeadline"] {
-        if let Some(value) = typed_member(&parsed.message, field).and_then(uint) {
-            view.rows.push(Row::text("签名截止时间", time_text(value)));
-        }
-    }
-    Some(view)
+        permit: Some(permit),
+    })
 }
 
 /// 描述文件给的字段名.绑定是网络,`verifyingContract`,类型串,类型串里已经有 `primaryType`.
@@ -158,20 +110,11 @@ pub(crate) fn labels(parsed: &TypedMessage, style: &Style) -> Option<Vec<(String
 }
 
 pub(crate) fn view(parsed: &TypedMessage, style: &Style) -> TypedView {
-    let permit = parsed.is_permit().then(|| permit_view(parsed, style)).flatten();
-    let mut view = permit.unwrap_or_else(|| TypedView {
-        actions: vec![ActionView {
-            risk: Risk::Unknown,
-            title: parsed.primary.clone(),
-            rows: Vec::new(),
-        }],
-        ..TypedView::default()
-    });
-    let contract = parsed.verifying_contract();
-    let contract = contract.map(|address| Row::mono("验证合约", (style.format)(&address.into_array())));
-    let kind = Row::text("交易类型", "EIP-712 消息");
-    view.rows.splice(0..0, std::iter::once(kind).chain(contract));
-    view
+    parsed
+        .is_permit()
+        .then(|| permit_view(parsed, style))
+        .flatten()
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

@@ -1,0 +1,611 @@
+{
+  "generator": "tools/crosscheck/src/stake_interface.rs",
+  "cases": [
+    {
+      "instruction": "initialize",
+      "layout": "older",
+      "builder": "solana-stake-interface 4.4.0",
+      "message": "01000204f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7010101010101010101010101010101010101010101010101010101010101010106a7d517192c5c51218cc94c3d4af17f58daee089ba1fd44e3dbd98a0000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000009090909090909090909090909090909090909090909090909090909090909090103020102740000000009090909090909090909090909090909090909090909090909090909090909090303030303030303030303030303030303030303030303030303030303030303000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "rentSysvar",
+          "SysvarRent111111111111111111111111111111111"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "initializeChecked",
+      "layout": "older",
+      "builder": "solana-stake-interface 4.4.0",
+      "message": "02010306f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70303030303030303030303030303030303030303030303030303030303030303010101010101010101010101010101010101010101010101010101010101010106a7d517192c5c51218cc94c3d4af17f58daee089ba1fd44e3dbd98a00000000090909090909090909090909090909090909090909090909090909090909090906a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc0000000000909090909090909090909090909090909090909090909090909090909090909010504020304010409000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "rentSysvar",
+          "SysvarRent111111111111111111111111111111111"
+        ],
+        [
+          "stakeAuthority",
+          "cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN"
+        ],
+        [
+          "withdrawAuthority",
+          "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorize",
+      "layout": "older",
+      "builder": "solana-stake-interface 4.4.0",
+      "message": "01000204f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7010101010101010101010101010101010101010101010101010101010101010106a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000009090909090909090909090909090909090909090909090909090909090909090103030102002801000000030303030303030303030303030303030303030303030303030303030303030301000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "clockSysvar",
+          "SysvarC1ock11111111111111111111111111111111"
+        ],
+        [
+          "authority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorize",
+      "layout": "older",
+      "builder": "solana-stake-interface 4.4.0",
+      "message": "02010205f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70404040404040404040404040404040404040404040404040404040404040404010101010101010101010101010101010101010101010101010101010101010106a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc0000000000909090909090909090909090909090909090909090909090909090909090909010404020300012801000000030303030303030303030303030303030303030303030303030303030303030301000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "clockSysvar",
+          "SysvarC1ock11111111111111111111111111111111"
+        ],
+        [
+          "authority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "lockupAuthority",
+          "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorizeChecked",
+      "layout": "older",
+      "builder": "solana-stake-interface 4.4.0",
+      "message": "02010205f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70303030303030303030303030303030303030303030303030303030303030303010101010101010101010101010101010101010101010101010101010101010106a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc000000000090909090909090909090909090909090909090909090909090909090909090901040402030001080a00000001000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "clockSysvar",
+          "SysvarC1ock11111111111111111111111111111111"
+        ],
+        [
+          "authority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "newAuthority",
+          "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorizeChecked",
+      "layout": "older",
+      "builder": "solana-stake-interface 4.4.0",
+      "message": "03020206f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f703030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404010101010101010101010101010101010101010101010101010101010101010106a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000009090909090909090909090909090909090909090909090909090909090909090105050304000102080a00000001000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "clockSysvar",
+          "SysvarC1ock11111111111111111111111111111111"
+        ],
+        [
+          "authority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "newAuthority",
+          "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+        ],
+        [
+          "lockupAuthority",
+          "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorizeWithSeed",
+      "layout": "older",
+      "builder": "solana-stake-interface 4.4.0",
+      "message": "02010205f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70404040404040404040404040404040404040404040404040404040404040404010101010101010101010101010101010101010101010101010101010101010106a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000009090909090909090909090909090909090909090909090909090909090909090104040200030154080000000303030303030303030303030303030303030303030303030303030303030303010000000400000000000000736565640808080808080808080808080808080808080808080808080808080808080808",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "base",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "clockSysvar",
+          "SysvarC1ock11111111111111111111111111111111"
+        ],
+        [
+          "lockupAuthority",
+          "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorizeCheckedWithSeed",
+      "layout": "older",
+      "builder": "solana-stake-interface 4.4.0",
+      "message": "02010205f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70303030303030303030303030303030303030303030303030303030303030303010101010101010101010101010101010101010101010101010101010101010106a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc000000000090909090909090909090909090909090909090909090909090909090909090901040402000301340b000000010000000400000000000000736565640808080808080808080808080808080808080808080808080808080808080808",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "base",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "clockSysvar",
+          "SysvarC1ock11111111111111111111111111111111"
+        ],
+        [
+          "newAuthority",
+          "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorizeCheckedWithSeed",
+      "layout": "older",
+      "builder": "solana-stake-interface 4.4.0",
+      "message": "03020206f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f703030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404010101010101010101010101010101010101010101010101010101010101010106a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000009090909090909090909090909090909090909090909090909090909090909090105050300040102340b000000010000000400000000000000736565640808080808080808080808080808080808080808080808080808080808080808",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "base",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "clockSysvar",
+          "SysvarC1ock11111111111111111111111111111111"
+        ],
+        [
+          "newAuthority",
+          "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+        ],
+        [
+          "lockupAuthority",
+          "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "delegateStake",
+      "layout": "older",
+      "builder": "solana-stake-interface 4.4.0",
+      "message": "01000507f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70101010101010101010101010101010101010101010101010101010101010101050505050505050505050505050505050505050505050505050505050505050506a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a7d517193584d0feed9bb3431d13206be544281b57b8566cc5375ff400000006a1d817a502050b680791e6ce6db88e1e5b7150f61fc6790a4eb4d10000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000009090909090909090909090909090909090909090909090909090909090909090106060102030405000402000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "vote",
+          "LbUiWL3xVV8hTFYBVdbTNrpDo41NKS6o3LHHuDzjfcY"
+        ],
+        [
+          "clockSysvar",
+          "SysvarC1ock11111111111111111111111111111111"
+        ],
+        [
+          "stakeHistorySysvar",
+          "SysvarStakeHistory1111111111111111111111111"
+        ],
+        [
+          "stakeConfig",
+          "StakeConfig11111111111111111111111111111111"
+        ],
+        [
+          "stakeAuthority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ]
+      ],
+      "counterparty": "LbUiWL3xVV8hTFYBVdbTNrpDo41NKS6o3LHHuDzjfcY"
+    },
+    {
+      "instruction": "withdraw",
+      "layout": "older",
+      "builder": "solana-stake-interface 4.4.0",
+      "message": "02010307f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f704040404040404040404040404040404040404040404040404040404040404040101010101010101010101010101010101010101010101010101010101010101060606060606060606060606060606060606060606060606060606060606060606a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a7d517193584d0feed9bb3431d13206be544281b57b8566cc5375ff400000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000009090909090909090909090909090909090909090909090909090909090909090106060203040500010c040000000094357700000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "recipient",
+          "QWmroo4YnnMqYW3cnxWkFdaTxGD3P7vMSzwMHGbUzwF"
+        ],
+        [
+          "clockSysvar",
+          "SysvarC1ock11111111111111111111111111111111"
+        ],
+        [
+          "stakeHistorySysvar",
+          "SysvarStakeHistory1111111111111111111111111"
+        ],
+        [
+          "withdrawAuthority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "lockupAuthority",
+          "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq"
+        ]
+      ],
+      "counterparty": "QWmroo4YnnMqYW3cnxWkFdaTxGD3P7vMSzwMHGbUzwF"
+    },
+    {
+      "instruction": "deactivate",
+      "layout": "older",
+      "builder": "solana-stake-interface 4.4.0",
+      "message": "01000204f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7010101010101010101010101010101010101010101010101010101010101010106a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000009090909090909090909090909090909090909090909090909090909090909090103030102000405000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "clockSysvar",
+          "SysvarC1ock11111111111111111111111111111111"
+        ],
+        [
+          "stakeAuthority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ]
+      ],
+      "counterparty": null
+    },
+    {
+      "instruction": "merge",
+      "layout": "older",
+      "builder": "solana-stake-interface 4.4.0",
+      "message": "01000306f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70101010101010101010101010101010101010101010101010101010101010101070707070707070707070707070707070707070707070707070707070707070706a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a7d517193584d0feed9bb3431d13206be544281b57b8566cc5375ff400000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc000000000090909090909090909090909090909090909090909090909090909090909090901050501020304000407000000",
+      "accounts": [
+        [
+          "destinationStake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "sourceStake",
+          "US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"
+        ],
+        [
+          "clockSysvar",
+          "SysvarC1ock11111111111111111111111111111111"
+        ],
+        [
+          "stakeHistorySysvar",
+          "SysvarStakeHistory1111111111111111111111111"
+        ],
+        [
+          "stakeAuthority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ]
+      ],
+      "counterparty": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+    },
+    {
+      "instruction": "initialize",
+      "layout": "current",
+      "builder": "solana-stake-interface 5.1.1",
+      "message": "01000103f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7010101010101010101010101010101010101010101010101010101010101010106a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc000000000090909090909090909090909090909090909090909090909090909090909090901020101740000000009090909090909090909090909090909090909090909090909090909090909090303030303030303030303030303030303030303030303030303030303030303000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "initializeChecked",
+      "layout": "current",
+      "builder": "solana-stake-interface 5.1.1",
+      "message": "02010205f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f703030303030303030303030303030303030303030303030303030303030303030101010101010101010101010101010101010101010101010101010101010101090909090909090909090909090909090909090909090909090909090909090906a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000009090909090909090909090909090909090909090909090909090909090909090104030203010409000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "stakeAuthority",
+          "cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN"
+        ],
+        [
+          "withdrawAuthority",
+          "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorize",
+      "layout": "current",
+      "builder": "solana-stake-interface 5.1.1",
+      "message": "01000103f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7010101010101010101010101010101010101010101010101010101010101010106a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc000000000090909090909090909090909090909090909090909090909090909090909090901020201002801000000030303030303030303030303030303030303030303030303030303030303030301000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "authority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorize",
+      "layout": "current",
+      "builder": "solana-stake-interface 5.1.1",
+      "message": "02010104f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70404040404040404040404040404040404040404040404040404040404040404010101010101010101010101010101010101010101010101010101010101010106a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000009090909090909090909090909090909090909090909090909090909090909090103030200012801000000030303030303030303030303030303030303030303030303030303030303030301000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "authority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "lockupAuthority",
+          "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorizeChecked",
+      "layout": "current",
+      "builder": "solana-stake-interface 5.1.1",
+      "message": "02010104f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70303030303030303030303030303030303030303030303030303030303030303010101010101010101010101010101010101010101010101010101010101010106a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc0000000000909090909090909090909090909090909090909090909090909090909090909010303020001080a00000001000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "authority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "newAuthority",
+          "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorizeChecked",
+      "layout": "current",
+      "builder": "solana-stake-interface 5.1.1",
+      "message": "03020105f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f703030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404010101010101010101010101010101010101010101010101010101010101010106a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc000000000090909090909090909090909090909090909090909090909090909090909090901040403000102080a00000001000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "authority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "newAuthority",
+          "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+        ],
+        [
+          "lockupAuthority",
+          "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorizeWithSeed",
+      "layout": "current",
+      "builder": "solana-stake-interface 5.1.1",
+      "message": "02010104f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70404040404040404040404040404040404040404040404040404040404040404010101010101010101010101010101010101010101010101010101010101010106a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc000000000090909090909090909090909090909090909090909090909090909090909090901030302000154080000000303030303030303030303030303030303030303030303030303030303030303010000000400000000000000736565640808080808080808080808080808080808080808080808080808080808080808",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "base",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "lockupAuthority",
+          "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorizeCheckedWithSeed",
+      "layout": "current",
+      "builder": "solana-stake-interface 5.1.1",
+      "message": "02010104f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70303030303030303030303030303030303030303030303030303030303030303010101010101010101010101010101010101010101010101010101010101010106a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc0000000000909090909090909090909090909090909090909090909090909090909090909010303020001340b000000010000000400000000000000736565640808080808080808080808080808080808080808080808080808080808080808",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "base",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "newAuthority",
+          "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "authorizeCheckedWithSeed",
+      "layout": "current",
+      "builder": "solana-stake-interface 5.1.1",
+      "message": "03020105f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f703030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404010101010101010101010101010101010101010101010101010101010101010106a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc000000000090909090909090909090909090909090909090909090909090909090909090901040403000102340b000000010000000400000000000000736565640808080808080808080808080808080808080808080808080808080808080808",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "base",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "newAuthority",
+          "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+        ],
+        [
+          "lockupAuthority",
+          "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq"
+        ]
+      ],
+      "counterparty": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
+    },
+    {
+      "instruction": "delegateStake",
+      "layout": "current",
+      "builder": "solana-stake-interface 5.1.1",
+      "message": "01000204f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70101010101010101010101010101010101010101010101010101010101010101050505050505050505050505050505050505050505050505050505050505050506a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000009090909090909090909090909090909090909090909090909090909090909090103030102000402000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "vote",
+          "LbUiWL3xVV8hTFYBVdbTNrpDo41NKS6o3LHHuDzjfcY"
+        ],
+        [
+          "stakeAuthority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ]
+      ],
+      "counterparty": "LbUiWL3xVV8hTFYBVdbTNrpDo41NKS6o3LHHuDzjfcY"
+    },
+    {
+      "instruction": "withdraw",
+      "layout": "current",
+      "builder": "solana-stake-interface 5.1.1",
+      "message": "02010105f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f704040404040404040404040404040404040404040404040404040404040404040101010101010101010101010101010101010101010101010101010101010101060606060606060606060606060606060606060606060606060606060606060606a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc0000000000909090909090909090909090909090909090909090909090909090909090909010404020300010c040000000094357700000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "recipient",
+          "QWmroo4YnnMqYW3cnxWkFdaTxGD3P7vMSzwMHGbUzwF"
+        ],
+        [
+          "withdrawAuthority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ],
+        [
+          "lockupAuthority",
+          "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq"
+        ]
+      ],
+      "counterparty": "QWmroo4YnnMqYW3cnxWkFdaTxGD3P7vMSzwMHGbUzwF"
+    },
+    {
+      "instruction": "deactivate",
+      "layout": "current",
+      "builder": "solana-stake-interface 5.1.1",
+      "message": "01000103f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7010101010101010101010101010101010101010101010101010101010101010106a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc000000000090909090909090909090909090909090909090909090909090909090909090901020201000405000000",
+      "accounts": [
+        [
+          "stake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "stakeAuthority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ]
+      ],
+      "counterparty": null
+    },
+    {
+      "instruction": "merge",
+      "layout": "current",
+      "builder": "solana-stake-interface 5.1.1",
+      "message": "01000104f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70101010101010101010101010101010101010101010101010101010101010101070707070707070707070707070707070707070707070707070707070707070706a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000009090909090909090909090909090909090909090909090909090909090909090103030102000407000000",
+      "accounts": [
+        [
+          "destinationStake",
+          "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+        ],
+        [
+          "sourceStake",
+          "US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"
+        ],
+        [
+          "stakeAuthority",
+          "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+        ]
+      ],
+      "counterparty": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+    }
+  ]
+}

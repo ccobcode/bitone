@@ -104,7 +104,10 @@ describe("EVM 原始请求", () => {
         const tx = await evmRaw("call", { data: "6080", gas: "100000" });
         expect(tx.to).toBe("");
         expect(planOf(tx, "evm").call).toMatchObject({ to: null, data: "6080" });
-        expect(previewRequest(tx.request, keys())).toMatchObject({ risk: "unknown", title: "无法识别" });
+        expect(previewRequest(tx.request, keys())).toMatchObject({
+            risk: "unknown",
+            summary: { title: "无法识别" },
+        });
     });
 
     it("授权和撤销来自核心库的调用数据,冷钱包按授权判断", async () => {

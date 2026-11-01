@@ -69,12 +69,10 @@ fun SignedScreen(flow: WalletFlow, brightness: Brightness) {
         QrPlayer(flow, LABEL, fullscreen) { fullscreen = it }
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
             amountLine(review).takeIf { it.isNotEmpty() }?.let { DetailRow("金额", it) }
-            review.counterparty?.let { DetailRow(review.counterpartyLabel.orEmpty(), shortAddress(it), mono = true) }
-            review.rows
-                .firstOrNull { it.label == "付款账户" }
-                ?.let {
-                    DetailRow("签名账户", shortAddress(it.value), mono = true)
-                }
+            review.summary.counterparty?.let {
+                DetailRow(review.summary.counterpartyLabel.orEmpty(), shortAddress(it), mono = true)
+            }
+            review.summary.payer?.let { DetailRow("签名账户", shortAddress(it), mono = true) }
         }
     }
 }

@@ -43,14 +43,19 @@ function lockEntries(text) {
 
 function loadSchemas() {
     const lock = lockEntries(readFileSync(join(SCHEMAS, "lock.toml"), "utf8"));
-    return PROGRAMS.map((entry) => {
-        const file = SOLANA_PREFIX + entry.file;
+    const load = (name) => {
+        const file = SOLANA_PREFIX + name;
         const locked = lock.find((item) => item.file === file);
         if (!locked) throw new Error(`lock.toml 没有 ${file}`);
         const bytes = readFileSync(join(SCHEMAS, file));
         if (sha256(bytes) !== locked.sha256) throw new Error(`${file} 的哈希和 lock.toml 不符`);
-        return { ...entry, path: file, sha256: locked.sha256, root: JSON.parse(bytes) };
-    });
+        return { path: file, sha256: locked.sha256, root: JSON.parse(bytes) };
+    };
+    return PROGRAMS.map((entry) => ({
+        ...entry,
+        ...load(entry.file),
+        older: entry.older ? load(entry.older) : undefined,
+    }));
 }
 
 /** 遍历器认识的类型节点.新节点在这里失败,不会静默进入资产文件. */
@@ -182,13 +187,38 @@ function compactRemaining(node) {
     return { name: node.value.name, signer: node.isSigner === true };
 }
 
-function compactInstruction(instruction, links) {
+const compactAccount = (account) => ({ name: account.name, optional: account.isOptional === true });
+
+/**
+ * 同一条指令的旧布局.除了系统变量和现在的账户逐个相同,所以规则表的路径两种布局都能用.
+ * 第一个系统变量所在的位置就是分辨布局的依据.
+ */
+function olderLayout(older, instruction, accounts) {
+    const names = older?.root.instructions[instruction.name];
+    if (!names) return {};
+    const { sysvars } = older.root;
+    const kept = names.filter((name) => !sysvars[name]);
+    if (kept.join() !== accounts.map((account) => account.name).join()) {
+        throw new Error(`${instruction.name} 的旧布局和 IDL 不符`);
+    }
+    const slot = names.findIndex((name) => sysvars[name]);
+    return {
+        older: {
+            slot,
+            sysvar: sysvars[names[slot]],
+            accounts: names.map(
+                (name) => accounts.find((account) => account.name === name) ?? compactAccount({ name }),
+            ),
+        },
+    };
+}
+
+function compactInstruction(instruction, links, older) {
+    const accounts = (instruction.accounts ?? []).map(compactAccount);
     return {
         name: instruction.name,
-        accounts: (instruction.accounts ?? []).map((account) => ({
-            name: account.name,
-            optional: account.isOptional === true,
-        })),
+        accounts,
+        ...olderLayout(older, instruction, accounts),
         arguments: instruction.arguments.map((argument) => ({
             name: argument.name,
             type: compactType(argument.type, links),
@@ -206,7 +236,7 @@ function batchShape({ instruction, argument, accounts, payload }) {
 function compactProgram(entry) {
     const { program } = entry.root;
     const links = new Set();
-    const instructions = program.instructions.map((instruction) => compactInstruction(instruction, links));
+    const instructions = program.instructions.map((instruction) => compactInstruction(instruction, links, entry.older));
     const definedTypes = {};
     const pending = [...links];
     while (pending.length) {
@@ -229,7 +259,9 @@ function compactProgram(entry) {
 
 function writeAsset(schemas) {
     const asset = {
-        sources: Object.fromEntries(schemas.map((entry) => [entry.path, entry.sha256])),
+        sources: Object.fromEntries(
+            schemas.flatMap((entry) => [entry, entry.older ?? entry]).map((file) => [file.path, file.sha256]),
+        ),
         programs: schemas.map(compactProgram),
     };
     writeFileSync(ASSET, `${JSON.stringify(asset)}\n`);

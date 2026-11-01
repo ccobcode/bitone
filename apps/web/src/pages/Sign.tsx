@@ -323,7 +323,7 @@ function SigningView({ tx }: { tx: TxRecord }) {
                             <Countdown tx={tx} />
                             {review ? (
                                 <Chip tone={refused ? "danger" : review.confirm === "tap" ? "ok" : "warn"}>
-                                    {review.title}
+                                    {review.summary.title}
                                 </Chip>
                             ) : null}
                         </div>
