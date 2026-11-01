@@ -1,4 +1,4 @@
-VERSION   ?= 0.1.0
+VERSION   ?= 0.2.0
 DIST_DIR  := dist/bitone
 DIST_NAME := bitone-v$(VERSION)-$(shell uname -s | tr '[:upper:]' '[:lower:]')-$(shell uname -m)
 
