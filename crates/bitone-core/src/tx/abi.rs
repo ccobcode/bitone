@@ -46,6 +46,8 @@ pub enum Call {
         irregular: bool,
     },
     Multicall(Vec<Vec<u8>>),
+    /// 选择器是已知的,格式不对.
+    Malformed,
     Other,
 }
 
@@ -95,23 +97,31 @@ fn bytes_array(args: &[u8], base: usize) -> Option<Vec<Vec<u8>>> {
         .collect()
 }
 
-/// 授权类调用按前缀判断.合约照样会执行带尾部字节或高位不干净的调用,
-/// 所以这类数据不能降级成无法识别,只标为参数异常.
-fn loose_address(args: &[u8], index: usize) -> Option<[u8; 20]> {
-    word(args, index)?[12..].try_into().ok()
+/// 授权类调用按前缀判断.合约照样会执行带尾部字节,高位不干净或长度不够的调用,
+/// 读不到的字节是 0,所以这类数据不能降级成无法识别,只标为参数异常.
+fn loose_word(args: &[u8], index: usize) -> Word {
+    let tail = args.get(index * 32..).unwrap_or_default();
+    let len = tail.len().min(32);
+    let mut value = [0; 32];
+    value[..len].copy_from_slice(&tail[..len]);
+    value
+}
+
+fn loose_address(args: &[u8], index: usize) -> [u8; 20] {
+    loose_word(args, index)[12..].try_into().expect("20 字节")
 }
 
 fn irregular(args: &[u8], words: usize, addresses: &[usize]) -> bool {
     args.len() != words * 32 || addresses.iter().any(|i| address(args, *i).is_none())
 }
 
-fn approve(args: &[u8], method: &'static str) -> Option<Call> {
-    Some(Call::Approve {
+fn approve(args: &[u8], method: &'static str) -> Call {
+    Call::Approve {
         method,
-        spender: loose_address(args, 0)?,
-        amount: word(args, 1)?,
+        spender: loose_address(args, 0),
+        amount: loose_word(args, 1),
         irregular: irregular(args, 2, &[0]),
-    })
+    }
 }
 
 pub fn decode(data: &[u8]) -> Call {
@@ -120,47 +130,39 @@ pub fn decode(data: &[u8]) -> Call {
     };
     let call = match *selector {
         // 转账相反:格式不对就不是普通转账.
-        TRANSFER if args.len() == 64 => address(args, 0)
+        TRANSFER => address(args, 0)
             .zip(word(args, 1))
+            .filter(|_| args.len() == 64)
             .map(|(to, amount)| Call::Transfer { to, amount }),
-        APPROVE => approve(args, "approve"),
-        INCREASE_ALLOWANCE => approve(args, "increaseAllowance"),
-        INCREASE_APPROVAL => approve(args, "increaseApproval"),
-        SET_APPROVAL_FOR_ALL => {
-            loose_address(args, 0)
-                .zip(word(args, 1))
-                .map(|(operator, value)| Call::SetApprovalForAll {
-                    operator,
-                    approved: value != [0; 32],
-                    irregular: irregular(args, 2, &[0]) || boolean(args, 1).is_none(),
-                })
-        }
-        PERMIT => loose_address(args, 1)
-            .zip(word(args, 2))
-            .map(|(spender, amount)| Call::Approve {
-                method: "permit",
-                spender,
-                amount,
-                irregular: irregular(args, 7, &[0, 1]),
-            }),
-        PERMIT2_APPROVE => loose_address(args, 0)
-            .zip(loose_address(args, 1))
-            .zip(word(args, 2))
-            .map(|((token, spender), amount)| Call::Permit2Approve {
-                token,
-                spender,
-                amount,
-                irregular: irregular(args, 4, &[0, 1]),
-            }),
+        APPROVE => Some(approve(args, "approve")),
+        INCREASE_ALLOWANCE => Some(approve(args, "increaseAllowance")),
+        INCREASE_APPROVAL => Some(approve(args, "increaseApproval")),
+        SET_APPROVAL_FOR_ALL => Some(Call::SetApprovalForAll {
+            operator: loose_address(args, 0),
+            approved: loose_word(args, 1) != [0; 32],
+            irregular: irregular(args, 2, &[0]) || boolean(args, 1).is_none(),
+        }),
+        PERMIT => Some(Call::Approve {
+            method: "permit",
+            spender: loose_address(args, 1),
+            amount: loose_word(args, 2),
+            irregular: irregular(args, 7, &[0, 1]),
+        }),
+        PERMIT2_APPROVE => Some(Call::Permit2Approve {
+            token: loose_address(args, 0),
+            spender: loose_address(args, 1),
+            amount: loose_word(args, 2),
+            irregular: irregular(args, 4, &[0, 1]),
+        }),
         MULTICALL => offset(args, 0)
             .and_then(|base| bytes_array(args, base))
             .map(Call::Multicall),
         MULTICALL_DEADLINE => offset(args, 1)
             .and_then(|base| bytes_array(args, base))
             .map(Call::Multicall),
-        _ => None,
+        _ => return Call::Other,
     };
-    call.unwrap_or(Call::Other)
+    call.unwrap_or(Call::Malformed)
 }
 
 /// 地址的写法随链不同,比如 TRON 用 Base58.
@@ -406,7 +408,9 @@ fn classify_at(style: &Style, contract: &[u8; 20], data: &[u8], has_value: bool,
             result.inner = inner;
             result
         }
-        _ => {
+        // 描述文件不能降级:解不开的已知选择器和超过层数的 multicall 不查清单.
+        Call::Malformed | Call::Multicall(_) => unknown(&contract_text, data),
+        Call::Other => {
             let mut result = unknown(&contract_text, data);
             // 附带原生币的调用不适用已知函数的展示.
             if let Some(known) = style
@@ -587,6 +591,33 @@ mod tests {
         assert_eq!(result.risk, Risk::Approval);
     }
 
+    #[test]
+    fn short_approvals_stay_approvals() {
+        let calls = [
+            call(APPROVE, &[addr(PEER), uint(1)]),
+            call(INCREASE_ALLOWANCE, &[addr(PEER), uint(1)]),
+            call(INCREASE_APPROVAL, &[addr(PEER), uint(1)]),
+            call(SET_APPROVAL_FOR_ALL, &[addr(PEER), uint(1)]),
+            call(PERMIT, &[addr(OTHER), addr(PEER), uint(1)]),
+            call(PERMIT2_APPROVE, &[addr(OTHER), addr(PEER), uint(1)]),
+        ];
+        for data in &calls {
+            for len in [4, 5, 36, 67] {
+                let result = classify(&style(), &OTHER, &data[..len], false);
+                assert_eq!(result.risk, Risk::Approval, "{len}");
+                assert_eq!(result.alerts.len(), 1, "{len}");
+            }
+        }
+    }
+
+    #[test]
+    fn short_approve_reads_missing_bytes_as_zero() {
+        let data = call(APPROVE, &[addr(PEER), uint(0x0102)]);
+        let result = classify(&style(), &OTHER, &data[..data.len() - 1], false);
+        assert_eq!(result.amount.unwrap().text, "256");
+        assert_eq!(result.counterparty, Some(evm_text(&PEER)));
+    }
+
     fn multicall(calls: &[Vec<u8>]) -> Vec<u8> {
         let mut data = MULTICALL.to_vec();
         data.extend_from_slice(&uint(32));
@@ -700,5 +731,41 @@ mod tests {
         assert_eq!(approve.risk, Risk::Approval);
         let with_value = classify(&style, &OTHER, &[0x12, 0x34, 0x56, 0x78], true);
         assert_eq!(with_value.risk, Risk::Unknown);
+    }
+
+    #[test]
+    fn a_manifest_entry_cannot_lower_a_known_selector() {
+        let mut manifest = Manifest::builtin().clone();
+        for known in [TRANSFER, APPROVE, MULTICALL, MULTICALL_DEADLINE] {
+            manifest.functions.push(crate::manifest::KnownFunction {
+                network: "ethereum".into(),
+                contract: evm_text(&OTHER),
+                selector: known.to_lower_hex_string(),
+                title: "质押".into(),
+            });
+        }
+        let style = Style {
+            network: "ethereum",
+            manifest: &manifest,
+            format: &evm_text,
+        };
+        let mut trailing = call(TRANSFER, &[addr(PEER), uint(1)]);
+        trailing.push(0);
+        for bad in [
+            trailing,
+            call(TRANSFER, &[addr(PEER)]),
+            MULTICALL.to_vec(),
+            call(MULTICALL, &[uint(u64::MAX)]),
+            call(MULTICALL_DEADLINE, &[uint(0)]),
+        ] {
+            assert_eq!(classify(&style, &OTHER, &bad, false).risk, Risk::Unknown);
+        }
+        let too_deep = multicall(&[call(APPROVE, &[addr(PEER), uint(1)])]);
+        assert_eq!(
+            classify_at(&style, &OTHER, &too_deep, false, MAX_DEPTH).risk,
+            Risk::Unknown
+        );
+        let short = call(APPROVE, &[addr(PEER)]);
+        assert_eq!(classify(&style, &OTHER, &short, false).risk, Risk::Approval);
     }
 }

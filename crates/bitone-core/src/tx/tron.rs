@@ -479,7 +479,7 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 }
 
 /// 毫秒时间戳转成 UTC 时间,算法见 Howard Hinnant 的 civil_from_days.
-fn utc_time(ms: u64) -> String {
+pub(crate) fn utc_time(ms: u64) -> String {
     let seconds = ms / 1000;
     let z = (seconds / 86_400) as i64 + 719_468;
     let era = z / 146_097;

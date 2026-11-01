@@ -7,6 +7,7 @@ use crate::path::DerivationPath;
 use crate::request::SignRequest;
 use crate::review::{ActionView, AmountView, Forbid, Review, ReviewBuilder, Risk, Row};
 use crate::tx::ReviewContext;
+use crate::tx::tron::utc_time;
 use crate::units::{decimal_from_be, format_units};
 use bitcoin::hex::FromHex;
 use serde_json::Value;
@@ -209,40 +210,47 @@ fn text_field<'a>(value: &'a Value, name: &str) -> Result<&'a str, Forbid> {
     value[name].as_str().ok_or(Forbid::ParseFailed)
 }
 
-type Grant = (String, [u8; 32]);
+/// 代币,额度和额度的过期时间.
+type Grant = (String, [u8; 32], Option<[u8; 32]>);
 
 /// 被授权方,代币和额度.批量授权取全部代币.
 fn permit_grants(data: &Value) -> Result<(String, Vec<Grant>), Forbid> {
     let message = &data["message"];
     let spender = text_field(message, "spender")?.to_string();
-    let grant = |token: &Value, amount: &Value| -> Result<Grant, Forbid> {
+    let grant = |token: &Value, amount: &Value, expiration: Option<&Value>| -> Result<Grant, Forbid> {
         Ok((
             token.as_str().ok_or(Forbid::ParseFailed)?.to_string(),
             uint_word(amount)?,
+            expiration.map(uint_word).transpose()?,
         ))
     };
+    let item = |entry: &Value| grant(&entry["token"], &entry["amount"], entry.get("expiration"));
+    let items = |list: &Value| {
+        list.as_array()
+            .ok_or(Forbid::ParseFailed)?
+            .iter()
+            .map(item)
+            .collect::<Result<Vec<_>, _>>()
+    };
     let grants = match data["primaryType"].as_str() {
-        Some("Permit") => {
-            let token = &data["domain"]["verifyingContract"];
-            vec![grant(token, &message["value"])?]
-        }
-        Some("PermitSingle") => vec![grant(&message["details"]["token"], &message["details"]["amount"])?],
-        Some("PermitBatch") => message["details"]
-            .as_array()
-            .ok_or(Forbid::ParseFailed)?
-            .iter()
-            .map(|d| grant(&d["token"], &d["amount"]))
-            .collect::<Result<_, _>>()?,
-        Some("PermitTransferFrom") => vec![grant(&message["permitted"]["token"], &message["permitted"]["amount"])?],
-        Some("PermitBatchTransferFrom") => message["permitted"]
-            .as_array()
-            .ok_or(Forbid::ParseFailed)?
-            .iter()
-            .map(|p| grant(&p["token"], &p["amount"]))
-            .collect::<Result<_, _>>()?,
+        Some("Permit") => vec![grant(&data["domain"]["verifyingContract"], &message["value"], None)?],
+        Some("PermitSingle") => vec![item(&message["details"])?],
+        Some("PermitBatch") => items(&message["details"])?,
+        Some("PermitTransferFrom") => vec![item(&message["permitted"])?],
+        Some("PermitBatchTransferFrom") => items(&message["permitted"])?,
         _ => return Err(Forbid::MessageSigning),
     };
     Ok((spender, grants))
+}
+
+/// 单位是秒.换算不到日期的值显示原始整数.
+fn time_text(word: &[u8; 32]) -> String {
+    let (high, low) = word.split_at(24);
+    let seconds = u64::from_be_bytes(low.try_into().expect("8 字节"));
+    match seconds.checked_mul(1000) {
+        Some(ms) if high == [0; 24] => utc_time(ms),
+        _ => decimal_from_be(word),
+    }
 }
 
 pub fn review(
@@ -268,7 +276,8 @@ pub fn review(
         counterparty: Some(evm_text(&parse_evm_address(&spender).map_err(|_| Forbid::ParseFailed)?)),
         ..Default::default()
     };
-    for (token, amount) in &grants {
+    let mut unlimited_grants = 0;
+    for (token, amount, expiration) in &grants {
         let raw = decimal_from_be(amount);
         let unlimited = amount[..12] != [0; 12] || amount[12..] == [0xff; 20];
         let asset = ctx.manifest.lookup(network.id(), token);
@@ -291,26 +300,53 @@ pub fn review(
         } else {
             "不在内置清单"
         };
+        let mut rows = vec![
+            Row::mono("代币合约", token.clone()),
+            Row::text("合约清单", listed),
+            Row::text(
+                "额度",
+                if unlimited {
+                    "无限".to_string()
+                } else {
+                    view.text.clone()
+                },
+            ),
+        ];
+        rows.extend(expiration.map(|time| Row::text("额度过期时间", time_text(&time))));
         builder.actions.push(ActionView {
             risk: Risk::Approval,
             title: data["primaryType"].as_str().unwrap_or("Permit").to_string(),
-            rows: vec![
-                Row::mono("代币合约", token.clone()),
-                Row::text("合约清单", listed),
-                Row::text(
-                    "额度",
-                    if unlimited {
-                        "无限".to_string()
-                    } else {
-                        view.text.clone()
-                    },
-                ),
-            ],
+            rows,
         });
-        builder.amount.get_or_insert(view);
+        unlimited_grants += usize::from(unlimited);
+        // 多笔时顶部不放金额,否则小额会盖住后面的无限额度.全部额度都在动作里.
+        if grants.len() == 1 {
+            builder.amount = Some(view);
+        }
     }
+    if grants.len() > 1 {
+        builder
+            .alerts
+            .push(format!("这笔签名包含 {} 个授权,请逐个核对", grants.len()));
+        // 横幅只看顶部金额,多笔时要靠告警说出无限额度.
+        if unlimited_grants > 0 {
+            builder.alerts.push(format!(
+                "其中 {unlimited_grants} 个是无限额度,对方可随时转走全部这种资产"
+            ));
+        }
+    }
+    let contract = text_field(&data["domain"], "verifyingContract")?;
+    let contract = parse_evm_address(contract).map_err(|_| Forbid::ParseFailed)?;
     builder.rows.extend(signer_path_row(network, expected, payer, path));
     builder.rows.push(Row::text("交易类型", "EIP-712 消息"));
+    builder.rows.push(Row::mono("验证合约", evm_text(&contract)));
+    for field in ["deadline", "sigDeadline"] {
+        if let Some(value) = data["message"].get(field) {
+            builder
+                .rows
+                .push(Row::text("签名截止时间", time_text(&uint_word(value)?)));
+        }
+    }
     Ok(builder.finish(network.id()))
 }
 

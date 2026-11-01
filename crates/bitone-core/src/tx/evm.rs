@@ -388,7 +388,7 @@ fn review_tx(
         (None, _) => abi::Classified {
             risk: Risk::Unknown,
             title: "创建合约".to_string(),
-            amount: None,
+            amount: has_value.then(native_amount),
             counterparty_label: None,
             counterparty: None,
             alerts: Vec::new(),
@@ -430,7 +430,7 @@ fn review_tx(
     builder.rows.extend(signer_path_row(network, chain_id, payer, path));
     builder.rows.push(Row::text("Nonce", tx.nonce.to_string()));
     builder.rows.push(Row::text("交易类型", tx_type_label(tx.tx_type)));
-    if has_value && !tx.data.is_empty() {
+    if has_value && (tx.to.is_none() || !tx.data.is_empty()) {
         builder
             .rows
             .push(Row::text("附带金额", format!("{value_text} {}", native.symbol)));

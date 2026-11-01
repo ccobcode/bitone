@@ -69,6 +69,8 @@ pub enum Forbid {
     MissingPrevTx,
     #[error("前序交易与输入不符")]
     PrevTxMismatch,
+    #[error("这个 sighash 不承诺全部输入和输出,签名后交易内容可以被改动")]
+    UnsafeSighash,
     #[error("这类交易暂不支持")]
     Unsupported,
 }

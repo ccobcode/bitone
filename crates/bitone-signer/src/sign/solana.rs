@@ -853,6 +853,38 @@ mod tests {
     }
 
     #[test]
+    fn assign_with_seed_is_a_permission_change() {
+        let s = setup();
+        let mut assign = vec![10, 0, 0, 0];
+        assign.extend_from_slice(&STRANGER);
+        assign.extend_from_slice(&5u64.to_le_bytes());
+        assign.extend_from_slice(b"vault");
+        assign.extend_from_slice(&VICTIM_PROGRAM);
+        let accounts = [key(PEER), payer()];
+        let reviewed = |data: &[u8]| {
+            let message = compose(payer(), &[], &[advance(), ix(SYSTEM_PROGRAM, &accounts, data)]);
+            check(&s, &message)
+        };
+        let review = reviewed(&assign);
+        assert_eq!((review.risk, review.confirm), (Risk::PermissionChange, Confirm::Hold));
+        assert!(action_has(&review, "当前控制方", PEER));
+        // 新所有者在 seed 后面,开头的 32 字节是 base.
+        assert_eq!(
+            review.counterparty.as_deref(),
+            Some(bitcoin::base58::encode(&VICTIM_PROGRAM)).as_deref()
+        );
+        let mut trailing = assign.clone();
+        trailing.push(0);
+        assert_eq!(reviewed(&trailing).risk, Risk::PermissionChange);
+
+        // 布局读不完的指令节点会拒绝,不能把 base 当成新所有者.
+        assert_eq!(reviewed(&assign[..assign.len() - 1]).risk, Risk::Unknown);
+        let mut huge = assign.clone();
+        huge[36..44].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert_eq!(reviewed(&huge).risk, Risk::Unknown);
+    }
+
+    #[test]
     fn advance_must_be_first() {
         let s = setup();
         let message = compose(payer(), &[], &[transfer(1), advance()]);
@@ -1003,7 +1035,7 @@ mod tests {
     }
 
     #[test]
-    fn token_2022_transfer_checked_is_plain_when_listed() {
+    fn token_2022_transfer_checked_is_never_plain() {
         let s = setup();
         let mint = key(USDC);
         let message = compose(
@@ -1011,7 +1043,10 @@ mod tests {
             &[],
             &[advance(), transfer_checked(TOKEN_2022_PROGRAM, mint, 6)],
         );
-        assert_eq!(check(&s, &message).risk, Risk::Transfer);
+        let review = check(&s, &message);
+        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+        let amount = review.amount.unwrap();
+        assert_eq!((amount.text.as_str(), amount.symbol), ("1250000", None));
     }
 
     #[test]

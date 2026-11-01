@@ -1,7 +1,7 @@
 //! 待签名请求和签名结果,见 docs/03-system.md 第 6 节.
 
 use crate::Error;
-use crate::protocol::{FrameEncoder, UR_RESPONSE, VERSION, check_limits};
+use crate::protocol::{FrameEncoder, UR_RESPONSE, VERSION, check_fields, check_limits};
 use minicbor::bytes::ByteVec;
 use minicbor::{Decode, Encode};
 
@@ -41,6 +41,7 @@ impl SignRequest {
 
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         check_limits(bytes)?;
+        check_fields(bytes, &[0, 1, 2, 3, 4, 5, 6, 7])?;
         let request: Self = minicbor::decode(bytes).map_err(|_| Error::Decode)?;
         if request.version != VERSION {
             return Err(Error::UnsupportedVersion);
@@ -69,6 +70,7 @@ impl SignResponse {
 
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         check_limits(bytes)?;
+        check_fields(bytes, &[0, 1, 2])?;
         let response: Self = minicbor::decode(bytes).map_err(|_| Error::Decode)?;
         if response.version != VERSION {
             return Err(Error::UnsupportedVersion);
@@ -84,10 +86,10 @@ impl SignResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::with_field;
 
-    #[test]
-    fn request_round_trip() {
-        let request = SignRequest {
+    fn request() -> SignRequest {
+        SignRequest {
             version: VERSION,
             id: [7; 16],
             fingerprint: [1, 2, 3, 4],
@@ -96,17 +98,53 @@ mod tests {
             paths: vec!["m/44'/60'/0'/0/0".into()],
             payload: vec![2, 1, 0],
             hint: None,
+        }
+    }
+
+    fn response() -> SignResponse {
+        SignResponse {
+            version: VERSION,
+            id: [7; 16],
+            signatures: vec![ByteVec::from(vec![1u8; 65])],
+        }
+    }
+
+    #[test]
+    fn request_round_trip() {
+        assert_eq!(SignRequest::decode(&request().encode()).unwrap(), request());
+        let hinted = SignRequest {
+            hint: Some("owner".into()),
+            ..request()
         };
-        assert_eq!(SignRequest::decode(&request.encode()).unwrap(), request);
+        assert_eq!(SignRequest::decode(&hinted.encode()).unwrap(), hinted);
     }
 
     #[test]
     fn response_round_trip() {
-        let response = SignResponse {
-            version: VERSION,
-            id: [7; 16],
-            signatures: vec![ByteVec::from(vec![1u8; 65])],
-        };
-        assert_eq!(SignResponse::decode(&response.encode()).unwrap(), response);
+        assert_eq!(SignResponse::decode(&response().encode()).unwrap(), response());
+    }
+
+    #[test]
+    fn request_rejects_unknown_and_duplicate_fields() {
+        let bytes = request().encode();
+        for (key, value) in [(8, 0), (9, 1), (4, KIND_TYPED_DATA)] {
+            assert_eq!(
+                SignRequest::decode(&with_field(&bytes, key, value)),
+                Err(Error::Decode),
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn response_rejects_unknown_and_duplicate_fields() {
+        let bytes = response().encode();
+        for (key, value) in [(3, 0), (0, VERSION)] {
+            assert_eq!(
+                SignResponse::decode(&with_field(&bytes, key, value)),
+                Err(Error::Decode),
+                "{key}"
+            );
+        }
     }
 }

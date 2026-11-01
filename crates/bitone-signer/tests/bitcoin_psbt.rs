@@ -551,14 +551,7 @@ mod ownership {
             psbt.inputs[0].sighash_type = sighash(0x81);
             psbt.inputs[1].sighash_type = sighash(0x81);
         });
-        assert_eq!(forbidden(review(&s, payload)), Some(Forbid::MissingPrevTx));
-    }
-
-    #[test]
-    fn single_taproot_input_with_anyone_can_pay_is_only_an_alert() {
-        let s = setup();
-        let payload = forged(&taproot_send(&s), |psbt| psbt.inputs[0].sighash_type = sighash(0x81));
-        assert_eq!(review(&s, payload).confirm, Confirm::Hold);
+        assert_eq!(forbidden(review(&s, payload)), Some(Forbid::UnsafeSighash));
     }
 
     /// 其他钱包的输入把自己声明成 Taproot,本钱包全是 SegWit,同样没有签名能替它作证.
@@ -591,17 +584,6 @@ mod ownership {
         let prev = funding(script(&s.other, SEGWIT), 250_000, 7);
         let payload = forged(&taproot_send(&s), |psbt| {
             add_foreign(psbt, foreign_witness_only(&prev), &prev)
-        });
-        assert_eq!(forbidden(review(&s, payload)), Some(Forbid::MissingPrevTx));
-    }
-
-    #[test]
-    fn anyone_can_pay_does_not_vouch_for_other_inputs() {
-        let s = setup();
-        let prev = funding(script(&s.other, TAPROOT), 250_000, 7);
-        let payload = forged(&taproot_send(&s), |psbt| {
-            add_foreign(psbt, foreign_witness_only(&prev), &prev);
-            psbt.inputs[0].sighash_type = sighash(0x81);
         });
         assert_eq!(forbidden(review(&s, payload)), Some(Forbid::MissingPrevTx));
     }
@@ -670,37 +652,35 @@ mod sighash_types {
     }
 
     #[test]
-    fn other_values_are_high_risk() {
+    fn other_values_are_refused_by_review_and_signing() {
         let s = setup();
-        for (send, value, label) in [
-            (segwit_send(&s), 0x02, "NONE"),
-            (segwit_send(&s), 0x03, "SINGLE"),
-            (segwit_send(&s), 0x81, "ALL + ANYONECANPAY"),
-            (taproot_send(&s), 0x02, "NONE"),
-            (taproot_send(&s), 0x83, "SINGLE + ANYONECANPAY"),
-        ] {
-            let payload = forged(&send, |psbt| psbt.inputs[0].sighash_type = sighash(value));
-            let review = review(&s, payload);
-            assert_eq!(
-                (review.risk, review.confirm),
-                (Risk::Transfer, Confirm::Hold),
-                "{value}"
-            );
-            assert_eq!(review.alerts.len(), 1);
-            assert!(review.alerts[0].contains(label), "{}", review.alerts[0]);
+        for send in [segwit_send(&s), taproot_send(&s)] {
+            for value in [0x02, 0x03, 0x81, 0x82, 0x83] {
+                let payload = forged(&send, |psbt| psbt.inputs[0].sighash_type = sighash(value));
+                let prepared = btc::prepare(Network::Bitcoin, &payload, s.keys.fingerprint);
+                assert_eq!(prepared.unwrap_err(), Forbid::UnsafeSighash, "{value}");
+                assert_eq!(
+                    forbidden(review(&s, payload.clone())),
+                    Some(Forbid::UnsafeSighash),
+                    "{value}"
+                );
+                assert_eq!(
+                    sign(&s, Network::Bitcoin, payload).unwrap_err(),
+                    Error::Refused,
+                    "{value}"
+                );
+            }
         }
     }
 
     #[test]
-    fn none_on_a_legacy_or_nested_input_is_high_risk() {
+    fn none_on_a_legacy_or_nested_input_is_refused() {
         let s = setup();
         for path in [LEGACY, NESTED] {
             let inputs = [utxo(&s, path, 1_000_000, 1)];
             let payload = build_psbt(Network::Bitcoin, &s.keys, &inputs, &[pay(PEER, 400_000)], None).unwrap();
             let payload = forged(&payload, |psbt| psbt.inputs[0].sighash_type = sighash(2));
-            let result = review(&s, payload);
-            assert_eq!(result.confirm, Confirm::Hold, "{path}");
-            assert!(result.alerts.iter().any(|a| a.contains("NONE")));
+            assert_eq!(forbidden(review(&s, payload)), Some(Forbid::UnsafeSighash), "{path}");
         }
     }
 
@@ -711,7 +691,7 @@ mod sighash_types {
         let inputs = [utxo(&s, SEGWIT, 500_000, 1), utxo(&s, LEGACY, 500_000, 2)];
         let payload = build_psbt(Network::Bitcoin, &s.keys, &inputs, &[pay(PEER, 900_000)], None).unwrap();
         let payload = forged(&payload, |psbt| psbt.inputs[1].sighash_type = sighash(3));
-        assert_eq!(forbidden(review(&s, payload)), Some(Forbid::Unsupported));
+        assert_eq!(forbidden(review(&s, payload)), Some(Forbid::UnsafeSighash));
     }
 
     #[test]
@@ -1057,6 +1037,8 @@ mod display {
         assert_eq!(review.amount.as_ref().unwrap().text, "0.003");
         assert_eq!(review.counterparty, None);
         assert_eq!(review.counterparty_label, None);
+        assert_eq!(review.confirm, Confirm::Hold);
+        assert_eq!(review.alerts, vec!["这笔交易有 2 个收款方,请逐个核对"]);
         assert_eq!(review.actions.len(), 3);
         assert!(review.actions.iter().all(|a| a.risk == Risk::Transfer));
         assert!(review.actions[0].rows.iter().any(|r| r.value == PEER));
@@ -1423,13 +1405,18 @@ mod signing {
     }
 
     #[test]
-    fn non_default_sighash_is_signed_as_declared() {
+    fn non_default_sighash_is_neither_signed_nor_verified() {
         let s = setup();
-        let payload = forged(&segwit_send(&s), |psbt| psbt.inputs[0].sighash_type = sighash(2));
-        let (req, response, review) = sign(&s, Network::Bitcoin, payload).unwrap();
-        assert_eq!(review.confirm, Confirm::Hold);
-        assert_eq!(*response.signatures[0].last().unwrap(), 0x02);
-        assert!(btc::verify(Network::Bitcoin, &req, &response).is_ok());
+        let (mut req, response, _) = sign(&s, Network::Bitcoin, segwit_send(&s)).unwrap();
+        req.payload = forged(&req.payload, |psbt| psbt.inputs[0].sighash_type = sighash(2));
+        assert_eq!(
+            sign(&s, Network::Bitcoin, req.payload.clone()).unwrap_err(),
+            Error::Refused
+        );
+        assert_eq!(
+            btc::verify(Network::Bitcoin, &req, &response),
+            Err(CoreError::InvalidParams)
+        );
     }
 
     #[test]

@@ -321,6 +321,13 @@ fn key_at(bytes: &[u8]) -> Option<[u8; 32]> {
     bytes.first_chunk::<32>().copied()
 }
 
+/// AssignWithSeed 的数据依次是 base,seed,新所有者.seed 是 8 字节长度加内容.
+fn seeded_owner(rest: &[u8]) -> Option<[u8; 32]> {
+    let seed = rest.get(32..)?;
+    let len = usize::try_from(le_u64(seed)?).ok()?;
+    key_at(seed.get(8..)?.get(len..)?)
+}
+
 /// AllocateWithSeed.派生地址是公开的,任何人都能往里转一点钱,那样 CreateAccountWithSeed 就会失败,
 /// 这个钱包再也发不出交易.所以分三步:先转入租金,再分配空间,最后初始化.
 /// 分配要付款账户签名,攻击者只能存钱,抢不走这个地址.
@@ -512,8 +519,11 @@ impl Scan<'_> {
         let Some((tag, rest)) = ix.data.split_first_chunk::<4>() else {
             return Effect::unknown("未知系统指令");
         };
-        match (u32::from_le_bytes(*tag), key_at(rest)) {
+        let tag = u32::from_le_bytes(*tag);
+        let key = if tag == 10 { seeded_owner(rest) } else { key_at(rest) };
+        match (tag, key) {
             (1, Some(owner)) => self.permission_change("Assign", self.shown(ix, 0), base58(&owner)),
+            (10, Some(owner)) => self.permission_change("AssignWithSeed", self.shown(ix, 0), base58(&owner)),
             (2, _) => self.transfer_sol(ix).unwrap_or_else(|| Effect::unknown("系统转账")),
             (7, Some(authority)) => {
                 let mut effect = self.permission_change("AuthorizeNonceAccount", self.shown(ix, 1), base58(&authority));
@@ -571,12 +581,12 @@ impl Scan<'_> {
             .filter(|owner| associated_token_address(owner, mint, program).as_ref() == Ok(destination))
     }
 
-    /// 只有规范的形式才可能算普通转账.账户多余,数据有尾部字节或地址来自查找表时节点照样转账,
-    /// 所以金额和目标都要显示,金额用原始整数.
+    /// 只有经典 Token 程序的规范形式才可能算普通转账.Token-2022 的扩展能改变实际效果,
+    /// 账户多余,数据有尾部字节或地址来自查找表时节点照样转账,所以金额和目标都要显示,金额用原始整数.
     fn transfer_checked(&self, ix: &Instruction, program: &[u8; 32], rest: &[u8]) -> Option<Effect> {
         let amount = le_u64(rest)?;
         let decimals = *rest.get(8)?;
-        let exact = rest.len() == 9 && ix.accounts.len() == 4 && !self.uses_lookup(ix);
+        let exact = *program == TOKEN_PROGRAM && rest.len() == 9 && ix.accounts.len() == 4 && !self.uses_lookup(ix);
         let (mint, destination) = (self.account(ix, 1), self.account(ix, 2));
         let view = self.token_view(mint.as_ref().filter(|_| exact), Some(decimals), amount);
         let listed = view.symbol.is_some();

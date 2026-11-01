@@ -29,6 +29,8 @@ mod tests {
     const EVM_PATH: &str = "m/44'/60'/0'/0/0";
     const PEER: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
     const USDT: &str = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+    const PERMIT2: &str = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+    const UINT160_MAX: &str = "1461501637330902918203684832716283019655932542975";
 
     struct Setup {
         wallet: Wallet,
@@ -296,6 +298,24 @@ mod tests {
         assert_eq!(review(&s, &request(&s, "ethereum", tx.encode())).risk, Risk::Unknown);
     }
 
+    #[test]
+    fn contract_creation_shows_its_value() {
+        let s = setup();
+        for data in [Vec::new(), vec![0x60]] {
+            let mut tx = native(1);
+            tx.to = None;
+            tx.data = data;
+            let result = review(&s, &request(&s, "ethereum", tx.encode()));
+            assert_eq!(result.risk, Risk::Unknown);
+            assert_eq!(result.amount.as_ref().unwrap().text, "1.5");
+            assert_eq!(row(&result, "附带金额"), "1.5 ETH");
+        }
+        let mut free = native(1);
+        free.to = None;
+        free.value = Vec::new();
+        assert_eq!(review(&s, &request(&s, "ethereum", free.encode())).amount, None);
+    }
+
     fn with_authorization(chain_id: u8) -> Vec<u8> {
         let mut tx = native(1);
         tx.tx_type = 4;
@@ -403,18 +423,16 @@ mod tests {
         );
     }
 
-    #[test]
-    fn permit2_is_an_approval() {
-        let s = setup();
-        let data = serde_json::json!({
+    fn permit2(primary: &str, details_type: &str, details: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
             "types": {
                 "EIP712Domain": [
                     {"name": "name", "type": "string"},
                     {"name": "chainId", "type": "uint256"},
                     {"name": "verifyingContract", "type": "address"}
                 ],
-                "PermitSingle": [
-                    {"name": "details", "type": "PermitDetails"},
+                primary: [
+                    {"name": "details", "type": details_type},
                     {"name": "spender", "type": "address"},
                     {"name": "sigDeadline", "type": "uint256"}
                 ],
@@ -425,17 +443,85 @@ mod tests {
                     {"name": "nonce", "type": "uint48"}
                 ]
             },
-            "primaryType": "PermitSingle",
-            "domain": {"name": "Permit2", "chainId": 1, "verifyingContract": USDT},
-            "message": {
-                "details": {"token": USDT, "amount": "1000000", "expiration": 1, "nonce": 0},
-                "spender": PEER,
-                "sigDeadline": 1
-            }
-        });
+            "primaryType": primary,
+            "domain": {"name": "Permit2", "chainId": 1, "verifyingContract": PERMIT2},
+            "message": {"details": details, "spender": PEER, "sigDeadline": 2}
+        })
+    }
+
+    fn grant(token: &str, amount: &str) -> serde_json::Value {
+        serde_json::json!({"token": token, "amount": amount, "expiration": 1, "nonce": 0})
+    }
+
+    fn row<'a>(review: &'a Review, label: &str) -> &'a str {
+        review
+            .rows
+            .iter()
+            .chain(review.actions.iter().flat_map(|a| &a.rows))
+            .find(|r| r.label == label)
+            .map_or("", |r| r.value.as_str())
+    }
+
+    #[test]
+    fn permit2_is_an_approval() {
+        let s = setup();
+        let data = permit2("PermitSingle", "PermitDetails", grant(USDT, "1000000"));
         let review = review(&s, &typed_request(&s, &data));
         assert_eq!((review.risk, review.confirm), (Risk::Approval, Confirm::Hold));
-        assert_eq!(review.amount.unwrap().text, "1");
+        assert_eq!(review.amount.as_ref().unwrap().text, "1");
+        assert!(review.alerts.is_empty());
+    }
+
+    #[test]
+    fn permit_batch_has_no_headline_amount() {
+        let s = setup();
+        let details = serde_json::json!([grant(USDT, "1000000"), grant(PEER, "5")]);
+        let data = permit2("PermitBatch", "PermitDetails[]", details);
+        let review = review(&s, &typed_request(&s, &data));
+        assert_eq!(review.risk, Risk::Approval);
+        assert_eq!(review.amount, None);
+        assert_eq!(review.counterparty.as_deref(), Some(PEER));
+        assert_eq!(review.actions.len(), 2);
+        assert_eq!(review.alerts, vec!["这笔签名包含 2 个授权,请逐个核对"]);
+    }
+
+    #[test]
+    fn permit_batch_names_its_unlimited_grants() {
+        let s = setup();
+        let details = serde_json::json!([grant(USDT, "1"), grant(PEER, UINT160_MAX)]);
+        let data = permit2("PermitBatch", "PermitDetails[]", details);
+        let review = review(&s, &typed_request(&s, &data));
+        assert_eq!(review.amount, None);
+        assert_eq!(
+            review.alerts,
+            vec![
+                "这笔签名包含 2 个授权,请逐个核对",
+                "其中 1 个是无限额度,对方可随时转走全部这种资产"
+            ]
+        );
+    }
+
+    #[test]
+    fn typed_rows_show_the_contract_and_the_deadlines() {
+        let s = setup();
+        let result = review(&s, &typed(&s, "Permit", 1.into()));
+        assert_eq!(row(&result, "验证合约"), USDT);
+        assert_eq!(row(&result, "签名截止时间"), "1970-01-01 00:00:01 UTC");
+
+        let single = permit2("PermitSingle", "PermitDetails", grant(USDT, "1000000"));
+        let result = review(&s, &typed_request(&s, &single));
+        assert_eq!(row(&result, "验证合约"), PERMIT2);
+        assert_eq!(row(&result, "签名截止时间"), "1970-01-01 00:00:02 UTC");
+        assert_eq!(row(&result, "额度过期时间"), "1970-01-01 00:00:01 UTC");
+    }
+
+    #[test]
+    fn deadlines_without_a_date_stay_raw_integers() {
+        let s = setup();
+        let mut data = typed_data("Permit", 1.into());
+        data["message"]["deadline"] = UINT160_MAX.into();
+        let result = review(&s, &typed_request(&s, &data));
+        assert_eq!(row(&result, "签名截止时间"), UINT160_MAX);
     }
 
     /// DAI 的 Permit 同名不同字段,`allowed` 才是实际授权,`value` 不进哈希.曾经显示额度 1,实际签下无限授权.

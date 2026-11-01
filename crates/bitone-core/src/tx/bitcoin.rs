@@ -77,24 +77,6 @@ impl Sighash {
         )
     }
 
-    fn anyone_can_pay(self) -> bool {
-        use {EcdsaSighashType as E, TapSighashType as T};
-        matches!(
-            self,
-            Sighash::Ecdsa(E::AllPlusAnyoneCanPay | E::NonePlusAnyoneCanPay | E::SinglePlusAnyoneCanPay)
-                | Sighash::Taproot(T::AllPlusAnyoneCanPay | T::NonePlusAnyoneCanPay | T::SinglePlusAnyoneCanPay)
-        )
-    }
-
-    fn single(self) -> bool {
-        use {EcdsaSighashType as E, TapSighashType as T};
-        matches!(
-            self,
-            Sighash::Ecdsa(E::Single | E::SinglePlusAnyoneCanPay)
-                | Sighash::Taproot(T::Single | T::SinglePlusAnyoneCanPay)
-        )
-    }
-
     fn label(self) -> String {
         let text = match self {
             Sighash::Ecdsa(ty) => ty.to_string(),
@@ -217,7 +199,7 @@ fn origin(
 impl OwnInput {
     /// 这个输入的签名是否承诺全部输入的金额和 script.
     fn vouches_for_all(&self) -> bool {
-        self.kind == AccountKind::Taproot && !self.sighash.anyone_can_pay()
+        self.kind == AccountKind::Taproot
     }
 }
 
@@ -254,26 +236,20 @@ fn spent_output(txin: &TxIn, input: &Input) -> Result<(TxOut, bool), Forbid> {
     }
 }
 
-fn input_sighash(input: &Input, kind: AccountKind, index: usize, outputs: usize) -> Result<Sighash, Forbid> {
+fn input_sighash(input: &Input, kind: AccountKind) -> Result<Sighash, Forbid> {
     let sighash = if kind == AccountKind::Taproot {
         Sighash::Taproot(input.taproot_hash_ty().map_err(|_| Forbid::Unsupported)?)
     } else {
         Sighash::Ecdsa(input.ecdsa_hash_ty().map_err(|_| Forbid::Unsupported)?)
     };
-    // SINGLE 没有对应输出时,旧式 sighash 的原文是常量 1,这个签名能花掉这把钥匙的任何币.
-    if sighash.single() && index >= outputs {
-        return Err(Forbid::Unsupported);
+    // 其他 sighash 不绑定全部输入和输出,这里禁止,核对和签名都走不下去.
+    if !sighash.commits_everything() {
+        return Err(Forbid::UnsafeSighash);
     }
     Ok(sighash)
 }
 
-fn own_input(
-    origin: Origin,
-    input: &Input,
-    index: usize,
-    outputs: usize,
-    network: Network,
-) -> Result<OwnInput, Forbid> {
+fn own_input(origin: Origin, input: &Input, network: Network) -> Result<OwnInput, Forbid> {
     let info = validate_for_network(&origin.path, network).map_err(|e| match e {
         Error::PathNetworkMismatch => Forbid::PathNetworkMismatch,
         _ => Forbid::PathNotAllowed,
@@ -297,7 +273,7 @@ fn own_input(
             }
         }
     }
-    let sighash = input_sighash(input, info.kind, index, outputs)?;
+    let sighash = input_sighash(input, info.kind)?;
     Ok(OwnInput {
         path: origin.path,
         kind: info.kind,
@@ -332,10 +308,8 @@ pub fn prepare(network: Network, payload: &[u8], fingerprint: [u8; 4]) -> Result
     }
 
     let mut inputs = Vec::with_capacity(tx.input.len());
-    for (index, ((txin, input), origin)) in tx.input.iter().zip(&psbt.inputs).zip(origins).enumerate() {
-        let own = origin
-            .map(|o| own_input(o, input, index, tx.output.len(), network))
-            .transpose()?;
+    for ((txin, input), origin) in tx.input.iter().zip(&psbt.inputs).zip(origins) {
+        let own = origin.map(|o| own_input(o, input, network)).transpose()?;
         let (prevout, proven) = spent_output(txin, input)?;
         if let Some(own) = &own
             && own.key.script(own.kind)? != prevout.script_pubkey
@@ -346,7 +320,7 @@ pub fn prepare(network: Network, payload: &[u8], fingerprint: [u8; 4]) -> Result
     }
 
     // 任何一个有效签名都必须来自一次真实的展示.Taproot 签名承诺全部输入的金额和 script,
-    // 声明有假它就无效.ECDSA 和 ANYONECANPAY 只承诺自己这个输入,别的输入造假时依然有效.
+    // 声明有假它就无效.ECDSA 只承诺自己这个输入,别的输入造假时依然有效.
     // "是不是 Taproot"本身也只是 witness_utxo 的声明:把用户的 SegWit 币说成 Taproot,
     // 分两次各骗一个 ECDSA 签名再拼起来,就是 CVE-2020-14199.
     // 所以只要有这样的签名,其余输入都要有前序交易,Taproot 也不例外.
@@ -544,20 +518,13 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
 
     let mut foreign = Vec::new();
     let mut payer_rows = Vec::new();
-    for (index, input) in prepared.inputs.iter().enumerate() {
+    for input in &prepared.inputs {
         let Some(own) = &input.own else {
             foreign.push(input.prevout.value.to_sat());
             continue;
         };
         if derived_script(ctx, &own.path, own.kind)? != input.prevout.script_pubkey {
             return Err(Forbid::AddressMismatch);
-        }
-        if !own.sighash.commits_everything() {
-            builder.alerts.push(format!(
-                "第 {} 个输入的 sighash 是 {},交易内容可能被改动",
-                index + 1,
-                own.sighash.label()
-            ));
         }
         let address = address_text(&input.prevout.script_pubkey, network).ok_or(Forbid::AddressMismatch)?;
         payer_rows.push(Row::mono("付款账户", address));
@@ -628,7 +595,13 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
             builder.counterparty_label = Some("收款地址".to_string());
             builder.counterparty = Some(only.rows[0].value.clone());
         }
-        _ => builder.amount = Some(amount_view(sent)),
+        // 总额盖不住分配:小额给正确地址,大额给攻击者,总额不变.
+        many => {
+            builder.amount = Some(amount_view(sent));
+            builder
+                .alerts
+                .push(format!("这笔交易有 {} 个收款方,请逐个核对", many.len()));
+        }
     }
     builder.actions.append(&mut external);
     builder.actions.append(&mut change_actions);

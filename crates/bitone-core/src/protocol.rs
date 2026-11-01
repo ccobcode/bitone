@@ -60,6 +60,7 @@ impl AccountsExport {
     /// 只有内容全部通过校验才返回.路径不在白名单或与主网,测试网声明冲突的数据不会进入浏览器.
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         check_limits(bytes)?;
+        check_fields(bytes, &[0, 1, 3])?;
         let export: Self = minicbor::decode(bytes).map_err(|_| Error::Decode)?;
         if export.version != VERSION {
             return Err(Error::UnsupportedVersion);
@@ -129,6 +130,7 @@ impl AddressCheck {
 
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         check_limits(bytes)?;
+        check_fields(bytes, &[0, 1, 2, 3, 4])?;
         let check: Self = minicbor::decode(bytes).map_err(|_| Error::Decode)?;
         if check.version != VERSION {
             return Err(Error::UnsupportedVersion);
@@ -190,6 +192,27 @@ pub fn check_limits(bytes: &[u8]) -> Result<(), Error> {
         }
     }
     if stack.is_empty() { Ok(()) } else { Err(Error::Decode) }
+}
+
+/// 解析前走一遍顶层 map.派生的解码器会跳过未知键,重复键取最后一个,这些内容都不能进入核对.
+/// 不定长 map 没有合法来源,直接拒绝.要在 `check_limits` 之后调用.
+pub fn check_fields(bytes: &[u8], known: &[u32]) -> Result<(), Error> {
+    let mut decoder = Decoder::new(bytes);
+    let len = decoder.map().map_err(|_| Error::Decode)?.ok_or(Error::Decode)?;
+    let mut seen = Vec::with_capacity(known.len());
+    for _ in 0..len {
+        let key = decoder.u32().map_err(|_| Error::Decode)?;
+        if !known.contains(&key) || seen.contains(&key) {
+            return Err(Error::Decode);
+        }
+        seen.push(key);
+        decoder.skip().map_err(|_| Error::Decode)?;
+    }
+    if decoder.position() == bytes.len() {
+        Ok(())
+    } else {
+        Err(Error::Decode)
+    }
 }
 
 /// 子容器读完后才关闭父容器,否则最后一项嵌套的数据不会累加深度.
@@ -300,6 +323,15 @@ fn header(part: &str) -> Result<&str, Error> {
     Ok(ur_type)
 }
 
+/// 在顶层 map 末尾加一项.
+#[cfg(test)]
+pub(crate) fn with_field(bytes: &[u8], key: u8, value: u8) -> Vec<u8> {
+    let mut out = bytes.to_vec();
+    out[0] += 1;
+    out.extend([key, value]);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,6 +433,51 @@ mod tests {
             address: "x".into(),
         };
         assert_eq!(AddressCheck::decode(&forged.encode()), Err(Error::PathNetworkMismatch));
+    }
+
+    #[test]
+    fn trailing_bytes_are_rejected() {
+        let mut bytes = sample().encode();
+        bytes.push(0);
+        assert_eq!(AccountsExport::decode(&bytes), Err(Error::Decode));
+    }
+
+    #[test]
+    fn accounts_reject_unknown_and_duplicate_fields() {
+        let bytes = sample().encode();
+        for (key, value) in [(2, 0), (4, 0), (0, VERSION)] {
+            assert_eq!(
+                AccountsExport::decode(&with_field(&bytes, key, value)),
+                Err(Error::Decode),
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn address_check_rejects_unknown_and_duplicate_fields() {
+        let bytes = AddressCheck::new([1, 2, 3, 4], Network::Solana, "m/44'/501'/0'/0'", "x")
+            .unwrap()
+            .encode();
+        for (key, value) in [(5, 0), (0, VERSION)] {
+            assert_eq!(
+                AddressCheck::decode(&with_field(&bytes, key, value)),
+                Err(Error::Decode),
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn long_key_encodings_and_indefinite_maps_cannot_hide_a_field() {
+        let mut long_key = sample().encode();
+        long_key[0] += 1;
+        long_key.extend([0x18, 0x00, VERSION]);
+        assert_eq!(AccountsExport::decode(&long_key), Err(Error::Decode));
+        let mut indefinite = sample().encode();
+        indefinite[0] = 0xbf;
+        indefinite.push(0xff);
+        assert_eq!(AccountsExport::decode(&indefinite), Err(Error::Decode));
     }
 
     #[test]
