@@ -31,7 +31,15 @@ import {
 import { clearLocalData, db, planOf } from "./db";
 import { CONFLICT_SPACING } from "./machine";
 import { broadcastTx, createReplacement, createSetup, createTransfer, replaceAndCancel, resendTx } from "./transfer";
-import { applyObservation, cancelTx, markSigned, sweepExpired, withAccountLock } from "./txs";
+import {
+    applyObservation,
+    cancelTx,
+    markSigned,
+    noteSpent,
+    releaseAbandoned,
+    sweepExpired,
+    withAccountLock,
+} from "./txs";
 
 let fixture: Fixture;
 
@@ -455,6 +463,18 @@ describe("Bitcoin 构建", () => {
         expect(await spendableCoins(account(), "bitcoin")).toEqual([]);
     });
 
+    it("网关再怎么报输入已被花掉,已放弃交易的 UTXO 也不会被再次选中,用户确认后才放开", async () => {
+        bitcoinGateway(coins(BTC_ADDRESS, [100_000]));
+        const tx = await createTransfer(draft(40_000n));
+        await markSigned(tx.id, { raw: "aa", hash: "b".repeat(64) });
+        await cancelTx(tx.id, "用户取消");
+        const now = Date.now();
+        for (let round = 0; round < 12; round++) await noteSpent(tx.id, true, now + round * CONFLICT_SPACING);
+        expect(await spendableCoins(account(), "bitcoin")).toEqual([]);
+        await releaseAbandoned(tx.id);
+        expect(await spendableCoins(account(), "bitcoin")).toHaveLength(1);
+    });
+
     it("找零太小时没有找零,不占用找零索引", async () => {
         bitcoinGateway(coins(BTC_ADDRESS, [40_500]));
         const tx = await createTransfer(draft(40_000n));
@@ -715,6 +735,18 @@ describe("Solana 构建", () => {
         expect((failed as PromiseRejectedResult).reason).toMatchObject({ code: "nonce-busy" });
     });
 
+    it("网关再怎么报 nonce 已推进,已放弃的交易也一直挡着,用户确认后才放开", async () => {
+        solanaGateway();
+        const tx = await createTransfer(draft());
+        await markSigned(tx.id, { raw: "aa", hash: "sig" });
+        await cancelTx(tx.id, "用户取消");
+        const now = Date.now();
+        for (let round = 0; round < 12; round++) await noteSpent(tx.id, true, now + round * CONFLICT_SPACING);
+        await expect(createTransfer(draft())).rejects.toMatchObject({ code: "nonce-busy" });
+        await releaseAbandoned(tx.id);
+        expect((await createTransfer(draft())).state).toBe("signing");
+    });
+
     it("放弃已签名的创建请求后,blockhash 过期就释放,账户不会永远被占住", async () => {
         solanaGateway(false);
         const tx = await createSetup(draft());
@@ -887,6 +919,36 @@ describe("替换和重建", () => {
         await applyObservation(next.id, seen("finalized", "0x2"), { now: Date.now() });
         expect((await db.txs.get(next.id))?.state).toBe("confirmed");
         expect(await db.reservations.count()).toBe(0);
+    });
+
+    it.each(["finalized", "failed"] as const)(
+        "替换交易 %s 的说法只来自网关,已放弃的交易继续占着,用户确认后才释放",
+        async (status) => {
+            evmGateway(7, { "ethereum/broadcast": () => ({ hash: "0x2", status: "accepted" }) });
+            const tx = await broadcasted();
+            await cancelTx(tx.id, "用户取消");
+            const next = await createReplacement(must(await db.txs.get(tx.id)), "cancel", side(PATHS.evm));
+            await markSigned(next.id, { raw: "bb", hash: "0x2" });
+            await broadcastTx(next.id);
+            await applyObservation(next.id, { ...seen(status, "0x2"), stage: "finalized" }, { now: Date.now() });
+            expect((await db.txs.get(next.id))?.state).toBe(status === "finalized" ? "confirmed" : "failed");
+            expect(await db.reservations.toArray()).toMatchObject([{ value: "7", txIds: [tx.id] }]);
+            await expect(createTransfer(evmDraft())).rejects.toMatchObject({ code: "nonce-held" });
+            await releaseAbandoned(tx.id);
+            expect(await db.reservations.count()).toBe(0);
+            expect((await createTransfer(evmDraft())).state).toBe("signing");
+        },
+    );
+
+    it("原交易上链后,已签名没广播的替换请求作废,它的签名继续占着序号", async () => {
+        evmGateway(7, { "ethereum/broadcast": () => ({ hash: "0x1", status: "accepted" }) });
+        const tx = await broadcasted();
+        await broadcastTx(tx.id);
+        const next = await createReplacement(must(await db.txs.get(tx.id)), "speedup", side(PATHS.evm));
+        await markSigned(next.id, { raw: "bb", hash: "0x2" });
+        await applyObservation(tx.id, { ...seen("finalized", "0x1"), stage: "finalized" }, { now: Date.now() });
+        expect((await db.txs.get(next.id))?.state).toBe("abandoned");
+        expect(await db.reservations.toArray()).toMatchObject([{ value: "7", txIds: [next.id] }]);
     });
 
     it("原交易抢先上链:还没签名的替换请求作废,已广播的标为已替换", async () => {

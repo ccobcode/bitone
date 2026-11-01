@@ -5,7 +5,6 @@ import type { Claim } from "./claims";
 import { db, txKey, type NewTx, type Reservation, type ReservationType, type TxRecord } from "./db";
 import { entry } from "./feed";
 import {
-    CONFLICT_ROUNDS,
     CONFLICT_SPACING,
     EXPIRY_GRACE,
     holdsReservation,
@@ -145,6 +144,16 @@ async function saveRecord(tx: TxRecord, now: number): Promise<void> {
     await db.chainTxs.put(entry(tx.walletId, `local:${tx.walletId}`, tx.network, item));
 }
 
+/** 这笔不再占用.替换交易可能还在途,已放弃的交易签名仍然有效,只去掉自己,别人还占着的不能释放. */
+async function dropHolder(id: string, rows: Reservation[]): Promise<void> {
+    for (const row of rows) {
+        const others = await db.txs.bulkGet(row.txIds.filter((txId) => txId !== id));
+        const holders = others.flatMap((tx) => (tx && holdsReservation(tx) ? [tx.id] : []));
+        if (holders.length > 0) await db.reservations.put({ ...row, txIds: holders });
+        else await db.reservations.delete(row.id);
+    }
+}
+
 /** 状态变化后处理占用.上链要等到最终状态才释放,确认中的交易可能被重组退回来. */
 async function settle(before: TxRecord, after: TxRecord, now: number): Promise<void> {
     if (before.state === after.state) return;
@@ -152,18 +161,14 @@ async function settle(before: TxRecord, after: TxRecord, now: number): Promise<v
     const landed = after.state === "confirming" || after.state === "confirmed" || after.state === "failed";
     if (landed) await retireSiblings(after, rows, now);
     if (after.state === "confirmed" || after.state === "failed") {
-        await db.reservations.bulkDelete(rows.map((row) => row.id));
+        // 上链的说法只来自网关.共用占用的已放弃交易签名仍然有效,它的占用留给用户确认.
+        await dropHolder(after.id, rows);
         await markChangeUsed(after);
         await saveRecord(after, now);
         return;
     }
     if (landed || holdsReservation(after)) return;
-    for (const row of rows) {
-        const others = await db.txs.bulkGet(row.txIds.filter((id) => id !== after.id));
-        const holders = others.flatMap((tx) => (tx && holdsReservation(tx) ? [tx.id] : []));
-        if (holders.length > 0) await db.reservations.put({ ...row, txIds: holders });
-        else await db.reservations.delete(row.id);
-    }
+    await dropHolder(after.id, rows);
 }
 
 async function apply(id: string, change: (tx: TxRecord) => TxRecord, now: number): Promise<TxRecord> {
@@ -257,7 +262,7 @@ export async function sweepExpired(now = Date.now()): Promise<void> {
     }
 }
 
-/** 已放弃但签名仍然有效的交易,等它的序号确定作废后释放. */
+/** 已放弃但签名仍然有效,还占着序号的交易. */
 export async function heldByAbandoned(): Promise<TxRecord[]> {
     const rows = await db.txs.where("state").equals("abandoned").toArray();
     const signed = rows.filter((tx) => tx.raw !== undefined);
@@ -265,32 +270,32 @@ export async function heldByAbandoned(): Promise<TxRecord[]> {
     return signed.filter((_, i) => (held[i] ?? 0) > 0);
 }
 
-/** 这笔不再占用.替换交易可能还在途,只去掉自己,别人还占着的不能释放. */
 async function releaseHolder(id: string): Promise<void> {
     await db.transaction("rw", scope(), async () => {
-        for (const row of await db.reservations.where("txIds").equals(id).toArray()) {
-            const others = await db.txs.bulkGet(row.txIds.filter((txId) => txId !== id));
-            const holders = others.flatMap((tx) => (tx && holdsReservation(tx) ? [tx.id] : []));
-            if (holders.length > 0) await db.reservations.put({ ...row, txIds: holders });
-            else await db.reservations.delete(row.id);
-        }
+        await dropHolder(id, await db.reservations.where("txIds").equals(id).toArray());
     });
     announce();
 }
 
-/** 已放弃的交易这一轮的序号是否已被用掉.要连续看到才释放. */
+/**
+ * 记下已放弃的交易这一轮的序号是否已被用掉,给用户看.这只是证据,不释放占用:
+ * 数据来自网关,可能是假的,签名却一直有效.释放要用户确认,见 `releaseAbandoned`.
+ */
 export async function noteSpent(id: string, spent: boolean, now = Date.now()): Promise<void> {
     const tx = await db.txs.get(id);
     if (!tx) return;
-    const spaced = now - (tx.conflictAt ?? 0) >= CONFLICT_SPACING;
     if (!spent) {
         if (tx.conflicts !== 0) await db.txs.update(id, { conflicts: 0 });
         return;
     }
-    if (!spaced) return;
-    const conflicts = tx.conflicts + 1;
-    await db.txs.update(id, { conflicts, conflictAt: now });
-    if (conflicts >= CONFLICT_ROUNDS) await releaseHolder(id);
+    if (now - (tx.conflictAt ?? 0) < CONFLICT_SPACING) return;
+    await db.txs.update(id, { conflicts: tx.conflicts + 1, conflictAt: now });
+}
+
+/** 用户看过证据后,确认这笔已放弃的交易的序号已被用掉.只有详情页的确认能走到这里. */
+export async function releaseAbandoned(id: string): Promise<void> {
+    const tx = await db.txs.get(id);
+    if (tx?.state === "abandoned") await releaseHolder(id);
 }
 
 const CLOSED: ReadonlySet<TxRecord["state"]> = new Set<TxRecord["state"]>(["abandoned", "expired", "replaced"]);

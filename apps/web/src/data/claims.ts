@@ -31,16 +31,12 @@ export async function sharedClaims(tx: Pick<TxRecord, "id">): Promise<Claim[]> {
 }
 
 /**
- * 找到挡路的已放弃交易:它的 nonce 不小于链上 nonce,而且没有别的交易在用.
- * 在它之后构建的交易永远打包不了,要先发替换交易.
+ * 找到挡路的已放弃交易:它还占着 nonce,而且没有别的交易在用.它的签名仍然有效,
+ * 要先发替换交易,或者由用户确认序号已被用掉.这里不看链上 nonce:网关报一个更高的值就能绕过去.
  */
-export function abandonedHolder(
-    rows: readonly Reservation[],
-    txs: readonly TxRecord[],
-    floor: number,
-): TxRecord | null {
+export function abandonedHolder(rows: readonly Reservation[], txs: readonly TxRecord[]): TxRecord | null {
     for (const row of rows) {
-        if (row.type !== "nonce" || Number(row.value) < floor) continue;
+        if (row.type !== "nonce") continue;
         const owners = txs.filter((tx) => row.txIds.includes(tx.id));
         if (owners.length > 0 && owners.every((tx) => tx.state === "abandoned")) return owners[0] ?? null;
     }
