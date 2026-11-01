@@ -72,7 +72,7 @@ impl Harness {
     fn script(&self, path: &str) -> ScriptBuf {
         let parsed = DerivationPath::parse(path).expect("路径有效");
         let key = PublicKey::from_slice(&self.keys.secp256k1(&parsed).expect("账户已导出")).expect("公钥有效");
-        script_for(classify(&parsed).expect("白名单").kind, &key).expect("比特币路径")
+        script_for(classify(&parsed).expect("认得出的路径").kind, &key).expect("比特币路径")
     }
 
     /// 打一笔钱到路径对应的地址,确认后返回 UTXO.
@@ -153,6 +153,7 @@ fn broadcast(h: &Harness, s: Scenario) -> Result<(), String> {
         paths: Vec::new(),
         payload,
         hint: None,
+        chain: None,
     };
 
     let ctx = ReviewContext {

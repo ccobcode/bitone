@@ -108,6 +108,8 @@ apps/
     buildSrc/           构建时从 design/ 生成 Kotlin
 design/
   tokens.json           设计令牌,唯一来源,网页端构建时生成 CSS 变量
+tools/
+  crosscheck/           语料检查和依赖构建检查,在工作区之外,有自己的锁文件
 ```
 
 `bitone-signer` 不进 WASM,网页端的构建产物里不存在任何签名代码.

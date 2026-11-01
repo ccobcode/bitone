@@ -103,29 +103,30 @@ private fun StatePage(
     }
 }
 
-/** AS 自检失败. */
+/** AS 自检失败.强提醒,确认后放行这一次操作.生成新钱包要等自检通过,或者放弃. */
 @Composable
 fun SelfCheckFailedScreen(flow: WalletFlow) {
     val c = BitOneTheme.colors
     val rows =
-        flow.report?.items.orEmpty().map { item ->
-            val color =
-                when (item.state) {
-                    CheckState.Pass -> c.text3
-                    CheckState.Warn -> c.warn
-                    CheckState.Fail -> c.danger
-                }
-            StateRow(item.label, item.value, color)
-        }
+        flow.report
+            ?.items
+            .orEmpty()
+            .filter { it.state != CheckState.Pass }
+            .map { item ->
+                StateRow(item.label, item.value, if (item.state == CheckState.Fail) c.danger else c.warn)
+            }
+    val mayContinue = flow.canAcknowledge
     StatePage(
         flow = flow,
         title = "离线自检",
         icon = Icons.Alert,
-        heading = "签名已锁定",
-        body = "处理下面的问题后重新检测.",
+        heading = if (mayContinue) "这台手机可能不再隔离" else "不能创建钱包",
+        body = if (mayContinue) "气隙可能已不成立.继续只放行这一次操作." else "处理下面的问题后重新检测.",
         rows = rows,
         action = "重新检测",
         onAction = flow::retryCheck,
+        secondary = if (mayContinue) "仍然继续" else "放弃新建",
+        onSecondary = if (mayContinue) flow::acknowledgeCheck else flow.setup::abandonCreate,
     )
 }
 
@@ -173,12 +174,12 @@ fun ParseFailedScreen(flow: WalletFlow) {
 
 private val ForbiddenRules =
     listOf(
-        "没有 Chain ID 的旧式交易",
-        "chain_id 为 0 的 EIP-7702 授权",
-        "裸哈希,消息签名和未支持的 EIP-712",
+        "Chain ID 和网络不符",
+        "本机还不支持的 EIP-712 和其他链的消息签名",
         "路径不在白名单,或与网络冲突",
         "地址与路径不符",
         "缺少必需的前序交易",
+        "编码不合规的数据",
     )
 
 /** AS 禁止签名.[com.ccobcode.bitone.flow.ScanFlow.refusal] 是核心库给的实际原因,下面是全部规则. */
@@ -226,10 +227,10 @@ fun NeedsRecoveryScreen(flow: WalletFlow) {
         title = "钱包",
         icon = Icons.Key,
         heading = "钱包需要恢复",
-        body = "屏幕锁被移除后,硬件密钥已失效.",
+        body = "硬件密钥已失效,或本机数据已损坏.",
         rows =
             listOf(
-                StateRow("第 1 步", "重新设置屏幕锁", c.text),
+                StateRow("第 1 步", "确认已设置屏幕锁", c.text),
                 StateRow("第 2 步", "用助记词恢复", c.text),
             ),
         action = "导入助记词",
@@ -237,18 +238,20 @@ fun NeedsRecoveryScreen(flow: WalletFlow) {
     )
 }
 
-/** 错误 10 次之后. */
+/** AS 导入前的提醒.导入成功后本机原来的钱包就没了,只有助记词能找回资金. */
 @Composable
-fun WipedScreen(flow: WalletFlow) {
-    val c = BitOneTheme.colors
+fun ImportOverwriteScreen(flow: WalletFlow) {
     StatePage(
         flow = flow,
-        title = "钱包",
+        title = "导入助记词",
         icon = Icons.Alert,
-        heading = "钱包已抹除",
-        body = "PIN 错误达到 10 次,可用助记词恢复.",
-        action = "重新开始",
-        onAction = flow::restartAfterWipe,
+        warn = true,
+        heading = "本机钱包会被替换",
+        body = "替换后只有助记词能找回原来的资金.",
+        action = "继续导入",
+        onAction = flow.setup::confirmOverwrite,
+        secondary = "返回",
+        onSecondary = { flow.back() },
     )
 }
 

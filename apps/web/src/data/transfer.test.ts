@@ -5,9 +5,9 @@ import { needsPrevTx, spendableCoins } from "../chains/bitcoin/transfer";
 import { bumpedEvmFees } from "../chains/evm/transfer";
 import { solanaNonceAddress } from "../chains/solana/core";
 import { NONCE_RENT, SOLANA_BLOCKHASH_WINDOW } from "../chains/solana/transfer";
-import { QUOTE_LIFETIME, TransferError } from "../chains/transfer";
-import { TRON_LIFETIME, tronCost, tronFeeLimit } from "../chains/tron/transfer";
-import { accountKeyList, previewRequest } from "../core";
+import { QUOTE_LIFETIME, TransferError, reviewRequest } from "../chains/transfer";
+import { TRON_DEFAULT_FEE_LIMIT, TRON_LIFETIME, tronCost, tronFeeLimit } from "../chains/tron/transfer";
+import { accountKeyList, previewRequest, type Review } from "../core";
 import {
     BTC_ADDRESS,
     EVM_ADDRESS,
@@ -29,6 +29,7 @@ import {
     type Route,
 } from "../testing";
 import { clearLocalData, db, planOf } from "./db";
+import { CONFLICT_SPACING } from "./machine";
 import { broadcastTx, createReplacement, createSetup, createTransfer, replaceAndCancel, resendTx } from "./transfer";
 import { applyObservation, cancelTx, markSigned, sweepExpired, withAccountLock } from "./txs";
 
@@ -54,6 +55,13 @@ function evmGateway(pending = 7, extra: Record<string, Route> = {}) {
 }
 
 const keys = () => accountKeyList(fixture.accounts);
+
+/** 全部输出都回到本钱包.前序交易的输出也叫这个名字,嵌套得更深. */
+function ownOutputsOnly(review: Review): boolean {
+    const outputs = review.fields.filter((row) => row.name === "output");
+    const depth = Math.min(...outputs.map((row) => row.depth));
+    return outputs.filter((row) => row.depth === depth).every((row) => row.own);
+}
 
 const side = (path: string) => ({ wallet: fixture.wallet, accounts: fixture.accounts, account: fixture.account(path) });
 
@@ -81,7 +89,11 @@ describe("EVM 构建", () => {
         expect(tx.hardExpiry).toBe(false);
         expect(tx.expiresAt).toBeGreaterThanOrEqual(before + QUOTE_LIFETIME);
         const review = previewRequest(tx.request, keys());
-        expect(review).toMatchObject({ risk: "transfer", confirm: "tap", counterparty: PEER_EVM });
+        expect(review).toMatchObject({
+            risk: "transfer",
+            confirm: "tap",
+            summary: { counterparty: PEER_EVM },
+        });
         expect(await db.reservations.toArray()).toMatchObject([{ type: "nonce", value: "7", txIds: [tx.id] }]);
     });
 
@@ -147,6 +159,13 @@ describe("EVM 构建", () => {
         expect(await db.txs.count()).toBe(1);
     });
 
+    it("手续费无法确认时,核验结果记在交易上", async () => {
+        evmGateway();
+        const tx = await createTransfer(evmDraft());
+        const signed = await markSigned(tx.id, { raw: "aa", hash: "0x1", feeUnconfirmed: true });
+        expect(signed.feeUnconfirmed).toBe(true);
+    });
+
     it("发了替换交易之后,新交易接在它后面", async () => {
         evmGateway();
         const first = await createTransfer(evmDraft());
@@ -167,6 +186,62 @@ describe("EVM 构建", () => {
         expect(planOf(await createTransfer(evmDraft(999n)), "evm").nonce).toBe(8);
     });
 
+    describe("网关谎报序号已被用掉", () => {
+        const unknown = {
+            hash: "0x1",
+            status: "unknown",
+            stage: null,
+            confirmations: 0,
+            block: null,
+            fee: null,
+        } as const;
+
+        async function sent() {
+            evmGateway(7, { "ethereum/broadcast": () => ({ hash: "0x1", status: "accepted" }) });
+            const tx = await createTransfer(evmDraft());
+            await markSigned(tx.id, { raw: "aa", hash: "0x1" });
+            await broadcastTx(tx.id);
+            return tx;
+        }
+
+        it("占用不释放,同样的转账发不出去,nonce 不会被跳过", async () => {
+            const tx = await sent();
+            const now = Date.now();
+            await applyObservation(tx.id, unknown, { now, conflict: true });
+            await applyObservation(tx.id, unknown, { now: now + CONFLICT_SPACING, conflict: true });
+            expect((await db.txs.get(tx.id))?.state).toBe("uncertain");
+            expect(await db.reservations.toArray()).toMatchObject([{ value: "7", txIds: [tx.id] }]);
+            await expect(createTransfer(evmDraft())).rejects.toMatchObject({ code: "duplicate" });
+        });
+
+        it("早先标成已替换,但替换交易不是这个浏览器发出的,同样的转账也发不出去", async () => {
+            const tx = await sent();
+            await db.txs.update(tx.id, { state: "replaced" });
+            await expect(createTransfer(evmDraft())).rejects.toMatchObject({ code: "duplicate" });
+            expect(planOf(await createTransfer(evmDraft(999n)), "evm").nonce).toBe(8);
+        });
+
+        it("这个浏览器发出的替换交易上链后是定论,可以再发", async () => {
+            const tx = await sent();
+            await db.txs.update(tx.id, { state: "replaced", replacedBy: "TX-2" });
+            expect((await createTransfer(evmDraft())).state).toBe("signing");
+        });
+
+        it("这个浏览器的替换交易上链才标成已替换,原交易和它共用占用", async () => {
+            const tx = await sent();
+            const now = Date.now();
+            await applyObservation(tx.id, unknown, { now, conflict: true });
+            await applyObservation(tx.id, unknown, { now: now + CONFLICT_SPACING, conflict: true });
+            const next = await createReplacement(must(await db.txs.get(tx.id)), "rebuild", side(PATHS.evm));
+            await markSigned(next.id, { raw: "bb", hash: "0x2" });
+            evmGateway(7, { "ethereum/broadcast": () => ({ hash: "0x2", status: "accepted" }) });
+            await broadcastTx(next.id);
+            const included = { ...unknown, hash: "0x2", status: "included", stage: "latest", block: 5 } as const;
+            await applyObservation(next.id, included, { now });
+            expect(await db.txs.get(tx.id)).toMatchObject({ state: "replaced", replacedBy: next.id });
+        });
+    });
+
     it("本地过期释放占用,已过期的待签名交易变成已放弃", async () => {
         evmGateway();
         const tx = await createTransfer(evmDraft());
@@ -177,14 +252,12 @@ describe("EVM 构建", () => {
         expect(await db.reservations.count()).toBe(0);
     });
 
-    it("估算回滚时不写入任何记录", async () => {
+    it("估算失败不拦截,按默认 Gas 上限生成请求", async () => {
         evmGateway(7, { "ethereum/estimate": () => gatewayError("invalid_request", "execution reverted") });
-        await expect(createTransfer(evmDraft())).rejects.toMatchObject({
-            code: "revert",
-            message: "execution reverted",
-        });
-        expect(await db.txs.count()).toBe(0);
-        expect(await db.reservations.count()).toBe(0);
+        const native = await createTransfer(evmDraft());
+        expect(planOf(native, "evm").gasLimit).toBe(21_000);
+        const token = await createTransfer(draftFor(fixture, PATHS.evm, EVM_ADDRESS, "ethereum", PEER_EVM, 5n, USDT));
+        expect(planOf(token, "evm").gasLimit).toBe(65_000);
     });
 
     it("手动填写 Gas 上限时不估算", async () => {
@@ -208,15 +281,20 @@ describe("EVM 构建", () => {
         expect(call.to).toBe(USDT);
         expect(call.data).toMatch(/^0xa9059cbb0{24}70997970c51812dc3a010c7d01b50e0d17dc79c8/);
         expect(planOf(tx, "evm").gasLimit).toBe(60_000);
-        expect(previewRequest(tx.request, keys()).amount).toMatchObject({ symbol: "USDT" });
+        expect(previewRequest(tx.request, keys()).summary.amount).toMatchObject({ symbol: "USDT" });
     });
 
-    it("Forbidden 时抛错,什么都不写,没有二维码可显示", async () => {
+    it("本机预览判定禁止时照样写入,二维码交给冷钱包判断", async () => {
         evmGateway();
         const draft = { ...evmDraft(), account: { ...fixture.account(PATHS.evm), path: PATHS.tron } };
-        await expect(createTransfer(draft)).rejects.toMatchObject({ code: "forbidden" });
-        expect(await db.txs.count()).toBe(0);
-        expect(await db.reservations.count()).toBe(0);
+        const tx = await createTransfer(draft);
+        expect(tx.state).toBe("signing");
+        expect(previewRequest(tx.request, keys()).confirm).toBe("refuse");
+        expect(await db.reservations.count()).toBe(1);
+    });
+
+    it("预览解析不了时是 null,不抛错", () => {
+        expect(reviewRequest(new Uint8Array([1, 2, 3]), fixture.accounts)).toBeNull();
     });
 });
 
@@ -424,8 +502,8 @@ describe("Bitcoin 构建", () => {
             expect(plan.change + plan.fee).toBe(100_000);
             expect(plan.fee).toBeGreaterThan(old.fee);
             const review = previewRequest(next.request, keys());
-            expect(review.counterparty ?? null).toBeNull();
-            expect(review.actions.some((action) => action.title === "转给自己")).toBe(true);
+            expect(review.summary.counterparty ?? null).toBeNull();
+            expect(ownOutputsOnly(review)).toBe(true);
             expect(bitcoinFeeInfo(next.request).fee).toBe(plan.fee);
             expect(await db.reservations.count()).toBe(2);
         });
@@ -462,9 +540,7 @@ describe("Bitcoin 构建", () => {
             expect(faster).toMatchObject({ amount: "0", to: cancel.to });
             expect(plan.fee).toBeGreaterThan(planOf(cancel, "bitcoin").fee);
             expect(plan.change + plan.fee).toBe(100_000);
-            expect(previewRequest(faster.request, keys()).actions.some((action) => action.title === "转给自己")).toBe(
-                true,
-            );
+            expect(ownOutputsOnly(previewRequest(faster.request, keys()))).toBe(true);
         });
 
         it("输入不够付取消的手续费时拒绝", async () => {
@@ -523,7 +599,14 @@ describe("TRON 构建", () => {
         tronGateway();
         const tx = await createTransfer(draft("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"));
         expect(planOf(tx, "tron").feeLimit).toBe(Number(tronFeeLimit(65_000n, 420n)));
-        expect(previewRequest(tx.request, keys()).amount).toMatchObject({ symbol: "USDT" });
+        expect(previewRequest(tx.request, keys()).summary.amount).toMatchObject({ symbol: "USDT" });
+    });
+
+    it("估算失败不拦截,TRC-20 用默认 fee_limit", async () => {
+        tronGateway(Date.now(), { "tron/estimate": () => gatewayError("upstream_unavailable") });
+        const tx = await createTransfer(draft("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"));
+        expect(planOf(tx, "tron").feeLimit).toBe(Number(TRON_DEFAULT_FEE_LIMIT));
+        expect(planOf(await createTransfer(draft()), "tron").feeLimit).toBe(0);
     });
 
     it("能量,带宽和激活费分开计算", () => {
@@ -580,6 +663,12 @@ describe("Solana 构建", () => {
         });
     const draft = (asset = "native", amount = 1_000_000n) =>
         draftFor(fixture, PATHS.solana, SOLANA_ADDRESS, "solana", PEER, amount, asset);
+
+    it("查不到收款方的代币账户时按要创建算,不拦截", async () => {
+        solanaGateway(true, { "solana/estimate": () => gatewayError("upstream_unavailable") });
+        const tx = await createTransfer(draft(USDC));
+        expect(planOf(tx, "solana")).toMatchObject({ createAta: true, computeUnits: 200_000 });
+    });
 
     it("没有 nonce 账户时提示先创建", async () => {
         solanaGateway(false);
@@ -700,7 +789,7 @@ describe("Solana 构建", () => {
         const next = await createReplacement(tx, "rebuild", side(PATHS.solana));
         expect(next).toMatchObject({ kind: "rebuild", to: PEER, amount: tx.amount });
         expect(planOf(next, "solana").nonceValue).toBe(NONCE);
-        expect(previewRequest(next.request, keys()).counterparty).toBe(PEER);
+        expect(previewRequest(next.request, keys()).summary.counterparty).toBe(PEER);
     });
 
     it("取消交易重建时还是推进 nonce", async () => {

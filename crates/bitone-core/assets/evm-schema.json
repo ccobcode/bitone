@@ -1,0 +1,71 @@
+{
+    "gas": { "unit": "Gwei", "decimals": 9 },
+    "transactions": {
+        "legacy": {
+            "label": "旧式",
+            "action": "tx-legacy",
+            "fields": ["nonce", "gas_price", "gas_limit", "to", "value", "data"]
+        },
+        "eip2930": {
+            "label": "访问列表",
+            "action": "tx-eip2930",
+            "fields": ["chain_id", "nonce", "gas_price", "gas_limit", "to", "value", "data", "access_list"]
+        },
+        "eip1559": {
+            "label": "EIP-1559",
+            "action": "tx-eip1559",
+            "fields": [
+                "chain_id",
+                "nonce",
+                "max_priority_fee_per_gas",
+                "max_fee_per_gas",
+                "gas_limit",
+                "to",
+                "value",
+                "data",
+                "access_list"
+            ]
+        },
+        "eip4844": {
+            "label": "EIP-4844 blob",
+            "action": "tx-eip4844",
+            "fields": [
+                "chain_id",
+                "nonce",
+                "max_priority_fee_per_gas",
+                "max_fee_per_gas",
+                "gas_limit",
+                "to",
+                "value",
+                "data",
+                "access_list",
+                "max_fee_per_blob_gas",
+                "blob_versioned_hashes"
+            ]
+        },
+        "eip7702": {
+            "label": "EIP-7702",
+            "action": "tx-eip7702",
+            "fields": [
+                "chain_id",
+                "nonce",
+                "max_priority_fee_per_gas",
+                "max_fee_per_gas",
+                "gas_limit",
+                "to",
+                "value",
+                "data",
+                "access_list",
+                "authorization_list"
+            ]
+        }
+    },
+    "eip155": ["chain_id", "eip155_r", "eip155_s"],
+    "access_entry": ["address", "storage_keys"],
+    "authorization": ["chain_id", "address", "nonce", "y_parity", "r", "s"],
+    "authorization_message": ["chain_id", "address", "nonce"],
+    "eip191": { "tag": 25, "validator": 0, "typed_data": 1, "personal": 69 },
+    "contract_creation": "创建合约",
+    "no_chain_id": "无",
+    "unrecovered": "恢复失败"
+}

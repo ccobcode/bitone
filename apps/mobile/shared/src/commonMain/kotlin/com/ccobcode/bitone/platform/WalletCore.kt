@@ -87,12 +87,15 @@ interface UnlockedWallet {
     /** 全部账户的公钥,核对交易用. */
     fun publicKeys(imported: Boolean): ByteArray
 
-    /** 重新核对后签名.核对不通过时抛异常,不接触私钥. */
+    /** 重新核对后签名.核对不通过,和 [reviewDigest],[renderedFields] 不符,或者要二次确认而 [confirmedTwice] 为假时抛异常,不接触私钥. */
     fun signRequest(
         message: ByteArray,
         keys: ByteArray,
         highestChange: ChangeIndexes,
         manifest: ByteArray?,
+        reviewDigest: ByteArray,
+        renderedFields: UInt,
+        confirmedTwice: Boolean,
     ): SignOutcome
 
     fun close()

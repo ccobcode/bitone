@@ -1,0 +1,1671 @@
+{
+  "root": "protocol.Transaction.raw",
+  "envelope": {
+    "raw_data": 1,
+    "signature": 2
+  },
+  "type_url_prefix": "type.googleapis.com/protocol.",
+  "owner_fields": [
+    "owner_address",
+    "transparent_from_address"
+  ],
+  "contracts": {
+    "0": {
+      "name": "AccountCreateContract",
+      "message": "protocol.AccountCreateContract"
+    },
+    "1": {
+      "name": "TransferContract",
+      "message": "protocol.TransferContract"
+    },
+    "2": {
+      "name": "TransferAssetContract",
+      "message": "protocol.TransferAssetContract"
+    },
+    "3": {
+      "name": "VoteAssetContract",
+      "message": "protocol.VoteAssetContract"
+    },
+    "4": {
+      "name": "VoteWitnessContract",
+      "message": "protocol.VoteWitnessContract"
+    },
+    "5": {
+      "name": "WitnessCreateContract",
+      "message": "protocol.WitnessCreateContract"
+    },
+    "6": {
+      "name": "AssetIssueContract",
+      "message": "protocol.AssetIssueContract"
+    },
+    "8": {
+      "name": "WitnessUpdateContract",
+      "message": "protocol.WitnessUpdateContract"
+    },
+    "9": {
+      "name": "ParticipateAssetIssueContract",
+      "message": "protocol.ParticipateAssetIssueContract"
+    },
+    "10": {
+      "name": "AccountUpdateContract",
+      "message": "protocol.AccountUpdateContract"
+    },
+    "11": {
+      "name": "FreezeBalanceContract",
+      "message": "protocol.FreezeBalanceContract"
+    },
+    "12": {
+      "name": "UnfreezeBalanceContract",
+      "message": "protocol.UnfreezeBalanceContract"
+    },
+    "13": {
+      "name": "WithdrawBalanceContract",
+      "message": "protocol.WithdrawBalanceContract"
+    },
+    "14": {
+      "name": "UnfreezeAssetContract",
+      "message": "protocol.UnfreezeAssetContract"
+    },
+    "15": {
+      "name": "UpdateAssetContract",
+      "message": "protocol.UpdateAssetContract"
+    },
+    "16": {
+      "name": "ProposalCreateContract",
+      "message": "protocol.ProposalCreateContract"
+    },
+    "17": {
+      "name": "ProposalApproveContract",
+      "message": "protocol.ProposalApproveContract"
+    },
+    "18": {
+      "name": "ProposalDeleteContract",
+      "message": "protocol.ProposalDeleteContract"
+    },
+    "19": {
+      "name": "SetAccountIdContract",
+      "message": "protocol.SetAccountIdContract"
+    },
+    "20": {
+      "name": "CustomContract",
+      "message": null
+    },
+    "30": {
+      "name": "CreateSmartContract",
+      "message": "protocol.CreateSmartContract"
+    },
+    "31": {
+      "name": "TriggerSmartContract",
+      "message": "protocol.TriggerSmartContract"
+    },
+    "32": {
+      "name": "GetContract",
+      "message": null
+    },
+    "33": {
+      "name": "UpdateSettingContract",
+      "message": "protocol.UpdateSettingContract"
+    },
+    "41": {
+      "name": "ExchangeCreateContract",
+      "message": "protocol.ExchangeCreateContract"
+    },
+    "42": {
+      "name": "ExchangeInjectContract",
+      "message": "protocol.ExchangeInjectContract"
+    },
+    "43": {
+      "name": "ExchangeWithdrawContract",
+      "message": "protocol.ExchangeWithdrawContract"
+    },
+    "44": {
+      "name": "ExchangeTransactionContract",
+      "message": "protocol.ExchangeTransactionContract"
+    },
+    "45": {
+      "name": "UpdateEnergyLimitContract",
+      "message": "protocol.UpdateEnergyLimitContract"
+    },
+    "46": {
+      "name": "AccountPermissionUpdateContract",
+      "message": "protocol.AccountPermissionUpdateContract"
+    },
+    "48": {
+      "name": "ClearABIContract",
+      "message": "protocol.ClearABIContract"
+    },
+    "49": {
+      "name": "UpdateBrokerageContract",
+      "message": "protocol.UpdateBrokerageContract"
+    },
+    "51": {
+      "name": "ShieldedTransferContract",
+      "message": "protocol.ShieldedTransferContract"
+    },
+    "52": {
+      "name": "MarketSellAssetContract",
+      "message": "protocol.MarketSellAssetContract"
+    },
+    "53": {
+      "name": "MarketCancelOrderContract",
+      "message": "protocol.MarketCancelOrderContract"
+    },
+    "54": {
+      "name": "FreezeBalanceV2Contract",
+      "message": "protocol.FreezeBalanceV2Contract"
+    },
+    "55": {
+      "name": "UnfreezeBalanceV2Contract",
+      "message": "protocol.UnfreezeBalanceV2Contract"
+    },
+    "56": {
+      "name": "WithdrawExpireUnfreezeContract",
+      "message": "protocol.WithdrawExpireUnfreezeContract"
+    },
+    "57": {
+      "name": "DelegateResourceContract",
+      "message": "protocol.DelegateResourceContract"
+    },
+    "58": {
+      "name": "UnDelegateResourceContract",
+      "message": "protocol.UnDelegateResourceContract"
+    },
+    "59": {
+      "name": "CancelAllUnfreezeV2Contract",
+      "message": "protocol.CancelAllUnfreezeV2Contract"
+    }
+  },
+  "enums": {
+    "protocol.AccountType": {
+      "0": "Normal",
+      "1": "AssetIssue",
+      "2": "Contract"
+    },
+    "protocol.Permission.PermissionType": {
+      "0": "Owner",
+      "1": "Witness",
+      "2": "Active"
+    },
+    "protocol.ResourceCode": {
+      "0": "BANDWIDTH",
+      "1": "ENERGY",
+      "2": "TRON_POWER"
+    },
+    "protocol.SmartContract.ABI.Entry.EntryType": {
+      "0": "UnknownEntryType",
+      "1": "Constructor",
+      "2": "Function",
+      "3": "Event",
+      "4": "Fallback",
+      "5": "Receive",
+      "6": "Error"
+    },
+    "protocol.SmartContract.ABI.Entry.StateMutabilityType": {
+      "0": "UnknownMutabilityType",
+      "1": "Pure",
+      "2": "View",
+      "3": "Nonpayable",
+      "4": "Payable"
+    },
+    "protocol.Transaction.Contract.ContractType": {
+      "0": "AccountCreateContract",
+      "1": "TransferContract",
+      "2": "TransferAssetContract",
+      "3": "VoteAssetContract",
+      "4": "VoteWitnessContract",
+      "5": "WitnessCreateContract",
+      "6": "AssetIssueContract",
+      "8": "WitnessUpdateContract",
+      "9": "ParticipateAssetIssueContract",
+      "10": "AccountUpdateContract",
+      "11": "FreezeBalanceContract",
+      "12": "UnfreezeBalanceContract",
+      "13": "WithdrawBalanceContract",
+      "14": "UnfreezeAssetContract",
+      "15": "UpdateAssetContract",
+      "16": "ProposalCreateContract",
+      "17": "ProposalApproveContract",
+      "18": "ProposalDeleteContract",
+      "19": "SetAccountIdContract",
+      "20": "CustomContract",
+      "30": "CreateSmartContract",
+      "31": "TriggerSmartContract",
+      "32": "GetContract",
+      "33": "UpdateSettingContract",
+      "41": "ExchangeCreateContract",
+      "42": "ExchangeInjectContract",
+      "43": "ExchangeWithdrawContract",
+      "44": "ExchangeTransactionContract",
+      "45": "UpdateEnergyLimitContract",
+      "46": "AccountPermissionUpdateContract",
+      "48": "ClearABIContract",
+      "49": "UpdateBrokerageContract",
+      "51": "ShieldedTransferContract",
+      "52": "MarketSellAssetContract",
+      "53": "MarketCancelOrderContract",
+      "54": "FreezeBalanceV2Contract",
+      "55": "UnfreezeBalanceV2Contract",
+      "56": "WithdrawExpireUnfreezeContract",
+      "57": "DelegateResourceContract",
+      "58": "UnDelegateResourceContract",
+      "59": "CancelAllUnfreezeV2Contract"
+    }
+  },
+  "messages": {
+    "google.protobuf.Any": [
+      {
+        "number": 1,
+        "name": "type_url",
+        "kind": "text",
+        "required": true,
+        "show": "type_url"
+      },
+      {
+        "number": 2,
+        "name": "value",
+        "kind": "bytes",
+        "required": true,
+        "show": "contract_value"
+      }
+    ],
+    "protocol.AccountCreateContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "account_address",
+        "kind": "bytes",
+        "show": "address"
+      },
+      {
+        "number": 3,
+        "name": "type",
+        "kind": "enum",
+        "of": "protocol.AccountType"
+      }
+    ],
+    "protocol.AccountId": [
+      {
+        "number": 1,
+        "name": "name",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 2,
+        "name": "address",
+        "kind": "bytes"
+      }
+    ],
+    "protocol.AccountPermissionUpdateContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "owner",
+        "kind": "message",
+        "of": "protocol.Permission",
+        "required": true
+      },
+      {
+        "number": 3,
+        "name": "witness",
+        "kind": "message",
+        "of": "protocol.Permission"
+      },
+      {
+        "number": 4,
+        "name": "actives",
+        "kind": "message",
+        "of": "protocol.Permission",
+        "repeated": true
+      }
+    ],
+    "protocol.AccountUpdateContract": [
+      {
+        "number": 1,
+        "name": "account_name",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 2,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      }
+    ],
+    "protocol.AssetIssueContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "name",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 3,
+        "name": "abbr",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 4,
+        "name": "total_supply",
+        "kind": "int64",
+        "show": "token"
+      },
+      {
+        "number": 5,
+        "name": "frozen_supply",
+        "kind": "message",
+        "of": "protocol.AssetIssueContract.FrozenSupply",
+        "repeated": true
+      },
+      {
+        "number": 6,
+        "name": "trx_num",
+        "kind": "int32"
+      },
+      {
+        "number": 7,
+        "name": "precision",
+        "kind": "int32"
+      },
+      {
+        "number": 8,
+        "name": "num",
+        "kind": "int32"
+      },
+      {
+        "number": 9,
+        "name": "start_time",
+        "kind": "int64",
+        "show": "time"
+      },
+      {
+        "number": 10,
+        "name": "end_time",
+        "kind": "int64",
+        "show": "time"
+      },
+      {
+        "number": 11,
+        "name": "order",
+        "kind": "int64"
+      },
+      {
+        "number": 16,
+        "name": "vote_score",
+        "kind": "int32"
+      },
+      {
+        "number": 20,
+        "name": "description",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 21,
+        "name": "url",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 22,
+        "name": "free_asset_net_limit",
+        "kind": "int64"
+      },
+      {
+        "number": 23,
+        "name": "public_free_asset_net_limit",
+        "kind": "int64"
+      },
+      {
+        "number": 24,
+        "name": "public_free_asset_net_usage",
+        "kind": "int64"
+      },
+      {
+        "number": 25,
+        "name": "public_latest_free_net_time",
+        "kind": "int64",
+        "show": "time"
+      },
+      {
+        "number": 41,
+        "name": "id",
+        "kind": "text"
+      }
+    ],
+    "protocol.AssetIssueContract.FrozenSupply": [
+      {
+        "number": 1,
+        "name": "frozen_amount",
+        "kind": "int64",
+        "show": "token"
+      },
+      {
+        "number": 2,
+        "name": "frozen_days",
+        "kind": "int64"
+      }
+    ],
+    "protocol.CancelAllUnfreezeV2Contract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      }
+    ],
+    "protocol.ClearABIContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "contract_address",
+        "kind": "bytes",
+        "show": "address"
+      }
+    ],
+    "protocol.CreateSmartContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "new_contract",
+        "kind": "message",
+        "of": "protocol.SmartContract"
+      },
+      {
+        "number": 3,
+        "name": "call_token_value",
+        "kind": "int64",
+        "show": "token",
+        "action": "call-token-value"
+      },
+      {
+        "number": 4,
+        "name": "token_id",
+        "kind": "int64"
+      }
+    ],
+    "protocol.DelegateResourceContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "resource",
+        "kind": "enum",
+        "of": "protocol.ResourceCode"
+      },
+      {
+        "number": 3,
+        "name": "balance",
+        "kind": "int64",
+        "show": "coin"
+      },
+      {
+        "number": 4,
+        "name": "receiver_address",
+        "kind": "bytes",
+        "show": "address"
+      },
+      {
+        "number": 5,
+        "name": "lock",
+        "kind": "bool"
+      },
+      {
+        "number": 6,
+        "name": "lock_period",
+        "kind": "int64"
+      }
+    ],
+    "protocol.ExchangeCreateContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "first_token_id",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 3,
+        "name": "first_token_balance",
+        "kind": "int64",
+        "show": "token"
+      },
+      {
+        "number": 4,
+        "name": "second_token_id",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 5,
+        "name": "second_token_balance",
+        "kind": "int64",
+        "show": "token"
+      }
+    ],
+    "protocol.ExchangeInjectContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "exchange_id",
+        "kind": "int64"
+      },
+      {
+        "number": 3,
+        "name": "token_id",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 4,
+        "name": "quant",
+        "kind": "int64",
+        "show": "token"
+      }
+    ],
+    "protocol.ExchangeTransactionContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "exchange_id",
+        "kind": "int64"
+      },
+      {
+        "number": 3,
+        "name": "token_id",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 4,
+        "name": "quant",
+        "kind": "int64",
+        "show": "token"
+      },
+      {
+        "number": 5,
+        "name": "expected",
+        "kind": "int64",
+        "show": "token"
+      }
+    ],
+    "protocol.ExchangeWithdrawContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "exchange_id",
+        "kind": "int64"
+      },
+      {
+        "number": 3,
+        "name": "token_id",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 4,
+        "name": "quant",
+        "kind": "int64",
+        "show": "token"
+      }
+    ],
+    "protocol.FreezeBalanceContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "frozen_balance",
+        "kind": "int64",
+        "show": "coin"
+      },
+      {
+        "number": 3,
+        "name": "frozen_duration",
+        "kind": "int64"
+      },
+      {
+        "number": 10,
+        "name": "resource",
+        "kind": "enum",
+        "of": "protocol.ResourceCode"
+      },
+      {
+        "number": 15,
+        "name": "receiver_address",
+        "kind": "bytes",
+        "show": "address",
+        "action": "receiver-other"
+      }
+    ],
+    "protocol.FreezeBalanceV2Contract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "frozen_balance",
+        "kind": "int64",
+        "show": "coin"
+      },
+      {
+        "number": 3,
+        "name": "resource",
+        "kind": "enum",
+        "of": "protocol.ResourceCode"
+      }
+    ],
+    "protocol.Key": [
+      {
+        "number": 1,
+        "name": "address",
+        "kind": "bytes",
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "weight",
+        "kind": "int64"
+      }
+    ],
+    "protocol.MarketCancelOrderContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "order_id",
+        "kind": "bytes",
+        "show": "hash"
+      }
+    ],
+    "protocol.MarketSellAssetContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "sell_token_id",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 3,
+        "name": "sell_token_quantity",
+        "kind": "int64",
+        "show": "token"
+      },
+      {
+        "number": 4,
+        "name": "buy_token_id",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 5,
+        "name": "buy_token_quantity",
+        "kind": "int64",
+        "show": "token"
+      }
+    ],
+    "protocol.ParticipateAssetIssueContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "to_address",
+        "kind": "bytes",
+        "show": "address"
+      },
+      {
+        "number": 3,
+        "name": "asset_name",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 4,
+        "name": "amount",
+        "kind": "int64",
+        "show": "coin"
+      }
+    ],
+    "protocol.Permission": [
+      {
+        "number": 1,
+        "name": "type",
+        "kind": "enum",
+        "of": "protocol.Permission.PermissionType"
+      },
+      {
+        "number": 2,
+        "name": "id",
+        "kind": "int32"
+      },
+      {
+        "number": 3,
+        "name": "permission_name",
+        "kind": "text"
+      },
+      {
+        "number": 4,
+        "name": "threshold",
+        "kind": "int64"
+      },
+      {
+        "number": 5,
+        "name": "parent_id",
+        "kind": "int32"
+      },
+      {
+        "number": 6,
+        "name": "operations",
+        "kind": "bytes",
+        "show": "operations",
+        "len": 32
+      },
+      {
+        "number": 7,
+        "name": "keys",
+        "kind": "message",
+        "of": "protocol.Key",
+        "repeated": true,
+        "required": true
+      }
+    ],
+    "protocol.ProposalApproveContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "proposal_id",
+        "kind": "int64"
+      },
+      {
+        "number": 3,
+        "name": "is_add_approval",
+        "kind": "bool"
+      }
+    ],
+    "protocol.ProposalCreateContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "parameters",
+        "kind": "message",
+        "of": "protocol.ProposalCreateContract.ParametersEntry",
+        "repeated": true,
+        "map": true
+      }
+    ],
+    "protocol.ProposalCreateContract.ParametersEntry": [
+      {
+        "number": 1,
+        "name": "key",
+        "kind": "int64",
+        "required": true
+      },
+      {
+        "number": 2,
+        "name": "value",
+        "kind": "int64",
+        "required": true
+      }
+    ],
+    "protocol.ProposalDeleteContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "proposal_id",
+        "kind": "int64"
+      }
+    ],
+    "protocol.ReceiveDescription": [
+      {
+        "number": 1,
+        "name": "value_commitment",
+        "kind": "bytes"
+      },
+      {
+        "number": 2,
+        "name": "note_commitment",
+        "kind": "bytes"
+      },
+      {
+        "number": 3,
+        "name": "epk",
+        "kind": "bytes"
+      },
+      {
+        "number": 4,
+        "name": "c_enc",
+        "kind": "bytes"
+      },
+      {
+        "number": 5,
+        "name": "c_out",
+        "kind": "bytes"
+      },
+      {
+        "number": 6,
+        "name": "zkproof",
+        "kind": "bytes"
+      }
+    ],
+    "protocol.SetAccountIdContract": [
+      {
+        "number": 1,
+        "name": "account_id",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 2,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      }
+    ],
+    "protocol.ShieldedTransferContract": [
+      {
+        "number": 1,
+        "name": "transparent_from_address",
+        "kind": "bytes",
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "from_amount",
+        "kind": "int64",
+        "show": "coin"
+      },
+      {
+        "number": 3,
+        "name": "spend_description",
+        "kind": "message",
+        "of": "protocol.SpendDescription",
+        "repeated": true
+      },
+      {
+        "number": 4,
+        "name": "receive_description",
+        "kind": "message",
+        "of": "protocol.ReceiveDescription",
+        "repeated": true
+      },
+      {
+        "number": 5,
+        "name": "binding_signature",
+        "kind": "bytes"
+      },
+      {
+        "number": 6,
+        "name": "transparent_to_address",
+        "kind": "bytes",
+        "show": "address"
+      },
+      {
+        "number": 7,
+        "name": "to_amount",
+        "kind": "int64",
+        "show": "coin"
+      }
+    ],
+    "protocol.SmartContract": [
+      {
+        "number": 1,
+        "name": "origin_address",
+        "kind": "bytes",
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "contract_address",
+        "kind": "bytes",
+        "show": "bytes"
+      },
+      {
+        "number": 3,
+        "name": "abi",
+        "kind": "message",
+        "of": "protocol.SmartContract.ABI"
+      },
+      {
+        "number": 4,
+        "name": "bytecode",
+        "kind": "bytes",
+        "show": "bytes"
+      },
+      {
+        "number": 5,
+        "name": "call_value",
+        "kind": "int64",
+        "show": "coin",
+        "action": "call-value"
+      },
+      {
+        "number": 6,
+        "name": "consume_user_resource_percent",
+        "kind": "int64"
+      },
+      {
+        "number": 7,
+        "name": "name",
+        "kind": "text"
+      },
+      {
+        "number": 8,
+        "name": "origin_energy_limit",
+        "kind": "int64"
+      },
+      {
+        "number": 9,
+        "name": "code_hash",
+        "kind": "bytes",
+        "show": "hash"
+      },
+      {
+        "number": 10,
+        "name": "trx_hash",
+        "kind": "bytes",
+        "show": "hash"
+      },
+      {
+        "number": 11,
+        "name": "version",
+        "kind": "int32"
+      }
+    ],
+    "protocol.SmartContract.ABI": [
+      {
+        "number": 1,
+        "name": "entrys",
+        "kind": "message",
+        "of": "protocol.SmartContract.ABI.Entry",
+        "repeated": true
+      }
+    ],
+    "protocol.SmartContract.ABI.Entry": [
+      {
+        "number": 1,
+        "name": "anonymous",
+        "kind": "bool"
+      },
+      {
+        "number": 2,
+        "name": "constant",
+        "kind": "bool"
+      },
+      {
+        "number": 3,
+        "name": "name",
+        "kind": "text"
+      },
+      {
+        "number": 4,
+        "name": "inputs",
+        "kind": "message",
+        "of": "protocol.SmartContract.ABI.Entry.Param",
+        "repeated": true
+      },
+      {
+        "number": 5,
+        "name": "outputs",
+        "kind": "message",
+        "of": "protocol.SmartContract.ABI.Entry.Param",
+        "repeated": true
+      },
+      {
+        "number": 6,
+        "name": "type",
+        "kind": "enum",
+        "of": "protocol.SmartContract.ABI.Entry.EntryType"
+      },
+      {
+        "number": 7,
+        "name": "payable",
+        "kind": "bool"
+      },
+      {
+        "number": 8,
+        "name": "stateMutability",
+        "kind": "enum",
+        "of": "protocol.SmartContract.ABI.Entry.StateMutabilityType"
+      }
+    ],
+    "protocol.SmartContract.ABI.Entry.Param": [
+      {
+        "number": 1,
+        "name": "indexed",
+        "kind": "bool"
+      },
+      {
+        "number": 2,
+        "name": "name",
+        "kind": "text"
+      },
+      {
+        "number": 3,
+        "name": "type",
+        "kind": "text"
+      }
+    ],
+    "protocol.SpendDescription": [
+      {
+        "number": 1,
+        "name": "value_commitment",
+        "kind": "bytes"
+      },
+      {
+        "number": 2,
+        "name": "anchor",
+        "kind": "bytes"
+      },
+      {
+        "number": 3,
+        "name": "nullifier",
+        "kind": "bytes"
+      },
+      {
+        "number": 4,
+        "name": "rk",
+        "kind": "bytes"
+      },
+      {
+        "number": 5,
+        "name": "zkproof",
+        "kind": "bytes"
+      },
+      {
+        "number": 6,
+        "name": "spend_authority_signature",
+        "kind": "bytes"
+      }
+    ],
+    "protocol.Transaction.Contract": [
+      {
+        "number": 1,
+        "name": "type",
+        "kind": "enum",
+        "of": "protocol.Transaction.Contract.ContractType",
+        "show": "contract_type"
+      },
+      {
+        "number": 2,
+        "name": "parameter",
+        "kind": "message",
+        "of": "google.protobuf.Any",
+        "required": true
+      },
+      {
+        "number": 3,
+        "name": "provider",
+        "kind": "bytes",
+        "action": "field-unused"
+      },
+      {
+        "number": 4,
+        "name": "ContractName",
+        "kind": "bytes",
+        "show": "text",
+        "action": "field-unused"
+      },
+      {
+        "number": 5,
+        "name": "Permission_id",
+        "kind": "int32",
+        "action": "permission-id"
+      }
+    ],
+    "protocol.Transaction.raw": [
+      {
+        "number": 1,
+        "name": "ref_block_bytes",
+        "kind": "bytes",
+        "show": "hash",
+        "len": 2
+      },
+      {
+        "number": 3,
+        "name": "ref_block_num",
+        "kind": "int64",
+        "action": "field-unused"
+      },
+      {
+        "number": 4,
+        "name": "ref_block_hash",
+        "kind": "bytes",
+        "show": "hash",
+        "len": 8
+      },
+      {
+        "number": 8,
+        "name": "expiration",
+        "kind": "int64",
+        "show": "time"
+      },
+      {
+        "number": 9,
+        "name": "auths",
+        "kind": "message",
+        "of": "protocol.authority",
+        "repeated": true,
+        "action": "field-unused"
+      },
+      {
+        "number": 10,
+        "name": "data",
+        "kind": "bytes",
+        "show": "text",
+        "action": "memo"
+      },
+      {
+        "number": 11,
+        "name": "contract",
+        "kind": "message",
+        "of": "protocol.Transaction.Contract",
+        "repeated": true,
+        "required": true,
+        "single": true,
+        "show": "contract"
+      },
+      {
+        "number": 12,
+        "name": "scripts",
+        "kind": "bytes",
+        "action": "field-unused"
+      },
+      {
+        "number": 14,
+        "name": "timestamp",
+        "kind": "int64",
+        "show": "time"
+      },
+      {
+        "number": 18,
+        "name": "fee_limit",
+        "kind": "int64",
+        "show": "coin"
+      }
+    ],
+    "protocol.TransferAssetContract": [
+      {
+        "number": 1,
+        "name": "asset_name",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 2,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 3,
+        "name": "to_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 4,
+        "name": "amount",
+        "kind": "int64",
+        "show": "token"
+      }
+    ],
+    "protocol.TransferContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "to_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 3,
+        "name": "amount",
+        "kind": "int64",
+        "show": "coin"
+      }
+    ],
+    "protocol.TriggerSmartContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "contract_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 3,
+        "name": "call_value",
+        "kind": "int64",
+        "show": "coin",
+        "action": "call-value"
+      },
+      {
+        "number": 4,
+        "name": "data",
+        "kind": "bytes"
+      },
+      {
+        "number": 5,
+        "name": "call_token_value",
+        "kind": "int64",
+        "show": "token",
+        "action": "call-token-value"
+      },
+      {
+        "number": 6,
+        "name": "token_id",
+        "kind": "int64"
+      }
+    ],
+    "protocol.UnDelegateResourceContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "resource",
+        "kind": "enum",
+        "of": "protocol.ResourceCode"
+      },
+      {
+        "number": 3,
+        "name": "balance",
+        "kind": "int64",
+        "show": "coin"
+      },
+      {
+        "number": 4,
+        "name": "receiver_address",
+        "kind": "bytes",
+        "show": "address"
+      }
+    ],
+    "protocol.UnfreezeAssetContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      }
+    ],
+    "protocol.UnfreezeBalanceContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 10,
+        "name": "resource",
+        "kind": "enum",
+        "of": "protocol.ResourceCode"
+      },
+      {
+        "number": 15,
+        "name": "receiver_address",
+        "kind": "bytes",
+        "show": "address",
+        "action": "receiver-other"
+      }
+    ],
+    "protocol.UnfreezeBalanceV2Contract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "unfreeze_balance",
+        "kind": "int64",
+        "show": "coin"
+      },
+      {
+        "number": 3,
+        "name": "resource",
+        "kind": "enum",
+        "of": "protocol.ResourceCode"
+      }
+    ],
+    "protocol.UpdateAssetContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "description",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 3,
+        "name": "url",
+        "kind": "bytes",
+        "show": "text"
+      },
+      {
+        "number": 4,
+        "name": "new_limit",
+        "kind": "int64"
+      },
+      {
+        "number": 5,
+        "name": "new_public_limit",
+        "kind": "int64"
+      }
+    ],
+    "protocol.UpdateBrokerageContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "brokerage",
+        "kind": "int32"
+      }
+    ],
+    "protocol.UpdateEnergyLimitContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "contract_address",
+        "kind": "bytes",
+        "show": "address"
+      },
+      {
+        "number": 3,
+        "name": "origin_energy_limit",
+        "kind": "int64"
+      }
+    ],
+    "protocol.UpdateSettingContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "contract_address",
+        "kind": "bytes",
+        "show": "address"
+      },
+      {
+        "number": 3,
+        "name": "consume_user_resource_percent",
+        "kind": "int64"
+      }
+    ],
+    "protocol.VoteAssetContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "vote_address",
+        "kind": "bytes",
+        "repeated": true,
+        "show": "address"
+      },
+      {
+        "number": 3,
+        "name": "support",
+        "kind": "bool"
+      },
+      {
+        "number": 5,
+        "name": "count",
+        "kind": "int32"
+      }
+    ],
+    "protocol.VoteWitnessContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "votes",
+        "kind": "message",
+        "of": "protocol.VoteWitnessContract.Vote",
+        "repeated": true
+      },
+      {
+        "number": 3,
+        "name": "support",
+        "kind": "bool"
+      }
+    ],
+    "protocol.VoteWitnessContract.Vote": [
+      {
+        "number": 1,
+        "name": "vote_address",
+        "kind": "bytes",
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "vote_count",
+        "kind": "int64"
+      }
+    ],
+    "protocol.WithdrawBalanceContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      }
+    ],
+    "protocol.WithdrawExpireUnfreezeContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      }
+    ],
+    "protocol.WitnessCreateContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 2,
+        "name": "url",
+        "kind": "bytes",
+        "show": "text"
+      }
+    ],
+    "protocol.WitnessUpdateContract": [
+      {
+        "number": 1,
+        "name": "owner_address",
+        "kind": "bytes",
+        "required": true,
+        "show": "address"
+      },
+      {
+        "number": 12,
+        "name": "update_url",
+        "kind": "bytes",
+        "show": "text"
+      }
+    ],
+    "protocol.authority": [
+      {
+        "number": 1,
+        "name": "account",
+        "kind": "message",
+        "of": "protocol.AccountId"
+      },
+      {
+        "number": 2,
+        "name": "permission_name",
+        "kind": "bytes",
+        "show": "text"
+      }
+    ]
+  }
+}

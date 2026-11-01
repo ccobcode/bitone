@@ -24,9 +24,9 @@ pub fn words(entropy: &[u8]) -> Result<Vec<String>, Error> {
     Ok(from_entropy(entropy)?.words().map(String::from).collect())
 }
 
-/// 校验并转换用户输入的助记词.只接受 12 和 24 词.
+/// 校验并转换用户输入的助记词.BIP39 的五种长度都接受,别处生成的钱包也要能导入.
 pub fn entropy_from_words(words: &[String]) -> Result<Zeroizing<Vec<u8>>, Error> {
-    if words.len() != 12 && words.len() != 24 {
+    if !matches!(words.len(), 12 | 15 | 18 | 21 | 24) {
         return Err(Error::InvalidWordCount);
     }
     let phrase = Zeroizing::new(words.join(" "));
@@ -111,6 +111,20 @@ mod tests {
         assert_eq!(entropy_from_words(&bad).unwrap_err(), Error::InvalidMnemonic);
         bad.pop();
         assert_eq!(entropy_from_words(&bad).unwrap_err(), Error::InvalidWordCount);
+    }
+
+    #[test]
+    fn every_bip39_length_imports() {
+        for (count, bytes) in [(15, 20), (18, 24), (21, 28)] {
+            let entropy = vec![7u8; bytes];
+            let list = words(&entropy).unwrap();
+            assert_eq!(list.len(), count);
+            assert_eq!(*entropy_from_words(&list).unwrap(), entropy);
+        }
+        assert_eq!(
+            entropy_from_words(&vec!["abandon".to_string(); 13]).unwrap_err(),
+            Error::InvalidWordCount
+        );
     }
 
     #[test]

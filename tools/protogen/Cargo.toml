@@ -1,0 +1,22 @@
+# 生成 TRON 的 prost 类型和字段表.在工作区之外,有自己的锁文件和工具链,见 docs/10-tx-decoding.md 第 6.4 节.
+[package]
+name = "protogen"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+heck = "=0.5.0"
+prettyplease = "=0.2.37"
+proc-macro2 = "1"
+prost-build = "=0.14.4"
+prost-types = "=0.14.4"
+protox = "=0.10.0"
+quote = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "=0.11.1"
+syn = { version = "2", features = ["full"] }
+toml = "1"

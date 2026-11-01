@@ -99,6 +99,27 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
 
     private var holdJob: Job? = null
 
+    /** 长按满了,等用户再确认一次.只有 [ConfirmMode.HoldConfirm] 才走到这里. */
+    var awaitingSecondConfirm by mutableStateOf(false)
+        private set
+
+    private var confirmedTwice = false
+
+    /** A6 的内容看到底才能确认.一屏放得下时一进页面就是 true,看过之后不再收回. */
+    var reviewRead by mutableStateOf(false)
+        private set
+
+    fun reviewScrolled(canScrollForward: Boolean) {
+        if (!canScrollForward) reviewRead = true
+    }
+
+    /** 通用列表实际画出的行数.签名时传回核心库,和节点数不同就拒绝. */
+    private var renderedFields = 0u
+
+    fun fieldsRendered(count: Int) {
+        renderedFields = count.toUInt()
+    }
+
     // AS
 
     var failure by mutableStateOf("")
@@ -116,13 +137,12 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
 
     // A5
 
-    /** 自检不通过时停在 AS. */
-    fun open() = host.guarded {
-        if (!host.recheck()) return@guarded
+    /** 自检不通过时停在 AS,确认后接着打开. */
+    fun open() = host.operation {
         if (!scanner.hasPermission() && !scanner.requestPermission()) {
             cameraBroken = false
             host.push(Screen.CameraDenied)
-            return@guarded
+            return@operation
         }
         beginScan()
         host.push(Screen.Scan)
@@ -156,6 +176,9 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         frames = 0
         progress = 0f
         mismatchFingerprint = null
+        renderedFields = 0u
+        awaitingSecondConfirm = false
+        confirmedTwice = false
         holdCancel()
     }
 
@@ -239,6 +262,10 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
             }
             reviewed.refused -> refuse(reviewed.alerts.firstOrNull() ?: "这笔交易包含禁止的动作")
             else -> {
+                reviewRead = false
+                renderedFields = 0u
+                awaitingSecondConfirm = false
+                confirmedTwice = false
                 result = ScanResult.Request(reviewed)
                 host.stack = listOf(Screen.Home, Screen.Review)
             }
@@ -267,10 +294,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
     fun openCameraSettings() = scanner.openSettings()
 
     /** 重新输入 BIP39 密码后重新核对. */
-    fun retryPassphrase() = host.guarded {
-        if (!host.recheck()) return@guarded
-        host.loadKeys()
-    }
+    fun retryPassphrase() = host.guarded { host.loadKeys() }
 
     /** 拒绝和 AS 的"退出". */
     fun exitRequest() {
@@ -282,12 +306,15 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
     // A6
 
     fun confirmTap() {
-        if (review?.confirm == ConfirmMode.Tap && host.screen == Screen.Review) proceedToPin()
+        if (reviewRead && review?.confirm == ConfirmMode.Tap && host.screen == Screen.Review) proceedToPin()
     }
 
     /** 按下时开始计时,满 3 秒才继续,中途松手作废.Tap 和 Refuse 都走不到这里. */
     fun holdStart() {
-        if (review?.confirm != ConfirmMode.Hold || host.screen != Screen.Review || host.busy || holdJob != null) return
+        val confirm = review?.confirm
+        if (confirm != ConfirmMode.Hold && confirm != ConfirmMode.HoldConfirm) return
+        if (host.screen != Screen.Review || host.busy || !reviewRead || holdJob != null) return
+        confirmedTwice = false
         holdJob =
             host.scope.launch {
                 repeat(HOLD_TICKS) { tick ->
@@ -296,8 +323,22 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
                 }
                 holdJob = null
                 holdProgress = 0f
-                proceedToPin()
+                if (confirm == ConfirmMode.HoldConfirm) awaitingSecondConfirm = true else proceedToPin()
             }
+    }
+
+    /** 二次确认.只有长按满了才会出现这一步. */
+    fun confirmSecond() {
+        if (!awaitingSecondConfirm || review?.confirm != ConfirmMode.HoldConfirm) return
+        if (host.screen != Screen.Review || host.busy) return
+        awaitingSecondConfirm = false
+        confirmedTwice = true
+        proceedToPin()
+    }
+
+    /** 不继续,回到长按. */
+    fun cancelSecondConfirm() {
+        awaitingSecondConfirm = false
     }
 
     fun holdCancel() {
@@ -306,28 +347,37 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         holdProgress = 0f
     }
 
-    private fun proceedToPin() = host.guarded {
-        if (!host.recheck()) return@guarded
-        host.unlock(UnlockRequest(UnlockPurpose.Sign) { signTask() })
-    }
+    private fun proceedToPin() = host.operation { host.unlock(UnlockRequest(UnlockPurpose.Sign) { signTask() }) }
 
     private fun signTask(): UnlockTask<SignOutcome> {
         val message = scanned?.message
+        val shown = review
+        val rendered = renderedFields
+        val twice = confirmedTwice
         return UnlockTask(
-            use = { wallet, saved -> sign(wallet, saved, requireNotNull(message)) },
+            use = { wallet, saved ->
+                sign(wallet, saved, requireNotNull(message), requireNotNull(shown), rendered, twice)
+            },
             finish = { outcome -> applySigned(outcome) },
         )
     }
 
     /** 用刚解开的钱包算出的公钥重新核对,不用缓存:BIP39 密码这次可能输错,核对页用的公钥不一定对应这个钱包.找零索引在返回之前落盘,屏幕上出现签名时本机已经记下. */
-    private fun sign(wallet: UnlockedWallet, saved: WalletMeta, message: ByteArray): SignOutcome {
+    private fun sign(
+        wallet: UnlockedWallet,
+        saved: WalletMeta,
+        message: ByteArray,
+        shown: ReviewResult,
+        rendered: UInt,
+        twice: Boolean,
+    ): SignOutcome {
         val keys = session.keysOf(wallet, saved)
         val highest = store.readHighestChange()
         val manifest = session.manifestPackage()
         val check = core.reviewRequest(message, keys, highest, manifest)
         if (check.fingerprintMismatch) return SignOutcome.Mismatch(check.requestFingerprint)
         if (check.refused) return SignOutcome.Refused(check.alerts.firstOrNull() ?: "这笔交易包含禁止的动作")
-        val outcome = wallet.signRequest(message, keys, highest, manifest)
+        val outcome = wallet.signRequest(message, keys, highest, manifest, shown.reviewDigest, rendered, twice)
         outcome.changeIndex?.let { index ->
             val slot = if (outcome.changeIsTestnet) highest.testnet else highest.mainnet
             if (index > slot) store.writeHighestChange(outcome.changeIsTestnet, index)
@@ -335,9 +385,14 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         return SignOutcome.Signed(outcome.frames, wallet.fingerprint(), keys)
     }
 
-    private fun applySigned(outcome: SignOutcome) {
+    private suspend fun applySigned(outcome: SignOutcome) {
         when (outcome) {
             is SignOutcome.Signed -> {
+                // 解开钱包要几秒,这期间新出现的失败要先确认.签名丢掉,确认后回到 A7 重来.
+                if (!host.recheck() || host.screen != Screen.Unlock) {
+                    outcome.stream.close()
+                    return
+                }
                 session.remember(outcome.keys, outcome.fingerprint)
                 player.show(outcome.stream)
                 scanned = null
@@ -372,8 +427,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
     /** 扫到的包已经验过签,这里要自检加 PIN,通过后才写入. */
     fun applyManifest() {
         if (result !is ScanResult.Manifest) return
-        host.guarded {
-            if (!host.recheck()) return@guarded
+        host.operation {
             host.unlock(
                 UnlockRequest(UnlockPurpose.ApplyManifest) {
                     UnlockTask(use = { _, _ -> }, finish = { writeManifest() })

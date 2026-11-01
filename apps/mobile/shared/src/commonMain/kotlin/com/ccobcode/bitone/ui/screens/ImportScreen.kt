@@ -53,7 +53,7 @@ fun ImportScreen(flow: WalletFlow) {
         contentGap = Space.s4,
         bottom = { ImportPanel(flow) },
     ) {
-        Segmented(WordCountOptions, flow.setup.wordCount, flow.setup::setImportWordCount)
+        Segmented(ImportWordCountOptions, flow.setup.wordCount, flow.setup::setImportWordCount)
         Card {
             Column(Modifier.padding(Space.s3)) {
                 ThreeColumns(List(flow.setup.wordCount) { it }) { index, _, modifier ->

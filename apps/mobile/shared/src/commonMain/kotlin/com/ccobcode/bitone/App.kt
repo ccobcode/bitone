@@ -20,6 +20,7 @@ import com.ccobcode.bitone.ui.screens.CameraDeniedScreen
 import com.ccobcode.bitone.ui.screens.ExportScreen
 import com.ccobcode.bitone.ui.screens.FingerprintMismatchScreen
 import com.ccobcode.bitone.ui.screens.ForbiddenScreen
+import com.ccobcode.bitone.ui.screens.ImportOverwriteScreen
 import com.ccobcode.bitone.ui.screens.ImportScreen
 import com.ccobcode.bitone.ui.screens.MainTabs
 import com.ccobcode.bitone.ui.screens.ManifestScreen
@@ -35,7 +36,6 @@ import com.ccobcode.bitone.ui.screens.UnlockScreen
 import com.ccobcode.bitone.ui.screens.VerifyScreen
 import com.ccobcode.bitone.ui.screens.ViewWordsScreen
 import com.ccobcode.bitone.ui.screens.WelcomeScreen
-import com.ccobcode.bitone.ui.screens.WipedScreen
 import com.ccobcode.bitone.ui.theme.BitOneFonts
 import com.ccobcode.bitone.ui.theme.BitOneTheme
 
@@ -85,7 +85,7 @@ fun App(flow: WalletFlow, brightness: Brightness, fonts: BitOneFonts = BitOneFon
                     Screen.Forbidden -> ForbiddenScreen(flow)
                     Screen.CameraDenied -> CameraDeniedScreen(flow)
                     Screen.NeedsRecovery -> NeedsRecoveryScreen(flow)
-                    Screen.Wiped -> WipedScreen(flow)
+                    Screen.ImportOverwrite -> ImportOverwriteScreen(flow)
                 }
             }
         }

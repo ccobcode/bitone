@@ -18,6 +18,8 @@ use tokio::time::{Instant, timeout};
 /// 每批查询的地址数,与 HTTP 接口的单次上限一致.
 const CHUNK: usize = 100;
 const SIGNAL_QUEUE: usize = 64;
+/// 连续这么多批失败就当上游故障,结束本轮,不逐批等超时.
+const MAX_FAILED_CHUNKS: usize = 3;
 
 /// 只有高度变化时两轮之间的最短间隔.BSC 和 Solana 不到一秒一个块,没有必要每块都通知.
 /// 地址有动静时不等它.
@@ -32,14 +34,19 @@ impl Drop for AbortOnDrop {
     }
 }
 
-/// 分批查询当前余额,按地址分组.第一次失败就结束本轮,上游故障时不逐批等超时.
-/// 没查到的地址不出现在结果里.
+/// 分批查询当前余额,按地址分组.没查到的地址不出现在结果里,一批失败不影响后面的批次.
 pub async fn current_balances(pool: &Pool, addresses: &[String]) -> HashMap<String, Vec<Balance>> {
     let mut grouped: HashMap<String, Vec<Balance>> = HashMap::new();
+    let mut failed = 0;
     for chunk in addresses.chunks(CHUNK) {
         let Ok(balances) = pool.balances(chunk).await else {
-            break;
+            failed += 1;
+            if failed == MAX_FAILED_CHUNKS {
+                break;
+            }
+            continue;
         };
+        failed = 0;
         for balance in balances {
             grouped.entry(balance.address.clone()).or_default().push(balance);
         }
@@ -226,18 +233,22 @@ impl Follower {
         })
     }
 
-    /// 查一轮并通知全部订阅.`query` 里的地址都查到才推进,否则返回假,这些地址下一轮重查.
-    async fn round(&self, pool: &Pool, height: u64, query: &[String], touched: &HashSet<String>) -> bool {
+    /// 查一轮并通知订阅.用到的地址都查到的订阅才推进,其余的等下一轮,一批查询失败不拖累别人.
+    /// 返回没推进的订阅的全部地址,全部推进时是空的.
+    async fn round(&self, pool: &Pool, height: u64, query: &[String], touched: &HashSet<String>) -> HashSet<String> {
         let watchers: Vec<Arc<Watcher>> = self.lock().watchers.values().cloned().collect();
         let current = current_balances(pool, query).await;
-        if current.len() != query.len() {
-            return false;
-        }
-        let notices = watchers
+        let missing: HashSet<&String> = query.iter().filter(|address| !current.contains_key(*address)).collect();
+        let (held, ready): (Vec<_>, Vec<_>) = watchers
             .iter()
+            .partition(|watcher| watcher.addresses.iter().any(|address| missing.contains(address)));
+        let notices = ready
+            .into_iter()
             .map(|watcher| watcher.notify(pool, height, &current, touched));
         join_all(notices).await;
-        true
+        held.into_iter()
+            .flat_map(|watcher| watcher.addresses.iter().cloned())
+            .collect()
     }
 }
 
@@ -319,8 +330,10 @@ async fn follow(networks: Arc<Networks>, follower: Arc<Follower>) {
         }
         next = Instant::now() + pause;
         let query = pending.query(&follower.watched.borrow());
-        if follower.round(pool, head, &query, &pending.touched).await {
-            pending.touched.clear();
+        let held = follower.round(pool, head, &query, &pending.touched).await;
+        // 已推进的订阅不用再查.只留下没推进的,它们下一轮要看到这些动静.
+        pending.touched.retain(|address| held.contains(address));
+        if held.is_empty() {
             pending.reconcile = false;
         } else {
             retry = Instant::now() + poll_interval;
@@ -331,15 +344,28 @@ async fn follow(networks: Arc<Networks>, follower: Arc<Follower>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::upstream::{Broadcast, Cursor, HistoryPage, Query, RawTx, Tx, Upstream};
+    use crate::upstream::{Broadcast, Cursor, Failed, HistoryPage, NATIVE, Query, RawTx, Tx, Upstream, balance};
     use futures_util::future::BoxFuture;
     use serde_json::Value;
+    use std::iter::once;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    struct Quiet;
+    /// 有地址以 `bad` 开头的这一批失败.
+    #[derive(Clone, Default)]
+    struct Quiet {
+        bad: &'static str,
+        queries: Arc<AtomicUsize>,
+    }
 
     impl Upstream for Quiet {
-        fn balances<'a>(&'a self, _: &'a [String]) -> Query<'a, Vec<Balance>> {
-            Box::pin(async { Ok(Vec::new()) })
+        fn balances<'a>(&'a self, addresses: &'a [String]) -> Query<'a, Vec<Balance>> {
+            self.queries.fetch_add(1, Ordering::Relaxed);
+            let failed = addresses.iter().any(|address| address.starts_with(self.bad));
+            let rows = addresses
+                .iter()
+                .map(|address| balance(address, NATIVE, "1".to_string()));
+            let rows: Vec<Balance> = rows.collect();
+            Box::pin(async move { if failed { Err(Failed) } else { Ok(rows) } })
         }
         fn height(&self) -> Query<'_, u64> {
             Box::pin(async { Ok(1) })
@@ -361,7 +387,7 @@ mod tests {
     /// 队列满时推送发不出去.长连接下这些地址不会再被查询,只能让客户端自己补.
     #[tokio::test]
     async fn an_update_the_queue_refused_makes_the_next_one_ask_for_a_refill() {
-        let pool = Pool::new(vec![Box::new(Quiet)], true, Duration::from_secs(1));
+        let pool = Pool::new(vec![Box::new(Quiet::default())], true, Duration::from_secs(1));
         let (out, mut sent) = mpsc::channel(1);
         out.try_send(String::new()).unwrap();
         let watcher = Watcher::new("s".to_string(), vec!["a".to_string()], out, Some(10), HashMap::new());
@@ -377,5 +403,65 @@ mod tests {
         watcher.notify(&pool, 13, &HashMap::new(), &HashSet::new()).await;
         let update: Value = serde_json::from_str(&sent.recv().await.unwrap()).unwrap();
         assert_eq!(update["params"]["txs"], json!([]), "补取一次就够了");
+    }
+
+    fn quiet_pool(upstream: Quiet) -> Pool {
+        Pool::new(vec![Box::new(upstream)], true, Duration::from_secs(1))
+    }
+
+    /// 一批失败时,用到这批地址的订阅等下一轮,别人照常收到推送.
+    #[tokio::test]
+    async fn a_failed_chunk_only_holds_the_subscriptions_that_need_it() {
+        let pool = quiet_pool(Quiet {
+            bad: "bad",
+            ..Quiet::default()
+        });
+        let follower = Follower::new(Network::Ethereum, Duration::from_secs(1));
+        let query: Vec<String> = once("bad".to_string())
+            .chain((0..CHUNK).map(|i| format!("a{i}")))
+            .collect();
+        let healthy = query.last().unwrap().clone();
+
+        let (out, mut sent) = mpsc::channel(1);
+        let (held_out, mut held_sent) = mpsc::channel(1);
+        let watcher = Watcher::new("ok".to_string(), vec![healthy], out, Some(10), HashMap::new());
+        let waiting = Watcher::new(
+            "held".to_string(),
+            vec!["bad".to_string()],
+            held_out,
+            Some(10),
+            HashMap::new(),
+        );
+        follower
+            .lock()
+            .watchers
+            .extend([(0, Arc::new(watcher)), (1, Arc::new(waiting))]);
+
+        let held = follower.round(&pool, 11, &query, &HashSet::new()).await;
+        assert_eq!(held, HashSet::from(["bad".to_string()]));
+        let update: Value = serde_json::from_str(&sent.recv().await.unwrap()).unwrap();
+        assert_eq!(update["params"]["height"], 11);
+        assert!(held_sent.try_recv().is_err());
+    }
+
+    /// 上游整个坏了时不逐批等超时,零星的失败不影响后面的批次.
+    #[tokio::test]
+    async fn only_repeated_failures_end_the_balance_query() {
+        let addresses: Vec<String> = (0..CHUNK * 5).map(|i| format!("a{i}")).collect();
+        let down = Quiet {
+            bad: "a",
+            ..Quiet::default()
+        };
+        assert!(current_balances(&quiet_pool(down.clone()), &addresses).await.is_empty());
+        assert_eq!(down.queries.load(Ordering::Relaxed), MAX_FAILED_CHUNKS);
+
+        let mut mixed = addresses.clone();
+        mixed[0] = "bad".to_string();
+        let flaky = Quiet {
+            bad: "bad",
+            ..Quiet::default()
+        };
+        let found = current_balances(&quiet_pool(flaky), &mixed).await;
+        assert_eq!(found.len(), CHUNK * 4);
     }
 }

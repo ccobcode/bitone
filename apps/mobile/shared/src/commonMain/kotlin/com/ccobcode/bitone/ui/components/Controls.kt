@@ -244,7 +244,7 @@ fun HoldButton(
             .pressScale(pressed)
             .height(Size.hBtn)
             .clip(shape)
-            .background(c.dangerSoft)
+            .background(if (enabled) c.dangerSoft else c.surface3)
             .semantics { role = Role.Button }
             .pointerInput(enabled) {
                 if (!enabled) return@pointerInput
@@ -259,7 +259,7 @@ fun HoldButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        Txt(text, weight = Medium, color = c.danger)
+        Txt(text, weight = Medium, color = if (enabled) c.danger else c.text3)
         // 填色层盖在上面,只露出进度以内的部分,文字反色的分界线跟着走.
         Box(
             Modifier.matchParentSize()

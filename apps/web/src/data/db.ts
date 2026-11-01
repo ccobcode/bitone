@@ -58,8 +58,8 @@ export type TxState =
     | "confirmed"
     | "failed";
 
-/** `speedup` 和 `cancel` 是替换交易,`rebuild` 是结果不明时的重建,都复用原交易的序号. */
-export type TxKind = "transfer" | "speedup" | "cancel" | "rebuild" | "create-nonce";
+/** `speedup` 和 `cancel` 是替换交易,`rebuild` 是结果不明时的重建,都复用原交易的序号.`raw` 来自原始请求页. */
+export type TxKind = "transfer" | "speedup" | "cancel" | "rebuild" | "create-nonce" | "raw";
 
 export interface TimelineEntry {
     state: TxState;
@@ -88,6 +88,8 @@ export interface TxRecord {
     /** 签名数据,可以直接广播的十六进制. */
     raw?: string;
     hash?: string;
+    /** 核验时发现手续费没有经过前序交易确认,显示的金额只是 PSBT 的声明. */
+    feeUnconfirmed?: boolean;
     plan: TxPlan;
     createdAt: number;
     updatedAt: number;

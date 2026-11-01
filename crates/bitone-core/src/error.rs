@@ -8,8 +8,6 @@ pub enum Error {
     PathNotAllowed,
     #[error("路径与网络冲突")]
     PathNetworkMismatch,
-    #[error("索引超过上限")]
-    IndexTooLarge,
     #[error("公钥无效")]
     InvalidKey,
     #[error("不支持的二维码类型")]

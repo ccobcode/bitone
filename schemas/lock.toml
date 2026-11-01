@@ -1,0 +1,110 @@
+# 上游 schema 的来源.生成器先校验 sha256,见 docs/10-tx-decoding.md 第 6.4 节.
+
+[[schema]]
+file = "solana/system.json"
+repository = "solana-program/system"
+commit = "0e7dc5d918e2d404bbbe57542afdd56b242c3ce5"
+path = "idl.json"
+sha256 = "bb1a83194457a7fc735f9e5a806ecaced94a17276fc7b45f356171810f15b63a"
+
+[[schema]]
+file = "solana/token.json"
+repository = "solana-program/token"
+commit = "737788ff5bcc3f1f44cfb222f25483187650be76"
+path = "idl.json"
+sha256 = "33add106ed36fead9222bfd882f1b364f3c4714346becefd5fa6068652b0cc33"
+
+[[schema]]
+file = "solana/token-2022.json"
+repository = "solana-program/token-2022"
+commit = "986b3aa58cbcc40dea12b369912017a4066804e7"
+path = "idl.json"
+sha256 = "13cbda7213599f3312e1b7ffd1c7f176f36ebd74dba9feabe6e9a6874dc1d5d2"
+
+[[schema]]
+file = "solana/associated-token-account.json"
+repository = "solana-program/associated-token-account"
+commit = "5881eb14aaa794a85f78dc1fcd640cd89bd42cf3"
+path = "idl.json"
+sha256 = "e47349065e84f1737791464c08c8984bcf97341742487a9dba941acc7a62da67"
+
+[[schema]]
+file = "solana/compute-budget.json"
+repository = "solana-program/compute-budget"
+commit = "e189b8ca25ecc283354b96f12cdcd6d7f4246921"
+path = "idl.json"
+sha256 = "1a2e18158513353622cb6e39c075dc06731af76975af33df1468966d24e1ca95"
+
+[[schema]]
+file = "solana/memo.json"
+repository = "solana-program/memo"
+commit = "be804bfab190e3955bffb2a18864ad61676345c6"
+path = "idl.json"
+sha256 = "13e1cd43277ec47113900e964087cc3627b9e83f3ca8eab9c8c5bf02114b571c"
+
+[[schema]]
+file = "solana/stake.json"
+repository = "solana-program/stake"
+commit = "511afd3a7794f543be3028b333df0353ed113c64"
+path = "idl.json"
+sha256 = "9527f716b5f449ce809ad6d3c05b4d4e743dff6c80242531df6a2f24067a6b9a"
+
+# 官方 IDL 已经去掉 Stake 指令里的系统变量账户,现有钱包的交易还带着它们.这份按最后一个带系统变量的 interface 写成,
+# 和 @solana/web3.js 1.99.0 的 StakeProgram 核对过.
+[[schema]]
+file = "solana/stake-older.json"
+repository = "solana-program/stake"
+commit = "07d1a01960e3ee89ce899cb26186db82f874fb61"
+path = "interface/src/instruction.rs"
+sha256 = "3c0d5e7e8d2b957f74e6886afd4c0bd2cb8c8016203efd47bfb73faae6ab8f32"
+
+[[schema]]
+file = "solana/address-lookup-table.json"
+repository = "solana-program/address-lookup-table"
+commit = "355478c8ae00655fe8500c10ee61bff81a4ec9be"
+path = "idl.json"
+sha256 = "f23e8397def424afc9b38648ca3d7b7ed7fbcfa1c690af2c910b9e556bfd4a8a"
+
+# 官方没有 Vote 的 IDL.这份按 solana-vote-interface 7.3.0 写成,8 条共识投票指令不在里面.
+[[schema]]
+file = "solana/vote.json"
+repository = "anza-xyz/solana-sdk"
+commit = "7.3.0"
+path = "vote-interface/src/instruction.rs"
+sha256 = "e67130b609957b31a6e84fab123aeb6f1d77d5a958d8b96c388954b2026793cb"
+
+# 下载的 schema 是数据,生成器先校验这里的哈希.见 docs/10-tx-decoding.md 第 6.3 节和第 6.4 节.
+[tron]
+repository = "tronprotocol/java-tron"
+tag = "GreatVoyage-v4.8.2.4"
+commit = "4e8389f159d0782f1ebcd9dab2fd88388c0e6fe9"
+path = "protocol/src/main/protos"
+root = "tron"
+
+[tron.files]
+"core/Discover.proto" = "87fd67a605956f8308fa88b3d97101d03ad55616b15a55b5f9253fe279205f78"
+"core/Tron.proto" = "6982f5177850db3c5048005f8f222827d925052fbb8c93b0d041b20ed774aed3"
+"core/TronInventoryItems.proto" = "d85f2e2fd8de49216343be44bbf49722958f54ef11737ec236ba325ea02de9d4"
+"core/contract/account_contract.proto" = "8b185d719f250052768a341c00bb15c6ba280bbac73b99d9af5c218b960eecfe"
+"core/contract/asset_issue_contract.proto" = "3df981582ae1f5852b7c22b5ae99363c2b1be6427ee7c83df211cbde3b38bcb3"
+"core/contract/balance_contract.proto" = "e2275249dbe115d8e90d48a4b11c54ba2027cb635e9bedbf7aadfaa328db4cc4"
+"core/contract/common.proto" = "cc3dfa352f15761129f52a082ef49f3635b5f19fac62c114f4f5cfbb29a86d88"
+"core/contract/exchange_contract.proto" = "d0ce0e6e5d97cfe8ef19c1b47e32e79413feb8a5408bda0258e592947035e032"
+"core/contract/market_contract.proto" = "bac327d448dff9681f52446b93ff95dad66a6f2b35aecfc8e4565cc432244cc4"
+"core/contract/proposal_contract.proto" = "ccdbebd95b9874ba9a14f6554649723d92e7d71e337312bae90c80f57372e0c4"
+"core/contract/shield_contract.proto" = "cdd6be885d2b2781735bb60117ecefc912ce2cc7bbc693a482452bee36ce2443"
+"core/contract/smart_contract.proto" = "a838490e394db56e4945f1c327201aebdccd1762b5ec8f5a9cac7eb3d4e84f8b"
+"core/contract/storage_contract.proto" = "5e27e9094e314115d1d0001ccadef3c357ac012b5b399eda9f619cd9e4e5b9ff"
+"core/contract/vote_asset_contract.proto" = "98da89b3b1f21ce71e640a964414522b190667d05cf609be6bb455fae96a35fc"
+"core/contract/witness_contract.proto" = "44171f6055460f3a86aabbcce554b1aa13d2db7e9b7d049d707408e9f7e30467"
+
+# ERC-7730 注册表的文件,CC0-1.0.bitone-*.json 是本仓库写的同格式补充,不在这里.
+[erc7730]
+repository = "ethereum/clear-signing-erc7730-registry"
+commit = "352c5b19b9cf57dc11713893efa69a6be2bbcfa3"
+path = "ercs"
+root = "erc7730"
+
+[erc7730.files]
+"calldata-erc20-tokens.json" = "79b2cd40b21590bff8fe31b9d745125b70ad95d0720a3468e2a963490850e49d"
+"eip712-erc2612-permit.json" = "d0408c0f741125ced0831c1bb5664cfbe6bc05aa33c8fe751b3b8f7fb1a9c077"

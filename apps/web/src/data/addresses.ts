@@ -3,8 +3,8 @@ import type { Mode } from "../core";
 import { t } from "../core/i18n";
 import { db, type Account, type Address } from "./db";
 
-/** 与核心库的 MAX_ADDRESS_INDEX 一致. */
-export const MAX_ADDRESS_INDEX = 100_000;
+/** BIP-32 普通索引的上限,再往上是硬化索引,公钥派生不出来. */
+export const MAX_ADDRESS_INDEX = 0x8000_0000;
 
 export type DeriveAddress = (
     account: Pick<Account, "chain" | "kind" | "key">,

@@ -39,12 +39,18 @@ impl Wallet {
         if !review.is_signable() {
             return Err(Error::Refused);
         }
-        let network = Network::from_id(&request.network).ok_or(Error::Refused)?;
-        let signatures = match network.chain() {
-            Chain::Evm => vec![self.sign_evm(request, network)?],
-            Chain::Bitcoin => self.sign_bitcoin(request, network)?,
-            Chain::Tron => vec![self.sign_tron(request, network)?],
-            Chain::Solana => vec![self.sign_solana(request, network)?],
+        let signatures = match (Network::from_id(&request.network), tx::request_chain(request)) {
+            (None, Some(Chain::Bitcoin)) => self.sign_bitcoin(request, None)?,
+            (None, Some(Chain::Evm)) => vec![self.sign_evm(request)?],
+            (None, Some(Chain::Solana)) => vec![self.sign_solana(request)?],
+            (None, Some(Chain::Tron)) => vec![self.sign_tron(request, Mode::Mainnet)?],
+            (None, _) => return Err(Error::Refused),
+            (Some(network), _) => match network.chain() {
+                Chain::Evm => vec![self.sign_evm(request)?],
+                Chain::Bitcoin => self.sign_bitcoin(request, Some(network))?,
+                Chain::Tron => vec![self.sign_tron(request, network.mode())?],
+                Chain::Solana => vec![self.sign_solana(request)?],
+            },
         };
         let response = SignResponse {
             version: bitone_core::protocol::VERSION,
@@ -136,6 +142,7 @@ mod tests {
         assert_eq!(evm, "0x9858EfFD232B4033E47d90003D41EC34EcaEda94");
         assert!(keys.receive_address(EVM_PATH, 1).is_err());
         assert!(keys.receive_address("m/84'/0'/9'", 0).is_err());
-        assert!(keys.receive_address("m/84'/0'/0'", 100_000).is_err());
+        assert!(keys.receive_address("m/84'/0'/0'", 100_000).is_ok());
+        assert!(keys.receive_address("m/84'/0'/0'", 0x8000_0000).is_err());
     }
 }

@@ -7,22 +7,32 @@ function fee(tx: TxRecord): TxFact {
     return { label: "fee_limit", value: nativeText(tx, BigInt(planOf(tx, "tron").feeLimit)) };
 }
 
+/** 转账都是 30 分钟,粘贴的 `raw_data` 自己带过期时间. */
+function expiry(tx: TxRecord): TxFact {
+    const minutes = tx.kind === "raw" && tx.expiresAt !== null ? (tx.expiresAt - tx.createdAt) / 60_000 : 30;
+    return { label: t("过期时间"), value: t("{0} 分钟", Math.max(Math.round(minutes), 0)) };
+}
+
 export const view: ChainView = {
     fee,
-    sequence: () => ({ label: t("过期时间"), value: t("30 分钟") }),
+    sequence: expiry,
     checks: (tx, common, signer) => [
         common,
         signer,
         { label: t("raw_data 字节"), value: t("完全一致") },
-        {
-            label: t("合约类型"),
-            value: tx.asset === "native" ? "TransferContract" : "TriggerSmartContract",
-        },
-        { label: t("过期时间"), value: t("30 分钟") },
+        ...(tx.kind === "raw"
+            ? []
+            : [
+                  {
+                      label: t("合约类型"),
+                      value: tx.asset === "native" ? "TransferContract" : "TriggerSmartContract",
+                  },
+              ]),
+        expiry(tx),
         fee(tx),
     ],
     details: (tx) => [
-        { label: t("过期时间"), value: t("30 分钟") },
+        expiry(tx),
         { label: "fee_limit", value: nativeText(tx, BigInt(planOf(tx, "tron").feeLimit)) },
         {
             label: t("实际手续费"),

@@ -104,32 +104,84 @@ private fun uniffi.bitone_ffi.ReviewResult.shared() =
             when (confirm) {
                 uniffi.bitone_ffi.ConfirmMode.TAP -> ConfirmMode.Tap
                 uniffi.bitone_ffi.ConfirmMode.HOLD -> ConfirmMode.Hold
+                uniffi.bitone_ffi.ConfirmMode.HOLD_CONFIRM -> ConfirmMode.HoldConfirm
                 uniffi.bitone_ffi.ConfirmMode.REFUSE -> ConfirmMode.Refuse
             },
         network = network,
+        mainnet = mainnet,
+        summary = summary.shared(),
+        alerts = alerts,
+        fields = fields.map { it.shared() },
+        reviewDigest = reviewDigest,
+        fingerprintMismatch = fingerprintMismatch,
+        requestFingerprint = requestFingerprint,
+    )
+
+private fun uniffi.bitone_ffi.ReviewSummary.shared() =
+    ReviewSummary(
         title = title,
         amount = amount?.let { ReviewAmount(it.text, it.symbol, it.asset, it.icon, it.unlimited) },
         counterpartyLabel = counterpartyLabel,
         counterparty = counterparty,
-        alerts = alerts,
-        actions = actions.map { ReviewAction(it.risk.shared(), it.title, it.rows.shared()) },
-        rows = rows.shared(),
-        raw = raw.map { RawLine(it.text, it.note) },
-        fingerprintMismatch = fingerprintMismatch,
-        requestFingerprint = requestFingerprint,
+        controllers = controllers.map { ReviewController(it.current, it.next) },
+        parties = parties.map { ReviewParty(it.label, it.value) },
+        payer = payer,
     )
 
 private fun uniffi.bitone_ffi.RiskLevel.shared() =
     when (this) {
         uniffi.bitone_ffi.RiskLevel.TRANSFER -> Risk.Transfer
         uniffi.bitone_ffi.RiskLevel.RECOGNIZED -> Risk.Recognized
-        uniffi.bitone_ffi.RiskLevel.UNKNOWN -> Risk.Unknown
         uniffi.bitone_ffi.RiskLevel.APPROVAL -> Risk.Approval
         uniffi.bitone_ffi.RiskLevel.PERMISSION_CHANGE -> Risk.PermissionChange
+        uniffi.bitone_ffi.RiskLevel.UNKNOWN -> Risk.Unknown
         uniffi.bitone_ffi.RiskLevel.FORBIDDEN -> Risk.Forbidden
     }
 
-private fun List<uniffi.bitone_ffi.ReviewRow>.shared() = map { ReviewRow(it.label, it.value, it.mono) }
+private fun uniffi.bitone_ffi.FieldRow.shared() =
+    FieldRow(
+        id = id,
+        parent = parent,
+        depth = depth,
+        name = name,
+        label = label,
+        kind = kind.shared(),
+        value = value,
+        source = source.shared(),
+        offset = offset,
+        len = len,
+        risk = risk?.shared(),
+        note = note,
+        own = own,
+    )
+
+private fun uniffi.bitone_ffi.FieldKind.shared() =
+    when (this) {
+        uniffi.bitone_ffi.FieldKind.BOOL -> FieldKind.Bool
+        uniffi.bitone_ffi.FieldKind.INT -> FieldKind.Int
+        uniffi.bitone_ffi.FieldKind.UINT -> FieldKind.Uint
+        uniffi.bitone_ffi.FieldKind.AMOUNT -> FieldKind.Amount
+        uniffi.bitone_ffi.FieldKind.ADDRESS -> FieldKind.Address
+        uniffi.bitone_ffi.FieldKind.HASH -> FieldKind.Hash
+        uniffi.bitone_ffi.FieldKind.BYTES -> FieldKind.Bytes
+        uniffi.bitone_ffi.FieldKind.TEXT -> FieldKind.Text
+        uniffi.bitone_ffi.FieldKind.ENUM -> FieldKind.Enum
+        uniffi.bitone_ffi.FieldKind.TIME -> FieldKind.Time
+        uniffi.bitone_ffi.FieldKind.SCRIPT -> FieldKind.Script
+        uniffi.bitone_ffi.FieldKind.STRUCT -> FieldKind.Struct
+        uniffi.bitone_ffi.FieldKind.LIST -> FieldKind.List
+        uniffi.bitone_ffi.FieldKind.OPAQUE -> FieldKind.Opaque
+    }
+
+private fun uniffi.bitone_ffi.FieldSource.shared() =
+    when (this) {
+        uniffi.bitone_ffi.FieldSource.SIGNED -> FieldSource.Signed
+        uniffi.bitone_ffi.FieldSource.CONTEXT -> FieldSource.Context
+        uniffi.bitone_ffi.FieldSource.DERIVED -> FieldSource.Derived
+        uniffi.bitone_ffi.FieldSource.MANIFEST -> FieldSource.Manifest
+        uniffi.bitone_ffi.FieldSource.DESCRIPTOR -> FieldSource.Descriptor
+        uniffi.bitone_ffi.FieldSource.HINT -> FieldSource.Hint
+    }
 
 private class Draft(private val inner: uniffi.bitone_ffi.WalletDraft) : WalletDraft {
     override val imported: Boolean
@@ -166,8 +218,20 @@ private class Unlocked(private val inner: uniffi.bitone_ffi.UnlockedWallet) : Un
         keys: ByteArray,
         highestChange: ChangeIndexes,
         manifest: ByteArray?,
+        reviewDigest: ByteArray,
+        renderedFields: UInt,
+        confirmedTwice: Boolean,
     ): SignOutcome = mapped {
-        val outcome = inner.signRequest(message, keys, highestChange.ffi(), manifest)
+        val outcome =
+            inner.signRequest(
+                message,
+                keys,
+                highestChange.ffi(),
+                manifest,
+                reviewDigest,
+                renderedFields,
+                confirmedTwice,
+            )
         SignOutcome(Stream(outcome.frames), outcome.changeIndex, outcome.changeIsTestnet)
     }
 

@@ -71,10 +71,11 @@ fun Txt(
     mono: Boolean = false,
     align: TextAlign = TextAlign.Start,
     lineHeight: TextUnit? = null,
+    translated: Boolean = true,
 ) {
     val fonts = BitOneTheme.fonts
     BasicText(
-        text = translate(text),
+        text = if (translated) translate(text) else text,
         modifier = modifier,
         style = textStyle(size, weight, color, if (mono) fonts.mono else fonts.sans, align, lineHeight),
     )

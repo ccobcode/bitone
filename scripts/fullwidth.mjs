@@ -73,6 +73,9 @@ export function fixText(text) {
     return text.replace(fullwidthRegex(), toAscii);
 }
 
+/** 上游的协议文件,哈希记在 `schemas/lock.toml`,不能改. */
+const VENDORED = /^schemas\/tron\//;
+
 function repoRoot() {
     return execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
 }
@@ -133,7 +136,7 @@ function main() {
 
     const hitsByFile = [];
     const fixed = [];
-    for (const path of files) {
+    for (const path of files.filter((file) => !VENDORED.test(file))) {
         const text = readable(path);
         if (text === null) continue;
         const hits = scanText(text);

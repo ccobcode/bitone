@@ -2,10 +2,10 @@ package com.ccobcode.bitone.platform
 
 import android.content.Context
 import android.util.AtomicFile
-import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.IOException
 
 /**
  * 应用私有目录.密文,PIN 计数,公钥和清单放 noBackupFilesDir,AtomicFile 在返回前 fsync, 断电时不会留下写了一半的文件.元数据和设置不是秘密,放 SharedPreferences,用
@@ -18,7 +18,13 @@ class FileSecureStore(context: Context) : SecureStore {
     private val manifest = AtomicFile(File(context.noBackupFilesDir, "manifest.bin"))
     private val prefs = context.getSharedPreferences("bitone", Context.MODE_PRIVATE)
 
-    override fun readVault(): ByteArray? = readBytes(vault)
+    /** 读不出来不等于没有钱包.空内容按损坏的密文处理,解锁时进"需恢复",那里能导入. */
+    override fun readVault(): ByteArray? =
+        try {
+            readBytes(vault)
+        } catch (_: IOException) {
+            ByteArray(0)
+        }
 
     private fun readBytes(file: AtomicFile): ByteArray? =
         try {
@@ -28,7 +34,7 @@ class FileSecureStore(context: Context) : SecureStore {
         }
 
     override fun readMeta(): WalletMeta? {
-        if (!prefs.getBoolean(KEY_HAS_WALLET, false)) return null
+        if (!prefs.contains(KEY_PASSPHRASE)) return null
         return WalletMeta(
             imported = prefs.getBoolean(KEY_IMPORTED, false),
             passphrase = prefs.getBoolean(KEY_PASSPHRASE, false),
@@ -47,7 +53,6 @@ class FileSecureStore(context: Context) : SecureStore {
         edit
             .remove(KEY_HIGHEST_CHANGE)
             .remove(KEY_HIGHEST_CHANGE_TESTNET)
-            .putBoolean(KEY_HAS_WALLET, true)
             .putBoolean(KEY_IMPORTED, meta.imported)
             .putBoolean(KEY_PASSPHRASE, meta.passphrase)
             .putString(KEY_FINGERPRINT, meta.fingerprint)
@@ -81,15 +86,7 @@ class FileSecureStore(context: Context) : SecureStore {
 
     override fun writeManifest(bytes: ByteArray) = write(manifest) { it.write(bytes) }
 
-    override fun readPinRecord(): PinRecord =
-        try {
-            pin.openRead().use { stream ->
-                val data = DataInputStream(stream)
-                PinRecord(data.readInt(), data.readLong(), data.readLong())
-            }
-        } catch (_: FileNotFoundException) {
-            PinRecord.Clean
-        }
+    override fun readPinRecord(): PinRecord = PinRecord.decode(readBytes(pin))
 
     override fun writePinRecord(record: PinRecord) {
         write(pin) { data ->
@@ -133,7 +130,6 @@ class FileSecureStore(context: Context) : SecureStore {
     }
 
     private companion object {
-        const val KEY_HAS_WALLET = "has_wallet"
         const val KEY_IMPORTED = "imported"
         const val KEY_PASSPHRASE = "passphrase"
         const val KEY_FINGERPRINT = "fingerprint"

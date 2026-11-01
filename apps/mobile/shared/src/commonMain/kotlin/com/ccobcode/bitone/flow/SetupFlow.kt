@@ -89,18 +89,33 @@ class SetupFlow internal constructor(private val host: FlowHost, private val pin
 
     /** 新建钱包.自检不通过时停在 AS. */
     fun startCreate() = host.guarded {
-        if (!host.recheck()) return@guarded
+        if (!host.recheckNewWallet()) return@guarded
         replaceDraft(withContext(work) { core.generateDraft(12) }, 12)
         passphraseEnabled = false
         loadBackupWords()
         host.push(Screen.Backup)
     }
 
-    fun startImport() = host.guarded {
-        if (!host.recheck()) return@guarded
+    /** 导入是找回资金的路,自检不过时确认后可以继续.本机还有密文时先提醒:导入成功后它就没了,输错助记词也找不回来. */
+    fun startImport() = host.operation {
+        if (withContext(work) { store.readVault() != null }) {
+            host.push(Screen.ImportOverwrite)
+        } else {
+            resetImportEntry()
+            host.push(Screen.ImportWords)
+        }
+    }
+
+    /** 提醒页的"继续导入". */
+    fun confirmOverwrite() {
+        if (host.busy) return
+        resetImportEntry()
+        host.showOnly(Screen.ImportWords)
+    }
+
+    private fun resetImportEntry() {
         resetImport()
         passphraseEnabled = false
-        host.push(Screen.ImportWords)
     }
 
     private fun replaceDraft(next: WalletDraft?, count: Int) {
@@ -119,13 +134,25 @@ class SetupFlow internal constructor(private val host: FlowHost, private val pin
 
     /** 换长度就是换一组新助记词,已抄写的作废. */
     fun setBackupWordCount(count: Int) = host.guarded {
-        if (count == wordCount) return@guarded
+        if (count == wordCount || !host.recheckNewWallet()) return@guarded
         replaceDraft(withContext(work) { core.generateDraft(count) }, count)
         loadBackupWords()
     }
 
     fun togglePassphrase() {
         passphraseEnabled = !passphraseEnabled
+    }
+
+    /** 生成新钱包途中自检一直不过时放弃,回到 A1,那里还能导入. */
+    fun abandonCreate() {
+        if (host.busy) return
+        quiz = emptyList()
+        picks = emptyMap()
+        verifyState = VerifyState.Pending
+        backupWords = emptyList()
+        pin.reset()
+        replaceDraft(null, 12)
+        host.stack = listOf(Screen.Welcome)
     }
 
     internal fun leaveCreate() {
@@ -164,6 +191,7 @@ class SetupFlow internal constructor(private val host: FlowHost, private val pin
     }
 
     fun backToBackup() = host.guarded {
+        if (!host.recheckNewWallet()) return@guarded
         quiz = emptyList()
         picks = emptyMap()
         verifyState = VerifyState.Pending
@@ -299,6 +327,8 @@ class SetupFlow internal constructor(private val host: FlowHost, private val pin
         val passphrase = passphraseEnabled
         host.guarded {
             pin.error = null
+            // 抄写和设 PIN 可能停留很久,加密落盘之前再自检一次.
+            if (!(if (current.imported) host.recheck() else host.recheckNewWallet())) return@guarded
             try {
                 val saved =
                     withContext(work) {

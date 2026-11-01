@@ -85,7 +85,10 @@ class SignFlowTest {
         scanRequest(rig)
         assertEquals(Screen.Review, rig.flow.screen)
         assertEquals(listOf(Screen.Home, Screen.Review), rig.flow.stack)
+        readToTheEnd(rig)
     }
+
+    private fun readToTheEnd(rig: Rig) = rig.flow.scan.reviewScrolled(canScrollForward = false)
 
     private fun TestScope.toPin(rig: Rig) {
         toReview(rig)
@@ -172,6 +175,118 @@ class SignFlowTest {
     }
 
     @Test
+    fun tapWaitsForTheEndOfTheReview() = runTest {
+        val rig = ready()
+        scanRequest(rig)
+        rig.flow.scan.reviewScrolled(canScrollForward = true)
+        rig.flow.scan.confirmTap()
+        advanceUntilIdle()
+        assertEquals(Screen.Review, rig.flow.screen)
+
+        readToTheEnd(rig)
+        // 展开详情后内容变长,看过的不收回.
+        rig.flow.scan.reviewScrolled(canScrollForward = true)
+        rig.flow.scan.confirmTap()
+        advanceUntilIdle()
+        assertEquals(Screen.Unlock, rig.flow.screen)
+    }
+
+    @Test
+    fun holdWaitsForTheEndOfTheReview() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Approval, ConfirmMode.Hold) }
+        scanRequest(rig)
+        rig.flow.scan.holdStart()
+        advanceTimeBy(3_100)
+        runCurrent()
+        assertEquals(0f, rig.flow.scan.holdProgress)
+        assertEquals(Screen.Review, rig.flow.screen)
+
+        readToTheEnd(rig)
+        rig.flow.scan.holdStart()
+        advanceTimeBy(3_100)
+        advanceUntilIdle()
+        assertEquals(Screen.Unlock, rig.flow.screen)
+    }
+
+    private fun TestScope.holdToTheEnd(rig: Rig) {
+        rig.flow.scan.holdStart()
+        advanceTimeBy(3_100)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun aRawHashNeedsASecondConfirmationAfterTheHold() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.HoldConfirm) }
+        toReview(rig)
+        holdToTheEnd(rig)
+        assertEquals(Screen.Review, rig.flow.screen)
+        assertTrue(rig.flow.scan.awaitingSecondConfirm)
+        rig.flow.scan.confirmSecond()
+        advanceUntilIdle()
+        assertEquals(Screen.Unlock, rig.flow.screen)
+        assertFalse(rig.flow.scan.awaitingSecondConfirm)
+    }
+
+    @Test
+    fun theSecondConfirmationNeedsTheHoldFirst() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.HoldConfirm) }
+        toReview(rig)
+        rig.flow.scan.confirmSecond()
+        advanceUntilIdle()
+        assertEquals(Screen.Review, rig.flow.screen)
+        assertFalse(rig.flow.scan.awaitingSecondConfirm)
+    }
+
+    @Test
+    fun aPlainHoldHasNoSecondStep() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.Hold) }
+        toReview(rig)
+        holdToTheEnd(rig)
+        assertEquals(Screen.Unlock, rig.flow.screen)
+        assertFalse(rig.flow.scan.awaitingSecondConfirm)
+    }
+
+    @Test
+    fun backingOutOfTheSecondConfirmationNeedsAnotherHold() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.HoldConfirm) }
+        toReview(rig)
+        holdToTheEnd(rig)
+        rig.flow.scan.cancelSecondConfirm()
+        rig.flow.scan.confirmSecond()
+        advanceUntilIdle()
+        assertEquals(Screen.Review, rig.flow.screen)
+    }
+
+    @Test
+    fun goingToBackgroundDropsTheSecondConfirmation() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.HoldConfirm) }
+        toReview(rig)
+        holdToTheEnd(rig)
+        rig.flow.onBackground()
+        assertFalse(rig.flow.scan.awaitingSecondConfirm)
+    }
+
+    @Test
+    fun theSecondConfirmationDoesNotCarryToTheNextRequest() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.HoldConfirm) }
+        toReview(rig)
+        holdToTheEnd(rig)
+        rig.flow.scan.exitRequest()
+        assertFalse(rig.flow.scan.awaitingSecondConfirm)
+    }
+
+    @Test
+    fun aNewRequestHasToBeReadAgain() = runTest {
+        val rig = ready()
+        toReview(rig)
+        rig.flow.scan.exitRequest()
+        scanRequest(rig)
+        rig.flow.scan.confirmTap()
+        advanceUntilIdle()
+        assertEquals(Screen.Review, rig.flow.screen)
+    }
+
+    @Test
     fun goingToBackgroundCancelsHold() = runTest {
         val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.Hold) }
         toReview(rig)
@@ -185,11 +300,11 @@ class SignFlowTest {
 
     @Test
     fun refuseGoesToForbiddenAndCannotReachPin() = runTest {
-        val rig = ready { it.core.review = reviewOf(Risk.Forbidden, ConfirmMode.Refuse, listOf("没有 Chain ID")) }
+        val rig = ready { it.core.review = reviewOf(Risk.Forbidden, ConfirmMode.Refuse, listOf("Chain ID 与网络不符")) }
         scanRequest(rig)
         val flow = rig.flow
         assertEquals(Screen.Forbidden, flow.screen)
-        assertEquals("没有 Chain ID", flow.scan.refusal)
+        assertEquals("Chain ID 与网络不符", flow.scan.refusal)
         assertNull(flow.scan.review)
 
         // 绕过页面直接调用后面的步骤.
@@ -356,6 +471,7 @@ class SignFlowTest {
         assertNull(rig.store.publicKeys)
         assertNull(rig.store.meta?.fingerprint)
 
+        readToTheEnd(rig)
         rig.flow.scan.confirmTap()
         advanceUntilIdle()
         assertTrue(rig.flow.unlock.needsPassphrase)
@@ -369,6 +485,7 @@ class SignFlowTest {
         val rig = ready(passphrase = true) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
         scanRequest(rig)
         submit(rig.flow, PIN, "pass")
+        readToTheEnd(rig)
         rig.flow.scan.confirmTap()
         advanceUntilIdle()
 
@@ -401,6 +518,68 @@ class SignFlowTest {
         assertEquals(Screen.Review, rig.flow.screen)
         assertContentEquals(keysFor(MAIN_FINGERPRINT), rig.store.publicKeys)
         assertTrue(rig.core.lastWallet!!.closed)
+    }
+
+    // 通用字段列表
+
+    @Test
+    fun theFieldListKeepsTheScrollGate() = runTest {
+        val rig = ready { it.core.review = reviewOf(fields = listOf(fieldOf("nonce"))) }
+        scanRequest(rig)
+        rig.flow.scan.reviewScrolled(canScrollForward = true)
+        rig.flow.scan.confirmTap()
+        advanceUntilIdle()
+        assertEquals(Screen.Review, rig.flow.screen)
+
+        readToTheEnd(rig)
+        rig.flow.scan.confirmTap()
+        advanceUntilIdle()
+        assertEquals(Screen.Unlock, rig.flow.screen)
+    }
+
+    @Test
+    fun theShownDigestAndRenderedRowsGoBackToTheCore() = runTest {
+        val fields = listOf(fieldOf("nonce"), fieldOf("to"))
+        val rig = ready { it.core.review = reviewOf(fields = fields) }
+        toReview(rig)
+        rig.flow.scan.fieldsRendered(fields.size)
+        rig.flow.scan.confirmTap()
+        advanceUntilIdle()
+        submit(rig.flow, PIN)
+        val call = rig.core.signCalls.single()
+        assertEquals(2u, call.renderedFields)
+        assertTrue(call.reviewDigest.contentEquals(REVIEW_DIGEST))
+        assertFalse(call.confirmedTwice)
+    }
+
+    @Test
+    fun theSecondConfirmationGoesBackToTheCore() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.HoldConfirm) }
+        toReview(rig)
+        holdToTheEnd(rig)
+        rig.flow.scan.confirmSecond()
+        advanceUntilIdle()
+        submit(rig.flow, PIN)
+        assertTrue(rig.core.signCalls.single().confirmedTwice)
+    }
+
+    @Test
+    fun aListThatNeverRenderedReportsNoRows() = runTest {
+        val rig = ready { it.core.review = reviewOf(fields = listOf(fieldOf("nonce"))) }
+        toPin(rig)
+        submit(rig.flow, PIN)
+        assertEquals(0u, rig.core.signCalls.single().renderedFields)
+    }
+
+    @Test
+    fun renderedRowsDoNotCarryOverToTheNextRequest() = runTest {
+        val rig = ready()
+        toReview(rig)
+        rig.flow.scan.fieldsRendered(5)
+        rig.flow.scan.exitRequest()
+        toPin(rig)
+        submit(rig.flow, PIN)
+        assertEquals(0u, rig.core.signCalls.single().renderedFields)
     }
 
     // 签名
@@ -448,13 +627,93 @@ class SignFlowTest {
     }
 
     @Test
-    fun selfCheckBlocksConfirm() = runTest {
+    fun aFailureDuringUnlockKeepsTheSignatureOffTheScreen() = runTest {
+        val rig = ready()
+        toPin(rig)
+        val flow = rig.flow
+        rig.core.onOpen = { rig.check.facts = facts(wifiOn = true) }
+        submit(flow, PIN)
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        assertEquals(1, rig.core.signCalls.size)
+        assertTrue(rig.core.lastStream!!.closed)
+
+        // 处理好之后回到 A7,可以重新签名.
+        rig.core.onOpen = {}
+        passSelfCheck(rig)
+        assertEquals(Screen.Unlock, flow.screen)
+        submit(flow, PIN)
+        assertEquals(Screen.Signed, flow.screen)
+    }
+
+    @Test
+    fun aFailedSelfCheckIsAcknowledgedOnceForTheWholeSignature() = runTest {
         val rig = ready()
         toReview(rig)
+        val flow = rig.flow
         rig.check.facts = facts(wifiOn = true)
-        rig.flow.scan.confirmTap()
+        flow.scan.confirmTap()
         advanceUntilIdle()
-        assertEquals(Screen.SelfCheckFailed, rig.flow.screen)
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        assertEquals(0, rig.core.opens)
+
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        assertEquals(Screen.Unlock, flow.screen)
+        submit(flow, BAD_PIN)
+        assertEquals(Screen.Unlock, flow.screen)
+        submit(flow, PIN)
+        assertEquals(Screen.Signed, flow.screen)
+    }
+
+    @Test
+    fun aNewFailureDuringUnlockAsksAgainBeforeShowingTheSignature() = runTest {
+        val rig = ready()
+        toPin(rig)
+        val flow = rig.flow
+        rig.core.onOpen = { rig.check.facts = facts(wifiOn = true) }
+        submit(flow, PIN)
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        assertTrue(rig.core.lastStream!!.closed)
+
+        // 确认后回到 A7 重新签名,不是死路.
+        rig.core.onOpen = {}
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        assertEquals(Screen.Unlock, flow.screen)
+        submit(flow, PIN)
+        assertEquals(Screen.Signed, flow.screen)
+    }
+
+    @Test
+    fun anAcknowledgementDoesNotCoverANewFailure() = runTest {
+        val rig = ready()
+        toReview(rig)
+        val flow = rig.flow
+        rig.check.facts = facts(wifiOn = true)
+        flow.scan.confirmTap()
+        advanceUntilIdle()
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        rig.check.facts = facts(wifiOn = true, adbEnabled = true)
+        submit(flow, PIN)
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        assertEquals(0, rig.core.opens)
+    }
+
+    @Test
+    fun leavingTheForegroundCancelsTheAcknowledgement() = runTest {
+        val rig = ready()
+        toReview(rig)
+        val flow = rig.flow
+        rig.check.facts = facts(wifiOn = true)
+        flow.scan.confirmTap()
+        advanceUntilIdle()
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        flow.onBackground()
+        submit(flow, PIN)
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        assertEquals(0, rig.core.opens)
     }
 
     @Test
@@ -479,18 +738,18 @@ class SignFlowTest {
     }
 
     @Test
-    fun tenthWrongPinDropsTheRequest() = runTest {
+    fun manyWrongPinsKeepTheRequest() = runTest {
         val rig = ready()
         toPin(rig)
         val flow = rig.flow
-        repeat(10) {
+        repeat(12) {
             rig.clock.elapsed += pinDelayMs(rig.store.pin.failures)
             flow.unlock.refreshStatus()
             submit(flow, BAD_PIN)
         }
-        assertEquals(Screen.Wiped, flow.screen)
-        assertNull(flow.scan.review)
-        assertNull(rig.store.publicKeys)
+        assertEquals(Screen.Unlock, flow.screen)
+        assertNotNull(flow.scan.review)
+        assertNotNull(rig.store.publicKeys)
     }
 
     @Test
@@ -863,6 +1122,42 @@ class SignFlowTest {
     }
 
     @Test
+    fun homeDuringUnlockLeavesNoWordsBehind() = runTest {
+        val rig = ready()
+        val flow = rig.flow
+        openViewWords(flow)
+        rig.core.onOpen = flow::onBackground
+        submit(flow, PIN)
+        assertEquals(Screen.Settings, flow.screen)
+        assertTrue(flow.settings.viewWords.isEmpty())
+    }
+
+    @Test
+    fun screenLockPromptDuringUnlockStillShowsTheWords() = runTest {
+        val rig = ready()
+        val flow = rig.flow
+        openViewWords(flow)
+        rig.core.onOpen = {
+            flow.onBackground()
+            flow.onResume()
+        }
+        submit(flow, PIN)
+        assertEquals(Screen.ViewWords, flow.screen)
+        assertEquals(Words12, flow.settings.viewWords)
+    }
+
+    @Test
+    fun aFailureDuringUnlockKeepsTheWordsOffTheScreen() = runTest {
+        val rig = ready()
+        val flow = rig.flow
+        openViewWords(flow)
+        rig.core.onOpen = { rig.check.facts = facts(wifiOn = true) }
+        submit(flow, PIN)
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        assertTrue(flow.settings.viewWords.isEmpty())
+    }
+
+    @Test
     fun failedSelfCheckClosesTheWordsPage() = runTest {
         val rig = ready()
         val flow = rig.flow
@@ -882,14 +1177,38 @@ class SignFlowTest {
     }
 
     @Test
-    fun selfCheckBlocksViewingWords() = runTest {
+    fun theWordsStayReachableAfterAnAcknowledgement() = runTest {
         val rig = ready()
-        rig.flow.openSettings()
+        val flow = rig.flow
+        flow.openSettings()
         rig.check.facts = facts(thirdPartyAccessibility = 1)
-        rig.flow.settings.startViewWords()
+        flow.settings.startViewWords()
         advanceUntilIdle()
-        assertEquals(Screen.SelfCheckFailed, rig.flow.screen)
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
         assertEquals(0, rig.core.opens)
+
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        submit(flow, PIN)
+        assertEquals(Screen.ViewWords, flow.screen)
+    }
+
+    @Test
+    fun aNewFailureDuringUnlockAsksAgainBeforeShowingTheWords() = runTest {
+        val rig = ready()
+        val flow = rig.flow
+        openViewWords(flow)
+        rig.core.onOpen = { rig.check.facts = facts(wifiOn = true) }
+        submit(flow, PIN)
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        assertTrue(flow.settings.viewWords.isEmpty())
+
+        rig.core.onOpen = {}
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        assertEquals(Screen.Unlock, flow.screen)
+        submit(flow, PIN)
+        assertEquals(Screen.ViewWords, flow.screen)
     }
 
     @Test

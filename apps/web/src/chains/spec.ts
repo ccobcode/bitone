@@ -6,7 +6,7 @@ import type { Claim } from "../data/claims";
 import type { Account, NewTx, TxRecord } from "../data/db";
 import type { Fees } from "./index";
 import type { QuoteInput, QuotePlan } from "./quote";
-import type { ReplaceDraft, ReplaceMode, SetupDraft, TransferDraft } from "./transfer";
+import type { RawDraft, RawValues, ReplaceDraft, ReplaceMode, SetupDraft, TransferDraft } from "./transfer";
 import type { Finality, TxFact } from "./view";
 
 /** 一笔待写入的交易.写入和加锁由 `data/transfer.ts` 统一完成,失败时什么也不写. */
@@ -45,6 +45,20 @@ export interface BroadcastCardProps {
     overdue: boolean;
     replace(mode: ReplaceMode): Promise<void>;
     resend(): Promise<void>;
+}
+
+export interface RawField {
+    id: string;
+    label: string;
+    hint?: string;
+    multiline?: boolean;
+}
+
+/** 原始请求页的一种内容.只有一种时页面不显示切换. */
+export interface RawMode {
+    id: string;
+    label: string;
+    fields: RawField[];
 }
 
 export interface ChainView {
@@ -104,6 +118,8 @@ export interface ChainSpec {
     replace: Replacement;
     /** 首次转账前要先上链的准备步骤. */
     setup?(draft: SetupDraft): Promise<Built>;
+    rawModes(): RawMode[];
+    raw(draft: RawDraft, mode: string, values: RawValues, fees: FeeSource): Promise<Built>;
     quote(input: QuoteInput): QuotePlan;
     view: ChainView;
     /** 已广播还没打包时显示的操作. */

@@ -15,3 +15,4 @@ BitOne 是一款多链冷钱包:私钥只在离线的 Android 手机上,网页�
 | [07-verification.md](07-verification.md) | 验证依据,验证方式,未验证事项,已知限制                                  |
 | [08-tech-stack.md](08-tech-stack.md)     | 技术栈,UI 库,iOS 扩展路径,工程结构                                     |
 | [09-gateway-api.md](09-gateway-api.md)   | 网关的请求和响应格式                                                   |
+| [10-tx-decoding.md](10-tx-decoding.md)   | 交易解码标准,全覆盖检查,解码和策略分离,渲染,各链矩阵,描述文件,验证     |

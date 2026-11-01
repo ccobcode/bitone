@@ -1,13 +1,14 @@
 //! 冷钱包的 UniFFI 绑定.助记词和种子都留在 Rust 对象里,Kotlin 和 Swift 只持有句柄.
 
+use bitone_core::decode::{Kind, SourceKind};
 use bitone_core::hex::DisplayHex;
 use bitone_core::keys::PublicKeys;
 use bitone_core::manifest::{Manifest, VENDOR_KEY};
 use bitone_core::protocol::{AddressCheck, DEFAULT_FRAGMENT_BYTES, FrameDecoder, FrameEncoder, UR_ACCOUNTS};
 use bitone_core::request::SignRequest;
-use bitone_core::review::{Confirm, Forbid, Review, Risk};
+use bitone_core::review::{Confirm, Forbid, Review, Risk, Summary};
 use bitone_core::tx::{self, HighestChange, ReviewContext};
-use bitone_core::{AccountKind, Mode, Network, qr};
+use bitone_core::{AccountKind, qr};
 use bitone_signer::{keys::Wallet, mnemonic, vault};
 use std::sync::Mutex;
 use zeroize::Zeroizing;
@@ -66,9 +67,9 @@ pub struct QrMatrix {
 pub enum RiskLevel {
     Transfer,
     Recognized,
-    Unknown,
     Approval,
     PermissionChange,
+    Unknown,
     Forbidden,
 }
 
@@ -76,14 +77,9 @@ pub enum RiskLevel {
 pub enum ConfirmMode {
     Tap,
     Hold,
+    /// 长按之后还要明确确认一次.
+    HoldConfirm,
     Refuse,
-}
-
-#[derive(uniffi::Record)]
-pub struct ReviewRow {
-    pub label: String,
-    pub value: String,
-    pub mono: bool,
 }
 
 #[derive(uniffi::Record)]
@@ -96,17 +92,77 @@ pub struct ReviewAmount {
     pub unlimited: bool,
 }
 
+/// A6d 的一组控制方.`current` 为空时当前控制方就是付款账户,`next` 为空时这笔权限变更没有新控制方.
 #[derive(uniffi::Record)]
-pub struct ReviewAction {
-    pub risk: RiskLevel,
-    pub title: String,
-    pub rows: Vec<ReviewRow>,
+pub struct ReviewController {
+    pub current: Option<String>,
+    pub next: Option<String>,
 }
 
+/// 权限变更打包的转账或调用的对方.
 #[derive(uniffi::Record)]
-pub struct ReviewRawLine {
-    pub text: String,
+pub struct ReviewParty {
+    pub label: String,
+    pub value: String,
+}
+
+/// 页面顶部,在字段列表上方.每个值都引用 `field_ids` 里的行.见 docs/10-tx-decoding.md 第 4.1 节.
+#[derive(uniffi::Record)]
+pub struct ReviewSummary {
+    pub title: String,
+    pub amount: Option<ReviewAmount>,
+    pub counterparty_label: Option<String>,
+    pub counterparty: Option<String>,
+    pub field_ids: Vec<u32>,
+    pub controllers: Vec<ReviewController>,
+    pub parties: Vec<ReviewParty>,
+    pub payer: Option<String>,
+}
+
+#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FieldKind {
+    Bool,
+    Int,
+    Uint,
+    Amount,
+    Address,
+    Hash,
+    Bytes,
+    Text,
+    Enum,
+    Time,
+    Script,
+    Struct,
+    List,
+    Opaque,
+}
+
+#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FieldSource {
+    Signed,
+    Context,
+    Derived,
+    Manifest,
+    Descriptor,
+    Hint,
+}
+
+/// 解码树的一个节点,前序排列.见 docs/10-tx-decoding.md 第 4 节.
+#[derive(uniffi::Record)]
+pub struct FieldRow {
+    pub id: u32,
+    pub parent: Option<u32>,
+    pub depth: u32,
+    pub name: String,
+    pub label: String,
+    pub kind: FieldKind,
+    pub value: String,
+    pub source: FieldSource,
+    pub offset: Option<u32>,
+    pub len: Option<u32>,
+    pub risk: Option<RiskLevel>,
     pub note: Option<String>,
+    pub own: bool,
 }
 
 /// 核对页要显示的全部内容.分类都在核心库里完成,界面只负责画出来.
@@ -115,14 +171,17 @@ pub struct ReviewResult {
     pub risk: RiskLevel,
     pub confirm: ConfirmMode,
     pub network: String,
-    pub title: String,
-    pub amount: Option<ReviewAmount>,
-    pub counterparty_label: Option<String>,
-    pub counterparty: Option<String>,
+    /// 页面顶部显示主网提示.
+    pub mainnet: bool,
+    pub summary: ReviewSummary,
     pub alerts: Vec<String>,
-    pub actions: Vec<ReviewAction>,
-    pub rows: Vec<ReviewRow>,
-    pub raw: Vec<ReviewRawLine>,
+    /// 解码树的全部节点.只有拒绝时才是空的.
+    pub fields: Vec<FieldRow>,
+    pub field_count: u32,
+    /// 手机把它和已渲染行数传回 `sign_request`.
+    pub review_digest: Vec<u8>,
+    /// 拒绝的原因,可以签名时为空.
+    pub refusal: Option<String>,
     /// 指纹对不上,要提示检查 BIP39 密码.
     pub fingerprint_mismatch: bool,
     /// 请求里的主密钥指纹.解析失败时为空.
@@ -140,58 +199,108 @@ fn risk_level(risk: Risk) -> RiskLevel {
     }
 }
 
-fn rows(list: Vec<bitone_core::review::Row>) -> Vec<ReviewRow> {
-    list.into_iter()
-        .map(|r| ReviewRow {
-            label: r.label,
-            value: r.value,
-            mono: r.mono,
-        })
-        .collect()
+fn field_kind(kind: Kind) -> FieldKind {
+    match kind {
+        Kind::Bool => FieldKind::Bool,
+        Kind::Int => FieldKind::Int,
+        Kind::Uint => FieldKind::Uint,
+        Kind::Amount => FieldKind::Amount,
+        Kind::Address => FieldKind::Address,
+        Kind::Hash => FieldKind::Hash,
+        Kind::Bytes => FieldKind::Bytes,
+        Kind::Text => FieldKind::Text,
+        Kind::Enum => FieldKind::Enum,
+        Kind::Time => FieldKind::Time,
+        Kind::Script => FieldKind::Script,
+        Kind::Struct => FieldKind::Struct,
+        Kind::List => FieldKind::List,
+        Kind::Opaque => FieldKind::Opaque,
+    }
 }
 
-fn review_result(review: Review, manifest: &Manifest, request_fingerprint: Option<String>) -> ReviewResult {
+fn field_source(source: SourceKind) -> FieldSource {
+    match source {
+        SourceKind::Signed => FieldSource::Signed,
+        SourceKind::Context => FieldSource::Context,
+        SourceKind::Derived => FieldSource::Derived,
+        SourceKind::Manifest => FieldSource::Manifest,
+        SourceKind::Descriptor => FieldSource::Descriptor,
+        SourceKind::Hint => FieldSource::Hint,
+    }
+}
+
+fn field_row(row: bitone_core::review::FieldRow) -> FieldRow {
+    FieldRow {
+        id: row.id,
+        parent: row.parent,
+        depth: row.depth,
+        name: row.name,
+        label: row.label,
+        kind: field_kind(row.kind),
+        value: row.value,
+        source: field_source(row.source),
+        offset: row.offset,
+        len: row.len,
+        risk: row.risk.map(risk_level),
+        note: row.note,
+        own: row.own,
+    }
+}
+
+fn review_summary(summary: Summary, manifest: &Manifest) -> ReviewSummary {
     let icon = |asset: &Option<String>| {
         let key = asset.as_deref()?;
         manifest.assets.iter().find(|a| a.key() == key).map(|a| a.icon.clone())
     };
-    ReviewResult {
-        risk: risk_level(review.risk),
-        confirm: match review.confirm {
-            Confirm::Tap => ConfirmMode::Tap,
-            Confirm::Hold => ConfirmMode::Hold,
-            Confirm::Refuse => ConfirmMode::Refuse,
-        },
-        network: review.network,
-        title: review.title,
-        amount: review.amount.map(|a| ReviewAmount {
+    ReviewSummary {
+        title: summary.title,
+        amount: summary.amount.map(|a| ReviewAmount {
             icon: icon(&a.asset),
             text: a.text,
             symbol: a.symbol,
             asset: a.asset,
             unlimited: a.unlimited,
         }),
-        counterparty_label: review.counterparty_label,
-        counterparty: review.counterparty,
+        counterparty_label: summary.counterparty_label,
+        counterparty: summary.counterparty,
+        field_ids: summary.field_ids,
+        controllers: summary
+            .controllers
+            .into_iter()
+            .map(|c| ReviewController {
+                current: c.current,
+                next: c.next,
+            })
+            .collect(),
+        parties: summary
+            .parties
+            .into_iter()
+            .map(|p| ReviewParty {
+                label: p.label,
+                value: p.value,
+            })
+            .collect(),
+        payer: summary.payer,
+    }
+}
+
+fn review_result(review: Review, manifest: &Manifest, request_fingerprint: Option<String>) -> ReviewResult {
+    ReviewResult {
+        risk: risk_level(review.risk),
+        confirm: match review.confirm {
+            Confirm::Tap => ConfirmMode::Tap,
+            Confirm::Hold => ConfirmMode::Hold,
+            Confirm::HoldConfirm => ConfirmMode::HoldConfirm,
+            Confirm::Refuse => ConfirmMode::Refuse,
+        },
+        network: review.network,
+        mainnet: review.mainnet,
+        summary: review_summary(review.summary, manifest),
         alerts: review.alerts,
-        actions: review
-            .actions
-            .into_iter()
-            .map(|a| ReviewAction {
-                risk: risk_level(a.risk),
-                title: a.title,
-                rows: rows(a.rows),
-            })
-            .collect(),
-        rows: rows(review.rows),
-        raw: review
-            .raw
-            .into_iter()
-            .map(|l| ReviewRawLine {
-                text: l.text,
-                note: l.note,
-            })
-            .collect(),
+        fields: review.fields.into_iter().map(field_row).collect(),
+        field_count: review.field_count,
+        review_digest: review.review_digest.to_vec(),
+        refusal: review.forbidden.map(|reason| reason.to_string()),
         fingerprint_mismatch: review.forbidden == Some(Forbid::FingerprintMismatch),
         request_fingerprint,
     }
@@ -255,8 +364,8 @@ impl From<ChangeIndexes> for HighestChange {
     }
 }
 
-fn load_manifest(package: Option<Vec<u8>>) -> Result<std::borrow::Cow<'static, Manifest>, WalletError> {
-    Ok(Manifest::active(package.as_deref(), &VENDOR_KEY)?)
+fn load_manifest(package: Option<Vec<u8>>) -> std::borrow::Cow<'static, Manifest> {
+    Manifest::active(package.as_deref(), &VENDOR_KEY)
 }
 
 /// 建钱包过程中的助记词.设置 PIN 之后就不再需要这个对象.
@@ -374,16 +483,30 @@ impl UnlockedWallet {
     }
 
     /// 重新核对后签名.核对不通过时返回错误,不接触私钥.
+    /// `review_digest` 和 `rendered_fields` 是用户确认的那一页,和重新核对的结果不同时拒绝.
+    /// `confirmed_twice` 表示用户在长按之后又确认了一次,要二次确认的请求没有它时拒绝.
+    #[allow(clippy::too_many_arguments)]
     pub fn sign_request(
         &self,
         message: Vec<u8>,
         public_keys: Vec<u8>,
         highest_change: ChangeIndexes,
         manifest: Option<Vec<u8>>,
+        review_digest: Vec<u8>,
+        rendered_fields: u32,
+        confirmed_twice: bool,
     ) -> Result<SignOutcome, WalletError> {
         let request = SignRequest::decode(&message)?;
         let keys = PublicKeys::decode(&public_keys)?;
-        let manifest = load_manifest(manifest)?;
+        let manifest = load_manifest(manifest);
+        let ctx = ReviewContext {
+            keys: &keys,
+            manifest: &manifest,
+            highest_change: highest_change.into(),
+        };
+        if !tx::review(&request, &ctx).matches_shown(&review_digest, rendered_fields, confirmed_twice) {
+            return Err(bitone_signer::Error::Refused.into());
+        }
         let (response, review) = self.wallet.sign(&request, &keys, &manifest, highest_change.into())?;
         let encoder = response.frames(DEFAULT_FRAGMENT_BYTES)?;
         Ok(SignOutcome {
@@ -391,7 +514,7 @@ impl UnlockedWallet {
                 encoder: Mutex::new(encoder),
             }),
             change_index: review.change_index,
-            change_is_testnet: Network::from_id(&request.network).is_some_and(|n| n.mode() == Mode::Testnet),
+            change_is_testnet: review.change_is_testnet,
         })
     }
 
@@ -467,7 +590,7 @@ pub fn review_request(
     manifest: Option<Vec<u8>>,
 ) -> Result<ReviewResult, WalletError> {
     let keys = PublicKeys::decode(&public_keys)?;
-    let manifest = load_manifest(manifest)?;
+    let manifest = load_manifest(manifest);
     let Ok(request) = SignRequest::decode(&message) else {
         return Ok(review_result(
             Review::forbidden("", Forbid::ParseFailed),
@@ -539,7 +662,7 @@ pub fn verify_manifest(package: Vec<u8>, current_version: u32) -> Result<u32, Wa
 
 #[uniffi::export]
 pub fn manifest_version(package: Option<Vec<u8>>) -> Result<u32, WalletError> {
-    Ok(load_manifest(package)?.version)
+    Ok(load_manifest(package).version)
 }
 
 #[uniffi::export]
@@ -593,7 +716,7 @@ pub struct ManifestEntry {
 /// 内置清单的全部代币,用于 A12 展示.原生币也在里面.
 #[uniffi::export]
 pub fn manifest_entries(package: Option<Vec<u8>>) -> Result<Vec<ManifestEntry>, WalletError> {
-    let manifest = load_manifest(package)?;
+    let manifest = load_manifest(package);
     Ok(manifest
         .assets
         .iter()
@@ -683,19 +806,78 @@ mod tests {
             paths: vec!["m/44'/60'/0'/0/0".into()],
             payload,
             hint: None,
+            chain: None,
         };
         let review = review_request(request.encode(), keys.clone(), NO_CHANGE, None).unwrap();
         assert_eq!((review.risk, review.confirm), (RiskLevel::Transfer, ConfirmMode::Tap));
-        let outcome = wallet
-            .sign_request(request.encode(), keys.clone(), NO_CHANGE, None)
-            .unwrap();
+        assert!(review.mainnet);
+        let rows = review.field_count;
+        assert_eq!(review.fields.len() as u32, rows);
+        let digest = review.review_digest;
+        let sign = |digest: &[u8], rendered| {
+            wallet.sign_request(
+                request.encode(),
+                keys.clone(),
+                NO_CHANGE,
+                None,
+                digest.to_vec(),
+                rendered,
+                false,
+            )
+        };
+        assert!(sign(&[0; 32], rows).is_err());
+        assert!(sign(&digest, rows - 1).is_err());
+        let outcome = sign(&digest, rows).unwrap();
         assert!(outcome.frames.next_part().unwrap().starts_with("ur:bitone-response/"));
 
         request.fingerprint = [0; 4];
         let refused = review_request(request.encode(), keys.clone(), NO_CHANGE, None).unwrap();
         assert!(refused.fingerprint_mismatch);
         assert_eq!(refused.confirm, ConfirmMode::Refuse);
-        assert!(wallet.sign_request(request.encode(), keys, NO_CHANGE, None).is_err());
+        assert!(
+            wallet
+                .sign_request(request.encode(), keys, NO_CHANGE, None, refused.review_digest, 0, true)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn a_raw_hash_cannot_skip_the_second_confirmation() {
+        use bitone_core::request::KIND_RAW_HASH;
+
+        let sealed = WalletDraft::generate(12)
+            .unwrap()
+            .seal(PIN.into(), TAG.to_vec())
+            .unwrap();
+        let wallet = UnlockedWallet::open(sealed, PIN.into(), TAG.to_vec(), String::new()).unwrap();
+        let keys = wallet.public_keys(false).unwrap();
+        let fingerprint = PublicKeys::decode(&keys).unwrap().fingerprint;
+        let request = SignRequest {
+            version: 1,
+            id: [1; 16],
+            fingerprint,
+            network: "ethereum".into(),
+            kind: KIND_RAW_HASH,
+            paths: vec!["m/44'/60'/0'/0/0".into()],
+            payload: vec![7; 32],
+            hint: None,
+            chain: None,
+        };
+        let review = review_request(request.encode(), keys.clone(), NO_CHANGE, None).unwrap();
+        assert_eq!(review.confirm, ConfirmMode::HoldConfirm);
+        let sign = |twice| {
+            wallet.sign_request(
+                request.encode(),
+                keys.clone(),
+                NO_CHANGE,
+                None,
+                review.review_digest.clone(),
+                review.field_count,
+                twice,
+            )
+        };
+        assert!(sign(false).is_err());
+        assert!(sign(true).is_ok());
     }
 
     #[test]
@@ -712,6 +894,30 @@ mod tests {
         };
         let review = review_request(vec![1, 2, 3], wallet_keys, NO_CHANGE, None).unwrap();
         assert_eq!(review.risk, RiskLevel::Forbidden);
+    }
+
+    #[test]
+    fn a_field_row_crosses_the_boundary_unchanged() {
+        let row = field_row(bitone_core::review::FieldRow {
+            id: 3,
+            parent: Some(1),
+            depth: 2,
+            name: "owner_address".into(),
+            label: "付款账户".into(),
+            kind: Kind::Address,
+            value: "T".into(),
+            source: SourceKind::Context,
+            offset: Some(4),
+            len: Some(21),
+            risk: Some(Risk::Unknown),
+            note: Some("备注".into()),
+            own: true,
+        });
+        assert_eq!((row.id, row.parent, row.depth), (3, Some(1), 2));
+        assert_eq!((row.kind, row.source), (FieldKind::Address, FieldSource::Context));
+        assert_eq!((row.offset, row.len), (Some(4), Some(21)));
+        assert_eq!(row.risk, Some(RiskLevel::Unknown));
+        assert!(row.own);
     }
 
     #[test]

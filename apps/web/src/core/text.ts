@@ -14,6 +14,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** 列表里的短格式,如 0x7a3F…9C21. */
 export function shortAddress(address: string): string {
+    if (!address) return "—";
     const head = address.startsWith("0x") || address.startsWith("bc1") || address.startsWith("tb1") ? 6 : 4;
     if (address.length <= head + 5) return address;
     return `${address.slice(0, head)}…${address.slice(-4)}`;

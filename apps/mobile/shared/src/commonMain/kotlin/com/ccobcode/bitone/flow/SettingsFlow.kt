@@ -48,15 +48,17 @@ class SettingsFlow internal constructor(private val host: FlowHost, private val 
     var viewWords by mutableStateOf(emptyList<String>())
         private set
 
-    fun startViewWords() = host.guarded {
-        if (!host.recheck()) return@guarded
+    fun startViewWords() = host.operation {
         host.unlock(
             UnlockRequest(UnlockPurpose.ViewWords) {
                 UnlockTask(
                     use = { wallet, _ -> wallet.words() },
                     finish = { words ->
-                        viewWords = words
-                        host.showOnly(Screen.ViewWords)
+                        // 解开钱包要几秒,这期间新出现的失败要先确认.助记词丢掉,确认后回到 A7 重来.
+                        if (host.recheck() && host.screen == Screen.Unlock) {
+                            viewWords = words
+                            host.showOnly(Screen.ViewWords)
+                        }
                     },
                 )
             }
@@ -72,8 +74,7 @@ class SettingsFlow internal constructor(private val host: FlowHost, private val 
     var changingPin by mutableStateOf(false)
         private set
 
-    fun startChangePin() = host.guarded {
-        if (!host.recheck()) return@guarded
+    fun startChangePin() = host.operation {
         pin.reset()
         changingPin = true
         host.push(Screen.SetPin)
@@ -107,9 +108,8 @@ class SettingsFlow internal constructor(private val host: FlowHost, private val 
         host.stack = host.stack.filterNot { it == Screen.SetPin || it == Screen.Unlock }
     }
 
-    /** 设置页的二次确认之后才调用.自检通过,PIN 正确才抹除,错误计入 [PinGuard]. */
-    fun startWipe() = host.guarded {
-        if (!host.recheck() || !host.session.canWipe) return@guarded
+    /** 设置页的二次确认之后才调用.PIN 正确才抹除,错误计入 [PinGuard]. */
+    fun startWipe() = host.operation {
         host.unlock(
             UnlockRequest(UnlockPurpose.Wipe) {
                 UnlockTask(

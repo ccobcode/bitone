@@ -1,5 +1,5 @@
 import type { RequestHeader } from "../../core";
-import { buildTronTransfer as wasmBuildTron } from "../../core/pkg/bitone_wasm";
+import { buildTronTransfer as wasmBuildTron, tronPayloadInfo as wasmPayloadInfo } from "../../core/pkg/bitone_wasm";
 
 export interface TronTransfer extends RequestHeader {
     path: string;
@@ -15,3 +15,11 @@ export interface TronTransfer extends RequestHeader {
 }
 
 export const buildTronTransfer = (args: TronTransfer): Uint8Array => wasmBuildTron(args);
+
+export interface TronPayloadInfo {
+    expirationMs: number;
+    feeLimit: number;
+}
+
+/** 粘贴的 `raw_data` 的过期时间和 fee_limit.核心库解析不了时是 undefined. */
+export const tronPayloadInfo = (payload: Uint8Array): TronPayloadInfo | undefined => wasmPayloadInfo(payload);

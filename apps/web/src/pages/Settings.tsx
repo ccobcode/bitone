@@ -258,6 +258,12 @@ export default function Settings() {
 
             <BackupCard />
 
+            <Group id="h-adv" title={t("高级")}>
+                <Setting label={t("原始请求")} hint={t("转账表单不支持的交易,手动填写后由冷钱包签名")}>
+                    <LinkButton to="/raw">{t("打开")}</LinkButton>
+                </Setting>
+            </Group>
+
             <Group id="h-danger" title={t("危险操作")} tone="text-danger">
                 <Setting label={t("清除本地数据")} hint={t("钱包可重新扫码恢复,地址簿和备注只能从备份恢复")}>
                     <ClearData />

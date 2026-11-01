@@ -58,7 +58,7 @@ Only the cold wallet holds private keys. The web app and gateway are designed as
 - **Multi-chain**: Bitcoin, Ethereum, BNB Smart Chain, Polygon, TRON, Solana and their testnets.
 - **Independent review**: The cold wallet parses each transaction and rates its risk itself. It ignores what the web app claims.
 - **Two-layer encryption**: The seed is encrypted with a PIN-derived key, then with a hardware Keystore key.
-- **Offline self-check**: Airplane mode, root, debugging and screen lock are checked at launch and before signing. A failed check locks signing.
+- **Offline self-check**: Airplane mode, root, debugging and screen lock are checked at launch and before signing. A failed check shows a strong warning, and the owner can continue one operation at a time. Only generating a new wallet stays blocked.
 - **Built-in list**: Token data ships with the app and updates offline by QR, taking effect only after its signature checks out.
 
 Not supported: iOS, HarmonyOS NEXT, DApp connections, message signing, swaps, multisig and NFTs.
@@ -145,7 +145,7 @@ curl -fLO https://github.com/ccobcode/bitone/releases/download/v$VERSION/$APK
 apksigner verify --print-certs $APK | grep $CERT && adb install $APK
 ```
 
-On the phone, set a screen lock, turn off USB debugging, turn on airplane mode, then create a wallet. The self-check locks signing if any of these is missing.
+On the phone, set a screen lock, turn off USB debugging, turn on airplane mode, then create a wallet. If any of these is missing, the app will not generate a new wallet and warns before every other operation.
 
 Open [bitone.cloudtay.com](https://bitone.cloudtay.com) and pair the cold wallet.
 

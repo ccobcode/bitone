@@ -48,6 +48,7 @@ import {
     SkeletonRows,
 } from "../ui/primitives";
 import { Confirm } from "../ui/Sheet";
+import { SignedTx } from "../ui/SignedTx";
 import { StateCard } from "../ui/StateCard";
 import { AssetIcon } from "../ui/TokenIcon";
 import { t, translate } from "../core/i18n";
@@ -238,6 +239,7 @@ function Details({ tx }: { tx: TxRecord }) {
                     </Fact>
                 ))}
             </dl>
+            {tx.raw ? <SignedTx raw={tx.raw} /> : null}
             {tx.hash ? <Remark id={txKey(tx.network, tx.hash)} /> : null}
         </Section>
     );

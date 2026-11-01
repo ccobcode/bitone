@@ -77,9 +77,6 @@ impl PublicKeys {
         if account.chain != Chain::Bitcoin && index != 0 {
             return Err(Error::InvalidParams);
         }
-        if index >= crate::path::MAX_ADDRESS_INDEX {
-            return Err(Error::IndexTooLarge);
-        }
         let bitcoin_network = if account_path.contains("/1'/") {
             Network::BtcTestnet4
         } else {
@@ -99,20 +96,21 @@ impl PublicKeys {
     }
 
     /// secp256k1 压缩公钥.Bitcoin 路径从账户扩展公钥继续派生.
+    /// 没有导出的硬化路径算不出来,结果是 `PathNotAllowed`,这样的路径解锁后才能核对.
     pub fn secp256k1(&self, path: &DerivationPath) -> Result<[u8; 33], Forbid> {
-        if let Some(account) = self.exact(path) {
+        let bitcoin = self.accounts.iter().filter(|a| a.chain == Chain::Bitcoin);
+        let parent = bitcoin
+            .filter_map(|account| Some((account, DerivationPath::parse(&account.path).ok()?)))
+            .find(|(_, parent)| path.0.starts_with(&parent.0));
+        let Some((account, parent)) = parent else {
+            let account = self.exact(path).ok_or(Forbid::PathNotAllowed)?;
             return account.key.as_slice().try_into().map_err(|_| Forbid::AddressMismatch);
-        }
-        let [a, b, c, change, index] = path.0.as_slice() else {
-            return Err(Forbid::PathNotAllowed);
         };
-        let parent = DerivationPath(vec![*a, *b, *c]);
-        let account = self.exact(&parent).ok_or(Forbid::PathNotAllowed)?;
         let xpub = Xpub::decode(&account.key).map_err(|_| Forbid::AddressMismatch)?;
-        let children = [
-            ChildNumber::from_normal_idx(*change).map_err(|_| Forbid::PathNotAllowed)?,
-            ChildNumber::from_normal_idx(*index).map_err(|_| Forbid::PathNotAllowed)?,
-        ];
+        let children = path.0[parent.0.len()..]
+            .iter()
+            .map(|level| ChildNumber::from_normal_idx(*level).map_err(|_| Forbid::PathNotAllowed))
+            .collect::<Result<Vec<_>, _>>()?;
         let child = xpub
             .derive_pub(&Secp256k1::verification_only(), &children)
             .map_err(|_| Forbid::AddressMismatch)?;

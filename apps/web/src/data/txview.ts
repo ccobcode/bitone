@@ -32,12 +32,18 @@ export function detailFacts(tx: TxRecord): TxFact[] {
     const rows: TxFact[] = [
         { label: t("网络"), value: networkName(tx.network) },
         { label: t("发送方"), value: tx.from, mono: true },
-        { label: t("接收方"), value: tx.to, mono: true },
+        { label: t("接收方"), value: tx.to || "—", mono: true },
         { label: t("金额"), value: amountText(tx) },
     ];
     if (tx.asset !== "native") rows.push({ label: t("代币合约"), value: tx.asset, mono: true });
     rows.push(...chainOf(tx.chain).view.details(tx));
+    if (tx.feeUnconfirmed) rows.push(feeUnconfirmedFact());
     return rows;
+}
+
+/** 冷钱包可以签手续费无法确认的 PSBT,这里要说明显示的手续费只是声明. */
+export function feeUnconfirmedFact(): TxFact {
+    return { label: t("手续费确认"), value: t("无法确认,输入金额只是声明") };
 }
 
 /** 最终性进度,标准见 docs/03-system.md 第 9 节. */
@@ -90,6 +96,7 @@ export function timelineSteps(tx: TxRecord): TimelineStep[] {
 
 /** 重新发起的入口.取消和创建 nonce 账户这两种不是用户的转账,不能预填内容. */
 export function retryLink(tx: Pick<TxRecord, "id" | "kind" | "accountId" | "network" | "asset">): string {
+    if (tx.kind === "raw") return "/raw";
     if (tx.kind === "cancel" || tx.kind === "create-nonce") {
         return `/send?account=${encodeURIComponent(tx.accountId)}&network=${encodeURIComponent(tx.network)}&asset=native`;
     }

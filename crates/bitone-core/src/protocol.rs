@@ -2,11 +2,13 @@
 //!
 //! 传输层是 BC-UR 喷泉码,载荷是 BitOne 自定义的 CBOR 结构.
 
-use crate::path::{DerivationPath, all_account_specs, validate_for_network};
+use crate::path::{DerivationPath, all_account_specs, classify, validate_for_network};
 use crate::{AccountKind, Chain, Error, Network};
 use minicbor::data::Type;
 use minicbor::{Decode, Decoder, Encode};
+use std::collections::BTreeSet;
 
+/// 永远是 1,见 docs/10-tx-decoding.md 第 1.2 节.
 pub const VERSION: u8 = 1;
 
 pub const UR_ACCOUNTS: &str = "bitone-accounts";
@@ -60,10 +62,9 @@ impl AccountsExport {
     /// 只有内容全部通过校验才返回.路径不在白名单或与主网,测试网声明冲突的数据不会进入浏览器.
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         check_limits(bytes)?;
+        check_fields(bytes)?;
         let export: Self = minicbor::decode(bytes).map_err(|_| Error::Decode)?;
-        if export.version != VERSION {
-            return Err(Error::UnsupportedVersion);
-        }
+        check_version(export.version)?;
         export.validate()?;
         Ok(export)
     }
@@ -82,15 +83,31 @@ impl AccountsExport {
             if account.key.len() != key_len {
                 return Err(Error::InvalidKey);
             }
-            let listed = specs
-                .iter()
-                .any(|s| s.chain == account.chain && s.kind == account.kind && s.path == account.path);
+            // Bitcoin 账户不设白名单,路径和类型不能自相矛盾.其他链的路径在各自的迁移步骤里放开.
+            let listed = match account.chain {
+                Chain::Bitcoin => bitcoin_account_is_consistent(account),
+                Chain::Evm | Chain::Tron | Chain::Solana => specs
+                    .iter()
+                    .any(|s| s.chain == account.chain && s.kind == account.kind && s.path == account.path),
+            };
             let repeated = self.accounts[..i].iter().any(|a| a.path == account.path);
             if !listed || repeated {
                 return Err(Error::PathNotAllowed);
             }
         }
         Ok(())
+    }
+}
+
+/// 路径认得出来时,地址类型要和路径一致.另一条链的路径不是 Bitcoin 账户.账户路径比地址路径少两层.
+fn bitcoin_account_is_consistent(account: &ExportedAccount) -> bool {
+    let Ok(path) = DerivationPath::parse(&account.path) else {
+        return false;
+    };
+    let address = DerivationPath([path.0.as_slice(), &[0, 0]].concat());
+    match classify(&path).or_else(|_| classify(&address)) {
+        Ok(info) => info.chain == Chain::Bitcoin && info.kind == account.kind,
+        Err(_) => account.kind != AccountKind::Single,
     }
 }
 
@@ -129,10 +146,9 @@ impl AddressCheck {
 
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         check_limits(bytes)?;
+        check_fields(bytes)?;
         let check: Self = minicbor::decode(bytes).map_err(|_| Error::Decode)?;
-        if check.version != VERSION {
-            return Err(Error::UnsupportedVersion);
-        }
+        check_version(check.version)?;
         let network = Network::from_id(&check.network).ok_or(Error::Decode)?;
         validate_for_network(&DerivationPath::parse(&check.path)?, network)?;
         Ok(check)
@@ -141,6 +157,15 @@ impl AddressCheck {
     /// 单帧二维码.内容是不区分大小写的 bytewords,所以 Base58 地址不会被大写破坏.
     pub fn frame(&self) -> Result<String, Error> {
         FrameEncoder::new(&self.encode(), UR_ADDRESS, MAX_PART_CHARS)?.next_part()
+    }
+}
+
+/// 更高的版本不拒绝:已知字段齐全就能读,冷钱包在核对页告警.
+pub(crate) fn check_version(version: u8) -> Result<(), Error> {
+    if version < VERSION {
+        Err(Error::UnsupportedVersion)
+    } else {
+        Ok(())
     }
 }
 
@@ -190,6 +215,26 @@ pub fn check_limits(bytes: &[u8]) -> Result<(), Error> {
         }
     }
     if stack.is_empty() { Ok(()) } else { Err(Error::Decode) }
+}
+
+/// 解析前走一遍顶层 map.派生的解码器遇到重复键取最后一个,所以重复键和尾部字节都拒绝.
+/// 未知键放行,派生的解码器会跳过它们,旧手机才读得懂新网页端的请求.
+/// 不定长 map 没有合法来源,直接拒绝.要在 `check_limits` 之后调用.
+pub fn check_fields(bytes: &[u8]) -> Result<(), Error> {
+    let mut decoder = Decoder::new(bytes);
+    let len = decoder.map().map_err(|_| Error::Decode)?.ok_or(Error::Decode)?;
+    let mut seen = BTreeSet::new();
+    for _ in 0..len {
+        if !seen.insert(decoder.u32().map_err(|_| Error::Decode)?) {
+            return Err(Error::Decode);
+        }
+        decoder.skip().map_err(|_| Error::Decode)?;
+    }
+    if decoder.position() == bytes.len() {
+        Ok(())
+    } else {
+        Err(Error::Decode)
+    }
 }
 
 /// 子容器读完后才关闭父容器,否则最后一项嵌套的数据不会累加深度.
@@ -300,6 +345,15 @@ fn header(part: &str) -> Result<&str, Error> {
     Ok(ur_type)
 }
 
+/// 在顶层 map 末尾加一项.
+#[cfg(test)]
+pub(crate) fn with_field(bytes: &[u8], key: u8, value: u8) -> Vec<u8> {
+    let mut out = bytes.to_vec();
+    out[0] += 1;
+    out.extend([key, value]);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,18 +387,39 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_version() {
+    fn a_higher_version_still_decodes_and_zero_does_not() {
         let mut export = sample();
         export.version = 9;
+        assert_eq!(AccountsExport::decode(&export.encode()), Ok(export.clone()));
+        export.version = 0;
         assert_eq!(AccountsExport::decode(&export.encode()), Err(Error::UnsupportedVersion));
     }
 
     #[test]
-    fn rejects_paths_outside_the_export_list() {
-        let stray = account(Chain::Bitcoin, AccountKind::SegWit, "m/84'/0'/7'", 78);
-        assert_eq!(with_accounts(vec![stray]), Err(Error::PathNotAllowed));
+    fn a_higher_address_check_still_decodes() {
+        let check = AddressCheck {
+            version: 9,
+            ..AddressCheck::new([1, 2, 3, 4], Network::Tron, "m/44'/195'/0'/0/0", "T").unwrap()
+        };
+        assert_eq!(AddressCheck::decode(&check.encode()), Ok(check));
+    }
+
+    #[test]
+    fn bitcoin_accounts_import_from_any_path_but_cannot_contradict_it() {
+        for path in ["m/84'/0'/7'", "m/84'/0'/7'/9", "m/9'/1'/2'"] {
+            let any = account(Chain::Bitcoin, AccountKind::SegWit, path, 78);
+            assert!(with_accounts(vec![any]).is_ok(), "{path}");
+        }
         let wrong_kind = account(Chain::Bitcoin, AccountKind::Taproot, "m/84'/0'/0'", 78);
         assert_eq!(with_accounts(vec![wrong_kind]), Err(Error::PathNotAllowed));
+        let other_chain = account(Chain::Bitcoin, AccountKind::SegWit, "m/44'/60'/0'/0/0", 78);
+        assert_eq!(with_accounts(vec![other_chain]), Err(Error::PathNotAllowed));
+    }
+
+    #[test]
+    fn other_chains_keep_the_export_list() {
+        let stray = account(Chain::Evm, AccountKind::Single, "m/44'/60'/1'/0/0", 33);
+        assert_eq!(with_accounts(vec![stray]), Err(Error::PathNotAllowed));
     }
 
     #[test]
@@ -401,6 +476,73 @@ mod tests {
             address: "x".into(),
         };
         assert_eq!(AddressCheck::decode(&forged.encode()), Err(Error::PathNetworkMismatch));
+    }
+
+    #[test]
+    fn trailing_bytes_are_rejected() {
+        let mut bytes = sample().encode();
+        bytes.push(0);
+        assert_eq!(AccountsExport::decode(&bytes), Err(Error::Decode));
+    }
+
+    #[test]
+    fn accounts_tolerate_unknown_fields_and_reject_duplicates() {
+        let bytes = sample().encode();
+        for key in [2, 4] {
+            assert_eq!(
+                AccountsExport::decode(&with_field(&bytes, key, 0)),
+                Ok(sample()),
+                "{key}"
+            );
+        }
+        assert_eq!(
+            AccountsExport::decode(&with_field(&bytes, 0, VERSION)),
+            Err(Error::Decode)
+        );
+    }
+
+    #[test]
+    fn address_check_tolerates_unknown_fields_and_rejects_duplicates() {
+        let check = AddressCheck::new([1, 2, 3, 4], Network::Solana, "m/44'/501'/0'/0'", "x").unwrap();
+        let bytes = check.encode();
+        assert_eq!(AddressCheck::decode(&with_field(&bytes, 5, 0)), Ok(check));
+        assert_eq!(
+            AddressCheck::decode(&with_field(&bytes, 0, VERSION)),
+            Err(Error::Decode)
+        );
+    }
+
+    #[test]
+    fn an_unknown_field_can_hold_a_nested_value() {
+        let mut bytes = sample().encode();
+        bytes[0] += 1;
+        bytes.extend([0x09, 0xa1, 0x01, 0x82, 0x01, 0x02]);
+        assert_eq!(AccountsExport::decode(&bytes), Ok(sample()));
+    }
+
+    #[test]
+    fn repeated_unknown_keys_are_rejected() {
+        let bytes = with_field(&with_field(&sample().encode(), 9, 0), 9, 1);
+        assert_eq!(AccountsExport::decode(&bytes), Err(Error::Decode));
+    }
+
+    #[test]
+    fn an_unknown_field_cannot_carry_trailing_bytes() {
+        let mut bytes = with_field(&sample().encode(), 9, 0);
+        bytes.push(0);
+        assert_eq!(AccountsExport::decode(&bytes), Err(Error::Decode));
+    }
+
+    #[test]
+    fn long_key_encodings_and_indefinite_maps_cannot_hide_a_field() {
+        let mut long_key = sample().encode();
+        long_key[0] += 1;
+        long_key.extend([0x18, 0x00, VERSION]);
+        assert_eq!(AccountsExport::decode(&long_key), Err(Error::Decode));
+        let mut indefinite = sample().encode();
+        indefinite[0] = 0xbf;
+        indefinite.push(0xff);
+        assert_eq!(AccountsExport::decode(&indefinite), Err(Error::Decode));
     }
 
     #[test]

@@ -1,8 +1,9 @@
 //! 一个网络的配置.各条链自己的选项由 `ChainSpec` 检查.
 
 use super::{is_valid, spec};
-use bitone_core::Network;
+use bitone_core::{Mode, Network};
 use serde::Deserialize;
+use std::net::IpAddr;
 
 // ponytail: 各条链的选项都在这一个结构里,配置文件的格式才能不变.`deny_unknown_fields` 和 `flatten`
 // 不能同用,所以新链要加选项时还是改这里.选项多了以后按链分表.
@@ -29,6 +30,30 @@ pub fn check_url(url: &str, owner: &str) -> Result<(), String> {
     }
 }
 
+/// 同机和内网的地址不经过公网.主机名查不出在哪里,不算.
+fn is_local(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    match host.trim_matches(['[', ']']).parse() {
+        Ok(IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
+        Ok(IpAddr::V6(ip)) => ip.is_loopback() || ip.is_unique_local(),
+        Err(_) => false,
+    }
+}
+
+/// 主网的上游决定网页端看到的余额和交易状态,明文连接谁都能改.同机或内网自建的节点除外.
+fn check_transport(network: Network, url: &str) -> Result<(), String> {
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return Ok(());
+    };
+    let plain = matches!(parsed.scheme(), "http" | "tcp");
+    if network.mode() == Mode::Mainnet && plain && !parsed.host_str().is_some_and(is_local) {
+        return Err(format!("{} 是主网,明文上游只能是本机或内网的 IP", network.id()));
+    }
+    Ok(())
+}
+
 impl NetworkConfig {
     pub fn validate(&self, network: Network) -> Result<(), String> {
         let id = network.id();
@@ -43,6 +68,9 @@ impl NetworkConfig {
             if set && !spec.options().contains(&option) {
                 return Err(format!("{id} 不支持 {option}"));
             }
+        }
+        for url in self.upstreams.iter().chain(&self.indexer) {
+            check_transport(network, url)?;
         }
         for url in &self.upstreams {
             spec.check_upstream(network, url)?;

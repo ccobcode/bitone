@@ -1,0 +1,57 @@
+{
+    "native_unit": "SOL",
+    "none": "无",
+    "item": "item",
+    "variant": "variant",
+    "lookup_value": "查找表地址",
+    "roles": {
+        "signer_writable": "签名者,可写",
+        "signer_readonly": "签名者,只读",
+        "writable": "可写",
+        "readonly": "只读"
+    },
+    "versions": {
+        "prefix": 128,
+        "v1": 129,
+        "legacy": "legacy",
+        "v0": "v0",
+        "v1_name": "v1"
+    },
+    "associated_token_program": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+    "token_programs": ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"],
+    "fees": {
+        "lamports_per_signature": 5000,
+        "units_per_instruction": 200000,
+        "max_compute_units": 1400000,
+        "micro_lamports_per_lamport": 1000000,
+        "unit_limit": { "action": "computeBudget.setComputeUnitLimit", "argument": "units" },
+        "unit_price": { "action": "computeBudget.setComputeUnitPrice", "argument": "microLamports" }
+    },
+    "v1": {
+        "priority_fee": 3,
+        "compute_unit_limit": 4,
+        "loaded_accounts_data_size_limit": 8,
+        "heap_size": 16,
+        "max_size": 4096,
+        "signature_bytes": 64,
+        "max_signatures": 12,
+        "max_addresses": 64,
+        "max_instructions": 64,
+        "min_heap": 32768,
+        "max_heap": 262144,
+        "heap_step": 1024
+    },
+    "offchain": {
+        "domain_prefix": 255,
+        "domain": "solana offchain",
+        "application_domain_bytes": 32,
+        "formats": ["restricted-ascii", "limited-utf8", "extended-utf8"],
+        "ledger": { "limited": 1212, "extended": 65515 },
+        "preamble": { "limited": 1232, "extended": 65535 }
+    },
+    "token_transfer": {
+        "instructions": ["transferChecked", "transferCheckedWithFee"],
+        "destination": "destination",
+        "mint": "mint"
+    }
+}

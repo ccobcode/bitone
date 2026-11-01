@@ -1,0 +1,17 @@
+# docs/10-tx-decoding.md 第 6.1 节的运行时依赖,这里只检查 wasm 和 Android 能否构建.
+[package]
+name = "dependency-builds"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+alloy-consensus = { version = "=2.5.0", default-features = false, features = ["std"] }
+alloy-dyn-abi = { version = "=1.7.3", default-features = false, features = ["std", "eip712"] }
+alloy-eips = { version = "=2.5.0", default-features = false, features = ["std"] }
+alloy-primitives = { version = "=1.7.3", default-features = false, features = ["std"] }
+alloy-rlp = { version = "=0.3.17", default-features = false, features = ["std"] }
+bitcoin = { version = "=0.32.102", default-features = false, features = ["std", "secp-recovery"] }
+psbt-v2 = "=0.3.0"

@@ -7,6 +7,8 @@ import com.ccobcode.bitone.platform.HardwareKeyException
 import com.ccobcode.bitone.platform.UnlockedWallet
 import com.ccobcode.bitone.platform.WalletCoreException
 import com.ccobcode.bitone.platform.WalletMeta
+import com.ccobcode.bitone.platform.walletMeta
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 
 /** A7 解开钱包之后做什么.钱包只活在这一次操作里,操作结束立刻关闭. */
@@ -53,8 +55,6 @@ private sealed interface Attempt<out T> {
     class Failed(val reason: String) : Attempt<Nothing>
 
     data object Lost : Attempt<Nothing>
-
-    data object Wiped : Attempt<Nothing>
 }
 
 /** A7 输 PIN,解开钱包,做完发起方交来的事.这里不知道发起方是谁. */
@@ -88,7 +88,11 @@ class UnlockFlow internal constructor(private val host: FlowHost, private val gu
         get() = session.passphraseRequired && purpose !in PIN_ONLY
 
     val canSubmit: Boolean
-        get() = !host.busy && waitMs == 0L && pin.length == PIN_LENGTH && (!needsPassphrase || passphrase.isNotEmpty())
+        get() =
+            !host.busy &&
+                waitMs == 0L &&
+                pin.length == PIN_LENGTH &&
+                (!needsPassphrase || passphrase.isNotEmpty() || session.passphraseOptional)
 
     internal fun open(next: UnlockRequest) {
         request = next
@@ -143,7 +147,7 @@ class UnlockFlow internal constructor(private val host: FlowHost, private val gu
         host.guarded {
             // 输入框不等结果,先清空.
             resetEntry()
-            // 解开钱包之前再自检一次,这是签名前的最后一步.
+            // 解开钱包之前再自检一次,这是签名前的最后一步.停在 AS 时 PIN 已经清掉,确认后回到这页重新输入.
             if (!host.recheck() || host.screen != Screen.Unlock || task == null) return@guarded
             perform(task, enteredPin, enteredPassphrase, current)
         }
@@ -160,7 +164,6 @@ class UnlockFlow internal constructor(private val host: FlowHost, private val gu
             is Attempt.Opened -> {
                 failures = 0
                 waitMs = 0
-                session.canWipe = true
                 task.finish(outcome.result)
             }
             Attempt.Wrong -> refreshStatus()
@@ -171,17 +174,17 @@ class UnlockFlow internal constructor(private val host: FlowHost, private val gu
                 error = outcome.reason
             }
             Attempt.Lost -> host.walletLost()
-            Attempt.Wiped -> {
-                host.walletErased()
-                host.stack = listOf(Screen.Wiped)
-            }
         }
     }
 
-    /** 旧格式在输对 PIN 时换成当前格式.新密文落盘后才删旧密钥,中途断电时旧密文还能解开. */
+    /** 旧格式在输对 PIN 时换成当前格式.新密文落盘后才删旧密钥,中途断电时旧密文还能解开.失败时留着旧密文,下次解锁再换,不影响这次使用. */
     private suspend fun migrate(wallet: UnlockedWallet, enteredPin: String) {
-        store.replaceVault(wallet.seal(enteredPin, hardwareKey.enroll(enteredPin)))
-        hardwareKey.dropLegacy()
+        try {
+            store.replaceVault(wallet.seal(enteredPin, hardwareKey.enroll(enteredPin)))
+            hardwareKey.dropLegacy()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {}
     }
 
     private suspend fun <T> attempt(
@@ -192,8 +195,8 @@ class UnlockFlow internal constructor(private val host: FlowHost, private val gu
     ): Attempt<T> {
         if (guard.remainingMs() > 0) return Attempt.Wait
         val vault = store.readVault() ?: return Attempt.Lost
-        val saved = store.readMeta() ?: return Attempt.Lost
-        // 硬件层失败不是 PIN 错误,不计数,也绝不能因此抹除.
+        val saved = store.walletMeta() ?: return Attempt.Lost
+        // 硬件层失败不是 PIN 错误,不计数.只有密钥确实不在了才算丢失,其他错误可以重试.
         val (sealed, tag) =
             try {
                 if (core.isBoundVault(vault)) {
@@ -206,10 +209,12 @@ class UnlockFlow internal constructor(private val host: FlowHost, private val gu
                 }
             } catch (_: HardwareKeyException.AuthCancelled) {
                 return Attempt.Cancelled
-            } catch (_: HardwareKeyException) {
+            } catch (_: HardwareKeyException.Lost) {
                 return Attempt.Lost
+            } catch (_: HardwareKeyException) {
+                return Attempt.Failed("硬件密钥暂时不可用,请重试")
             }
-        val attempts = guard.beginAttempt()
+        guard.beginAttempt()
         val wallet: UnlockedWallet =
             try {
                 if (tag != null) {
@@ -218,9 +223,7 @@ class UnlockFlow internal constructor(private val host: FlowHost, private val gu
                     core.openLegacy(sealed, enteredPin, enteredPassphrase)
                 }
             } catch (_: WalletCoreException.WrongPin) {
-                if (attempts < MAX_PIN_FAILURES) return Attempt.Wrong
-                host.eraseData()
-                return Attempt.Wiped
+                return Attempt.Wrong
             } catch (_: WalletCoreException) {
                 return Attempt.Lost
             }

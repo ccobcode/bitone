@@ -16,9 +16,12 @@ ws_heartbeat_ms = 30000
 rate_limit_burst = 1200
 rate_limit_per_second = 20
 ws_max_connections_per_ip = 64
+ws_max_addresses_per_ip = 20000
 
 # 部署在反向代理或负载均衡后面时,填代理的 IP.
 # 只有来自这些 IP 的请求才读 X-Forwarded-For,默认不信任任何代理.
+# 代理要把对端地址追加到这个头里.网关从右往左取第一个不受信任的地址,
+# 链路上没有填在这里的代理会被当成客户端,比如 CDN 的节点.
 trusted_proxies = []
 
 # 价格上游是 CoinGecko 的 simple/price 格式.删掉这一段后 /v1/prices 返回空.
@@ -53,6 +56,7 @@ url = "https://api.coingecko.com/api/v3/simple/price"
 
 # Bitcoin 优先用 Electrum 协议:一个连接批量查询,不用自己存区块.Esplora 只做备用.
 # ssl:// 验证证书,ssl-insecure:// 不验证,只允许测试网,tcp:// 只用于同机或内网的服务器.
+# 主网的 tcp:// 和 http:// 上游只接受 localhost 和内网 IP,indexer 也一样.
 # 自建 electrs 或 Fulcrum 时把地址写在最前面,其他不用改.
 # 公共服务器由志愿者运营,能看到查询的地址.
 

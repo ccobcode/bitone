@@ -1,13 +1,15 @@
 //! Bitcoin PSBT 的核对,签名,核验.需要真实的 `Wallet`,所以放在这里.
 //! 助记词是 abandon×11 about,下面的伪造 PSBT 都是真的构造出来再序列化的.
 
-use bitcoin::bip32::{DerivationPath as BipPath, Fingerprint};
+use bitcoin::bip32::{DerivationPath as BipPath, Fingerprint, Xpriv};
 use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::hashes::Hash;
 use bitcoin::psbt::{Input, Psbt, PsbtSighashType};
 use bitcoin::secp256k1::{PublicKey, Secp256k1, ecdsa};
 use bitcoin::taproot::{TapTree, TaprootBuilder};
-use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness, absolute, transaction};
+use bitcoin::{
+    Amount, NetworkKind, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness, absolute, transaction,
+};
 use bitone_core::keys::PublicKeys;
 use bitone_core::manifest::Manifest;
 use bitone_core::path::classify;
@@ -19,6 +21,7 @@ use bitone_core::tx::{self, HighestChange, ReviewContext};
 use bitone_core::{AccountKind, DerivationPath, Error as CoreError, Network};
 use bitone_signer::Error;
 use bitone_signer::keys::Wallet;
+use bitone_signer::mnemonic;
 use std::str::FromStr;
 
 const SEGWIT: &str = "m/84'/0'/0'/0/0";
@@ -48,8 +51,41 @@ fn setup() -> Setup {
     Setup { wallet, keys, other }
 }
 
+fn shown(review: &Review, wanted: &str) -> bool {
+    review.fields.iter().any(|row| row.value == wanted)
+}
+
+fn field_value<'a>(review: &'a Review, name: &str) -> &'a str {
+    review
+        .fields
+        .iter()
+        .find(|row| row.name == name)
+        .unwrap()
+        .value
+        .as_str()
+}
+
+/// 交易的输出行,带是否属于本钱包.前序交易的输出也叫这个名字,嵌套得更深.
+fn outputs(review: &Review) -> Vec<bool> {
+    let rows = || review.fields.iter().filter(|row| row.name == "output");
+    let depth = rows().map(|row| row.depth).min();
+    rows()
+        .filter(|row| Some(row.depth) == depth)
+        .map(|row| row.own)
+        .collect()
+}
+
 fn p(text: &str) -> DerivationPath {
     DerivationPath::parse(text).unwrap()
+}
+
+/// 测试钱包在这条路径上的公钥.网页端保存的公钥算不出没有导出的硬化路径.
+fn seed_key(path: &str) -> PublicKey {
+    let seed = mnemonic::seed(&[0u8; 16], "").unwrap();
+    let secp = Secp256k1::new();
+    let master = Xpriv::new_master(NetworkKind::Main, seed.as_ref()).unwrap();
+    let child = master.derive_priv(&secp, &BipPath::from_str(path).unwrap()).unwrap();
+    child.private_key.public_key(&secp)
 }
 
 fn public(keys: &PublicKeys, path: &str) -> PublicKey {
@@ -108,6 +144,7 @@ fn request(s: &Setup, network: Network, payload: Vec<u8>) -> SignRequest {
         paths: Vec::new(),
         payload,
         hint: None,
+        chain: None,
     }
 }
 
@@ -120,7 +157,12 @@ fn review_with(s: &Setup, network: Network, payload: Vec<u8>, highest_change: u3
             testnet: highest_change,
         },
     };
-    tx::review(&request(s, network, payload), &ctx)
+    let review = tx::review(&request(s, network, payload), &ctx);
+    assert_eq!(review.field_count as usize, review.fields.len());
+    if review.is_signable() {
+        assert!(!review.fields.is_empty());
+    }
+    review
 }
 
 fn review(s: &Setup, payload: Vec<u8>) -> Review {
@@ -215,13 +257,28 @@ mod ownership {
         let review = review(&s, segwit_send(&s));
         assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Tap));
         assert!(review.alerts.is_empty());
-        assert!(review.rows.iter().any(|r| r.label == "派生路径" && r.value == SEGWIT));
-        assert!(
-            review
-                .rows
-                .iter()
-                .any(|r| r.value == "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu")
-        );
+        assert!(shown(&review, SEGWIT));
+        assert!(shown(&review, "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"));
+    }
+
+    /// 路径在 PSBT 里.请求的 `paths` 没有校验,不能变成字段.
+    #[test]
+    fn the_paths_of_the_request_are_not_rows() {
+        let s = setup();
+        let plain = request(&s, Network::Bitcoin, segwit_send(&s));
+        let written = SignRequest {
+            paths: vec!["随便写的路径".into()],
+            ..plain.clone()
+        };
+        let ctx = ReviewContext {
+            keys: &s.keys,
+            manifest: Manifest::builtin(),
+            highest_change: HighestChange::default(),
+        };
+        let review = tx::review(&written, &ctx);
+        assert!(review.is_signable());
+        assert!(!shown(&review, "随便写的路径"));
+        assert_eq!(review.review_digest, tx::review(&plain, &ctx).review_digest);
     }
 
     #[test]
@@ -235,10 +292,9 @@ mod ownership {
         let review = review(&s, payload);
         assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Hold));
         assert_eq!(review.alerts, vec!["有 1 个输入不属于本钱包"]);
-        let row = review.rows.iter().find(|r| r.label == "其他钱包的输入").unwrap();
-        assert_eq!(row.value, "1 个,共 0.0025 BTC");
-        assert_eq!(review.rows.iter().filter(|r| r.label == "付款账户").count(), 1);
-        assert_eq!(review.amount.unwrap().text, "0.0065");
+        let inputs = review.fields.iter().filter(|row| row.name == "input");
+        assert_eq!(inputs.filter(|row| row.own).count(), 1);
+        assert_eq!(review.summary.amount.unwrap().text, "0.0065");
     }
 
     #[test]
@@ -271,19 +327,68 @@ mod ownership {
         );
     }
 
+    /// 公钥算得出的路径,算出来不一样就拒绝.
     #[test]
-    fn input_path_outside_the_whitelist_is_refused() {
+    fn a_derivable_input_path_of_another_address_is_refused() {
         let s = setup();
-        for path in [
-            "m/84'/0'/1'/0/0",
-            "m/84'/0'/0'/2/0",
-            "m/84'/0'/0'/0/100000",
-            "m/9'/0'/0'/0/0",
-            "m/0",
-        ] {
+        for path in ["m/84'/0'/0'/2/0", "m/84'/0'/0'/0/100000", "m/84'/0'/0'/0/1/7"] {
             let payload = forged(&segwit_send(&s), |psbt| set_path(&mut psbt.inputs[0], path));
-            assert_eq!(forbidden(review(&s, payload)), Some(Forbid::PathNotAllowed), "{path}");
+            assert_eq!(forbidden(review(&s, payload)), Some(Forbid::AddressMismatch), "{path}");
         }
+    }
+
+    /// 公钥算不出的路径要等解锁,这时才有结论.
+    #[test]
+    fn an_unverifiable_input_path_warns_and_is_settled_after_unlocking() {
+        let s = setup();
+        for path in ["m/84'/0'/1'/0/0", "m/9'/0'/0'/0/0", "m/0"] {
+            let payload = forged(&segwit_send(&s), |psbt| set_path(&mut psbt.inputs[0], path));
+            let shown = review(&s, payload.clone());
+            assert_eq!((shown.risk, shown.confirm), (Risk::Transfer, Confirm::Hold), "{path}");
+            assert!(shown.alerts[0].contains(path), "{}", shown.alerts[0]);
+            assert_eq!(
+                sign(&s, Network::Bitcoin, payload).unwrap_err(),
+                Error::Refused,
+                "{path}"
+            );
+        }
+    }
+
+    /// 真实的非常见路径:私钥派生得出,网页端的公钥算不出.
+    #[test]
+    fn any_path_can_spend() {
+        let s = setup();
+        for path in ["m/84'/0'/7'/0/0", "m/9'/0'/0'", "m/84'/5'/0'/3/1"] {
+            let key = seed_key(path);
+            let prev = funding(script_for(AccountKind::SegWit, &key).unwrap(), 1_000_000, 9);
+            let payload = forged(&segwit_send(&s), |psbt| {
+                psbt.unsigned_tx.input[0].previous_output.txid = prev.compute_txid();
+                let source = (Fingerprint::from(s.keys.fingerprint), BipPath::from_str(path).unwrap());
+                psbt.inputs[0] = Input {
+                    non_witness_utxo: Some(prev.clone()),
+                    bip32_derivation: [(key, source)].into(),
+                    ..Input::default()
+                };
+            });
+            let (req, response, shown) = sign(&s, Network::Bitcoin, payload).unwrap();
+            assert_eq!(shown.confirm, Confirm::Hold, "{path}");
+            assert!(btc::verify(Network::Bitcoin, &req, &response).is_ok(), "{path}");
+        }
+    }
+
+    #[test]
+    fn a_usual_key_on_another_script_type_warns() {
+        let s = setup();
+        let key = public(&s.keys, SEGWIT);
+        let prev = funding(script_for(AccountKind::Legacy, &key).unwrap(), 1_000_000, 9);
+        let payload = forged(&segwit_send(&s), |psbt| {
+            psbt.unsigned_tx.input[0].previous_output.txid = prev.compute_txid();
+            psbt.inputs[0].non_witness_utxo = Some(prev.clone());
+            psbt.inputs[0].witness_utxo = None;
+        });
+        let shown = review(&s, payload);
+        assert_eq!(shown.confirm, Confirm::Hold);
+        assert!(shown.alerts[0].contains(SEGWIT), "{}", shown.alerts[0]);
     }
 
     #[test]
@@ -396,12 +501,40 @@ mod ownership {
         assert_eq!(forbidden(tx::review(&req, &ctx)), Some(Forbid::RawHashSigning));
     }
 
+    /// 手续费确认不了,可以签,类别是无法识别.
+    fn assert_fee_unconfirmed(review: &Review) {
+        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(
+            review.alerts.iter().any(|alert| alert.contains("手续费无法确认")),
+            "{:?}",
+            review.alerts
+        );
+    }
+
     #[test]
-    fn non_taproot_input_needs_the_previous_transaction() {
+    fn segwit_input_without_the_previous_transaction_is_unknown_and_signable() {
         let s = setup();
         let payload = forged(&segwit_send(&s), |psbt| psbt.inputs[0].non_witness_utxo = None);
-        assert_eq!(forbidden(review(&s, payload.clone())), Some(Forbid::MissingPrevTx));
-        assert_eq!(sign(&s, Network::Bitcoin, payload).unwrap_err(), Error::Refused);
+        let shown = review(&s, payload.clone());
+        assert_fee_unconfirmed(&shown);
+        let fee = shown.fields.iter().find(|row| row.name == "fee").unwrap();
+        assert_eq!(fee.risk, Some(Risk::Unknown));
+        assert!(fee.note.as_ref().unwrap().contains("手续费无法确认"));
+        let (_, response, signed) = sign(&s, Network::Bitcoin, payload).unwrap();
+        assert_fee_unconfirmed(&signed);
+        assert_eq!(*response.signatures[0].last().unwrap(), 0x01);
+    }
+
+    #[test]
+    fn legacy_input_without_the_previous_transaction_is_refused() {
+        let s = setup();
+        let inputs = [utxo(&s, LEGACY, 1_000_000, 1)];
+        let payload = build_psbt(Network::Bitcoin, &s.keys, &inputs, &[pay(PEER, 400_000)], None).unwrap();
+        let payload = forged(&payload, |psbt| {
+            let spent = psbt.inputs[0].non_witness_utxo.take().unwrap().output[0].clone();
+            psbt.inputs[0].witness_utxo = Some(spent);
+        });
+        assert_eq!(forbidden(review(&s, payload)), Some(Forbid::MissingPrevTx));
     }
 
     #[test]
@@ -456,10 +589,7 @@ mod ownership {
         let payload = forged(&segwit_send(&s), |psbt| psbt.inputs[0].witness_utxo = None);
         let review = review(&s, payload);
         assert!(review.is_signable());
-        assert_eq!(
-            review.rows.iter().find(|r| r.label == "手续费").unwrap().value,
-            "0.00001 BTC"
-        );
+        assert_eq!(field_value(&review, "fee"), "0.00001 BTC");
     }
 
     #[test]
@@ -493,14 +623,15 @@ mod ownership {
         let good = mixed_send(&s);
         assert_eq!(review(&s, good.clone()).confirm, Confirm::Tap);
         let payload = forged(&good, |psbt| psbt.inputs[0].non_witness_utxo = None);
-        assert_eq!(forbidden(review(&s, payload)), Some(Forbid::MissingPrevTx));
+        assert_fee_unconfirmed(&review(&s, payload));
     }
 
     /// 用户有两个 SegWit 币.每一轮把其中一个说成本钱包的 Taproot 输入,金额压低,
     /// 另一个币的 ECDSA 签名照样有效.两轮的签名拼起来,用户看到的手续费是假的.
     /// 在按"混合交易只要求非 Taproot 带前序交易"写的代码上,这笔交易被 regtest 节点接受了.
+    /// 手续费不再拦截签名,所以这里必须是无法识别,告警写明手续费无法确认.
     #[test]
-    fn segwit_coin_disguised_as_my_taproot_input_is_refused() {
+    fn segwit_coin_disguised_as_my_taproot_input_cannot_pass_as_plain() {
         let s = setup();
         let inputs = [utxo(&s, SEGWIT, 100_000_000, 1), utxo(&s, SEGWIT_2, 100_000_000, 2)];
         let honest = build_psbt(
@@ -528,16 +659,15 @@ mod ownership {
                 input.tap_internal_key = Some(internal);
                 input.tap_key_origins.insert(internal, (Vec::new(), source));
             });
-            assert_eq!(forbidden(review(&s, payload.clone())), Some(Forbid::MissingPrevTx));
-            assert_eq!(sign(&s, Network::Bitcoin, payload).unwrap_err(), Error::Refused);
+            assert_fee_unconfirmed(&review(&s, payload));
         }
     }
 
     #[test]
-    fn taproot_input_next_to_segwit_needs_its_previous_transaction() {
+    fn taproot_input_next_to_segwit_needs_its_previous_transaction_to_confirm_the_fee() {
         let s = setup();
         let payload = forged(&mixed_send(&s), |psbt| psbt.inputs[1].non_witness_utxo = None);
-        assert_eq!(forbidden(review(&s, payload)), Some(Forbid::MissingPrevTx));
+        assert_fee_unconfirmed(&review(&s, payload));
     }
 
     #[test]
@@ -551,11 +681,11 @@ mod ownership {
             psbt.inputs[0].sighash_type = sighash(0x81);
             psbt.inputs[1].sighash_type = sighash(0x81);
         });
-        assert_eq!(forbidden(review(&s, payload)), Some(Forbid::MissingPrevTx));
+        assert_fee_unconfirmed(&review(&s, payload));
     }
 
     #[test]
-    fn single_taproot_input_with_anyone_can_pay_is_only_an_alert() {
+    fn single_taproot_input_with_anyone_can_pay_is_signable_with_a_hold() {
         let s = setup();
         let payload = forged(&taproot_send(&s), |psbt| psbt.inputs[0].sighash_type = sighash(0x81));
         assert_eq!(review(&s, payload).confirm, Confirm::Hold);
@@ -569,8 +699,7 @@ mod ownership {
         let payload = forged(&segwit_send(&s), |psbt| {
             add_foreign(psbt, foreign_witness_only(&prev), &prev)
         });
-        assert_eq!(forbidden(review(&s, payload.clone())), Some(Forbid::MissingPrevTx));
-        assert_eq!(sign(&s, Network::Bitcoin, payload).unwrap_err(), Error::Refused);
+        assert_fee_unconfirmed(&review(&s, payload));
     }
 
     #[test]
@@ -586,13 +715,13 @@ mod ownership {
     }
 
     #[test]
-    fn foreign_segwit_input_still_needs_its_previous_transaction() {
+    fn foreign_segwit_input_without_its_previous_transaction_leaves_the_fee_unconfirmed() {
         let s = setup();
         let prev = funding(script(&s.other, SEGWIT), 250_000, 7);
         let payload = forged(&taproot_send(&s), |psbt| {
             add_foreign(psbt, foreign_witness_only(&prev), &prev)
         });
-        assert_eq!(forbidden(review(&s, payload)), Some(Forbid::MissingPrevTx));
+        assert_fee_unconfirmed(&review(&s, payload));
     }
 
     #[test]
@@ -603,7 +732,7 @@ mod ownership {
             add_foreign(psbt, foreign_witness_only(&prev), &prev);
             psbt.inputs[0].sighash_type = sighash(0x81);
         });
-        assert_eq!(forbidden(review(&s, payload)), Some(Forbid::MissingPrevTx));
+        assert_fee_unconfirmed(&review(&s, payload));
     }
 
     #[test]
@@ -648,10 +777,7 @@ mod sighash_types {
         );
         assert_eq!(review_all.confirm, Confirm::Tap);
         let review_unset = review(&s, segwit_send(&s));
-        assert_eq!(
-            review_unset.rows.iter().find(|r| r.label == "sighash").unwrap().value,
-            "ALL"
-        );
+        assert_eq!(review_unset.confirm, Confirm::Tap);
     }
 
     #[test]
@@ -659,10 +785,6 @@ mod sighash_types {
         let s = setup();
         let unset = review(&s, taproot_send(&s));
         assert_eq!(unset.confirm, Confirm::Tap);
-        assert_eq!(
-            unset.rows.iter().find(|r| r.label == "sighash").unwrap().value,
-            "DEFAULT"
-        );
         for value in [0, 1] {
             let payload = forged(&taproot_send(&s), |psbt| psbt.inputs[0].sighash_type = sighash(value));
             assert_eq!(review(&s, payload).confirm, Confirm::Tap, "{value}");
@@ -670,7 +792,7 @@ mod sighash_types {
     }
 
     #[test]
-    fn other_values_are_high_risk() {
+    fn other_values_are_unknown_and_say_the_signature_does_not_bind_the_page() {
         let s = setup();
         for (send, value, label) in [
             (segwit_send(&s), 0x02, "NONE"),
@@ -681,27 +803,36 @@ mod sighash_types {
         ] {
             let payload = forged(&send, |psbt| psbt.inputs[0].sighash_type = sighash(value));
             let review = review(&s, payload);
-            assert_eq!(
-                (review.risk, review.confirm),
-                (Risk::Transfer, Confirm::Hold),
-                "{value}"
-            );
+            assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold), "{value}");
             assert_eq!(review.alerts.len(), 1);
             assert!(review.alerts[0].contains(label), "{}", review.alerts[0]);
+            assert!(review.alerts[0].contains("不绑定页面显示的全部收款方和金额"));
+            assert!(review.alerts[0].contains("签名后它们可以被改动"));
         }
     }
 
     #[test]
-    fn none_on_a_legacy_or_nested_input_is_high_risk() {
+    fn none_on_a_legacy_or_nested_input_is_unknown() {
         let s = setup();
         for path in [LEGACY, NESTED] {
             let inputs = [utxo(&s, path, 1_000_000, 1)];
             let payload = build_psbt(Network::Bitcoin, &s.keys, &inputs, &[pay(PEER, 400_000)], None).unwrap();
             let payload = forged(&payload, |psbt| psbt.inputs[0].sighash_type = sighash(2));
             let result = review(&s, payload);
-            assert_eq!(result.confirm, Confirm::Hold, "{path}");
+            assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold), "{path}");
             assert!(result.alerts.iter().any(|a| a.contains("NONE")));
         }
+    }
+
+    #[test]
+    fn the_alert_names_the_input_that_is_not_bound() {
+        let s = setup();
+        let inputs = [utxo(&s, SEGWIT, 500_000, 1), utxo(&s, SEGWIT_2, 500_000, 2)];
+        let payload = build_psbt(Network::Bitcoin, &s.keys, &inputs, &[pay(PEER, 900_000)], None).unwrap();
+        let payload = forged(&payload, |psbt| psbt.inputs[1].sighash_type = sighash(2));
+        let result = review(&s, payload);
+        assert_eq!(result.risk, Risk::Unknown);
+        assert!(result.alerts[0].starts_with("第 2 个输入"), "{}", result.alerts[0]);
     }
 
     #[test]
@@ -752,10 +883,9 @@ mod change {
     fn change_is_recognised_and_not_counted_as_sent() {
         let s = setup();
         let review = review(&s, segwit_send(&s));
-        assert_eq!(review.amount.as_ref().unwrap().text, "0.004");
+        assert_eq!(review.summary.amount.as_ref().unwrap().text, "0.004");
         assert_eq!(review.change_index, Some(3));
-        let change = review.actions.iter().find(|a| a.title == "找零").unwrap();
-        assert_eq!(change.risk, Risk::Transfer);
+        assert!(outputs(&review).contains(&true));
     }
 
     #[test]
@@ -764,7 +894,7 @@ mod change {
         let payload = forged(&segwit_send(&s), |psbt| psbt.outputs[1].bip32_derivation.clear());
         let review = review(&s, payload);
         assert_eq!(review.change_index, None);
-        assert_eq!(review.amount.unwrap().text, "0.00999");
+        assert_eq!(review.summary.amount.unwrap().text, "0.00999");
     }
 
     #[test]
@@ -777,42 +907,72 @@ mod change {
         });
         let review = review(&s, payload);
         assert_eq!(review.change_index, None);
-        assert_eq!(review.actions.iter().filter(|a| a.title == "找零").count(), 0);
+        assert!(!outputs(&review).contains(&true));
     }
 
-    /// 路径,公钥,script 全部对得上,能拦住它的只有白名单.
+    /// 输出改成这条路径的地址,路径,公钥,script 全部对得上.
+    fn with_own_output(s: &Setup, path: &str) -> Vec<u8> {
+        let key = public(&s.keys, path);
+        forged(&segwit_send(s), |psbt| {
+            let source = (Fingerprint::from(s.keys.fingerprint), BipPath::from_str(path).unwrap());
+            psbt.unsigned_tx.output[1].script_pubkey = script_for(AccountKind::SegWit, &key).unwrap();
+            psbt.outputs[1].bip32_derivation = [(key, source)].into();
+        })
+    }
+
     #[test]
-    fn huge_or_other_network_change_is_refused_even_when_it_derives() {
+    fn a_far_index_is_this_wallet_with_a_warning_and_a_hold() {
         let s = setup();
-        for path in ["m/84'/0'/0'/1/100000", "m/84'/0'/0'/1/999999999", "m/84'/1'/0'/1/3"] {
-            let key = public(&s.keys, path);
-            let payload = forged(&segwit_send(&s), |psbt| {
-                let source = (Fingerprint::from(s.keys.fingerprint), BipPath::from_str(path).unwrap());
-                psbt.unsigned_tx.output[1].script_pubkey = script_for(AccountKind::SegWit, &key).unwrap();
-                psbt.outputs[1].bip32_derivation = [(key, source)].into();
-            });
+        for index in [100_000, 999_999_999] {
+            let path = format!("m/84'/0'/0'/1/{index}");
+            let payload = with_own_output(&s, &path);
+            let shown = review(&s, payload.clone());
+            assert_eq!((shown.risk, shown.confirm), (Risk::Transfer, Confirm::Hold), "{path}");
+            assert_eq!(shown.change_index, Some(index));
             assert_eq!(
-                forbidden(review(&s, payload.clone())),
-                Some(Forbid::AddressMismatch),
-                "{path}"
+                shown.alerts,
+                vec![format!("找零索引 {index} 跳得太远,资金可能落到不容易找回的位置")]
             );
-            assert_eq!(
-                sign(&s, Network::Bitcoin, payload).unwrap_err(),
-                Error::Refused,
-                "{path}"
-            );
+            assert!(outputs(&shown).contains(&true));
+            assert!(sign(&s, Network::Bitcoin, payload).is_ok(), "{path}");
         }
     }
 
     #[test]
-    fn change_path_must_be_whitelisted() {
+    fn an_unusual_change_path_is_this_wallet_with_a_warning_and_a_hold() {
         let s = setup();
-        for path in [
-            "m/84'/0'/1'/1/3",
-            "m/84'/1'/0'/1/3",
-            "m/44'/60'/0'/0/0",
-            "m/84'/0'/0'/2/3",
-        ] {
+        let path = "m/84'/0'/0'/9/3";
+        let shown = review(&s, with_own_output(&s, path));
+        assert_eq!((shown.risk, shown.confirm), (Risk::Transfer, Confirm::Hold));
+        assert_eq!(shown.change_index, None);
+        assert!(shown.alerts[0].contains(path), "{}", shown.alerts[0]);
+        assert!(outputs(&shown).contains(&true));
+        let row = shown.fields.iter().find(|row| row.own && row.value == path).unwrap();
+        assert_eq!(row.name, "output");
+    }
+
+    #[test]
+    fn a_receive_address_as_change_is_this_wallet_with_a_warning() {
+        let s = setup();
+        let shown = review(&s, with_own_output(&s, "m/84'/0'/0'/0/3"));
+        assert_eq!(shown.confirm, Confirm::Hold);
+        assert_eq!(shown.change_index, None);
+        assert_eq!(shown.summary.amount.unwrap().text, "0.004");
+    }
+
+    #[test]
+    fn a_claimed_output_that_does_not_rederive_is_refused() {
+        let s = setup();
+        assert_eq!(
+            forbidden(review(&s, with_change_path(&s, "m/84'/0'/0'/2/3"))),
+            Some(Forbid::AddressMismatch)
+        );
+    }
+
+    #[test]
+    fn a_change_path_of_another_chain_or_key_is_refused() {
+        let s = setup();
+        for path in ["m/84'/1'/0'/1/3", "m/44'/60'/0'/0/0"] {
             assert_eq!(
                 forbidden(review(&s, with_change_path(&s, path))),
                 Some(Forbid::AddressMismatch),
@@ -821,16 +981,31 @@ mod change {
         }
     }
 
+    /// 公钥算不出来时不能说它是本钱包的,按外部收款方显示,解锁后再定.
     #[test]
-    fn change_must_be_on_the_change_chain() {
+    fn an_unverifiable_claim_is_external_and_settled_after_unlocking() {
         let s = setup();
+        let path = "m/84'/0'/1'/1/3";
+        let payload = with_change_path(&s, path);
+        let shown = review(&s, payload.clone());
+        assert_eq!((shown.risk, shown.confirm), (Risk::Transfer, Confirm::Hold));
+        assert_eq!(shown.summary.amount.as_ref().unwrap().text, "0.00999");
+        assert!(shown.fields.iter().all(|row| !row.own || row.name == "input"));
+        assert!(shown.alerts.iter().any(|alert| alert.contains(path)));
+        assert_eq!(sign(&s, Network::Bitcoin, payload).unwrap_err(), Error::Refused);
+    }
+
+    #[test]
+    fn a_real_change_output_on_an_unexported_path_signs_after_unlocking() {
+        let s = setup();
+        let path = "m/84'/0'/1'/1/3";
+        let key = seed_key(path);
         let payload = forged(&segwit_send(&s), |psbt| {
-            psbt.unsigned_tx.output[1].script_pubkey = script(&s.keys, "m/84'/0'/0'/0/3");
-            for (_, source) in psbt.outputs[1].bip32_derivation.iter_mut() {
-                source.1 = BipPath::from_str("m/84'/0'/0'/0/3").unwrap();
-            }
+            let source = (Fingerprint::from(s.keys.fingerprint), BipPath::from_str(path).unwrap());
+            psbt.unsigned_tx.output[1].script_pubkey = script_for(AccountKind::SegWit, &key).unwrap();
+            psbt.outputs[1].bip32_derivation = [(key, source)].into();
         });
-        assert_eq!(forbidden(review(&s, payload)), Some(Forbid::AddressMismatch));
+        assert!(sign(&s, Network::Bitcoin, payload).is_ok());
     }
 
     #[test]
@@ -848,7 +1023,7 @@ mod change {
         let s = setup();
         let review = review(&s, taproot_send(&s));
         assert_eq!(review.change_index, Some(3));
-        assert_eq!(review.amount.unwrap().text, "0.004");
+        assert_eq!(review.summary.amount.unwrap().text, "0.004");
     }
 
     #[test]
@@ -1025,10 +1200,7 @@ mod fees {
         // 手续费 1000 sat.估算的大小要和真实签名后的交易一致.
         let tx: Transaction = deserialize(&btc::verify(Network::Bitcoin, &req, &response).unwrap().raw).unwrap();
         assert_eq!(tx.vsize(), 141);
-        assert_eq!(
-            review.rows.iter().find(|r| r.label == "费率").unwrap().value,
-            "7.09 sat/vB"
-        );
+        assert!(field_value(&review, "fee_rate").starts_with("7"));
     }
 }
 
@@ -1039,12 +1211,12 @@ mod display {
     fn one_external_output_sets_amount_and_counterparty() {
         let s = setup();
         let review = review(&s, segwit_send(&s));
-        let amount = review.amount.as_ref().unwrap();
+        let amount = review.summary.amount.as_ref().unwrap();
         assert_eq!(amount.symbol.as_deref(), Some("BTC"));
         assert_eq!(amount.asset.as_deref(), Some("bitcoin:native"));
-        assert_eq!(review.counterparty_label.as_deref(), Some("收款地址"));
-        assert_eq!(review.counterparty.as_deref(), Some(PEER));
-        assert_eq!(review.actions.iter().filter(|a| a.title != "找零").count(), 1);
+        assert_eq!(review.summary.counterparty_label.as_deref(), Some("收款地址"));
+        assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
+        assert_eq!(outputs(&review).iter().filter(|own| !**own).count(), 1);
     }
 
     #[test]
@@ -1054,14 +1226,15 @@ mod display {
         let payments = [pay(PEER, 100_000), pay(PEER_2, 200_000)];
         let payload = build_psbt(Network::Bitcoin, &s.keys, &inputs, &payments, Some((CHANGE, 699_000))).unwrap();
         let review = review(&s, payload);
-        assert_eq!(review.amount.as_ref().unwrap().text, "0.003");
-        assert_eq!(review.counterparty, None);
-        assert_eq!(review.counterparty_label, None);
-        assert_eq!(review.actions.len(), 3);
-        assert!(review.actions.iter().all(|a| a.risk == Risk::Transfer));
-        assert!(review.actions[0].rows.iter().any(|r| r.value == PEER));
-        assert!(review.actions[1].rows.iter().any(|r| r.value == PEER_2));
-        assert_eq!(review.actions[2].title, "找零");
+        assert_eq!(review.summary.amount.as_ref().unwrap().text, "0.003");
+        assert_eq!(review.summary.counterparty, None);
+        assert_eq!(review.summary.counterparty_label, None);
+        assert_eq!(review.confirm, Confirm::Hold);
+        assert_eq!(review.alerts, vec!["这笔交易有 2 个收款方,请逐个核对"]);
+        assert_eq!(outputs(&review), [false, false, true]);
+        assert_eq!(review.risk, Risk::Transfer);
+        assert!(shown(&review, PEER));
+        assert!(shown(&review, PEER_2));
     }
 
     #[test]
@@ -1084,9 +1257,8 @@ mod display {
         );
         let review = review(&s, payload);
         assert_eq!(review.risk, Risk::Transfer);
-        assert_eq!(review.actions[0].title, "转给自己");
-        assert_eq!(review.actions[1].title, "找零");
-        assert_eq!(review.counterparty, None);
+        assert!(outputs(&review).iter().all(|own| *own));
+        assert_eq!(review.summary.counterparty, None);
         // 发送额是 0,任何手续费都超过发送额的 5%.
         assert_eq!(review.alerts, vec!["手续费明显偏高"]);
     }
@@ -1099,8 +1271,8 @@ mod display {
         let payload = build_psbt(Network::Bitcoin, &s.keys, &inputs, &[], Some((CHANGE, 999_000))).unwrap();
         let review = review(&s, payload);
         assert_eq!(review.risk, Risk::Transfer);
-        assert_eq!(review.actions[0].title, "转给自己");
-        assert_eq!(review.counterparty, None);
+        assert!(outputs(&review).iter().all(|own| *own));
+        assert_eq!(review.summary.counterparty, None);
     }
 
     #[test]
@@ -1128,31 +1300,26 @@ mod display {
     }
 
     #[test]
-    fn rows_follow_the_field_table() {
+    fn the_summary_points_at_the_external_outputs() {
+        let s = setup();
+        let review = review(&s, segwit_send(&s));
+        let rows = review.summary.field_ids.iter().map(|id| &review.fields[*id as usize]);
+        assert!(rows.into_iter().any(|row| row.name == "output" && !row.own));
+        assert_eq!(
+            review.summary.payer.as_deref(),
+            Some("bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu")
+        );
+    }
+
+    #[test]
+    fn the_fields_show_the_network_the_fee_and_both_inputs() {
         let s = setup();
         let review = review(&s, mixed_send(&s));
-        let labels: Vec<&str> = review.rows.iter().map(|r| r.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            [
-                "网络",
-                "付款账户",
-                "派生路径",
-                "输入金额",
-                "付款账户",
-                "派生路径",
-                "输入金额",
-                "地址类型",
-                "手续费",
-                "费率",
-                "sighash"
-            ]
-        );
-        assert_eq!(review.rows[0].value, "Bitcoin");
-        assert_eq!(review.rows[7].value, "原生 SegWit,Taproot");
-        assert_eq!(review.rows[8].value, "0.00001 BTC");
-        assert_eq!(review.rows[10].value, "ALL,DEFAULT");
-        assert!(!review.raw.is_empty());
+        assert_eq!(field_value(&review, "network"), "bitcoin");
+        assert_eq!(field_value(&review, "fee"), "0.00001 BTC");
+        let own = review.fields.iter().filter(|row| row.name == "input" && row.own);
+        assert_eq!(own.count(), 2);
+        assert_eq!(review.field_count as usize, review.fields.len());
     }
 
     #[test]
@@ -1162,9 +1329,9 @@ mod display {
             psbt.unsigned_tx.output[0].script_pubkey = ScriptBuf::new_op_return([1u8, 2, 3]);
         });
         let review = review(&s, payload);
-        assert_eq!(review.confirm, Confirm::Hold);
-        assert_eq!(review.counterparty.as_deref(), Some("6a03010203"));
-        assert!(review.alerts.iter().any(|a| a.contains("原始脚本")));
+        assert_eq!((review.risk, review.confirm), (Risk::Recognized, Confirm::Hold));
+        assert_eq!(review.summary.counterparty.as_deref(), Some("6a03010203"));
+        assert!(review.alerts.iter().any(|a| a.contains("销毁")));
     }
 
     #[test]
@@ -1176,9 +1343,12 @@ mod display {
             let payload = build_psbt(network, &s.keys, &inputs, &[pay(TEST_PEER, 400_000)], change).unwrap();
             let review = review_with(&s, network, payload, 0);
             assert_eq!(review.confirm, Confirm::Tap);
-            assert_eq!(review.counterparty.as_deref(), Some(TEST_PEER));
-            assert!(review.rows[1].value.starts_with("tb1q"));
-            assert_eq!(review.amount.unwrap().asset, Some(format!("{}:native", network.id())));
+            assert_eq!(review.summary.counterparty.as_deref(), Some(TEST_PEER));
+            assert!(review.fields.iter().any(|row| row.value.starts_with("tb1q")));
+            assert_eq!(
+                review.summary.amount.unwrap().asset,
+                Some(format!("{}:native", network.id()))
+            );
         }
     }
 }
@@ -1296,7 +1466,7 @@ mod building {
             )
         };
         assert_eq!(build(SEGWIT_2), Err(CoreError::InvalidParams));
-        assert_eq!(build("m/84'/0'/0'/1/100000"), Err(CoreError::IndexTooLarge));
+        assert!(build("m/84'/0'/0'/1/100000").is_ok());
         assert_eq!(build("m/84'/1'/0'/1/0"), Err(CoreError::PathNetworkMismatch));
     }
 
@@ -1347,6 +1517,440 @@ mod building {
         assert_eq!(psbt.unsigned_tx.version, transaction::Version::TWO);
         assert_eq!(psbt.unsigned_tx.lock_time, absolute::LockTime::ZERO);
         assert_eq!(psbt.fee().unwrap(), Amount::from_sat(1_000));
+    }
+}
+
+mod decoded_fields {
+    use super::*;
+    use bitcoin::script::{Builder, PushBytesBuf};
+    use bitcoin::{Opcode, opcodes};
+    use bitone_core::review::FieldRow;
+
+    fn row<'a>(review: &'a Review, name: &str) -> &'a FieldRow {
+        review.fields.iter().find(|row| row.name == name).unwrap()
+    }
+
+    fn with_output_script(s: &Setup, script: ScriptBuf, sats: u64) -> Vec<u8> {
+        forged(&segwit_send(s), |psbt| {
+            psbt.unsigned_tx.output[0] = TxOut {
+                value: Amount::from_sat(sats),
+                script_pubkey: script,
+            };
+        })
+    }
+
+    fn witness(version: Opcode, program: &[u8]) -> ScriptBuf {
+        let pushed = PushBytesBuf::try_from(program.to_vec()).unwrap();
+        Builder::new().push_opcode(version).push_slice(pushed).into_script()
+    }
+
+    #[test]
+    fn the_phone_gets_the_generic_list_with_the_summary_on_top() {
+        let s = setup();
+        let review = review(&s, segwit_send(&s));
+        assert_eq!(review.field_count as usize, review.fields.len());
+        assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
+        assert_eq!(row(&review, "fee").value, "0.00001 BTC");
+        assert_eq!(row(&review, "fee_rate").value, "7.09 sat/vB");
+        assert!(review.review_digest != [0; 32]);
+    }
+
+    #[test]
+    fn sequence_version_and_locktime_are_shown_with_their_meaning() {
+        let s = setup();
+        let review = review(&s, segwit_send(&s));
+        let version = row(&review, "version");
+        assert_eq!(version.value, "2");
+        assert_eq!(version.note.as_deref(), Some("支持相对锁定(BIP-68)"));
+        let sequence = row(&review, "sequence");
+        assert_eq!(sequence.value, "4294967293");
+        assert_eq!(sequence.note.as_deref(), Some("可替换(BIP-125)"));
+        let lock_time = row(&review, "lock_time");
+        assert_eq!(lock_time.value, "0");
+        assert_eq!(lock_time.note.as_deref(), Some("无锁定"));
+    }
+
+    #[test]
+    fn a_lock_with_every_input_final_says_it_has_no_effect() {
+        let s = setup();
+        let payload = forged(&segwit_send(&s), |psbt| {
+            psbt.unsigned_tx.lock_time = absolute::LockTime::from_consensus(800_000);
+            psbt.unsigned_tx.input[0].sequence = Sequence::MAX;
+        });
+        let review = review(&s, payload);
+        let note = row(&review, "lock_time").note.clone().unwrap();
+        assert!(note.contains("不生效"), "{note}");
+    }
+
+    #[test]
+    fn truc_and_other_versions_alert() {
+        let s = setup();
+        for (version, word) in [(3, "TRUC"), (7, "不是标准值")] {
+            let payload = forged(&segwit_send(&s), |psbt| {
+                psbt.unsigned_tx.version = transaction::Version(version);
+            });
+            let review = review(&s, payload);
+            assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Hold));
+            assert!(review.alerts[0].contains(word), "{}", review.alerts[0]);
+        }
+    }
+
+    #[test]
+    fn own_rows_carry_the_mark_and_the_path() {
+        let s = setup();
+        let review = review(&s, segwit_send(&s));
+        let own: Vec<_> = review.fields.iter().filter(|row| row.own).collect();
+        assert_eq!(own.len(), 2);
+        assert_eq!((own[0].name.as_str(), own[0].value.as_str()), ("input", SEGWIT));
+        assert_eq!((own[1].name.as_str(), own[1].value.as_str()), ("output", CHANGE));
+    }
+
+    #[test]
+    fn op_return_payload_is_text_and_hex() {
+        let s = setup();
+        let review = review(&s, with_output_script(&s, ScriptBuf::new_op_return(b"gm"), 0));
+        assert_eq!((review.risk, review.confirm), (Risk::Recognized, Confirm::Hold));
+        assert_eq!(row(&review, "text").value, "gm");
+        assert_eq!(row(&review, "data").value, "676d");
+    }
+
+    #[test]
+    fn a_zero_amount_op_return_adds_no_alert_of_its_own() {
+        let s = setup();
+        let payload = forged(&segwit_send(&s), |psbt| {
+            psbt.unsigned_tx.output[0] = TxOut {
+                value: Amount::ZERO,
+                script_pubkey: ScriptBuf::new_op_return(b"gm"),
+            };
+            psbt.unsigned_tx.output[1].value = Amount::from_sat(980_000);
+        });
+        let review = review(&s, payload);
+        // 发送额是 0,任何手续费都超过发送额的 5%.
+        assert_eq!(review.alerts, vec!["手续费明显偏高"]);
+        assert_eq!(review.risk, Risk::Recognized);
+    }
+
+    #[test]
+    fn witness_versions_two_to_sixteen_are_unknown_and_never_a_tap() {
+        let s = setup();
+        for opcode in opcodes::all::OP_PUSHNUM_2.to_u8()..=opcodes::all::OP_PUSHNUM_16.to_u8() {
+            let script = witness(Opcode::from(opcode), &[1; 32]);
+            let review = review(&s, with_output_script(&s, script, 400_000));
+            assert_eq!(
+                (review.risk, review.confirm),
+                (Risk::Unknown, Confirm::Hold),
+                "{opcode}"
+            );
+            assert_eq!(review.summary.title, "无法识别");
+            assert!(row(&review, "witness_version").source == bitone_core::decode::SourceKind::Derived);
+            assert!(row(&review, "script").value.contains("OP_PUSHBYTES_32"));
+            assert!(review.alerts.iter().any(|alert| alert.contains("见证版本")));
+        }
+    }
+
+    #[test]
+    fn bad_witness_lengths_and_other_scripts_are_unknown_and_shown_as_opcodes() {
+        let s = setup();
+        for script in [
+            witness(opcodes::all::OP_PUSHNUM_1, &[1; 31]),
+            witness(opcodes::all::OP_PUSHBYTES_0, &[1; 19]),
+            ScriptBuf::from_bytes(vec![opcodes::all::OP_NOP.to_u8()]),
+        ] {
+            let review = review(&s, with_output_script(&s, script, 400_000));
+            assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+            assert!(row(&review, "script").value.contains("OP_"));
+        }
+    }
+
+    #[test]
+    fn outputs_with_no_address_form_are_recognized_with_an_alert() {
+        let s = setup();
+        let key = bitcoin::PublicKey::new(public(&s.other, SEGWIT));
+        let multisig = Builder::new()
+            .push_opcode(opcodes::all::OP_PUSHNUM_1)
+            .push_key(&key)
+            .push_opcode(opcodes::all::OP_PUSHNUM_1)
+            .push_opcode(opcodes::all::OP_CHECKMULTISIG)
+            .into_script();
+        for (script, word) in [
+            (ScriptBuf::new_p2pk(&key), "P2PK"),
+            (multisig, "裸多签"),
+            (witness(opcodes::all::OP_PUSHNUM_1, &[0x4e, 0x73]), "P2A"),
+        ] {
+            let review = review(&s, with_output_script(&s, script, 400_000));
+            assert_eq!((review.risk, review.confirm), (Risk::Recognized, Confirm::Hold));
+            assert!(review.alerts[0].contains(word), "{}", review.alerts[0]);
+        }
+    }
+
+    #[test]
+    fn an_unknown_psbt_key_is_unknown_and_signable() {
+        let s = setup();
+        let payload = forged(&segwit_send(&s), |psbt| {
+            let key = bitcoin::psbt::raw::Key {
+                type_value: 0x70,
+                key: vec![1],
+            };
+            psbt.inputs[0].unknown.insert(key, vec![2]);
+        });
+        let shown = review(&s, payload.clone());
+        assert_eq!((shown.risk, shown.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(sign(&s, Network::Bitcoin, payload).is_ok());
+    }
+
+    #[test]
+    fn an_input_of_this_wallet_on_an_unknown_script_cannot_be_signed() {
+        let s = setup();
+        let key = public(&s.keys, SEGWIT);
+        let prev = funding(ScriptBuf::new_p2wsh(&bitcoin::WScriptHash::all_zeros()), 1_000_000, 9);
+        let payload = forged(&segwit_send(&s), |psbt| {
+            let source = psbt.inputs[0].bip32_derivation.values().next().unwrap().clone();
+            psbt.unsigned_tx.input[0].previous_output.txid = prev.compute_txid();
+            psbt.inputs[0] = Input {
+                non_witness_utxo: Some(prev.clone()),
+                bip32_derivation: [(key, source)].into(),
+                ..Input::default()
+            };
+        });
+        assert_eq!(forbidden(review(&s, payload)), Some(Forbid::Unsupported));
+    }
+
+    #[test]
+    fn a_foreign_input_on_an_unknown_script_is_only_shown() {
+        let s = setup();
+        let prev = funding(ScriptBuf::new_p2wsh(&bitcoin::WScriptHash::all_zeros()), 250_000, 7);
+        let payload = forged(&segwit_send(&s), |psbt| {
+            add_foreign(psbt, foreign_with_prev_tx(&prev), &prev);
+            psbt.unsigned_tx.output[0].value = Amount::from_sat(650_000);
+        });
+        assert_eq!(review(&s, payload).alerts, vec!["有 1 个输入不属于本钱包"]);
+    }
+
+    #[test]
+    fn an_undecodable_psbt_shows_the_reason_and_the_digest() {
+        let s = setup();
+        let mut payload = segwit_send(&s);
+        payload.push(0);
+        let shown = review(&s, payload);
+        assert_eq!(shown.forbidden, Some(Forbid::ParseFailed));
+        assert!(shown.alerts[0].contains("SHA-256"), "{}", shown.alerts[0]);
+    }
+
+    #[test]
+    fn a_payload_that_is_not_a_psbt_cannot_be_signed() {
+        let s = setup();
+        assert_eq!(forbidden(review(&s, vec![1, 2, 3])), Some(Forbid::ParseFailed));
+    }
+
+    #[test]
+    fn signed_and_context_rows_have_ranges_and_derived_rows_do_not() {
+        let s = setup();
+        let review = review(&s, segwit_send(&s));
+        for row in &review.fields {
+            let ranged = matches!(
+                row.source,
+                bitone_core::decode::SourceKind::Signed | bitone_core::decode::SourceKind::Context
+            );
+            assert_eq!(row.offset.is_some(), ranged, "{}", row.name);
+        }
+    }
+}
+
+mod unknown_networks {
+    use super::*;
+
+    const LOCAL: &str = "local-debug";
+
+    fn local(s: &Setup, payload: Vec<u8>, chain: Option<u8>) -> SignRequest {
+        SignRequest {
+            network: LOCAL.into(),
+            chain,
+            ..request(s, Network::Bitcoin, payload)
+        }
+    }
+
+    fn reviewed(s: &Setup, req: &SignRequest) -> Review {
+        let ctx = ReviewContext {
+            keys: &s.keys,
+            manifest: Manifest::builtin(),
+            highest_change: HighestChange::default(),
+        };
+        tx::review(req, &ctx)
+    }
+
+    fn signed(s: &Setup, req: &SignRequest) -> Result<(SignResponse, Review), Error> {
+        s.wallet
+            .sign(req, &s.keys, Manifest::builtin(), HighestChange::default())
+    }
+
+    #[test]
+    fn a_psbt_on_an_unknown_network_is_detected_from_the_payload_and_signable() {
+        let s = setup();
+        let req = local(&s, segwit_send(&s), None);
+        let shown = reviewed(&s, &req);
+        assert_eq!((shown.risk, shown.confirm), (Risk::Unknown, Confirm::Hold));
+        assert_eq!(shown.network, LOCAL);
+        assert!(shown.alerts[0].contains("不认识这个网络"), "{}", shown.alerts[0]);
+        assert_eq!(
+            shown.fields.iter().find(|row| row.name == "network").unwrap().value,
+            LOCAL
+        );
+        let known = sign(&s, Network::Bitcoin, segwit_send(&s)).unwrap().1;
+        let (response, _) = signed(&s, &req).unwrap();
+        assert_eq!(response.signatures, known.signatures);
+    }
+
+    #[test]
+    fn the_chain_field_decides_when_it_is_present() {
+        let s = setup();
+        let bitcoin = local(&s, segwit_send(&s), Some(0));
+        assert_eq!(reviewed(&s, &bitcoin).risk, Risk::Unknown);
+        // 编号 1 是 EVM,PSBT 没有路径可以签.200 这个版本不认识.
+        for (chain, reason) in [(1, Forbid::PathNotAllowed), (200, Forbid::UnknownNetwork)] {
+            let other = local(&s, segwit_send(&s), Some(chain));
+            assert_eq!(forbidden(reviewed(&s, &other)), Some(reason), "{chain}");
+            assert_eq!(signed(&s, &other).unwrap_err(), Error::Refused);
+        }
+    }
+
+    #[test]
+    fn a_payload_without_the_magic_stays_refused() {
+        let s = setup();
+        let garbled = local(&s, vec![1, 2, 3], None);
+        assert_eq!(forbidden(reviewed(&s, &garbled)), Some(Forbid::UnknownNetwork));
+        let declared = local(&s, vec![1, 2, 3], Some(0));
+        assert_eq!(forbidden(reviewed(&s, &declared)), Some(Forbid::ParseFailed));
+    }
+
+    #[test]
+    fn paths_of_any_kind_of_key_are_not_contradictions_here() {
+        let s = setup();
+        let inputs = [utxo(&s, "m/84'/1'/0'/0/0", 1_000_000, 1)];
+        let payload = build_psbt(Network::BtcTestnet4, &s.keys, &inputs, &[pay(TEST_PEER, 400_000)], None).unwrap();
+        let shown = reviewed(&s, &local(&s, payload, None));
+        assert_eq!((shown.risk, shown.confirm), (Risk::Unknown, Confirm::Hold));
+        assert_eq!(shown.summary.counterparty.as_deref(), Some(TEST_PEER));
+    }
+
+    #[test]
+    fn the_change_index_goes_to_the_slot_of_the_key() {
+        let s = setup();
+        let inputs = [utxo(&s, "m/84'/1'/0'/0/0", 1_000_000, 1)];
+        let change = Some(("m/84'/1'/0'/1/3", 599_000));
+        let payload = build_psbt(
+            Network::BtcTestnet4,
+            &s.keys,
+            &inputs,
+            &[pay(TEST_PEER, 400_000)],
+            change,
+        )
+        .unwrap();
+        let shown = reviewed(&s, &local(&s, payload, None));
+        assert_eq!((shown.change_index, shown.change_is_testnet), (Some(3), true));
+    }
+
+    #[test]
+    fn the_network_name_is_escaped_for_display() {
+        let s = setup();
+        let mut req = local(&s, segwit_send(&s), None);
+        req.network = "evil\u{202E}net".into();
+        assert_eq!(reviewed(&s, &req).network, "evil\\u{202e}net");
+    }
+}
+
+mod version_two {
+    use super::*;
+    use psbt_v2::v2;
+
+    /// 同一笔交易的 PSBT v2.
+    fn v2_of(payload: &[u8], modifiable: u8) -> Vec<u8> {
+        let psbt = Psbt::deserialize(payload).unwrap();
+        let global = v2::Global {
+            version: psbt_v2::V2,
+            tx_version: psbt.unsigned_tx.version,
+            fallback_lock_time: None,
+            tx_modifiable_flags: modifiable,
+            input_count: psbt.inputs.len(),
+            output_count: psbt.outputs.len(),
+            xpubs: Default::default(),
+            proprietaries: Default::default(),
+            unknowns: Default::default(),
+        };
+        let inputs = psbt.unsigned_tx.input.iter().zip(&psbt.inputs).map(|(txin, input)| {
+            let mut map = v2::Input::new(&txin.previous_output);
+            map.sequence = Some(txin.sequence);
+            map.non_witness_utxo = input.non_witness_utxo.clone();
+            map.witness_utxo = input.witness_utxo.clone();
+            map.redeem_script = input.redeem_script.clone();
+            map.tap_internal_key = input.tap_internal_key;
+            map.tap_key_origins = input.tap_key_origins.clone();
+            let keys = input.bip32_derivation.iter();
+            map.bip32_derivations = keys.map(|(key, source)| ((*key).into(), source.clone())).collect();
+            map
+        });
+        let outputs = psbt.unsigned_tx.output.iter().zip(&psbt.outputs).map(|(out, meta)| {
+            let mut map = v2::Output::new(out.clone());
+            map.redeem_script = meta.redeem_script.clone();
+            map.tap_internal_key = meta.tap_internal_key;
+            map.tap_key_origins = meta.tap_key_origins.clone();
+            let keys = meta.bip32_derivation.iter();
+            map.bip32_derivations = keys.map(|(key, source)| ((*key).into(), source.clone())).collect();
+            map
+        });
+        v2::Psbt {
+            global,
+            inputs: inputs.collect(),
+            outputs: outputs.collect(),
+        }
+        .serialize()
+    }
+
+    #[test]
+    fn v2_reviews_like_v0() {
+        let s = setup();
+        let review = review(&s, v2_of(&segwit_send(&s), 0));
+        assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Tap));
+        assert_eq!(review.summary.counterparty.as_deref(), Some(PEER));
+        assert_eq!(review.change_index, Some(3));
+        assert!(review.fields.iter().any(|row| row.own && row.name == "psbt_input"));
+        assert!(review.fields.iter().any(|row| row.own && row.name == "psbt_output"));
+        assert!(review.fields.iter().any(|row| row.name == "output_index"));
+    }
+
+    #[test]
+    fn v2_signs_the_same_bytes_as_v0_and_verifies() {
+        let s = setup();
+        for payload in [segwit_send(&s), taproot_send(&s), mixed_send(&s)] {
+            let (_, first, _) = sign(&s, Network::Bitcoin, payload.clone()).unwrap();
+            let (req, second, _) = sign(&s, Network::Bitcoin, v2_of(&payload, 0)).unwrap();
+            assert_eq!(first.signatures, second.signatures);
+            assert!(btc::verify(Network::Bitcoin, &req, &second).is_ok());
+        }
+    }
+
+    #[test]
+    fn a_modifiable_v2_is_signable_with_an_alert() {
+        let s = setup();
+        let payload = v2_of(&segwit_send(&s), 3);
+        let shown = review(&s, payload.clone());
+        assert_eq!((shown.risk, shown.confirm), (Risk::Transfer, Confirm::Hold));
+        assert!(shown.alerts[0].contains("修改"), "{}", shown.alerts[0]);
+        assert!(sign(&s, Network::Bitcoin, payload).is_ok());
+    }
+
+    #[test]
+    fn v2_keeps_the_rules_of_v0() {
+        let s = setup();
+        let stripped = forged(&segwit_send(&s), |psbt| psbt.inputs[0].non_witness_utxo = None);
+        let shown = review(&s, v2_of(&stripped, 0));
+        assert_eq!((shown.risk, shown.confirm), (Risk::Unknown, Confirm::Hold));
+        let bad_change = forged(&segwit_send(&s), |psbt| {
+            psbt.unsigned_tx.output[1].script_pubkey = script(&s.other, CHANGE);
+        });
+        assert_eq!(
+            forbidden(review(&s, v2_of(&bad_change, 0))),
+            Some(Forbid::AddressMismatch)
+        );
     }
 }
 
@@ -1427,7 +2031,7 @@ mod signing {
         let s = setup();
         let payload = forged(&segwit_send(&s), |psbt| psbt.inputs[0].sighash_type = sighash(2));
         let (req, response, review) = sign(&s, Network::Bitcoin, payload).unwrap();
-        assert_eq!(review.confirm, Confirm::Hold);
+        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
         assert_eq!(*response.signatures[0].last().unwrap(), 0x02);
         assert!(btc::verify(Network::Bitcoin, &req, &response).is_ok());
     }
@@ -1638,14 +2242,33 @@ mod signing {
         );
     }
 
+    /// 手机能签手续费无法确认的 PSBT,所以核验也要放行,否则用户签完了广播不出去.
     #[test]
-    fn verify_refuses_a_forged_psbt() {
+    fn a_signed_psbt_with_an_unconfirmed_fee_verifies_and_says_so() {
         let s = setup();
-        let (mut req, response, _) = sign(&s, Network::Bitcoin, segwit_send(&s)).unwrap();
-        req.payload = forged(&req.payload, |psbt| psbt.inputs[0].non_witness_utxo = None);
+        let payload = forged(&segwit_send(&s), |psbt| psbt.inputs[0].non_witness_utxo = None);
+        let (req, response, _) = sign(&s, Network::Bitcoin, payload).unwrap();
+        let verified = btc::verify(Network::Bitcoin, &req, &response).unwrap();
+        assert!(verified.fee_unconfirmed);
+        assert!(!verified.signature_only);
+    }
+
+    #[test]
+    fn a_confirmed_fee_verifies_without_the_mark() {
+        let s = setup();
+        let (req, response, _) = sign(&s, Network::Bitcoin, segwit_send(&s)).unwrap();
+        assert!(!btc::verify(Network::Bitcoin, &req, &response).unwrap().fee_unconfirmed);
+    }
+
+    #[test]
+    fn an_unconfirmed_fee_still_needs_a_good_signature() {
+        let s = setup();
+        let payload = forged(&segwit_send(&s), |psbt| psbt.inputs[0].non_witness_utxo = None);
+        let (req, mut response, _) = sign(&s, Network::Bitcoin, payload).unwrap();
+        response.signatures[0] = vec![0; 71].into();
         assert_eq!(
             btc::verify(Network::Bitcoin, &req, &response),
-            Err(CoreError::InvalidParams)
+            Err(CoreError::BadSignature)
         );
     }
 
