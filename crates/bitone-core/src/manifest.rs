@@ -23,6 +23,9 @@ pub struct Asset {
     pub icon: String,
     pub standard: String,
     pub min_fraction: u8,
+    /// Token-2022 的 mint 声明的扩展.扩展是链上状态,声明过才可能是普通转账,见 docs/10-tx-decoding.md 第 5.3 节.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extensions: Option<Vec<String>>,
 }
 
 impl Asset {
@@ -43,6 +46,7 @@ impl Asset {
             icon: String::new(),
             standard: String::new(),
             min_fraction: decimals,
+            extensions: None,
         }
     }
 }

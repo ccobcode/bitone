@@ -1,18 +1,23 @@
 use crate::Error;
 use crate::keys::Wallet;
+use bitone_core::DerivationPath;
+use bitone_core::decode::solana::parse_solana;
 use bitone_core::request::SignRequest;
-use bitone_core::tx::solana::Message;
-use bitone_core::{DerivationPath, Network};
 use ed25519_dalek::{Signer, SigningKey};
 
 impl Wallet {
-    pub(crate) fn sign_solana(&self, request: &SignRequest, _network: Network) -> Result<Vec<u8>, Error> {
+    /// 没有导出的路径到这里才知道公钥.签名私钥必须是载荷要求的签名者,否则地址和路径不符.
+    pub(crate) fn sign_solana(&self, request: &SignRequest) -> Result<Vec<u8>, Error> {
         let [path] = request.paths.as_slice() else {
             return Err(Error::Refused);
         };
         let path = DerivationPath::parse(path)?;
-        Message::decode(&request.payload).map_err(|_| Error::Refused)?;
+        let payload = parse_solana(&request.payload).map_err(|_| Error::Refused)?;
         let key = SigningKey::from_bytes(&*self.ed25519_key(&path)?);
+        let public = key.verifying_key().to_bytes();
+        if payload.signers().is_some_and(|required| !required.contains(&public)) {
+            return Err(Error::Refused);
+        }
         Ok(key.sign(&request.payload).to_bytes().to_vec())
     }
 }
@@ -22,6 +27,7 @@ mod tests {
     use crate::Error;
     use crate::keys::Wallet;
     use bitone_core::address::parse_solana_address;
+    use bitone_core::decode::solana::{SolanaPayload, V1Config, parse_solana};
     use bitone_core::keys::PublicKeys;
     use bitone_core::manifest::Manifest;
     use bitone_core::protocol::VERSION;
@@ -36,6 +42,8 @@ mod tests {
     use bitone_core::{DerivationPath, Network};
 
     const PATH: &str = "m/44'/501'/0'/0'";
+    /// `SignRequest.chain` 的编号.
+    const SOLANA_CHAIN: u8 = 3;
     const DEVNET_PATH: &str = "m/44'/1'/0'/0'";
     const PAYER: &str = "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk";
     const NONCE: &str = "DR8vVnEzE8JD2JXdqmNXZxo3WneEEdxdxoAEfycoq7XT";
@@ -101,7 +109,11 @@ mod tests {
             highest_change: HighestChange::default(),
         };
         let review = tx::review(request, &ctx);
-        assert!(review.fields.is_empty(), "这条链还没迁移");
+        assert_eq!(
+            review.fields.is_empty(),
+            !review.is_signable(),
+            "可以签名的请求都有解码树"
+        );
         review
     }
 
@@ -740,6 +752,7 @@ mod tests {
     }
 
     /// 链上程序解码时忽略尾部字节,这几条指令带上尾部字节一样执行,不能因此降级.
+    /// 尾部字节是 `opaque`,第 3 节的顺序里无法识别高于权限变更,权限类的字段照常解码.
     #[test]
     fn trailing_bytes_do_not_downgrade_dangerous_instructions() {
         let s = setup();
@@ -748,7 +761,7 @@ mod tests {
         let tailed = ix(TOKEN_PROGRAM, &[key(SOURCE_ATA), STRANGER, payer()], &data);
         assert_eq!(
             check(&s, &compose(payer(), &[], &[advance(), tailed])).risk,
-            Risk::Approval
+            Risk::Unknown
         );
 
         let mut data = token_data(13, 5, Some(6));
@@ -756,7 +769,7 @@ mod tests {
         let tailed = ix(TOKEN_PROGRAM, &[key(SOURCE_ATA), key(USDC), STRANGER, payer()], &data);
         assert_eq!(
             check(&s, &compose(payer(), &[], &[advance(), tailed])).risk,
-            Risk::Approval
+            Risk::Unknown
         );
 
         let mut data = vec![6, 2, 1];
@@ -765,7 +778,7 @@ mod tests {
         let tailed = ix(TOKEN_PROGRAM, &[key(SOURCE_ATA), payer()], &data);
         assert_eq!(
             check(&s, &compose(payer(), &[], &[advance(), tailed])).risk,
-            Risk::PermissionChange
+            Risk::Unknown
         );
 
         let mut data = vec![1, 0, 0, 0];
@@ -774,7 +787,7 @@ mod tests {
         let tailed = ix(SYSTEM_PROGRAM, &[payer()], &data);
         assert_eq!(
             check(&s, &compose(payer(), &[], &[advance(), tailed])).risk,
-            Risk::PermissionChange
+            Risk::Unknown
         );
 
         let mut data = vec![7, 0, 0, 0];
@@ -783,19 +796,19 @@ mod tests {
         let tailed = ix(SYSTEM_PROGRAM, &[nonce(), payer()], &data);
         assert_eq!(
             check(&s, &compose(payer(), &[], &[advance(), tailed])).risk,
-            Risk::PermissionChange
+            Risk::Unknown
         );
     }
 
     #[test]
-    fn revoke_and_close_are_unknown() {
+    fn revoke_and_close_are_recognized() {
         let s = setup();
         let revoke = ix(TOKEN_PROGRAM, &[key(SOURCE_ATA), payer()], &[5]);
         let review = check(&s, &compose(payer(), &[], &[advance(), revoke]));
-        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+        assert_eq!((review.risk, review.confirm), (Risk::Recognized, Confirm::Tap));
         let close = ix(TOKEN_PROGRAM, &[key(SOURCE_ATA), STRANGER, payer()], &[9]);
         let review = check(&s, &compose(payer(), &[], &[advance(), close]));
-        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+        assert_eq!((review.risk, review.confirm), (Risk::Recognized, Confirm::Hold));
     }
 
     #[test]
@@ -878,7 +891,9 @@ mod tests {
         );
         let mut trailing = assign.clone();
         trailing.push(0);
-        assert_eq!(reviewed(&trailing).risk, Risk::PermissionChange);
+        let review = reviewed(&trailing);
+        assert_eq!(review.risk, Risk::Unknown);
+        assert_eq!(review.confirm, Confirm::Hold);
 
         // 布局读不完的指令节点会拒绝,不能把 base 当成新所有者.
         assert_eq!(reviewed(&assign[..assign.len() - 1]).risk, Risk::Unknown);
@@ -942,7 +957,10 @@ mod tests {
                 (Risk::Unknown, Confirm::Hold),
                 "第 {i} 例"
             );
-            assert_eq!(review.alerts.len(), 1, "第 {i} 例");
+            assert!(
+                review.alerts.iter().any(|alert| alert.contains("AdvanceNonceAccount")),
+                "第 {i} 例"
+            );
         }
     }
 
@@ -979,11 +997,18 @@ mod tests {
         assert_eq!(result.unwrap_err(), Error::Refused);
     }
 
+    /// 第 1.1 节:本账户是必需的签名者就能签,手续费支付者不是本账户时是无法识别.
     #[test]
-    fn being_a_second_signer_is_not_enough() {
+    fn a_foreign_fee_payer_is_unknown_and_signable() {
         let s = setup();
         let message = compose(STRANGER, &[payer()], &[transfer(1)]);
-        assert_eq!(forbidden(check(&s, &message)), Some(Forbid::AddressMismatch));
+        let req = request(&s, message.encode());
+        let review = review(&s, &req);
+        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(review.alerts.iter().any(|alert| alert.contains("手续费支付者")));
+        assert!(review.alerts.iter().any(|alert| alert.contains("其他账户")));
+        let (response, _) = sign(&s, &req);
+        assert_eq!(response.signatures.len(), 1);
     }
 
     #[test]
@@ -1000,12 +1025,12 @@ mod tests {
     }
 
     #[test]
-    fn token_outside_the_manifest_is_unknown_with_a_raw_amount() {
+    fn token_outside_the_manifest_is_recognized_with_a_raw_amount() {
         let s = setup();
         let fake = [0x77; 32];
         let message = compose(payer(), &[], &[advance(), transfer_checked(TOKEN_PROGRAM, fake, 6)]);
         let review = check(&s, &message);
-        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+        assert_eq!((review.risk, review.confirm), (Risk::Recognized, Confirm::Hold));
         let amount = review.amount.unwrap();
         assert_eq!((amount.text.as_str(), amount.symbol), ("1250000", None));
     }
@@ -1034,7 +1059,7 @@ mod tests {
             paths: vec![DEVNET_PATH.into()],
             ..request(&s, build_transfer(&params).unwrap())
         };
-        assert_eq!(review(&s, &req).risk, Risk::Unknown);
+        assert_eq!(review(&s, &req).risk, Risk::Recognized);
     }
 
     #[test]
@@ -1061,7 +1086,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_token_transfer_is_unknown() {
+    fn legacy_token_transfer_is_recognized_with_an_alert() {
         let s = setup();
         let legacy = ix(
             TOKEN_PROGRAM,
@@ -1069,7 +1094,7 @@ mod tests {
             &token_data(3, 1_250_000, None),
         );
         let review = check(&s, &compose(payer(), &[], &[advance(), legacy]));
-        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+        assert_eq!((review.risk, review.confirm), (Risk::Recognized, Confirm::Hold));
         let amount = review.amount.unwrap();
         assert_eq!((amount.text.as_str(), amount.symbol), ("1250000", None));
         assert_eq!(review.counterparty.as_deref(), Some(PEER_ATA));
@@ -1140,7 +1165,7 @@ mod tests {
         extra.accounts.push(STRANGER);
         let review = check(&s, &compose(payer(), &[], &[advance(), transfer(1), extra]));
         assert_eq!(review.risk, Risk::Unknown);
-        assert_eq!(review.alerts.len(), 1);
+        assert_eq!(review.alerts.len(), 2);
         assert!(action_has(&review, "金额", "1000 SOL"));
         // 风险最高的是这一笔,顶部显示它.
         assert_eq!(review.amount.unwrap().text, "1000");
@@ -1264,7 +1289,9 @@ mod tests {
         let statics = message.keys.len() as u8;
         message.instructions[1].accounts[1] = statics;
         let review = check(&s, &message);
-        assert_eq!(review.risk, Risk::Approval);
+        // 第 3 节的顺序里无法识别高于授权,消息含查找表时是无法识别.
+        assert_eq!(review.risk, Risk::Unknown);
+        assert_eq!(review.confirm, Confirm::Hold);
         assert_eq!(review.counterparty.as_deref(), Some("查找表地址"));
     }
 
@@ -1356,14 +1383,19 @@ mod tests {
     }
 
     #[test]
-    fn other_compute_budget_instructions_are_unknown() {
+    fn compute_budget_instructions_are_not_actions_except_the_deprecated_one() {
         let s = setup();
-        // 请求堆内存不是这里认识的指令.
         let heap = ix(COMPUTE_BUDGET_PROGRAM, &[], &[1, 0, 0, 1, 0]);
+        let review = check(&s, &compose(payer(), &[], &[heap, transfer(1)]));
+        assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Tap));
+        let units = ix(COMPUTE_BUDGET_PROGRAM, &[], &[0, 1, 0, 0, 0, 0, 0, 0, 0]);
         assert_eq!(
-            check(&s, &compose(payer(), &[], &[heap, transfer(1)])).risk,
+            check(&s, &compose(payer(), &[], &[units, transfer(1)])).risk,
             Risk::Unknown
         );
+        // 只有 ComputeBudget 的交易没有动作.
+        let review = check(&s, &compose(payer(), &[], &[compute_price(1)]));
+        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
     }
 
     #[test]
@@ -1425,10 +1457,9 @@ mod tests {
         let wrong_program = ata_accounts(key(PEER_ATA), VICTIM_PROGRAM);
         let wrong_account = ata_accounts(STRANGER, TOKEN_PROGRAM);
         let cases = [
-            ix(ASSOCIATED_TOKEN_PROGRAM, &good, &[2]),
-            ix(ASSOCIATED_TOKEN_PROGRAM, &good[..5], &[1]),
             ix(ASSOCIATED_TOKEN_PROGRAM, &wrong_program, &[1]),
             ix(ASSOCIATED_TOKEN_PROGRAM, &wrong_account, &[1]),
+            ix(ASSOCIATED_TOKEN_PROGRAM, &good, &[9]),
         ];
         for (i, bad) in cases.into_iter().enumerate() {
             assert_eq!(
@@ -1439,18 +1470,31 @@ mod tests {
         }
     }
 
+    /// 账户数少于 IDL 必需的数量,程序本身不会执行.
     #[test]
-    fn other_system_instructions_are_unknown() {
+    fn fewer_accounts_than_the_idl_requires_are_refused() {
+        let s = setup();
+        let good = ata_accounts(key(PEER_ATA), TOKEN_PROGRAM);
+        for bad in [
+            ix(ASSOCIATED_TOKEN_PROGRAM, &good, &[2]),
+            ix(ASSOCIATED_TOKEN_PROGRAM, &good[..5], &[1]),
+            ix(SYSTEM_PROGRAM, &[payer()], &transfer(1).data),
+        ] {
+            let review = check(&s, &compose(payer(), &[], &[advance(), bad]));
+            assert_eq!(forbidden(review), Some(Forbid::ParseFailed));
+        }
+    }
+
+    #[test]
+    fn other_system_instructions_follow_the_table() {
         let s = setup();
         let withdraw = ix(
             SYSTEM_PROGRAM,
-            &[nonce(), STRANGER, payer()],
+            &[nonce(), STRANGER, RECENT_BLOCKHASHES_SYSVAR, RENT_SYSVAR, payer()],
             &[5, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
         );
-        assert_eq!(
-            check(&s, &compose(payer(), &[], &[advance(), withdraw])).risk,
-            Risk::Unknown
-        );
+        let review = check(&s, &compose(payer(), &[], &[advance(), withdraw]));
+        assert_eq!((review.risk, review.confirm), (Risk::Recognized, Confirm::Hold));
         let short = ix(SYSTEM_PROGRAM, &[payer()], &[1]);
         assert_eq!(
             check(&s, &compose(payer(), &[], &[advance(), short])).risk,
@@ -1485,6 +1529,12 @@ mod tests {
             native(),
             token(true),
             build_create_nonce(PAYER, BLOCKHASH, 1_447_680).unwrap(),
+            versioned(Version::V1(V1Config {
+                priority_fee: Some(1),
+                ..V1Config::default()
+            }))
+            .encode(),
+            offchain("Test Message"),
         ];
         let mut state = 0x9e37_79b9_7f4a_7c15u64;
         let mut next = move || {
@@ -1506,7 +1556,9 @@ mod tests {
             }
             if review(&s, &request(&s, payload.clone())).is_signable() {
                 signable += 1;
-                assert_eq!(Message::decode(&payload).unwrap().encode(), payload);
+                if let Ok(SolanaPayload::Message(message)) = parse_solana(&payload) {
+                    assert_eq!(message.encode(), payload);
+                }
             }
         }
         assert!(signable > 0);
@@ -1524,7 +1576,7 @@ mod tests {
     fn path_rules() {
         let s = setup();
         let mut req = request(&s, native());
-        req.paths = vec!["m/44'/501'/1'/0'".into()];
+        req.paths = vec!["m/44'/501'/0'/0".into()];
         assert_eq!(forbidden(review(&s, &req)), Some(Forbid::PathNotAllowed));
         req.paths = vec!["m/44'/60'/0'/0/0".into()];
         assert_eq!(forbidden(review(&s, &req)), Some(Forbid::PathNetworkMismatch));
@@ -1618,6 +1670,243 @@ mod tests {
             tx::verify(&req, &response, &payer()).unwrap_err(),
             bitone_core::Error::InvalidParams
         );
+    }
+
+    /// 第 1.1 节:路径不设白名单.公钥算不出来时解锁后用私钥核对.
+    #[test]
+    fn an_unexported_hardened_path_signs_after_the_private_key_check() {
+        let s = setup();
+        let other_path = DerivationPath::parse("m/44'/501'/1'/0'").unwrap();
+        let wallet_key = {
+            use ed25519_dalek::SigningKey;
+            SigningKey::from_bytes(&s.wallet.ed25519_key(&other_path).unwrap())
+                .verifying_key()
+                .to_bytes()
+        };
+        let message = compose(wallet_key, &[], &[transfer(1)]);
+        let mut req = request(&s, message.encode());
+        req.paths = vec!["m/44'/501'/1'/0'".into()];
+        let review = review(&s, &req);
+        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(review.alerts.iter().any(|alert| alert.contains("m/44'/501'/1'/0'")));
+        assert!(review.alerts.iter().any(|alert| alert.contains("解锁后")));
+        let (response, _) = sign(&s, &req);
+        tx::verify(&req, &response, &wallet_key).unwrap();
+
+        // 这个路径的私钥不是这笔消息的签名者.
+        let mut foreign = request(&s, compose(payer(), &[], &[transfer(1)]).encode());
+        foreign.paths = vec!["m/44'/501'/1'/0'".into()];
+        let result = s
+            .wallet
+            .sign(&foreign, &s.keys, Manifest::builtin(), HighestChange::default());
+        assert_eq!(result.unwrap_err(), Error::Refused);
+    }
+
+    fn versioned(version: Version) -> Message {
+        let mut message = compose(payer(), &[], &[transfer(7)]);
+        message.version = version;
+        message
+    }
+
+    #[test]
+    fn v1_transactions_put_the_signature_after_the_message() {
+        let s = setup();
+        let config = V1Config {
+            priority_fee: Some(100),
+            ..V1Config::default()
+        };
+        let req = request(&s, versioned(Version::V1(config)).encode());
+        let (response, review) = sign(&s, &req);
+        assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Tap));
+        assert_eq!(row(&review, "消息版本"), "v1");
+        assert_eq!(row(&review, "优先费"), "0.0000001 SOL");
+        let verified = tx::verify(&req, &response, &payer()).unwrap();
+        assert!(!verified.signature_only);
+        let expected = [req.payload.as_slice(), &response.signatures[0]].concat();
+        assert_eq!(verified.raw, expected);
+    }
+
+    fn signature_only(s: &Setup, req: &SignRequest) -> tx::Verified {
+        let (response, review) = sign(s, req);
+        assert!(!review.fields.is_empty());
+        let verified = tx::verify(req, &response, &payer()).unwrap();
+        assert!(verified.signature_only);
+        assert_eq!(verified.raw, response.signatures[0].to_vec());
+        verified
+    }
+
+    #[test]
+    fn an_unknown_version_is_signed_as_it_is_after_a_second_confirmation() {
+        let s = setup();
+        let mut payload = native();
+        payload[0] = 0x90;
+        let req = request(&s, payload);
+        let review = review(&s, &req);
+        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::HoldConfirm));
+        signature_only(&s, &req);
+    }
+
+    #[test]
+    fn unknown_mask_bits_need_a_second_confirmation_and_the_key_must_be_a_signer() {
+        let s = setup();
+        let mut payload = versioned(Version::V1(V1Config::default())).encode();
+        payload[4] = 0x20;
+        let req = request(&s, payload.clone());
+        let review = review(&s, &req);
+        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::HoldConfirm));
+        assert!(!review.alerts.is_empty());
+        signature_only(&s, &req);
+
+        let mut stranger = compose(STRANGER, &[], &[transfer(1)]);
+        stranger.version = Version::V1(V1Config::default());
+        let mut payload = stranger.encode();
+        payload[4] = 0x20;
+        let req = request(&s, payload);
+        let refused = tx::review(
+            &req,
+            &ReviewContext {
+                keys: &s.keys,
+                manifest: Manifest::builtin(),
+                highest_change: HighestChange::default(),
+            },
+        );
+        assert_eq!(forbidden(refused), Some(Forbid::AddressMismatch));
+    }
+
+    /// `\xffsolana offchain`,版本 0,受限 ASCII.
+    fn offchain(text: &str) -> Vec<u8> {
+        let mut bytes = vec![0xff];
+        bytes.extend_from_slice(b"solana offchain");
+        bytes.extend_from_slice(&[0, 0]);
+        bytes.extend_from_slice(&(text.len() as u16).to_le_bytes());
+        bytes.extend_from_slice(text.as_bytes());
+        bytes
+    }
+
+    #[test]
+    fn offchain_messages_are_decoded_and_have_nothing_to_broadcast() {
+        let s = setup();
+        let req = request(&s, offchain("Test Message"));
+        let review = review(&s, &req);
+        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(review.fields.iter().any(|row| row.value == "Test Message"));
+        let verified = signature_only(&s, &req);
+        assert_eq!(verified.hash.len(), 64);
+    }
+
+    #[test]
+    fn a_malformed_offchain_message_is_refused_never_signed_as_opaque() {
+        let s = setup();
+        let mut bad = offchain("Test Message");
+        bad[18] = 99;
+        let req = request(&s, bad);
+        assert_eq!(forbidden(review(&s, &req)), Some(Forbid::ParseFailed));
+        assert_eq!(
+            s.wallet
+                .sign(&req, &s.keys, Manifest::builtin(), HighestChange::default())
+                .unwrap_err(),
+            Error::Refused
+        );
+    }
+
+    #[test]
+    fn an_offchain_message_for_someone_else_is_refused() {
+        let s = setup();
+        let mut bytes = vec![0xff];
+        bytes.extend_from_slice(b"solana offchain");
+        bytes.extend_from_slice(&[1, 1]);
+        bytes.extend_from_slice(&STRANGER);
+        bytes.extend_from_slice(b"hello");
+        assert_eq!(
+            forbidden(review(&s, &request(&s, bytes))),
+            Some(Forbid::AddressMismatch)
+        );
+    }
+
+    #[test]
+    fn an_unknown_network_only_warns_and_keeps_the_mainnet_prompt() {
+        let s = setup();
+        let req = SignRequest {
+            network: "solana-localnet".into(),
+            chain: Some(SOLANA_CHAIN),
+            ..request(&s, native())
+        };
+        let review = review(&s, &req);
+        assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(review.mainnet);
+        assert_eq!(review.network, "solana-localnet");
+        assert_eq!(row(&review, "网络"), "solana-localnet");
+        assert_eq!(row(&review, "基础费"), "5000");
+        assert!(!review.alerts.is_empty());
+        let (response, _) = sign(&s, &req);
+        tx::verify(&req, &response, &payer()).unwrap();
+    }
+
+    #[test]
+    fn the_path_and_the_payload_say_solana_when_no_chain_is_given() {
+        let s = setup();
+        let keep = |path: &str, payload: Vec<u8>| SignRequest {
+            network: "local".into(),
+            paths: vec![path.to_string()],
+            ..request(&s, payload)
+        };
+        let mainnet = keep(PATH, native());
+        assert_eq!(tx::request_chain(&mainnet), Some(bitone_core::Chain::Solana));
+        // `1'` 不只属于一条链.
+        let testnet = keep(DEVNET_PATH, vec![9, 9]);
+        assert_eq!(tx::request_chain(&testnet), None);
+        let message = keep(DEVNET_PATH, native());
+        assert_eq!(tx::request_chain(&message), Some(bitone_core::Chain::Solana));
+        // 非硬化的路径算不出 ed25519 私钥,载荷也不能说明这是 Solana.
+        let normal = keep("m/44'/7'/0'/0", native());
+        assert_eq!(tx::request_chain(&normal), None);
+    }
+
+    #[test]
+    fn fields_carry_the_digest_that_signing_checks() {
+        let s = setup();
+        let review = review(&s, &request(&s, native()));
+        assert_eq!(review.field_count as usize, review.fields.len());
+        assert!(review.matches_shown(&review.review_digest, review.field_count, false));
+        for name in ["source", "destination", "recent_blockhash", "base_fee", "priority_fee"] {
+            assert!(review.fields.iter().any(|row| row.name == name), "{name}");
+        }
+        let own = review.fields.iter().find(|row| row.name == "source").unwrap();
+        assert!(own.own);
+    }
+
+    #[test]
+    fn a_listed_token_amount_is_shown_with_its_symbol() {
+        let s = setup();
+        let review = review(&s, &hinted(&s, token(false), PEER));
+        let amount = review.fields.iter().find(|row| row.name == "amount").unwrap();
+        assert_eq!(amount.value, "1.25 USDC");
+        let owner = review.fields.iter().find(|row| row.name == "recipient_owner").unwrap();
+        assert_eq!(owner.value, PEER);
+    }
+
+    #[test]
+    fn a_declared_token_2022_mint_can_be_plain() {
+        let s = setup();
+        let mint = key(USDC);
+        let message = compose(
+            payer(),
+            &[],
+            &[advance(), transfer_checked(TOKEN_2022_PROGRAM, mint, 6)],
+        );
+        let mut manifest = Manifest::builtin().clone();
+        for asset in &mut manifest.assets {
+            if asset.contract == USDC {
+                asset.extensions = Some(Vec::new());
+            }
+        }
+        let ctx = ReviewContext {
+            keys: &s.keys,
+            manifest: &manifest,
+            highest_change: HighestChange::default(),
+        };
+        let review = tx::review(&request(&s, message.encode()), &ctx);
+        assert_eq!(review.risk, Risk::Transfer);
     }
 
     #[test]

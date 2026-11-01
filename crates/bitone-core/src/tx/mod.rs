@@ -9,11 +9,12 @@ pub mod evm;
 pub mod solana;
 pub mod tron;
 
+use crate::decode::solana::{SolanaPayload, parse_solana};
 use crate::decode::{Decoded, EvmPayload, Failure, is_psbt, parse_evm};
 use crate::hex::DisplayHex;
 use crate::keys::PublicKeys;
 use crate::manifest::{Asset, Manifest};
-use crate::path::{DerivationPath, classify, validate_for_network};
+use crate::path::{DerivationPath, classify, is_all_hardened, solana_path_mode, validate_for_network};
 use crate::policy::{self, AssetFact, Facts};
 use crate::protocol::{AddressCheck, VERSION};
 use crate::request::{SignRequest, SignResponse};
@@ -93,6 +94,30 @@ fn looks_like_evm(path: &str, payload: &[u8]) -> bool {
     by_path || matches!(parse_evm(payload), Ok(EvmPayload::Transaction(_)))
 }
 
+/// coin type `501'` 只属于 Solana.`1'` 不只属于一条链,所以路径认不出来时看载荷.
+fn looks_like_solana(path: &str, payload: &[u8]) -> bool {
+    let Ok(path) = DerivationPath::parse(path) else {
+        return false;
+    };
+    let by_path = solana_path_mode(&path) == Some(Mode::Mainnet);
+    let by_payload = is_all_hardened(&path)
+        && matches!(
+            parse_solana(payload),
+            Ok(SolanaPayload::Message(_) | SolanaPayload::Partial { .. } | SolanaPayload::Offchain { .. })
+        );
+    by_path || by_payload
+}
+
+fn chain_of_path(path: &str, payload: &[u8]) -> Option<Chain> {
+    if looks_like_evm(path, payload) {
+        Some(Chain::Evm)
+    } else if looks_like_solana(path, payload) {
+        Some(Chain::Solana)
+    } else {
+        None
+    }
+}
+
 /// 请求属于哪条链.网络是本机认识的就看网络,否则看请求的链字段,没有时按路径和载荷判断.
 /// Bitcoin 的路径在 PSBT 里,所以 `paths` 是空的.
 pub fn request_chain(request: &SignRequest) -> Option<Chain> {
@@ -101,7 +126,7 @@ pub fn request_chain(request: &SignRequest) -> Option<Chain> {
         (None, Some(number)) => Chain::from_number(number),
         (None, None) => match request.paths.as_slice() {
             [] => is_psbt(&request.payload).then_some(Chain::Bitcoin),
-            [path] => looks_like_evm(path, &request.payload).then_some(Chain::Evm),
+            [path] => chain_of_path(path, &request.payload),
             [_, _, ..] => None,
         },
     }
@@ -116,14 +141,15 @@ fn try_review(request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forb
         return match request_chain(request) {
             Some(Chain::Bitcoin) => bitcoin::review(None, request, ctx),
             Some(Chain::Evm) => evm::review(None, request, ctx),
-            Some(Chain::Tron | Chain::Solana) | None => Err(Forbid::UnknownNetwork),
+            Some(Chain::Solana) => solana::review(None, request, ctx),
+            Some(Chain::Tron) | None => Err(Forbid::UnknownNetwork),
         };
     };
     let review = match network.chain() {
         Chain::Bitcoin => bitcoin::review(Some(network), request, ctx),
         Chain::Evm => evm::review(Some(network), request, ctx),
         Chain::Tron => tron::review(network, request, ctx),
-        Chain::Solana => solana::review(network, request, ctx),
+        Chain::Solana => solana::review(Some(network), request, ctx),
     }?;
     Ok(native_alert(review, network, ctx))
 }
@@ -197,7 +223,8 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
     let Some(network) = Network::from_id(&request.network) else {
         return match request_chain(request) {
             Some(Chain::Evm) => evm::verify(request, response, signer),
-            Some(Chain::Bitcoin | Chain::Tron | Chain::Solana) | None => Err(Error::InvalidParams),
+            Some(Chain::Solana) => solana::verify(request, response, signer),
+            Some(Chain::Bitcoin | Chain::Tron) | None => Err(Error::InvalidParams),
         };
     };
     match network.chain() {

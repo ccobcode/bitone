@@ -4,6 +4,9 @@
 
 mod bitcoin_vectors;
 mod evm_vectors;
+mod solana_vectors;
+#[cfg(test)]
+mod vote_interface;
 
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -77,6 +80,11 @@ fn run() -> Result<(), String> {
         "EVM 向量:{} 笔交易,{} 个不合法载荷,{} 条消息",
         report.transactions, report.invalid, report.messages
     );
+    let report = solana_vectors::check(Path::new(VECTORS))?;
+    println!(
+        "Solana 向量:{} 个程序,{} 条指令,{} 条消息,{} 个字段,{} 个账户不足的消息被拒绝",
+        report.programs, report.instructions, report.messages, report.fields, report.refused
+    );
     Ok(())
 }
 
@@ -127,6 +135,13 @@ mod tests {
     fn the_evm_vectors_hold() {
         let report = evm_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
         assert!(report.transactions > 0 && report.invalid > 0 && report.messages > 0);
+    }
+
+    #[test]
+    fn the_solana_vectors_hold() {
+        let report = solana_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
+        assert_eq!(report.programs, 9);
+        assert!(report.instructions > 0 && report.fields > 0 && report.refused > 0);
     }
 
     #[test]

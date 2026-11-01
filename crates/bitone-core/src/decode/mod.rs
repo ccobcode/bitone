@@ -16,6 +16,8 @@ mod psbt_official;
 mod psbt_values;
 mod rlp;
 mod script;
+pub mod solana;
+mod solana_idl;
 
 pub use check::{Failure, MAX_DEPTH, Reject, RoundTrip};
 pub use evm::{

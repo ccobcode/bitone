@@ -3,6 +3,7 @@
 # psbt-v2 =0.3.0 已进入 bitone-core:rust-bitcoin 组织,CC0-1.0,只依赖 bitcoin.miniscript 只出现在锁文件里,不编译.
 # alloy-consensus,alloy-eips =2.5.0,alloy-primitives =1.7.3,alloy-rlp =0.3.17 已进入 bitone-core:EVM 的官方类型,MIT OR Apache-2.0,
 # 关掉默认特性,不启用 k256,kzg,serde.授权人恢复用现有的 secp256k1.
+# solana-vote-interface =7.3.0 和它的 solana-hash,solana-instruction,solana-pubkey 只是 tools/crosscheck 的 dev 依赖:Vote 的 IDL 是手写的,要和官方类型比较,不进产物.
 
 [graph]
 targets = [

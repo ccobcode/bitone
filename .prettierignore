@@ -7,3 +7,6 @@ apps/mobile/*
 !apps/mobile/gradle/
 apps/mobile/gradle/*
 !apps/mobile/gradle/libs.versions.toml
+schemas/solana/
+crates/bitone-core/assets/solana-idl.json
+tools/crosscheck/vectors/solana.json

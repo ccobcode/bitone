@@ -74,6 +74,7 @@ fn manifest_with(network: Network, contract: &str, decimals: u8, standard: &str)
         icon: "test".to_string(),
         standard: standard.to_string(),
         min_fraction: 2,
+        extensions: None,
     });
     manifest
 }

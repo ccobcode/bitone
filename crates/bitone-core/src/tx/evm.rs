@@ -36,7 +36,7 @@ pub mod types {
 }
 
 /// 派生路径的层数上限,BIP-32 的深度只有一个字节.
-const MAX_PATH_DEPTH: usize = 255;
+pub(super) const MAX_PATH_DEPTH: usize = 255;
 
 /// 未签名的交易.只能由官方类型得到,所以解码,展示和签名看到的是同一份内容.
 #[derive(Clone, Debug, PartialEq, Eq)]

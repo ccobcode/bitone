@@ -2,7 +2,7 @@
 //!
 //! `assess` 只读树,不修改树,拿不到原始载荷.新内容默认是无法识别,可以签名,不会默认变成普通转账.
 //! 依赖方向由 `tests/architecture.rs` 检查.阈值是初始值,技术方案里校准.
-//! Bitcoin,EVM 的类别和告警都在规则表里,`assess_bitcoin`,`assess_evm` 只算出命中了哪些种类.
+//! Bitcoin,EVM,Solana 的类别和告警都在规则表里,`assess_bitcoin`,`assess_evm`,`assess_solana` 只算出命中了哪些种类.
 
 use crate::decode::{Decoded, NodeId, SourceKind, Value};
 use crate::{Chain, Mode, Network};
@@ -106,6 +106,9 @@ struct Rule {
     /// 长按之后还要二次确认.
     #[serde(default)]
     second: bool,
+    /// 不算动作,不影响类别.只有这种节点的交易和没有动作一样是无法识别.
+    #[serde(default)]
+    passive: bool,
 }
 
 /// 链的 ID 到动作种类名到规则.
@@ -200,6 +203,9 @@ fn assess_with(decoded: &Decoded, rules: &Rules, signals: &[Signal]) -> Assessme
             findings.entry(id).or_default().risk = Some(Risk::Unknown);
             continue;
         };
+        if rule.passive {
+            continue;
+        }
         let risk = Risk::from(rule.class);
         risks.push(risk);
         second |= rule.second;
@@ -212,6 +218,7 @@ fn assess_with(decoded: &Decoded, rules: &Rules, signals: &[Signal]) -> Assessme
             alerts.push(alert);
         }
     }
+    unknown |= risks.is_empty();
     // 进入签名原文的 `opaque` 字节含义不明,动作的规则不能替它担保.
     for visit in decoded.visits() {
         let opaque = matches!(&visit.node.value, Value::Opaque(bytes) if !bytes.is_empty());
@@ -409,6 +416,7 @@ const FEE_CAP_ROW: &str = "fee_cap";
 const NETWORK_ROW: &str = "network";
 const PATH_ROW: &str = "derivation_path";
 const PATH_KIND: &str = "path-unusual";
+const SOLANA_FEE_ROW: &str = "priority_fee";
 
 /// EVM 的事实.路径,合约调用和网络都由 `tx` 层算出,这里不碰密钥和载荷.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -497,6 +505,59 @@ pub fn assess_evm(decoded: &Decoded, facts: &EvmFacts) -> Assessment {
     let mut assessment = assess_with(decoded, rules(), &signals);
     if let (Some(node), Some(note)) = (call, &facts.call_note) {
         assessment.findings.entry(node).or_default().note = Some(note.clone());
+    }
+    for visit in &visits {
+        let own = matches!(&visit.node.value, Value::Address(address) if Some(address) == facts.signer.as_ref());
+        if own {
+            assessment.findings.entry(visit.id).or_default().own = true;
+        }
+    }
+    assessment
+}
+
+/// Solana 的一项判定.种类名在规则表里.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SolanaFinding {
+    pub node: NodeId,
+    pub kind: &'static str,
+    pub args: Vec<String>,
+}
+
+/// Solana 的事实.路径,清单和本账户的核对都由 `tx` 层完成,这里不碰密钥和载荷.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SolanaFacts {
+    pub signer: Option<String>,
+    /// 这条派生路径不是本机导出的账户.
+    pub unusual_path: Option<String>,
+    pub fee_high: bool,
+    pub findings: Vec<SolanaFinding>,
+    /// 清单内代币的金额,带符号.
+    pub displays: Vec<(NodeId, String)>,
+}
+
+/// Solana 的策略.类别和告警都在规则表里.
+pub fn assess_solana(decoded: &Decoded, facts: &SolanaFacts) -> Assessment {
+    let visits = decoded.visits();
+    let row = |name: &str| {
+        visits
+            .iter()
+            .find(|visit| visit.node.name == name)
+            .map_or(ROOT, |visit| visit.id)
+    };
+    let mut signals: Vec<Signal> = facts
+        .findings
+        .iter()
+        .map(|finding| Signal::new(finding.node, finding.kind, finding.args.clone()))
+        .collect();
+    if facts.fee_high {
+        signals.push(Signal::new(row(SOLANA_FEE_ROW), "fee-high", Vec::new()));
+    }
+    if let Some(path) = &facts.unusual_path {
+        signals.push(Signal::new(row(PATH_ROW), PATH_KIND, vec![path.clone()]));
+    }
+    let mut assessment = assess_with(decoded, rules(), &signals);
+    for (node, display) in &facts.displays {
+        assessment.findings.entry(*node).or_default().display = Some(display.clone());
     }
     for visit in &visits {
         let own = matches!(&visit.node.value, Value::Address(address) if Some(address) == facts.signer.as_ref());
@@ -707,7 +768,8 @@ mod tests {
     #[test]
     fn only_the_migrated_chains_have_tables() {
         for (chain, table) in rules() {
-            assert_eq!(table.is_empty(), chain != "bitcoin" && chain != "evm", "{chain}");
+            let migrated = ["bitcoin", "evm", "solana"].contains(&chain.as_str());
+            assert_eq!(table.is_empty(), !migrated, "{chain}");
         }
     }
 
@@ -777,6 +839,125 @@ mod tests {
             .map(|(kind, _)| kind.as_str())
             .collect();
         assert_eq!(second, ["eip191-unknown", "eip712-digest", "raw-hash"]);
+    }
+
+    const SOLANA_KINDS: [&str; 29] = [
+        "program-unknown",
+        "instruction-unknown",
+        "lookup-table",
+        "lookup-account",
+        "fee-payer-foreign",
+        "signer-unverified",
+        "other-signers",
+        "path-unusual",
+        "fee-high",
+        "actions-many",
+        "owner-unconfirmed",
+        "token-accounts-many",
+        "token-unlisted",
+        "token-decimals-mismatch",
+        "token-2022-undeclared",
+        "ata-underived",
+        "compute-budget-repeated",
+        "nonce-cancel",
+        "nonce-deposit-high",
+        "nonce-advance-foreign",
+        "nonce-step-foreign",
+        "v1-transaction-size",
+        "v1-signatures",
+        "v1-addresses",
+        "v1-instructions",
+        "v1-heap-size",
+        "v1-config-unknown",
+        "offchain-message",
+        "offchain-unknown",
+    ];
+
+    /// 第 3 节:官方枚举,矩阵对应的规则表要一致.重新生成 IDL 后出现新指令时这里失败.
+    #[test]
+    fn every_solana_kind_has_a_rule() {
+        let table = &rules()["solana"];
+        let actions = crate::decode::solana::instruction_actions();
+        for kind in actions.iter().map(String::as_str).chain(SOLANA_KINDS) {
+            assert!(table.contains_key(kind), "{kind}");
+        }
+        let unique: std::collections::BTreeSet<&str> = SOLANA_KINDS.into_iter().collect();
+        assert_eq!(table.len(), actions.len() + unique.len(), "规则表里有用不到的种类");
+    }
+
+    #[test]
+    fn solana_matches_the_standard_matrix() {
+        let table = &rules()["solana"];
+        let classes = [
+            ("system.transferSol", RuleClass::Transfer),
+            ("system.assignWithSeed", RuleClass::PermissionChange),
+            ("system.authorizeNonceAccount", RuleClass::PermissionChange),
+            ("token.transferChecked", RuleClass::Transfer),
+            ("token.approve", RuleClass::Approval),
+            ("token2022.approveChecked", RuleClass::Approval),
+            ("token.setAuthority", RuleClass::PermissionChange),
+            ("token2022.updateTransferHook", RuleClass::PermissionChange),
+            ("token2022.initializePermanentDelegate", RuleClass::PermissionChange),
+            ("token2022.confidentialTransfer", RuleClass::Unknown),
+            ("token2022.permissionedConfidentialBurn", RuleClass::Unknown),
+            ("computeBudget.requestUnits", RuleClass::Unknown),
+            ("stake.setLockupChecked", RuleClass::PermissionChange),
+            ("vote.updateValidatorIdentity", RuleClass::PermissionChange),
+            ("addressLookupTable.freezeLookupTable", RuleClass::Recognized),
+            ("memo.addMemo", RuleClass::Recognized),
+        ];
+        for (kind, class) in classes {
+            assert_eq!(table[kind].class, class, "{kind}");
+        }
+        for kind in [
+            "token.burn",
+            "stake.withdraw",
+            "vote.withdraw",
+            "system.withdrawNonceAccount",
+        ] {
+            assert_eq!(table[kind].class, RuleClass::Recognized, "{kind}");
+            assert!(table[kind].alert.is_some(), "{kind}");
+        }
+    }
+
+    #[test]
+    fn only_blind_solana_payloads_ask_for_the_second_confirmation() {
+        let second: Vec<&str> = rules()["solana"]
+            .iter()
+            .filter(|(_, rule)| rule.second)
+            .map(|(kind, _)| kind.as_str())
+            .collect();
+        assert_eq!(second, ["offchain-unknown", "v1-config-unknown"]);
+    }
+
+    #[test]
+    fn only_compute_budget_batch_and_the_nonce_advance_are_passive() {
+        let passive: Vec<&str> = rules()["solana"]
+            .iter()
+            .filter(|(_, rule)| rule.passive)
+            .map(|(kind, _)| kind.as_str())
+            .collect();
+        assert_eq!(
+            passive,
+            [
+                "computeBudget.requestHeapFrame",
+                "computeBudget.setComputeUnitLimit",
+                "computeBudget.setComputeUnitPrice",
+                "computeBudget.setLoadedAccountsDataSizeLimit",
+                "system.advanceNonceAccount",
+                "token.batch",
+                "token2022.batch",
+            ]
+        );
+    }
+
+    #[test]
+    fn no_action_of_substance_means_unknown() {
+        let decoded = decode(&Records, &input(&PAYLOAD)).unwrap();
+        let rows = "\"transfer\":{\"class\":\"recognized\",\"alert\":null,\"passive\":true}";
+        let assessment = assess_with(&decoded, &table(rows), &[]);
+        assert_eq!((assessment.risk, assessment.confirm), (Risk::Unknown, Confirm::Hold));
+        assert_eq!(assessment.alerts, [UNKNOWN_ALERT]);
     }
 
     #[test]

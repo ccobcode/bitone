@@ -13,6 +13,8 @@ pub const MAX_DEPTH: u32 = 32;
 pub enum Reject {
     #[error("载荷无法解码")]
     Malformed,
+    #[error("文本不是合法的 UTF-8")]
+    InvalidText,
     #[error("载荷有未归属的字节,偏移 {offset}")]
     Gap { offset: u64 },
     #[error("载荷的字节归属重复,偏移 {offset}")]

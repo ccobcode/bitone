@@ -42,12 +42,13 @@ impl Wallet {
         let signatures = match (Network::from_id(&request.network), tx::request_chain(request)) {
             (None, Some(Chain::Bitcoin)) => self.sign_bitcoin(request, None)?,
             (None, Some(Chain::Evm)) => vec![self.sign_evm(request)?],
+            (None, Some(Chain::Solana)) => vec![self.sign_solana(request)?],
             (None, _) => return Err(Error::Refused),
             (Some(network), _) => match network.chain() {
                 Chain::Evm => vec![self.sign_evm(request)?],
                 Chain::Bitcoin => self.sign_bitcoin(request, Some(network))?,
                 Chain::Tron => vec![self.sign_tron(request, network)?],
-                Chain::Solana => vec![self.sign_solana(request, network)?],
+                Chain::Solana => vec![self.sign_solana(request)?],
             },
         };
         let response = SignResponse {

@@ -1,0 +1,4201 @@
+{
+ "generator": "tools/crosscheck/codama/generate.mjs",
+ "instructions": [
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "createAccount",
+   "data": "0000000003f2052a0100000004f2052a01000000890d499822b05c95ceb1c295084307bb2e221c5dd1de09eb4d47d18fb0668d97",
+   "accounts": [
+    "payer",
+    "newAccount"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "0"
+    ],
+    [
+     "lamports",
+     "5000000003"
+    ],
+    [
+     "space",
+     "5000000004"
+    ],
+    [
+     "programAddress",
+     "ADzc9wXr7bje9u3ft724abuQ6Qg8a7HgvsySksrH77d8"
+    ]
+   ]
+  },
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "assign",
+   "data": "01000000b4d24662628312dadd76b5f8c2f9d984f2dae45c54bff65fbe2c307494dce642",
+   "accounts": [
+    "account"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "1"
+    ],
+    [
+     "programAddress",
+     "DArMXFJ5WNd6CxYrQCzWx45ukHu8egPRTQhG1NsFxS4R"
+    ]
+   ]
+  },
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "transferSol",
+   "data": "0200000005f2052a01000000",
+   "accounts": [
+    "source",
+    "destination"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "2"
+    ],
+    [
+     "amount",
+     "5000000005"
+    ]
+   ]
+  },
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "createAccountWithSeed",
+   "data": "030000002734f047be663a7d5216b17ab2678d206edb10ef8eb227ca441a34f3bf7ed277080000000000000073616d706c65203708f2052a0100000009f2052a01000000b5f3b63e4416c292de1db068e82b6b031e7cf2ffac3f2db93f757a48be27dd1b",
+   "accounts": [
+    "payer",
+    "newAccount"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "3"
+    ],
+    [
+     "base",
+     "3e3iiyYZoooeMTr77NVXy8hsSz4Dm11PgcTMsnb43HFC"
+    ],
+    [
+     "seed",
+     "sample 7"
+    ],
+    [
+     "amount",
+     "5000000008"
+    ],
+    [
+     "space",
+     "5000000009"
+    ],
+    [
+     "programAddress",
+     "DFGLLJSkv1N1McsZZWmYFCWwbJQM7uMWw5684QeBGPfG"
+    ]
+   ]
+  },
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "advanceNonceAccount",
+   "data": "04000000",
+   "accounts": [
+    "nonceAccount",
+    "recentBlockhashesSysvar",
+    "nonceAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "4"
+    ]
+   ]
+  },
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "withdrawNonceAccount",
+   "data": "0500000008f2052a01000000",
+   "accounts": [
+    "nonceAccount",
+    "recipientAccount",
+    "recentBlockhashesSysvar",
+    "rentSysvar",
+    "nonceAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "5"
+    ],
+    [
+     "withdrawAmount",
+     "5000000008"
+    ]
+   ]
+  },
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "initializeNonceAccount",
+   "data": "0600000065e007a007187d5e8b905badf490ea2e7b3dd0fb679be36ce2e63c341b840d28",
+   "accounts": [
+    "nonceAccount",
+    "recentBlockhashesSysvar",
+    "rentSysvar"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "6"
+    ],
+    [
+     "nonceAuthority",
+     "7rgK1hQqWtJx2iE2LSkV7MTKbLbtNbtPacijEH7oy3qZ"
+    ]
+   ]
+  },
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "authorizeNonceAccount",
+   "data": "07000000b5f3b63e4416c292de1db068e82b6b031e7cf2ffac3f2db93f757a48be27dd1b",
+   "accounts": [
+    "nonceAccount",
+    "nonceAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "7"
+    ],
+    [
+     "newNonceAuthority",
+     "DFGLLJSkv1N1McsZZWmYFCWwbJQM7uMWw5684QeBGPfG"
+    ]
+   ]
+  },
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "allocate",
+   "data": "080000000bf2052a01000000",
+   "accounts": [
+    "newAccount"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "8"
+    ],
+    [
+     "space",
+     "5000000011"
+    ]
+   ]
+  },
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "allocateWithSeed",
+   "data": "09000000ab04299d702783fdaacf7ddfa2e9d9738439969e7b53a85a3843b72109a3229f090000000000000073616d706c652031330ef2052a01000000113265e285b32bc7e42f1127e6292a4c6dbc1e71eebec2e5a393c684a8269bf0",
+   "accounts": [
+    "newAccount",
+    "baseAccount"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "9"
+    ],
+    [
+     "base",
+     "CWaQ4t2qCXpWjQ1h9cN5sphgzQU931K6gUCR4cGtphNN"
+    ],
+    [
+     "seed",
+     "sample 13"
+    ],
+    [
+     "space",
+     "5000000014"
+    ],
+    [
+     "programAddress",
+     "2A8WBRQj7i1TSV4R7HHAW3Qs1byXdBkLYsLDuQCxTYLf"
+    ]
+   ]
+  },
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "assignWithSeed",
+   "data": "0a000000684d61749b39e9151326ea19aaf821bd933a931f2d25b210f97dfa69f3d0594b090000000000000073616d706c65203134113265e285b32bc7e42f1127e6292a4c6dbc1e71eebec2e5a393c684a8269bf0",
+   "accounts": [
+    "account",
+    "baseAccount"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "10"
+    ],
+    [
+     "base",
+     "829qWn35nBAUf9XL48nHirWTwDffGfDbJxB54Hj1wsce"
+    ],
+    [
+     "seed",
+     "sample 14"
+    ],
+    [
+     "programAddress",
+     "2A8WBRQj7i1TSV4R7HHAW3Qs1byXdBkLYsLDuQCxTYLf"
+    ]
+   ]
+  },
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "transferSolWithSeed",
+   "data": "0b0000000ef2052a01000000090000000000000073616d706c65203135f2b75a31525437c5c7c91752a3a7487e0259fbb7753e824ed20be4ce0dd7cc53",
+   "accounts": [
+    "source",
+    "baseAccount",
+    "destination"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "11"
+    ],
+    [
+     "amount",
+     "5000000014"
+    ],
+    [
+     "fromSeed",
+     "sample 15"
+    ],
+    [
+     "fromOwner",
+     "HLTpbR4cNVsf6feQ7KozkrJCjbSgTxxLQzperjJNeJFC"
+    ]
+   ]
+  },
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "upgradeNonceAccount",
+   "data": "0c000000",
+   "accounts": [
+    "nonceAccount"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "12"
+    ]
+   ]
+  },
+  {
+   "program": "11111111111111111111111111111111",
+   "instruction": "createAccountAllowPrefund",
+   "data": "0d00000010f2052a0100000011f2052a0100000030049abbc1db10c05ed1e1f7b32c77774cd5410fe5b61e8aef188dfb41b9c8a9",
+   "accounts": [
+    "newAccount"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "13"
+    ],
+    [
+     "lamports",
+     "5000000016"
+    ],
+    [
+     "space",
+     "5000000017"
+    ],
+    [
+     "programAddress",
+     "4ESeDap9rCqT9hW5cfSxJejG5K4Khefh6xDY3gtGhLAc"
+    ]
+   ]
+  },
+  {
+   "program": "ComputeBudget111111111111111111111111111111",
+   "instruction": "requestUnits",
+   "data": "00b1860100b2860100",
+   "accounts": [],
+   "fields": [
+    [
+     "discriminator",
+     "0"
+    ],
+    [
+     "units",
+     "100017"
+    ],
+    [
+     "additionalFee",
+     "100018"
+    ]
+   ]
+  },
+  {
+   "program": "ComputeBudget111111111111111111111111111111",
+   "instruction": "requestHeapFrame",
+   "data": "01b2860100",
+   "accounts": [],
+   "fields": [
+    [
+     "discriminator",
+     "1"
+    ],
+    [
+     "bytes",
+     "100018"
+    ]
+   ]
+  },
+  {
+   "program": "ComputeBudget111111111111111111111111111111",
+   "instruction": "setComputeUnitLimit",
+   "data": "02b3860100",
+   "accounts": [],
+   "fields": [
+    [
+     "discriminator",
+     "2"
+    ],
+    [
+     "units",
+     "100019"
+    ]
+   ]
+  },
+  {
+   "program": "ComputeBudget111111111111111111111111111111",
+   "instruction": "setComputeUnitPrice",
+   "data": "0314f2052a01000000",
+   "accounts": [],
+   "fields": [
+    [
+     "discriminator",
+     "3"
+    ],
+    [
+     "microLamports",
+     "5000000020"
+    ]
+   ]
+  },
+  {
+   "program": "ComputeBudget111111111111111111111111111111",
+   "instruction": "setLoadedAccountsDataSizeLimit",
+   "data": "04b5860100",
+   "accounts": [],
+   "fields": [
+    [
+     "discriminator",
+     "4"
+    ],
+    [
+     "accountDataSizeLimit",
+     "100021"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "initializeMint",
+   "data": "00165c9d4c85878600c77fc352d106e36bd457b9d0e9db0b992312fdf15bb6ece40f00",
+   "accounts": [
+    "mint",
+    "rent"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "0"
+    ],
+    [
+     "decimals",
+     "22"
+    ],
+    [
+     "mintAuthority",
+     "7EXdCe65FmKPC58LRjJcVZxcK17UEVpo7uBr2c1c6HtA"
+    ],
+    [
+     "freezeAuthority",
+     null
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "initializeAccount",
+   "data": "01",
+   "accounts": [
+    "account",
+    "mint",
+    "owner",
+    "rent"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "1"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "initializeMultisig",
+   "data": "0218",
+   "accounts": [
+    "multisig",
+    "rent"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "2"
+    ],
+    [
+     "m",
+     "24"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "transfer",
+   "data": "0319f2052a01000000",
+   "accounts": [
+    "source",
+    "destination",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "3"
+    ],
+    [
+     "amount",
+     "5000000025"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "approve",
+   "data": "041af2052a01000000",
+   "accounts": [
+    "source",
+    "delegate",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "4"
+    ],
+    [
+     "amount",
+     "5000000026"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "revoke",
+   "data": "05",
+   "accounts": [
+    "source",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "5"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "setAuthority",
+   "data": "0600010a0cfc383332d4e8de7c5e76797f01a3603b158ffe388fca5239ed019b7c9c86",
+   "accounts": [
+    "owned",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "6"
+    ],
+    [
+     "authorityType",
+     "mintTokens"
+    ],
+    [
+     "newAuthority",
+     "gEZYpZKf7i2GDVmx9MjQjZ9HK9JBqLMhFhENq9dQ8UM"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "mintTo",
+   "data": "071df2052a01000000",
+   "accounts": [
+    "mint",
+    "token",
+    "mintAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "7"
+    ],
+    [
+     "amount",
+     "5000000029"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "burn",
+   "data": "081ef2052a01000000",
+   "accounts": [
+    "account",
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "8"
+    ],
+    [
+     "amount",
+     "5000000030"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "closeAccount",
+   "data": "09",
+   "accounts": [
+    "account",
+    "destination",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "9"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "freezeAccount",
+   "data": "0a",
+   "accounts": [
+    "account",
+    "mint",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "10"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "thawAccount",
+   "data": "0b",
+   "accounts": [
+    "account",
+    "mint",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "11"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "transferChecked",
+   "data": "0c22f2052a0100000023",
+   "accounts": [
+    "source",
+    "mint",
+    "destination",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "12"
+    ],
+    [
+     "amount",
+     "5000000034"
+    ],
+    [
+     "decimals",
+     "35"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "approveChecked",
+   "data": "0d23f2052a0100000024",
+   "accounts": [
+    "source",
+    "mint",
+    "delegate",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "13"
+    ],
+    [
+     "amount",
+     "5000000035"
+    ],
+    [
+     "decimals",
+     "36"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "mintToChecked",
+   "data": "0e24f2052a0100000025",
+   "accounts": [
+    "mint",
+    "token",
+    "mintAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "14"
+    ],
+    [
+     "amount",
+     "5000000036"
+    ],
+    [
+     "decimals",
+     "37"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "burnChecked",
+   "data": "0f25f2052a0100000026",
+   "accounts": [
+    "account",
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "15"
+    ],
+    [
+     "amount",
+     "5000000037"
+    ],
+    [
+     "decimals",
+     "38"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "initializeAccount2",
+   "data": "1092d3dc4aa7df5d3fda91cb3165fd7e7df99f5725f3644a3ab8d78938ff5f71ef",
+   "accounts": [
+    "account",
+    "mint",
+    "rent"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "16"
+    ],
+    [
+     "owner",
+     "At9tsiR3kkLVP5Q2P5h1NFyykoGqDRQe84Vp5ubyjoUA"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "syncNative",
+   "data": "11",
+   "accounts": [
+    "account"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "17"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "initializeAccount3",
+   "data": "1298f5c83876901e02b6712b92b05ee4bab86b639bf7ad22659f003e1c998f8c31",
+   "accounts": [
+    "account",
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "18"
+    ],
+    [
+     "owner",
+     "BJ6Ln9CFbZhqFz1xPQu4piP4W6P2TfUDxEBipaCXBnyW"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "initializeMultisig2",
+   "data": "1329",
+   "accounts": [
+    "multisig"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "19"
+    ],
+    [
+     "m",
+     "41"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "initializeMint2",
+   "data": "142a510a9f11e5626f6f04ca0a5891d4577e26594604428d5d086e023458d503f81e01759885f06a341cb4f04edbd50751e0ecb4d99bd2ef0061d74d5f49e1963c55d0",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "20"
+    ],
+    [
+     "decimals",
+     "42"
+    ],
+    [
+     "mintAuthority",
+     "6TMRCA2yXEz9STL6rK68dJ65M75y9vto5pVj5W7KHUfP"
+    ],
+    [
+     "freezeAuthority",
+     "8v3bPcaSkgRuataKAMv8LPmMUMb3YMHzLRc4pkHPDZpj"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "getAccountDataSize",
+   "data": "15",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "21"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "initializeImmutableOwner",
+   "data": "16",
+   "accounts": [
+    "account"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "22"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "amountToUiAmount",
+   "data": "172df2052a01000000",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "23"
+    ],
+    [
+     "amount",
+     "5000000045"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "uiAmountToAmount",
+   "data": "1873616d706c65203436",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "24"
+    ],
+    [
+     "uiAmount",
+     "sample 46"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "withdrawExcessLamports",
+   "data": "26",
+   "accounts": [
+    "source",
+    "destination",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "38"
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "unwrapLamports",
+   "data": "2d00",
+   "accounts": [
+    "source",
+    "destination",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "45"
+    ],
+    [
+     "amount",
+     null
+    ]
+   ]
+  },
+  {
+   "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "instruction": "batch",
+   "data": "ff040a0c32f2052a0100000033020105",
+   "accounts": [
+    "source",
+    "mint",
+    "destination",
+    "authority",
+    "source",
+    "owner"
+   ],
+   "inner": [
+    "transferChecked",
+    "revoke"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "255"
+    ],
+    [
+     "numberOfAccounts",
+     "4"
+    ],
+    [
+     "discriminator",
+     "12"
+    ],
+    [
+     "amount",
+     "5000000050"
+    ],
+    [
+     "decimals",
+     "51"
+    ],
+    [
+     "numberOfAccounts",
+     "2"
+    ],
+    [
+     "discriminator",
+     "5"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeMint",
+   "data": "00323f0e4703a38a43992b224902cd04b689ac60c466c4a454c4c71020cd858f1bc901f2fa2761158a2c584940300e1a1a0bf843d92b83b0da4589ac481f8a37b6ea80",
+   "accounts": [
+    "mint",
+    "rent"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "0"
+    ],
+    [
+     "decimals",
+     "50"
+    ],
+    [
+     "mintAuthority",
+     "5F9K6SmvHE1zaRo9mfiMnVZy33dXTggktXizyUR3PqyA"
+    ],
+    [
+     "freezeAuthority",
+     "HMUuDAqFkFixMYbz7ro9GxU46KKh2BLmDgK6n1DNp2y5"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeAccount",
+   "data": "01",
+   "accounts": [
+    "account",
+    "mint",
+    "owner",
+    "rent"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "1"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeMultisig",
+   "data": "0234",
+   "accounts": [
+    "multisig",
+    "rent"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "2"
+    ],
+    [
+     "m",
+     "52"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "transfer",
+   "data": "0335f2052a01000000",
+   "accounts": [
+    "source",
+    "destination",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "3"
+    ],
+    [
+     "amount",
+     "5000000053"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "approve",
+   "data": "0436f2052a01000000",
+   "accounts": [
+    "source",
+    "delegate",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "4"
+    ],
+    [
+     "amount",
+     "5000000054"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "revoke",
+   "data": "05",
+   "accounts": [
+    "source",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "5"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "setAuthority",
+   "data": "060200",
+   "accounts": [
+    "owned",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "6"
+    ],
+    [
+     "authorityType",
+     "accountOwner"
+    ],
+    [
+     "newAuthority",
+     null
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "mintTo",
+   "data": "0739f2052a01000000",
+   "accounts": [
+    "mint",
+    "token",
+    "mintAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "7"
+    ],
+    [
+     "amount",
+     "5000000057"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "burn",
+   "data": "083af2052a01000000",
+   "accounts": [
+    "account",
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "8"
+    ],
+    [
+     "amount",
+     "5000000058"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "closeAccount",
+   "data": "09",
+   "accounts": [
+    "account",
+    "destination",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "9"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "freezeAccount",
+   "data": "0a",
+   "accounts": [
+    "account",
+    "mint",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "10"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "thawAccount",
+   "data": "0b",
+   "accounts": [
+    "account",
+    "mint",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "11"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "transferChecked",
+   "data": "0c3ef2052a010000003f",
+   "accounts": [
+    "source",
+    "mint",
+    "destination",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "12"
+    ],
+    [
+     "amount",
+     "5000000062"
+    ],
+    [
+     "decimals",
+     "63"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "approveChecked",
+   "data": "0d3ff2052a0100000040",
+   "accounts": [
+    "source",
+    "mint",
+    "delegate",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "13"
+    ],
+    [
+     "amount",
+     "5000000063"
+    ],
+    [
+     "decimals",
+     "64"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "mintToChecked",
+   "data": "0e40f2052a0100000041",
+   "accounts": [
+    "mint",
+    "token",
+    "mintAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "14"
+    ],
+    [
+     "amount",
+     "5000000064"
+    ],
+    [
+     "decimals",
+     "65"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "burnChecked",
+   "data": "0f41f2052a0100000042",
+   "accounts": [
+    "account",
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "15"
+    ],
+    [
+     "amount",
+     "5000000065"
+    ],
+    [
+     "decimals",
+     "66"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeAccount2",
+   "data": "107f9f6c442eb44166d40364ed144dc70d64d04573f15924f2294520c8cab0b658",
+   "accounts": [
+    "account",
+    "mint",
+    "rent"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "16"
+    ],
+    [
+     "owner",
+     "9bBmnBGCHhuEW9h4AhM7dYR8Xd1iZZE9TZBMoH9xe3kT"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "syncNative",
+   "data": "11",
+   "accounts": [
+    "account"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "17"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeAccount3",
+   "data": "1284910d855e021ceefe9a73e5450f480622230e2e8e4b51f42beb35a8aa7c35e9",
+   "accounts": [
+    "account",
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "18"
+    ],
+    [
+     "owner",
+     "9vV6tcj6ayw3pj2mM5D1BzeEWTEbdBWuaXPwb1FPEo2G"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeMultisig2",
+   "data": "1345",
+   "accounts": [
+    "multisig"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "19"
+    ],
+    [
+     "m",
+     "69"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeMint2",
+   "data": "1446c0327802bc1ff5b31b7561f8179d5ea8445b88a47084ae89d840d783d8a8812b00",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "20"
+    ],
+    [
+     "decimals",
+     "70"
+    ],
+    [
+     "mintAuthority",
+     "DwFuwkC81jkESXhJibBRTiWdbC6D3UtzosmYTTubwbpn"
+    ],
+    [
+     "freezeAuthority",
+     null
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "getAccountDataSize",
+   "data": "15",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "21"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeImmutableOwner",
+   "data": "16",
+   "accounts": [
+    "account"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "22"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "amountToUiAmount",
+   "data": "1749f2052a01000000",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "23"
+    ],
+    [
+     "amount",
+     "5000000073"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "uiAmountToAmount",
+   "data": "1873616d706c65203734",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "24"
+    ],
+    [
+     "uiAmount",
+     "sample 74"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeMintCloseAuthority",
+   "data": "1900",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "25"
+    ],
+    [
+     "closeAuthority",
+     null
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeTransferFeeConfig",
+   "data": "1a0001225b9b06b03a8a53ae5fc5af61d7dcc1650211e37f508c125a0906e7c950d38000370450f2052a01000000",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "26"
+    ],
+    [
+     "transferFeeDiscriminator",
+     "0"
+    ],
+    [
+     "transferFeeConfigAuthority",
+     "3K7sw7bXxzLd1MUSrbyNbKZTcbnUoxogUBhX7iKcuzp7"
+    ],
+    [
+     "withdrawWithheldAuthority",
+     null
+    ],
+    [
+     "transferFeeBasisPoints",
+     "1079"
+    ],
+    [
+     "maximumFee",
+     "5000000080"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "transferCheckedWithFee",
+   "data": "1a014ef2052a010000004f50f2052a01000000",
+   "accounts": [
+    "source",
+    "mint",
+    "destination",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "26"
+    ],
+    [
+     "transferFeeDiscriminator",
+     "1"
+    ],
+    [
+     "amount",
+     "5000000078"
+    ],
+    [
+     "decimals",
+     "79"
+    ],
+    [
+     "fee",
+     "5000000080"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "withdrawWithheldTokensFromMint",
+   "data": "1a02",
+   "accounts": [
+    "mint",
+    "feeReceiver",
+    "withdrawWithheldAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "26"
+    ],
+    [
+     "transferFeeDiscriminator",
+     "2"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "withdrawWithheldTokensFromAccounts",
+   "data": "1a0350",
+   "accounts": [
+    "mint",
+    "feeReceiver",
+    "withdrawWithheldAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "26"
+    ],
+    [
+     "transferFeeDiscriminator",
+     "3"
+    ],
+    [
+     "numTokenAccounts",
+     "80"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "harvestWithheldTokensToMint",
+   "data": "1a04",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "26"
+    ],
+    [
+     "transferFeeDiscriminator",
+     "4"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "setTransferFee",
+   "data": "1a053a0453f2052a01000000",
+   "accounts": [
+    "mint",
+    "transferFeeConfigAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "26"
+    ],
+    [
+     "transferFeeDiscriminator",
+     "5"
+    ],
+    [
+     "transferFeeBasisPoints",
+     "1082"
+    ],
+    [
+     "maximumFee",
+     "5000000083"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeConfidentialTransferMint",
+   "data": "1b00a9e7a82336fb0e6675bd3002d91ca7ff198fc4ca2c3bbb3803aa44af6c8e1a200178272182180bd64856debbe993f74c2d27af96668789e68084fcb350c30579a0",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "0"
+    ],
+    [
+     "authority",
+     "CSEnCmEuXuy4SKgucfhTnSjoQwrdVwUxrTWuXj7SZvym"
+    ],
+    [
+     "autoApproveNewAccounts",
+     "true"
+    ],
+    [
+     "auditorElgamalPubkey",
+     "962XpG4FLYwjEnoP5EyYgSWVbvf6H3pHtxtiMjtwLKdy"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "updateConfidentialTransferMint",
+   "data": "1b010178272182180bd64856debbe993f74c2d27af96668789e68084fcb350c30579a0",
+   "accounts": [
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "1"
+    ],
+    [
+     "autoApproveNewAccounts",
+     "true"
+    ],
+    [
+     "auditorElgamalPubkey",
+     "962XpG4FLYwjEnoP5EyYgSWVbvf6H3pHtxtiMjtwLKdy"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "configureConfidentialTransferAccount",
+   "data": "1b027746d0a62ea14b5f538ef5d439f1aa7d1468154b988c6bed724476a146cfb6a5f8a002e156f2052a01000000a8",
+   "accounts": [
+    "token",
+    "mint",
+    "instructionsSysvarOrContextState",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "2"
+    ],
+    [
+     "decryptableZeroBalance",
+     "7746d0a62ea14b5f538ef5d439f1aa7d1468154b988c6bed724476a146cfb6a5f8a002e1"
+    ],
+    [
+     "maximumPendingBalanceCreditCounter",
+     "5000000086"
+    ],
+    [
+     "proofInstructionOffset",
+     "-88"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "approveConfidentialTransferAccount",
+   "data": "1b03",
+   "accounts": [
+    "token",
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "3"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "emptyConfidentialTransferAccount",
+   "data": "1b04a8",
+   "accounts": [
+    "token",
+    "instructionsSysvarOrContextState",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "4"
+    ],
+    [
+     "proofInstructionOffset",
+     "-88"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "confidentialDeposit",
+   "data": "1b0558f2052a0100000059",
+   "accounts": [
+    "token",
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "5"
+    ],
+    [
+     "amount",
+     "5000000088"
+    ],
+    [
+     "decimals",
+     "89"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "confidentialWithdraw",
+   "data": "1b0659f2052a010000005ab55a3d81682ba241b3a20a9db8986597d36a7564477355bea094f3238d40d9142e994941a3a2",
+   "accounts": [
+    "token",
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "6"
+    ],
+    [
+     "amount",
+     "5000000089"
+    ],
+    [
+     "decimals",
+     "90"
+    ],
+    [
+     "newDecryptableAvailableBalance",
+     "b55a3d81682ba241b3a20a9db8986597d36a7564477355bea094f3238d40d9142e994941"
+    ],
+    [
+     "equalityProofInstructionOffset",
+     "-93"
+    ],
+    [
+     "rangeProofInstructionOffset",
+     "-94"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "confidentialTransfer",
+   "data": "1b073819529d5a124318ff11a858fd3f54fa1a563538e7ea1abc5cb1311d29b986aa3d51e985b55a3d81682ba241b3a20a9db8986597d36a7564477355bea094f3238d40d9142e9949415291c74b0e1e89fdabd24dfba786c4e0105d62ce072bac48130f901e5bb9ad1dddfadcf67338a6fa704ffe781fbd5cd78487bd5b5392b455ef6a36433c74a478a6c2bd2938ba7bc0334a8cac060dd4bbc95b147cccd47bd9cfd4ab88a2a1a0",
+   "accounts": [
+    "sourceToken",
+    "mint",
+    "destinationToken",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "7"
+    ],
+    [
+     "newSourceDecryptableAvailableBalance",
+     "3819529d5a124318ff11a858fd3f54fa1a563538e7ea1abc5cb1311d29b986aa3d51e985"
+    ],
+    [
+     "transferAmountAuditorCiphertextLo",
+     "b55a3d81682ba241b3a20a9db8986597d36a7564477355bea094f3238d40d9142e9949415291c74b0e1e89fdabd24dfba786c4e0105d62ce072bac48130f901e"
+    ],
+    [
+     "transferAmountAuditorCiphertextHi",
+     "5bb9ad1dddfadcf67338a6fa704ffe781fbd5cd78487bd5b5392b455ef6a36433c74a478a6c2bd2938ba7bc0334a8cac060dd4bbc95b147cccd47bd9cfd4ab88"
+    ],
+    [
+     "equalityProofInstructionOffset",
+     "-94"
+    ],
+    [
+     "ciphertextValidityProofInstructionOffset",
+     "-95"
+    ],
+    [
+     "rangeProofInstructionOffset",
+     "-96"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "applyConfidentialPendingBalance",
+   "data": "1b085bf2052a010000005bb9ad1dddfadcf67338a6fa704ffe781fbd5cd78487bd5b5392b455ef6a36433c74a478",
+   "accounts": [
+    "token",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "8"
+    ],
+    [
+     "expectedPendingBalanceCreditCounter",
+     "5000000091"
+    ],
+    [
+     "newDecryptableAvailableBalance",
+     "5bb9ad1dddfadcf67338a6fa704ffe781fbd5cd78487bd5b5392b455ef6a36433c74a478"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "enableConfidentialCredits",
+   "data": "1b09",
+   "accounts": [
+    "token",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "9"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "disableConfidentialCredits",
+   "data": "1b0a",
+   "accounts": [
+    "token",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "10"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "enableNonConfidentialCredits",
+   "data": "1b0b",
+   "accounts": [
+    "token",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "11"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "disableNonConfidentialCredits",
+   "data": "1b0c",
+   "accounts": [
+    "token",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "12"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "confidentialTransferWithFee",
+   "data": "1b0d9efa7cba61053058e79309c144d61570f52645188a5d8668c70410083c59183871359172f931f6d504407f50f51b782b727521a9a4c29bd2ed2c534ee4d295391ffd3ba441be657d57d8d65cbc13f945ac1139e73f4a30debabbba1bf631aa6f2ac5fcbe05b0ba3120cc32ecacb4fc123bd5cff0de60d3ee89314578ac0ffceb370760e56e1deda756008b8f12c9a3475bdbaf12c8b442cb665d56ccf52383c1d7da78d09cfffefdfc",
+   "accounts": [
+    "sourceToken",
+    "mint",
+    "destinationToken",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "13"
+    ],
+    [
+     "newSourceDecryptableAvailableBalance",
+     "9efa7cba61053058e79309c144d61570f52645188a5d8668c70410083c59183871359172"
+    ],
+    [
+     "transferAmountAuditorCiphertextLo",
+     "f931f6d504407f50f51b782b727521a9a4c29bd2ed2c534ee4d295391ffd3ba441be657d57d8d65cbc13f945ac1139e73f4a30debabbba1bf631aa6f2ac5fcbe"
+    ],
+    [
+     "transferAmountAuditorCiphertextHi",
+     "05b0ba3120cc32ecacb4fc123bd5cff0de60d3ee89314578ac0ffceb370760e56e1deda756008b8f12c9a3475bdbaf12c8b442cb665d56ccf52383c1d7da78d0"
+    ],
+    [
+     "equalityProofInstructionOffset",
+     "-100"
+    ],
+    [
+     "transferAmountCiphertextValidityProofInstructionOffset",
+     "-1"
+    ],
+    [
+     "feeSigmaProofInstructionOffset",
+     "-2"
+    ],
+    [
+     "feeCiphertextValidityProofInstructionOffset",
+     "-3"
+    ],
+    [
+     "rangeProofInstructionOffset",
+     "-4"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "configureConfidentialTransferAccountWithRegistry",
+   "data": "1b0e",
+   "accounts": [
+    "token",
+    "mint",
+    "elgamalRegistry"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "27"
+    ],
+    [
+     "confidentialTransferDiscriminator",
+     "14"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeDefaultAccountState",
+   "data": "1c0002",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "28"
+    ],
+    [
+     "defaultAccountStateDiscriminator",
+     "0"
+    ],
+    [
+     "state",
+     "frozen"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "updateDefaultAccountState",
+   "data": "1c0100",
+   "accounts": [
+    "mint",
+    "freezeAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "28"
+    ],
+    [
+     "defaultAccountStateDiscriminator",
+     "1"
+    ],
+    [
+     "state",
+     "uninitialized"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "reallocate",
+   "data": "1d0c00",
+   "accounts": [
+    "token",
+    "payer",
+    "systemProgram",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "29"
+    ],
+    [
+     "newExtensionTypes",
+     "permanentDelegate"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "enableMemoTransfers",
+   "data": "1e00",
+   "accounts": [
+    "token",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "30"
+    ],
+    [
+     "memoTransfersDiscriminator",
+     "0"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "disableMemoTransfers",
+   "data": "1e01",
+   "accounts": [
+    "token",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "30"
+    ],
+    [
+     "memoTransfersDiscriminator",
+     "1"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "createNativeMint",
+   "data": "1f",
+   "accounts": [
+    "payer",
+    "nativeMint",
+    "systemProgram"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "31"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeNonTransferableMint",
+   "data": "20",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "32"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeInterestBearingMint",
+   "data": "21000000000000000000000000000000000000000000000000000000000000000000aefb",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "33"
+    ],
+    [
+     "interestBearingMintDiscriminator",
+     "0"
+    ],
+    [
+     "rateAuthority",
+     null
+    ],
+    [
+     "rate",
+     "-1106"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "updateRateInterestBearingMint",
+   "data": "2101aefb",
+   "accounts": [
+    "mint",
+    "rateAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "33"
+    ],
+    [
+     "interestBearingMintDiscriminator",
+     "1"
+    ],
+    [
+     "rate",
+     "-1106"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "enableCpiGuard",
+   "data": "2200",
+   "accounts": [
+    "token",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "34"
+    ],
+    [
+     "cpiGuardDiscriminator",
+     "0"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "disableCpiGuard",
+   "data": "2201",
+   "accounts": [
+    "token",
+    "owner"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "34"
+    ],
+    [
+     "cpiGuardDiscriminator",
+     "1"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializePermanentDelegate",
+   "data": "23b1d4d84d14df5f6350352cb6ef28e1cc93204d627d348441e2079b2599da6382",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "35"
+    ],
+    [
+     "delegate",
+     "CyBQQq7pgrBjN8NJV3czG2yKn9hKsdFB2jf6WWri64ZX"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeTransferHook",
+   "data": "2400684715d9def9f3a6c62a9e30a5e2427328b463b99e5d8a0c225beefcb259329f0000000000000000000000000000000000000000000000000000000000000000",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "36"
+    ],
+    [
+     "transferHookDiscriminator",
+     "0"
+    ],
+    [
+     "authority",
+     "824GbJFQW34SgwntzYTM9AWXTy4nwqVf56hHMS7Fdp3G"
+    ],
+    [
+     "programId",
+     null
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "updateTransferHook",
+   "data": "24010000000000000000000000000000000000000000000000000000000000000000",
+   "accounts": [
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "36"
+    ],
+    [
+     "transferHookDiscriminator",
+     "1"
+    ],
+    [
+     "programId",
+     null
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeConfidentialTransferFee",
+   "data": "250010f7f9d0144d0b055be0d107600aced80b64f5fc2360b409b6a2fae2bb58323a10f7f9d0144d0b055be0d107600aced80b64f5fc2360b409b6a2fae2bb58323a",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "37"
+    ],
+    [
+     "confidentialTransferFeeDiscriminator",
+     "0"
+    ],
+    [
+     "authority",
+     "29EqPQVfrj3GaChfzBvocx53R4f8ogYxpkRzFGzJ4BJH"
+    ],
+    [
+     "withdrawWithheldAuthorityElGamalPubkey",
+     "29EqPQVfrj3GaChfzBvocx53R4f8ogYxpkRzFGzJ4BJH"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "withdrawWithheldTokensFromMintForConfidentialTransferFee",
+   "data": "2501f2b7cb40bb41a9bc47bf4d10a9bfd50b041b9997cbda0676af531ff110e988e2548eff379c",
+   "accounts": [
+    "mint",
+    "destination",
+    "instructionsSysvarOrContextState",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "37"
+    ],
+    [
+     "confidentialTransferFeeDiscriminator",
+     "1"
+    ],
+    [
+     "proofInstructionOffset",
+     "-14"
+    ],
+    [
+     "newDecryptableAvailableBalance",
+     "b7cb40bb41a9bc47bf4d10a9bfd50b041b9997cbda0676af531ff110e988e2548eff379c"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "withdrawWithheldTokensFromAccountsForConfidentialTransferFee",
+   "data": "250272f065bc90640a77d1f9de78b861c74983146588b59b8078fd560a27fbd44266ef646e5c7281",
+   "accounts": [
+    "mint",
+    "destination",
+    "instructionsSysvarOrContextState",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "37"
+    ],
+    [
+     "confidentialTransferFeeDiscriminator",
+     "2"
+    ],
+    [
+     "numTokenAccounts",
+     "114"
+    ],
+    [
+     "proofInstructionOffset",
+     "-16"
+    ],
+    [
+     "newDecryptableAvailableBalance",
+     "65bc90640a77d1f9de78b861c74983146588b59b8078fd560a27fbd44266ef646e5c7281"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "harvestWithheldTokensToMintForConfidentialTransferFee",
+   "data": "2503",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "37"
+    ],
+    [
+     "confidentialTransferFeeDiscriminator",
+     "3"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "enableHarvestToMint",
+   "data": "2504",
+   "accounts": [
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "37"
+    ],
+    [
+     "confidentialTransferFeeDiscriminator",
+     "4"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "disableHarvestToMint",
+   "data": "2505",
+   "accounts": [
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "37"
+    ],
+    [
+     "confidentialTransferFeeDiscriminator",
+     "5"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "withdrawExcessLamports",
+   "data": "26",
+   "accounts": [
+    "source",
+    "destination",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "38"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeMetadataPointer",
+   "data": "2700abb33557f3cc117ee32d66840c5c757413f51b8e7a4ac24a862ec0c5442aaea70000000000000000000000000000000000000000000000000000000000000000",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "39"
+    ],
+    [
+     "metadataPointerDiscriminator",
+     "0"
+    ],
+    [
+     "authority",
+     "CZFD8T4hkc9hLNMy9b66HjwqQ52Jxs46VD588TRrbQPG"
+    ],
+    [
+     "metadataAddress",
+     null
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "updateMetadataPointer",
+   "data": "27010000000000000000000000000000000000000000000000000000000000000000",
+   "accounts": [
+    "mint",
+    "metadataPointerAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "39"
+    ],
+    [
+     "metadataPointerDiscriminator",
+     "1"
+    ],
+    [
+     "metadataAddress",
+     null
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeGroupPointer",
+   "data": "2800522aafc02ff18e58a7194fc8293efaa62d7a3a61de7930d9fe35e650d3595960ea5895bdcec6fc4f05b11a09a11f50ec7c03b4d44b03b06168446835329d9a42",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "40"
+    ],
+    [
+     "groupPointerDiscriminator",
+     "0"
+    ],
+    [
+     "authority",
+     "6XkBdwthuRCYhVjmnoXpGcRJwznHFghKxBKPNvY8zkSs"
+    ],
+    [
+     "groupAddress",
+     "GmnkHLRCcaNxXrXr9jmjXwRitizv99FxLa7GHbY7eXcM"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "updateGroupPointer",
+   "data": "2801ea5895bdcec6fc4f05b11a09a11f50ec7c03b4d44b03b06168446835329d9a42",
+   "accounts": [
+    "mint",
+    "groupPointerAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "40"
+    ],
+    [
+     "groupPointerDiscriminator",
+     "1"
+    ],
+    [
+     "groupAddress",
+     "GmnkHLRCcaNxXrXr9jmjXwRitizv99FxLa7GHbY7eXcM"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeGroupMemberPointer",
+   "data": "29000000000000000000000000000000000000000000000000000000000000000000c1f3a165dc32b41926e2b9eb8d8ce5cb463c79567a16ed2a20c4bcdb39fe2baf",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "41"
+    ],
+    [
+     "groupMemberPointerDiscriminator",
+     "0"
+    ],
+    [
+     "authority",
+     null
+    ],
+    [
+     "memberAddress",
+     "E479uzFcEPrhJVUJpoEact9f1jWVRUW49ohka77sCYD4"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "updateGroupMemberPointer",
+   "data": "2901c1f3a165dc32b41926e2b9eb8d8ce5cb463c79567a16ed2a20c4bcdb39fe2baf",
+   "accounts": [
+    "mint",
+    "groupMemberPointerAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "41"
+    ],
+    [
+     "groupMemberPointerDiscriminator",
+     "1"
+    ],
+    [
+     "memberAddress",
+     "E479uzFcEPrhJVUJpoEact9f1jWVRUW49ohka77sCYD4"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeConfidentialMintBurn",
+   "data": "2a00c1f3a165dc32b41926e2b9eb8d8ce5cb463c79567a16ed2a20c4bcdb39fe2bafb4f2b2aa47c2cd4c0515973b46f61ea780b59f8793b9cfab4937e6c5e031758a73f748e0",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "42"
+    ],
+    [
+     "confidentialMintBurnDiscriminator",
+     "0"
+    ],
+    [
+     "supplyElgamalPubkey",
+     "E479uzFcEPrhJVUJpoEact9f1jWVRUW49ohka77sCYD4"
+    ],
+    [
+     "decryptableSupply",
+     "b4f2b2aa47c2cd4c0515973b46f61ea780b59f8793b9cfab4937e6c5e031758a73f748e0"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "rotateSupplyElgamalPubkey",
+   "data": "2a01c12285dc78bdad640a7a8c360a50ad65f61217376ee483270c25d9c473f4bd03e4",
+   "accounts": [
+    "mint",
+    "instructionsSysvarOrContextState",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "42"
+    ],
+    [
+     "confidentialMintBurnDiscriminator",
+     "1"
+    ],
+    [
+     "newSupplyElgamalPubkey",
+     "DzvDdzGUazJv4rP2rjHYuT28WHadyChkFAKUxREktest"
+    ],
+    [
+     "proofInstructionOffset",
+     "-28"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "updateConfidentialMintBurnDecryptableSupply",
+   "data": "2a024767a1afd1dbd72c1bdbb88e36147c35235c5ecc6f4787c79ee3f0c9e42b652ff78564f7",
+   "accounts": [
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "42"
+    ],
+    [
+     "confidentialMintBurnDiscriminator",
+     "2"
+    ],
+    [
+     "newDecryptableSupply",
+     "4767a1afd1dbd72c1bdbb88e36147c35235c5ecc6f4787c79ee3f0c9e42b652ff78564f7"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "confidentialMint",
+   "data": "2a035ad90547162942cb17a6b1b1c017203c3a894e7367bae767fd4f7851686c56c98f688e3a5096a6e951508fdf00eae2b4a0cf25d2575e040032bdccc01a6f9f9be966543c1f17f761b7d4a91e1f54afb7dad76eff49d821ec589b71df0cb59f4662523a73c88faecf6d30e8c26b307d359a984d6902023cee9a8a472e7bb556f3e0d251ace4615c84a4c97d1985205ac7613d2dd4ab0d23db9329c807eb71dd328fc9dc43e0dfde",
+   "accounts": [
+    "token",
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "42"
+    ],
+    [
+     "confidentialMintBurnDiscriminator",
+     "3"
+    ],
+    [
+     "newDecryptableSupply",
+     "5ad90547162942cb17a6b1b1c017203c3a894e7367bae767fd4f7851686c56c98f688e3a"
+    ],
+    [
+     "mintAmountAuditorCiphertextLo",
+     "5096a6e951508fdf00eae2b4a0cf25d2575e040032bdccc01a6f9f9be966543c1f17f761b7d4a91e1f54afb7dad76eff49d821ec589b71df0cb59f4662523a73"
+    ],
+    [
+     "mintAmountAuditorCiphertextHi",
+     "c88faecf6d30e8c26b307d359a984d6902023cee9a8a472e7bb556f3e0d251ace4615c84a4c97d1985205ac7613d2dd4ab0d23db9329c807eb71dd328fc9dc43"
+    ],
+    [
+     "equalityProofInstructionOffset",
+     "-32"
+    ],
+    [
+     "ciphertextValidityProofInstructionOffset",
+     "-33"
+    ],
+    [
+     "rangeProofInstructionOffset",
+     "-34"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "confidentialBurn",
+   "data": "2a045096a6e951508fdf00eae2b4a0cf25d2575e040032bdccc01a6f9f9be966543c1f17f761c88faecf6d30e8c26b307d359a984d6902023cee9a8a472e7bb556f3e0d251ace4615c84a4c97d1985205ac7613d2dd4ab0d23db9329c807eb71dd328fc9dc43d8f8f6a45ba3b999a89c5cca4311f2ac5b6dbbeae2fd587bac8304b1fbc309ec1cb7370f54cf088cdd572be3ae9510f845d3202d87883de815a64cffe2deda82dfdedd",
+   "accounts": [
+    "token",
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "42"
+    ],
+    [
+     "confidentialMintBurnDiscriminator",
+     "4"
+    ],
+    [
+     "newDecryptableAvailableBalance",
+     "5096a6e951508fdf00eae2b4a0cf25d2575e040032bdccc01a6f9f9be966543c1f17f761"
+    ],
+    [
+     "burnAmountAuditorCiphertextLo",
+     "c88faecf6d30e8c26b307d359a984d6902023cee9a8a472e7bb556f3e0d251ace4615c84a4c97d1985205ac7613d2dd4ab0d23db9329c807eb71dd328fc9dc43"
+    ],
+    [
+     "burnAmountAuditorCiphertextHi",
+     "d8f8f6a45ba3b999a89c5cca4311f2ac5b6dbbeae2fd587bac8304b1fbc309ec1cb7370f54cf088cdd572be3ae9510f845d3202d87883de815a64cffe2deda82"
+    ],
+    [
+     "equalityProofInstructionOffset",
+     "-33"
+    ],
+    [
+     "ciphertextValidityProofInstructionOffset",
+     "-34"
+    ],
+    [
+     "rangeProofInstructionOffset",
+     "-35"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "applyConfidentialPendingBurn",
+   "data": "2a05",
+   "accounts": [
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "42"
+    ],
+    [
+     "confidentialMintBurnDiscriminator",
+     "5"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeScaledUiAmountMint",
+   "data": "2b008325d9b02e052cae88c74aff2a50f75db0cd038ce9ff85aa7adfcf590817aa770000000000c86040",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "43"
+    ],
+    [
+     "scaledUiAmountMintDiscriminator",
+     "0"
+    ],
+    [
+     "authority",
+     "9pwtEuPiDsJRpQMoPZd1RdHX2uWzV89rtzpG41mqmy4A"
+    ],
+    [
+     "multiplier",
+     "134.25"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "updateMultiplierScaledUiMint",
+   "data": "2b010000000000c8604085f1536500000000",
+   "accounts": [
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "43"
+    ],
+    [
+     "scaledUiAmountMintDiscriminator",
+     "1"
+    ],
+    [
+     "multiplier",
+     "134.25"
+    ],
+    [
+     "effectiveTimestamp",
+     "1700000133"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializePausableConfig",
+   "data": "2c00f8ae94f46262d05d89805f01f89e342f63f3218636bb83202b0428bd92a0dc8d",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "44"
+    ],
+    [
+     "pausableDiscriminator",
+     "0"
+    ],
+    [
+     "authority",
+     "HjkWb3psr3vt1aN8ugMzAR4wV3jcMXYGJBNWQscS2FTS"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "pause",
+   "data": "2c01",
+   "accounts": [
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "44"
+    ],
+    [
+     "pausableDiscriminator",
+     "1"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "resume",
+   "data": "2c02",
+   "accounts": [
+    "mint",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "44"
+    ],
+    [
+     "pausableDiscriminator",
+     "2"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeTokenMetadata",
+   "data": "d2e11ea258b84d8d0a00000073616d706c65203133350a00000073616d706c65203133360a00000073616d706c6520313337",
+   "accounts": [
+    "metadata",
+    "updateAuthority",
+    "mint",
+    "mintAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "d2e11ea258b84d8d"
+    ],
+    [
+     "name",
+     "sample 135"
+    ],
+    [
+     "symbol",
+     "sample 136"
+    ],
+    [
+     "uri",
+     "sample 137"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "updateTokenMetadataField",
+   "data": "dde9312db5cadcc8000a00000073616d706c6520313337",
+   "accounts": [
+    "metadata",
+    "updateAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "dde9312db5cadcc8"
+    ],
+    [
+     "field",
+     "name"
+    ],
+    [
+     "value",
+     "sample 137"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "removeTokenMetadataKey",
+   "data": "ea122038598d25b5000a00000073616d706c6520313338",
+   "accounts": [
+    "metadata",
+    "updateAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "ea122038598d25b5"
+    ],
+    [
+     "idempotent",
+     "false"
+    ],
+    [
+     "key",
+     "sample 138"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "updateTokenMetadataUpdateAuthority",
+   "data": "d7e4a6e45464567b0000000000000000000000000000000000000000000000000000000000000000",
+   "accounts": [
+    "metadata",
+    "updateAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "d7e4a6e45464567b"
+    ],
+    [
+     "newUpdateAuthority",
+     null
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "emitTokenMetadata",
+   "data": "faa6b4fa0d0cb846018cf2052a01000000018df2052a01000000",
+   "accounts": [
+    "metadata"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "faa6b4fa0d0cb846"
+    ],
+    [
+     "start",
+     "5000000140"
+    ],
+    [
+     "end",
+     "5000000141"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeTokenGroup",
+   "data": "79716c2736330004601b0cd628d8fa58f95a0f3fe0df5f89b5f938fb4d33bb7c0f87b81312dc8fc08df2052a01000000",
+   "accounts": [
+    "group",
+    "mint",
+    "mintAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "79716c2736330004"
+    ],
+    [
+     "updateAuthority",
+     "7UA4cULPBU8wjbxCCGo8zjryWiaTqYCmZWX7YuKu14s1"
+    ],
+    [
+     "maxSize",
+     "5000000141"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "updateTokenGroupMaxSize",
+   "data": "6c25ab8ff81e126e8df2052a01000000",
+   "accounts": [
+    "group",
+    "updateAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "6c25ab8ff81e126e"
+    ],
+    [
+     "maxSize",
+     "5000000141"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "updateTokenGroupUpdateAuthority",
+   "data": "a1695801edddd8cb0a70ffa876bf532f18559c32fc1c1ecfb89bd1e95d278dd6e4ba654ceaab0aba",
+   "accounts": [
+    "group",
+    "updateAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "a1695801edddd8cb"
+    ],
+    [
+     "newUpdateAuthority",
+     "hm1neWJhqUcZnoy5525ynqqqJVk3TpzTCTkUUoGRGuf"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializeTokenGroupMember",
+   "data": "9820deb0dfed7486",
+   "accounts": [
+    "member",
+    "memberMint",
+    "memberMintAuthority",
+    "group",
+    "groupUpdateAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "9820deb0dfed7486"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "unwrapLamports",
+   "data": "2d00",
+   "accounts": [
+    "source",
+    "destination",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "45"
+    ],
+    [
+     "amount",
+     null
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "initializePermissionedBurn",
+   "data": "2e00657ffab431fce45083a626d384372eb7d75ae97f88f8e5a21a21415b7243a3ac",
+   "accounts": [
+    "mint"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "46"
+    ],
+    [
+     "permissionedBurnDiscriminator",
+     "0"
+    ],
+    [
+     "authority",
+     "7qDN4Dn6XMUEqQrEDnGtL5i5cr2MsqEkiZ8bXM3CyZGP"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "permissionedBurn",
+   "data": "2e0193f2052a01000000",
+   "accounts": [
+    "account",
+    "mint",
+    "permissionedBurnAuthority",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "46"
+    ],
+    [
+     "permissionedBurnDiscriminator",
+     "1"
+    ],
+    [
+     "amount",
+     "5000000147"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "permissionedBurnChecked",
+   "data": "2e0294f2052a0100000095",
+   "accounts": [
+    "account",
+    "mint",
+    "permissionedBurnAuthority",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "46"
+    ],
+    [
+     "permissionedBurnDiscriminator",
+     "2"
+    ],
+    [
+     "amount",
+     "5000000148"
+    ],
+    [
+     "decimals",
+     "149"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "permissionedConfidentialBurn",
+   "data": "2e03303df8c461d0036c036022c8a57ea0186e923514f939f877c065a9eaffa537836c675e5434f34059eb5cb24b8456855d5dfc06d7df0fe00722e5c40bf5926232f90397a4edd0671fd19d7ced0f0e04af0bab0db61c3a69aa094a5a307935ea02ba74226dc5caa2e09e520a78d5977272a1f734219a14dc4ca4e25fc1150eab402a1d6f25cb6f9805c1d2bc4e45dcf926d9b4aa4cc26f06c68be22ddd9361db6d177a7c2acbcac9",
+   "accounts": [
+    "token",
+    "mint",
+    "permissionedBurnAuthority",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "46"
+    ],
+    [
+     "permissionedBurnDiscriminator",
+     "3"
+    ],
+    [
+     "newDecryptableAvailableBalance",
+     "303df8c461d0036c036022c8a57ea0186e923514f939f877c065a9eaffa537836c675e54"
+    ],
+    [
+     "burnAmountAuditorCiphertextLo",
+     "34f34059eb5cb24b8456855d5dfc06d7df0fe00722e5c40bf5926232f90397a4edd0671fd19d7ced0f0e04af0bab0db61c3a69aa094a5a307935ea02ba74226d"
+    ],
+    [
+     "burnAmountAuditorCiphertextHi",
+     "c5caa2e09e520a78d5977272a1f734219a14dc4ca4e25fc1150eab402a1d6f25cb6f9805c1d2bc4e45dcf926d9b4aa4cc26f06c68be22ddd9361db6d177a7c2a"
+    ],
+    [
+     "equalityProofInstructionOffset",
+     "-53"
+    ],
+    [
+     "ciphertextValidityProofInstructionOffset",
+     "-54"
+    ],
+    [
+     "rangeProofInstructionOffset",
+     "-55"
+    ]
+   ]
+  },
+  {
+   "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "instruction": "batch",
+   "data": "ff040a0c96f2052a0100000097020105",
+   "accounts": [
+    "source",
+    "mint",
+    "destination",
+    "authority",
+    "source",
+    "owner"
+   ],
+   "inner": [
+    "transferChecked",
+    "revoke"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "255"
+    ],
+    [
+     "numberOfAccounts",
+     "4"
+    ],
+    [
+     "discriminator",
+     "12"
+    ],
+    [
+     "amount",
+     "5000000150"
+    ],
+    [
+     "decimals",
+     "151"
+    ],
+    [
+     "numberOfAccounts",
+     "2"
+    ],
+    [
+     "discriminator",
+     "5"
+    ]
+   ]
+  },
+  {
+   "program": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+   "instruction": "create",
+   "data": "00",
+   "accounts": [
+    "funder",
+    "associatedTokenAccount",
+    "wallet",
+    "mint",
+    "systemProgram",
+    "tokenProgram"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "0"
+    ]
+   ]
+  },
+  {
+   "program": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+   "instruction": "createIdempotent",
+   "data": "01",
+   "accounts": [
+    "funder",
+    "associatedTokenAccount",
+    "wallet",
+    "mint",
+    "systemProgram",
+    "tokenProgram"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "1"
+    ]
+   ]
+  },
+  {
+   "program": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+   "instruction": "recoverNested",
+   "data": "02",
+   "accounts": [
+    "nestedAssociatedTokenAccount",
+    "nestedMint",
+    "destinationAssociatedTokenAccount",
+    "ownerAssociatedTokenAccount",
+    "ownerMint",
+    "wallet",
+    "ownerTokenProgram"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "2"
+    ]
+   ]
+  },
+  {
+   "program": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+   "instruction": "createWithArgs",
+   "data": "03019a3b870100",
+   "accounts": [
+    "funder",
+    "associatedTokenAccount",
+    "wallet",
+    "mint",
+    "systemProgram",
+    "tokenProgram"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "3"
+    ],
+    [
+     "mode",
+     "idempotent"
+    ],
+    [
+     "bump",
+     "154"
+    ],
+    [
+     "accountLen",
+     "100155"
+    ]
+   ]
+  },
+  {
+   "program": "Memo4c2pN8afCj432Lb7RMVKi9PbQnnW7ewFFaV3oAH",
+   "instruction": "addMemo",
+   "data": "73616d706c6520313533",
+   "accounts": [],
+   "fields": [
+    [
+     "memo",
+     "sample 153"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "initialize",
+   "data": "00000000357b829ad1a43d0933ae5655c3c4a370c98a81f65a3ff37f8ddbabe22df637dd3eff79789f65641031772dcfea43d678922d84b21a532821d80be20a01eac79d9df15365000000009ef2052a01000000668deca0794538c71eddca34f7d8db521566a26ce320f06d22d2eff6f21a8b7f",
+   "accounts": [
+    "stake"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "0"
+    ],
+    [
+     "staker",
+     "4bmqn9PCT1mwubqb8SDRnyVRnq5EkJ4WWtjYajGp61DE"
+    ],
+    [
+     "withdrawer",
+     "5EvDmkunV9A8Bzw6HedCdo4sgHdskN9h7CphvpDVwVSL"
+    ],
+    [
+     "unixTimestamp",
+     "1700000157"
+    ],
+    [
+     "epoch",
+     "5000000158"
+    ],
+    [
+     "custodian",
+     "7uL724PsdTyuTt2bhhx5AtttFBp4pspogJ1fTq248xSr"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "authorize",
+   "data": "01000000357b829ad1a43d0933ae5655c3c4a370c98a81f65a3ff37f8ddbabe22df637dd01000000",
+   "accounts": [
+    "stake",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "1"
+    ],
+    [
+     "arg0",
+     "4bmqn9PCT1mwubqb8SDRnyVRnq5EkJ4WWtjYajGp61DE"
+    ],
+    [
+     "arg1",
+     "withdrawer"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "delegateStake",
+   "data": "02000000",
+   "accounts": [
+    "stake",
+    "vote",
+    "stakeAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "2"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "split",
+   "data": "030000009ef2052a01000000",
+   "accounts": [
+    "stake",
+    "splitStake",
+    "stakeAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "3"
+    ],
+    [
+     "args",
+     "5000000158"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "withdraw",
+   "data": "040000009ff2052a01000000",
+   "accounts": [
+    "stake",
+    "recipient",
+    "withdrawAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "4"
+    ],
+    [
+     "args",
+     "5000000159"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "deactivate",
+   "data": "05000000",
+   "accounts": [
+    "stake",
+    "stakeAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "5"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "setLockup",
+   "data": "0600000001a2f15365000000000001868568c1198c0cc68749263aa757ad92a35686856657be49fbedd7e05220ee29",
+   "accounts": [
+    "stake",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "6"
+    ],
+    [
+     "unixTimestamp",
+     "1700000162"
+    ],
+    [
+     "epoch",
+     null
+    ],
+    [
+     "custodian",
+     "A47cvDwhjGYiHhna4ykSVC4ngFYZSvKKnCKQTeLXEJ4G"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "merge",
+   "data": "07000000",
+   "accounts": [
+    "destinationStake",
+    "sourceStake",
+    "stakeAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "7"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "authorizeWithSeed",
+   "data": "080000008598b3343a7016bb8a1e0acdf17bf4dcf265b5af5f3ea8e94f1a68ecd1222a30000000000a0000000000000073616d706c652031363590b2100dca65ddbe58d8b5555f30766cb022766fa318713ae705d5b350e5c96f",
+   "accounts": [
+    "stake",
+    "base"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "8"
+    ],
+    [
+     "newAuthorizedPubkey",
+     "9zWGobD7tFkH5ngXpTWGwaWP3eQEoHjwTuWMFahUqzyD"
+    ],
+    [
+     "stakeAuthorize",
+     "staker"
+    ],
+    [
+     "authoritySeed",
+     "sample 165"
+    ],
+    [
+     "authorityOwner",
+     "AjqBua8dvH5nfrMDTQ5Loku7f4XSLoHrvTrkWwUCGRYa"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "initializeChecked",
+   "data": "09000000",
+   "accounts": [
+    "stake",
+    "stakeAuthority",
+    "withdrawAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "9"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "authorizeChecked",
+   "data": "0a00000001000000",
+   "accounts": [
+    "stake",
+    "authority",
+    "newAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "10"
+    ],
+    [
+     "stakeAuthorize",
+     "withdrawer"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "authorizeCheckedWithSeed",
+   "data": "0b000000000000000a0000000000000073616d706c652031363757de02f457d43a9d6704de4177274f00ba718b3745ebc3bd64df5dadfe1c4a12",
+   "accounts": [
+    "stake",
+    "base",
+    "newAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "11"
+    ],
+    [
+     "stakeAuthorize",
+     "staker"
+    ],
+    [
+     "authoritySeed",
+     "sample 167"
+    ],
+    [
+     "authorityOwner",
+     "6uzpSCuA3Dc5V47mic216JvxRx9mC1xkBF5AaptZ27Xf"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "setLockupChecked",
+   "data": "0c00000001a8f153650000000000",
+   "accounts": [
+    "stake",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "12"
+    ],
+    [
+     "unixTimestamp",
+     "1700000168"
+    ],
+    [
+     "epoch",
+     null
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "getMinimumDelegation",
+   "data": "0d000000",
+   "accounts": [],
+   "fields": [
+    [
+     "discriminator",
+     "13"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "deactivateDelinquent",
+   "data": "0e000000",
+   "accounts": [
+    "stake",
+    "delinquentVote",
+    "referenceVote"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "14"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "moveStake",
+   "data": "10000000aaf2052a01000000",
+   "accounts": [
+    "sourceStake",
+    "destinationStake",
+    "stakeAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "16"
+    ],
+    [
+     "args",
+     "5000000170"
+    ]
+   ]
+  },
+  {
+   "program": "Stake11111111111111111111111111111111111111",
+   "instruction": "moveLamports",
+   "data": "11000000abf2052a01000000",
+   "accounts": [
+    "sourceStake",
+    "destinationStake",
+    "stakeAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "17"
+    ],
+    [
+     "args",
+     "5000000171"
+    ]
+   ]
+  },
+  {
+   "program": "Vote111111111111111111111111111111111111111",
+   "instruction": "initializeAccount",
+   "data": "00000000d751ace284f7a03f344b3c24cf7f5bc054a2fd952b47e0a6152cd162dd5cda4f8aeb9b8f38dfb644e9e429f6956d7d96d63dc1e1a02b1550c3913a129c5406b7b5ea90c75ef9e8a7f1048f42d0c27ababc6426406857b9ffd3c6899de850a834b0",
+   "accounts": [
+    "voteAccount",
+    "rentSysvar",
+    "clockSysvar",
+    "nodeIdentity"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "0"
+    ],
+    [
+     "nodePubkey",
+     "FVWtZvGCmUsUqRPeRxMTJ8qGFJvV74q11tU4n82BkZaW"
+    ],
+    [
+     "authorizedVoter",
+     "AMHdpnb4ZfPUpxBztiEjtcEYZ8B7bR4aidaBp9WEaftz"
+    ],
+    [
+     "authorizedWithdrawer",
+     "DF8FAez4nE4RKbje3FJu5xt61A3Szd2ye6EQsCZdj83u"
+    ],
+    [
+     "commission",
+     "176"
+    ]
+   ]
+  },
+  {
+   "program": "Vote111111111111111111111111111111111111111",
+   "instruction": "authorize",
+   "data": "01000000d751ace284f7a03f344b3c24cf7f5bc054a2fd952b47e0a6152cd162dd5cda4f00000000",
+   "accounts": [
+    "voteAccount",
+    "clockSysvar",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "1"
+    ],
+    [
+     "newAuthority",
+     "FVWtZvGCmUsUqRPeRxMTJ8qGFJvV74q11tU4n82BkZaW"
+    ],
+    [
+     "authorizationType",
+     "voter"
+    ]
+   ]
+  },
+  {
+   "program": "Vote111111111111111111111111111111111111111",
+   "instruction": "withdraw",
+   "data": "03000000aef2052a01000000",
+   "accounts": [
+    "voteAccount",
+    "recipient",
+    "withdrawAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "3"
+    ],
+    [
+     "lamports",
+     "5000000174"
+    ]
+   ]
+  },
+  {
+   "program": "Vote111111111111111111111111111111111111111",
+   "instruction": "updateValidatorIdentity",
+   "data": "04000000",
+   "accounts": [
+    "voteAccount",
+    "nodeIdentity",
+    "withdrawAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "4"
+    ]
+   ]
+  },
+  {
+   "program": "Vote111111111111111111111111111111111111111",
+   "instruction": "updateCommission",
+   "data": "05000000b0",
+   "accounts": [
+    "voteAccount",
+    "withdrawAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "5"
+    ],
+    [
+     "commission",
+     "176"
+    ]
+   ]
+  },
+  {
+   "program": "Vote111111111111111111111111111111111111111",
+   "instruction": "authorizeChecked",
+   "data": "0700000000000000",
+   "accounts": [
+    "voteAccount",
+    "clockSysvar",
+    "authority",
+    "newAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "7"
+    ],
+    [
+     "authorizationType",
+     "voter"
+    ]
+   ]
+  },
+  {
+   "program": "Vote111111111111111111111111111111111111111",
+   "instruction": "authorizeWithSeed",
+   "data": "0a000000010000005912d0d3bc693b3e72eb8524b409949cd5469ef4acbe23a704d6ebe9519df7310a0000000000000073616d706c6520313830995ad5f7c3d73acf71e4335bcfcc775b781e8ae8ee3b49542bc260dcc92f37b3",
+   "accounts": [
+    "voteAccount",
+    "clockSysvar",
+    "authorityBase"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "10"
+    ],
+    [
+     "authorizationType",
+     "withdrawer"
+    ],
+    [
+     "currentAuthorityDerivedKeyOwner",
+     "6zhvhVFMNcX4NyrMPgCuJXCsmzuGmaAvqM1aCTbB3ZRJ"
+    ],
+    [
+     "currentAuthorityDerivedKeySeed",
+     "sample 180"
+    ],
+    [
+     "newAuthority",
+     "BKdiNuqp4FmGUYJzRzj8dwzDnTpLS193CJgFfE5syfb8"
+    ]
+   ]
+  },
+  {
+   "program": "Vote111111111111111111111111111111111111111",
+   "instruction": "authorizeCheckedWithSeed",
+   "data": "0b000000020000000f07ec753c14e61d8415cfb38254192fb43a2f79489f668aa4f50f5ee05cff8aefbee7049fc435392494510cd25abe2352136df1914a90377a6b611fc8f4ad91271de47c00b9df66150788fe7e6e54fb2927487df1951f6eb6d3bf89f4094a42931d9af5c43a5009fcab7c9fd2f3b29a85df3b8d838984d1b27353e358b56e21e2f3a930e4d3d5d69f17ce78fdf98952394a72e75560a5f25b6ba038718bd8687de6468131363e0e00bea2153aeadfa80a0000000000000073616d706c6520313831",
+   "accounts": [
+    "voteAccount",
+    "clockSysvar",
+    "authorityBase",
+    "newAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "11"
+    ],
+    [
+     "authorizationType",
+     "voterWithBls"
+    ],
+    [
+     "blsPubkey",
+     "0f07ec753c14e61d8415cfb38254192fb43a2f79489f668aa4f50f5ee05cff8aefbee7049fc435392494510cd25abe23"
+    ],
+    [
+     "blsProofOfPossession",
+     "52136df1914a90377a6b611fc8f4ad91271de47c00b9df66150788fe7e6e54fb2927487df1951f6eb6d3bf89f4094a42931d9af5c43a5009fcab7c9fd2f3b29a85df3b8d838984d1b27353e358b56e21e2f3a930e4d3d5d69f17ce78fdf98952"
+    ],
+    [
+     "currentAuthorityDerivedKeyOwner",
+     "4re5jrpXmvatSXmjtKZgzj7bj4msKhttAhbCZCUvxADd"
+    ],
+    [
+     "currentAuthorityDerivedKeySeed",
+     "sample 181"
+    ]
+   ]
+  },
+  {
+   "program": "Vote111111111111111111111111111111111111111",
+   "instruction": "initializeAccountV2",
+   "data": "10000000995ad5f7c3d73acf71e4335bcfcc775b781e8ae8ee3b49542bc260dcc92f37b3fcc11ee7ed430b11fcb3846ce827aeba619fa3d0b4c6b113336ac67d5e6c783236bffb27c057f9106ae88c70468b92c42afd26fdb6f7afe49e897266d664a29fd4c6d4a60b6bdfe56c0c6c3b5a473dfcaac6bec8118aba178853281759c8077f681648ec3057641fdad535e33366ecd3e9ca69cda5214b533de357af7813b6d619b06e18cb06402b9b17de8102cc441007a2e1d2328b44837be14923b14e3fafc2f77ced25ccbd4c8cc9c29d086fd2bd9c1ec239bae300fe3279fac73eb4311e89b067fc5258bb1b7d6d58bf1b8e63aca204a304",
+   "accounts": [
+    "voteAccount",
+    "nodeIdentity",
+    "inflationRewardsCollector",
+    "blockRevenueCollector"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "16"
+    ],
+    [
+     "nodePubkey",
+     "BKdiNuqp4FmGUYJzRzj8dwzDnTpLS193CJgFfE5syfb8"
+    ],
+    [
+     "authorizedVoter",
+     "J1eY8kFXYotYoKutYk8KxAmKaCBVkNg3X4D8S2V4ENHf"
+    ],
+    [
+     "authorizedVoterBlsPubkey",
+     "36bffb27c057f9106ae88c70468b92c42afd26fdb6f7afe49e897266d664a29fd4c6d4a60b6bdfe56c0c6c3b5a473dfc"
+    ],
+    [
+     "authorizedVoterBlsProofOfPossession",
+     "aac6bec8118aba178853281759c8077f681648ec3057641fdad535e33366ecd3e9ca69cda5214b533de357af7813b6d619b06e18cb06402b9b17de8102cc441007a2e1d2328b44837be14923b14e3fafc2f77ced25ccbd4c8cc9c29d086fd2bd"
+    ],
+    [
+     "authorizedWithdrawer",
+     "BWRode6XDnf3DpjGwQwAmiRkNGNxxKqd2B7K9zYa3byu"
+    ],
+    [
+     "inflationRewardsCommissionBps",
+     "1186"
+    ],
+    [
+     "blockRevenueCommissionBps",
+     "1187"
+    ]
+   ]
+  },
+  {
+   "program": "Vote111111111111111111111111111111111111111",
+   "instruction": "updateCommissionCollector",
+   "data": "1100000001000000",
+   "accounts": [
+    "voteAccount",
+    "newCollector",
+    "withdrawAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "17"
+    ],
+    [
+     "commissionKind",
+     "blockRevenue"
+    ]
+   ]
+  },
+  {
+   "program": "Vote111111111111111111111111111111111111111",
+   "instruction": "updateCommissionBps",
+   "data": "120000009e0401000000",
+   "accounts": [
+    "voteAccount",
+    "withdrawAuthority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "18"
+    ],
+    [
+     "commissionBps",
+     "1182"
+    ],
+    [
+     "commissionKind",
+     "blockRevenue"
+    ]
+   ]
+  },
+  {
+   "program": "Vote111111111111111111111111111111111111111",
+   "instruction": "depositDelegatorRewards",
+   "data": "13000000b7f2052a01000000",
+   "accounts": [
+    "voteAccount",
+    "source",
+    "systemProgram"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "19"
+    ],
+    [
+     "deposit",
+     "5000000183"
+    ]
+   ]
+  },
+  {
+   "program": "AddressLookupTab1e1111111111111111111111111",
+   "instruction": "createLookupTable",
+   "data": "00000000b8f2052a01000000b9",
+   "accounts": [
+    "address",
+    "authority",
+    "payer",
+    "systemProgram"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "0"
+    ],
+    [
+     "recentSlot",
+     "5000000184"
+    ],
+    [
+     "bump",
+     "185"
+    ]
+   ]
+  },
+  {
+   "program": "AddressLookupTab1e1111111111111111111111111",
+   "instruction": "freezeLookupTable",
+   "data": "01000000",
+   "accounts": [
+    "address",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "1"
+    ]
+   ]
+  },
+  {
+   "program": "AddressLookupTab1e1111111111111111111111111",
+   "instruction": "extendLookupTable",
+   "data": "020000000100000000000000b980506fb9a141738934a6fc10d0892c1aa2c60c78504a4799e19c7a75e1d2ab",
+   "accounts": [
+    "address",
+    "authority",
+    "payer",
+    "systemProgram"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "2"
+    ],
+    [
+     "addresses",
+     "DV7uYBAKnBwNUqxFP2ab65MNarddsYW6M6hWF9v7jmZk"
+    ]
+   ]
+  },
+  {
+   "program": "AddressLookupTab1e1111111111111111111111111",
+   "instruction": "deactivateLookupTable",
+   "data": "03000000",
+   "accounts": [
+    "address",
+    "authority"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "3"
+    ]
+   ]
+  },
+  {
+   "program": "AddressLookupTab1e1111111111111111111111111",
+   "instruction": "closeLookupTable",
+   "data": "04000000",
+   "accounts": [
+    "address",
+    "authority",
+    "recipient"
+   ],
+   "fields": [
+    [
+     "discriminator",
+     "4"
+    ]
+   ]
+  }
+ ]
+}

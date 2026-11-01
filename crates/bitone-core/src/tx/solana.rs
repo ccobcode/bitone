@@ -1,19 +1,25 @@
-//! Solana 交易:严格解析,分类,构建和核验.规则见 docs/04-security.md 第 2.7 节.
-//!
-//! 载荷是消息字节,签名是消息的 ed25519 签名.解析后必须能重新编码回完全相同的字节,
-//! 这样冷钱包展示的内容和实际签名的内容不可能不一致.
+//! Solana 交易:核对,构建和核验.解码在 `decode::solana`,这里算出策略要的事实和旧字段.
+//! 标准见 docs/10-tx-decoding.md 第 5.3 节.载荷的 ed25519 签名原文就是载荷本身.
 
 use crate::address::parse_solana_address;
+use crate::decode::solana::{self as format, SolanaPayload, SolanaWalker, is_token_program, parse_solana, put_len};
+use crate::decode::{self, Coin, Decoded, Node, NodeId, Value};
 use crate::manifest::{Asset, Manifest};
-use crate::policy;
+use crate::path::{DerivationPath, check_solana_path, is_usual_solana_path, solana_path_mode};
+use crate::policy::{self, SolanaFacts, SolanaFinding};
 use crate::request::{KIND_TRANSACTION, SignRequest, SignResponse};
-use crate::review::{ActionView, AmountView, Forbid, RawLine, Review, ReviewBuilder, Risk, Row};
-use crate::tx::{ReviewContext, Verified, raw_lines, signer_path};
+use crate::review::{ActionView, AmountView, Forbid, RawLine, Review, Risk, Row};
+use crate::tx::evm::MAX_PATH_DEPTH;
+use crate::tx::{ReviewContext, Verified, raw_lines};
 use crate::units::format_units;
-use crate::{Chain, Error, Network};
+use crate::{Chain, Error, Mode, Network};
 use bitcoin::hex::DisplayHex;
 use ed25519_dalek::{Signature, VerifyingKey};
 use sha2::{Digest, Sha256};
+use std::borrow::Cow;
+use std::ops::Range;
+
+pub use crate::decode::solana::{Instruction, Lookup, Message, V1Config, Version};
 
 pub const SYSTEM_PROGRAM: [u8; 32] = [0; 32];
 pub const TOKEN_PROGRAM: [u8; 32] = [
@@ -47,237 +53,47 @@ const ADVANCE_NONCE_TITLE: &str = "作废已签名的交易";
 const CREATE_TOKEN_ACCOUNT_TITLE: &str = "创建代币账户";
 /// nonce 账户的数据长度.
 const NONCE_SPACE: u64 = 80;
-const LAMPORTS_PER_SIGNATURE: u64 = 5000;
-/// 没写 SetComputeUnitLimit 时每条指令的上限,算优先费时取这个偏高的值.
-const DEFAULT_UNITS_PER_INSTRUCTION: u64 = 200_000;
-const MAX_COMPUTE_UNITS: u64 = 1_400_000;
-const MICRO_LAMPORTS_PER_LAMPORT: u128 = 1_000_000;
+/// 规格化的 `transferChecked` 的账户数.
+const PLAIN_TOKEN_ACCOUNTS: usize = 4;
+const BASE_FEE_ROW: &str = "base_fee";
+const PRIORITY_FEE_ROW: &str = "priority_fee";
+const INSTRUCTION_ROW: &str = "instruction";
+const INSTRUCTIONS_DEPTH: u32 = 2;
+const ACCOUNTS_ROW: &str = "accounts";
+const DATA_ROW: &str = "data";
+const AMOUNT_ROW: &str = "amount";
+const DECIMALS_ROW: &str = "decimals";
+const MINT_ROW: &str = "mint";
+const TOKEN_ACTIONS: &str = "token.";
+const TOKEN_2022_ACTIONS: &str = "token2022.";
+const TRANSFER: &str = "transfer";
+const CHECKED_TRANSFERS: [&str; 2] = ["transferChecked", "transferCheckedWithFee"];
+const ASSOCIATED_ACTIONS: [&str; 3] = [
+    "associatedTokenAccount.create",
+    "associatedTokenAccount.createIdempotent",
+    "associatedTokenAccount.createWithArgs",
+];
+const ASSOCIATED_ACCOUNT_ROW: &str = "associatedTokenAccount";
+const WALLET_ROW: &str = "wallet";
+const SYSTEM_PROGRAM_ROW: &str = "systemProgram";
+const TOKEN_PROGRAM_ROW: &str = "tokenProgram";
+const ALLOCATE_ACTION: &str = "system.allocateWithSeed";
+const ALLOCATED_ROW: &str = "newAccount";
+const INITIALIZE_ACTION: &str = "system.initializeNonceAccount";
+const COMPUTE_BUDGET_ACTIONS: &str = "computeBudget.";
 
 fn base58(key: &[u8; 32]) -> String {
     bitcoin::base58::encode(key)
 }
 
-fn take<const N: usize>(buf: &mut &[u8]) -> Result<[u8; N], Forbid> {
-    let (head, rest) = buf.split_first_chunk::<N>().ok_or(Forbid::ParseFailed)?;
-    *buf = rest;
-    Ok(*head)
-}
-
-fn read_len(buf: &mut &[u8]) -> Result<usize, Forbid> {
-    let mut value = 0usize;
-    for shift in [0, 7, 14] {
-        let [byte] = take::<1>(buf)?;
-        value |= ((byte & 0x7f) as usize) << shift;
-        if byte & 0x80 == 0 {
-            return if value > u16::MAX as usize {
-                Err(Forbid::ParseFailed)
-            } else {
-                Ok(value)
-            };
-        }
-    }
-    Err(Forbid::ParseFailed)
-}
-
-fn put_len(out: &mut Vec<u8>, mut value: usize) {
-    while value >= 0x80 {
-        out.push(value as u8 | 0x80);
-        value >>= 7;
-    }
-    out.push(value as u8);
-}
-
-fn read_bytes(buf: &mut &[u8]) -> Result<Vec<u8>, Forbid> {
-    let len = read_len(buf)?;
-    if len > buf.len() {
-        return Err(Forbid::ParseFailed);
-    }
-    let (value, rest) = buf.split_at(len);
-    *buf = rest;
-    Ok(value.to_vec())
-}
-
-fn put_bytes(out: &mut Vec<u8>, value: &[u8]) {
-    put_len(out, value.len());
-    out.extend_from_slice(value);
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Version {
-    Legacy,
-    V0,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Instruction {
-    /// 程序在账户表里的下标.
-    pub program: u8,
-    pub accounts: Vec<u8>,
-    pub data: Vec<u8>,
-}
-
-/// 地址查找表的引用.表的内容在链上,冷钱包看不到.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Lookup {
-    pub table: [u8; 32],
-    pub writable: Vec<u8>,
-    pub readonly: Vec<u8>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Message {
-    pub version: Version,
-    pub required_signatures: u8,
-    pub readonly_signed: u8,
-    pub readonly_unsigned: u8,
-    pub keys: Vec<[u8; 32]>,
-    /// durable nonce 交易这里是 nonce 值.
-    pub blockhash: [u8; 32],
-    pub instructions: Vec<Instruction>,
-    pub lookups: Vec<Lookup>,
-}
-
 impl Message {
+    /// 只认交易消息,载荷的其他格式走 `decode`.解析器保证重新编码回完全相同的字节.
     pub fn decode(payload: &[u8]) -> Result<Self, Forbid> {
-        let mut buf = payload;
-        let first = *buf.first().ok_or(Forbid::ParseFailed)?;
-        let version = match first {
-            0x80 => {
-                buf = &buf[1..];
-                Version::V0
+        match parse_solana(payload).map_err(|_| Forbid::ParseFailed)? {
+            SolanaPayload::Message(message) => Ok(*message),
+            SolanaPayload::Partial { .. } | SolanaPayload::Offchain { .. } | SolanaPayload::Unknown => {
+                Err(Forbid::Unsupported)
             }
-            0x81..=0xff => return Err(Forbid::Unsupported),
-            _ => Version::Legacy,
-        };
-        let [required_signatures, readonly_signed, readonly_unsigned] = take(&mut buf)?;
-        let keys = (0..read_len(&mut buf)?)
-            .map(|_| take(&mut buf))
-            .collect::<Result<_, _>>()?;
-        let blockhash = take(&mut buf)?;
-        let instructions = (0..read_len(&mut buf)?)
-            .map(|_| {
-                let [program] = take(&mut buf)?;
-                Ok(Instruction {
-                    program,
-                    accounts: read_bytes(&mut buf)?,
-                    data: read_bytes(&mut buf)?,
-                })
-            })
-            .collect::<Result<_, Forbid>>()?;
-        let lookups = match version {
-            Version::Legacy => Vec::new(),
-            Version::V0 => (0..read_len(&mut buf)?)
-                .map(|_| {
-                    Ok(Lookup {
-                        table: take(&mut buf)?,
-                        writable: read_bytes(&mut buf)?,
-                        readonly: read_bytes(&mut buf)?,
-                    })
-                })
-                .collect::<Result<_, Forbid>>()?,
-        };
-        if !buf.is_empty() {
-            return Err(Forbid::ParseFailed);
-        }
-        let message = Self {
-            version,
-            required_signatures,
-            readonly_signed,
-            readonly_unsigned,
-            keys,
-            blockhash,
-            instructions,
-            lookups,
-        };
-        message.check()?;
-        if message.encode() != payload {
-            return Err(Forbid::ParseFailed);
-        }
-        Ok(message)
-    }
-
-    /// 和节点的 sanitize 规则一致.节点不接受的消息,这里也不展示.
-    fn check(&self) -> Result<(), Forbid> {
-        let required = self.required_signatures as usize;
-        let static_keys = self.keys.len();
-        let total = static_keys + self.lookup_count();
-        let header_fits = required >= 1
-            && self.readonly_signed < self.required_signatures
-            && required + self.readonly_unsigned as usize <= static_keys;
-        if !header_fits || total > 256 {
-            return Err(Forbid::ParseFailed);
-        }
-        let mut sorted = self.keys.clone();
-        sorted.sort_unstable();
-        sorted.dedup();
-        if sorted.len() != static_keys {
-            return Err(Forbid::ParseFailed);
-        }
-        if self
-            .lookups
-            .iter()
-            .any(|l| l.writable.is_empty() && l.readonly.is_empty())
-        {
-            return Err(Forbid::ParseFailed);
-        }
-        for ix in &self.instructions {
-            // 手续费支付者不能是程序,程序也不能来自查找表.
-            let program = ix.program as usize;
-            if program == 0 || program >= static_keys {
-                return Err(Forbid::ParseFailed);
-            }
-            if ix.accounts.iter().any(|&index| index as usize >= total) {
-                return Err(Forbid::ParseFailed);
-            }
-        }
-        Ok(())
-    }
-
-    pub fn encode(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-        if self.version == Version::V0 {
-            out.push(0x80);
-        }
-        out.extend_from_slice(&[self.required_signatures, self.readonly_signed, self.readonly_unsigned]);
-        put_len(&mut out, self.keys.len());
-        self.keys.iter().for_each(|key| out.extend_from_slice(key));
-        out.extend_from_slice(&self.blockhash);
-        put_len(&mut out, self.instructions.len());
-        for ix in &self.instructions {
-            out.push(ix.program);
-            put_bytes(&mut out, &ix.accounts);
-            put_bytes(&mut out, &ix.data);
-        }
-        if self.version == Version::V0 {
-            put_len(&mut out, self.lookups.len());
-            for lookup in &self.lookups {
-                out.extend_from_slice(&lookup.table);
-                put_bytes(&mut out, &lookup.writable);
-                put_bytes(&mut out, &lookup.readonly);
-            }
-        }
-        out
-    }
-
-    /// 来自查找表的地址数量.
-    pub fn lookup_count(&self) -> usize {
-        self.lookups.iter().map(|l| l.writable.len() + l.readonly.len()).sum()
-    }
-
-    fn is_signer(&self, index: usize) -> bool {
-        index < self.required_signatures as usize
-    }
-
-    fn is_writable(&self, index: usize) -> bool {
-        let required = self.required_signatures as usize;
-        let static_keys = self.keys.len();
-        if index < required {
-            index < required - self.readonly_signed as usize
-        } else if index < static_keys {
-            index < static_keys - self.readonly_unsigned as usize
-        } else {
-            let writable: usize = self.lookups.iter().map(|l| l.writable.len()).sum();
-            index < static_keys + writable
         }
     }
 }
@@ -291,26 +107,8 @@ pub fn nonce_account_address(payer: &[u8; 32]) -> Result<[u8; 32], Error> {
         .into())
 }
 
-/// 程序派生地址不能在曲线上,否则会有对应的私钥.
-fn find_program_address(seeds: &[&[u8]], program: &[u8; 32]) -> Result<[u8; 32], Error> {
-    for bump in (1..=u8::MAX).rev() {
-        let mut hasher = Sha256::new();
-        seeds.iter().for_each(|seed| hasher.update(seed));
-        let address: [u8; 32] = hasher
-            .chain_update([bump])
-            .chain_update(program)
-            .chain_update("ProgramDerivedAddress")
-            .finalize()
-            .into();
-        if VerifyingKey::from_bytes(&address).is_err() {
-            return Ok(address);
-        }
-    }
-    Err(Error::InvalidParams)
-}
-
 pub fn associated_token_address(owner: &[u8; 32], mint: &[u8; 32], program: &[u8; 32]) -> Result<[u8; 32], Error> {
-    find_program_address(&[owner, program, mint], &ASSOCIATED_TOKEN_PROGRAM)
+    format::associated_token_address(owner, mint, program).ok_or(Error::InvalidParams)
 }
 
 fn le_u64(bytes: &[u8]) -> Option<u64> {
@@ -378,16 +176,20 @@ impl Effect {
 /// 一遍扫完全部指令.ComputeBudget 和本钱包的 AdvanceNonceAccount 不算动作,其余每条都有一个 `Effect`.
 struct Scan<'a> {
     message: &'a Message,
-    network: Network,
+    /// 请求里的网络,本机不一定认识.
+    network: &'a str,
+    known: Option<Network>,
     manifest: &'a Manifest,
-    native: &'a Asset,
-    payer: [u8; 32],
-    nonce: [u8; 32],
+    native: Option<&'a Asset>,
+    /// 本账户和它的 nonce 账户.路径没有导出时公钥算不出来,要解锁后才能核对.
+    own: Option<([u8; 32], [u8; 32])>,
     /// 网页端声明的代币收款方所有者.只有推导得出目标账户时才采信.
     hint: Option<[u8; 32]>,
-    unit_limit: Option<u32>,
-    unit_price: Option<u64>,
-    alerts: Vec<String>,
+    /// 本钱包的 nonce 创建占用的指令.
+    creation: Option<Range<usize>>,
+    /// 不在第一条,或者不属于本钱包的 AdvanceNonceAccount.
+    foreign_advances: Vec<usize>,
+    deposit_high: bool,
 }
 
 impl Scan<'_> {
@@ -428,27 +230,39 @@ impl Scan<'_> {
                 .all(|(i, key)| self.account(ix, i).as_ref() == Some(key))
     }
 
+    /// 本机不认识的网络没有原生币,金额显示原始整数.
     fn sol(&self, lamports: u64) -> String {
-        format!(
-            "{} {}",
-            format_units(&lamports.to_string(), self.native.decimals),
-            self.native.symbol
-        )
+        match self.native {
+            Some(native) => format!(
+                "{} {}",
+                format_units(&lamports.to_string(), native.decimals),
+                native.symbol
+            ),
+            None => lamports.to_string(),
+        }
     }
 
     fn sol_view(&self, lamports: u64) -> AmountView {
-        AmountView {
-            text: format_units(&lamports.to_string(), self.native.decimals),
-            symbol: Some(self.native.symbol.clone()),
-            asset: Some(self.native.key()),
-            unlimited: false,
+        match self.native {
+            Some(native) => AmountView {
+                text: format_units(&lamports.to_string(), native.decimals),
+                symbol: Some(native.symbol.clone()),
+                asset: Some(native.key()),
+                unlimited: false,
+            },
+            None => AmountView {
+                text: lamports.to_string(),
+                symbol: None,
+                asset: None,
+                unlimited: false,
+            },
         }
     }
 
     /// 不在清单或小数位对不上时显示原始整数,不显示符号.
     fn token_view(&self, mint: Option<&[u8; 32]>, decimals: Option<u8>, amount: u64) -> AmountView {
         let asset = mint
-            .and_then(|mint| self.manifest.lookup(self.network.id(), &base58(mint)))
+            .and_then(|mint| self.manifest.lookup(self.network, &base58(mint)))
             .filter(|asset| Some(asset.decimals) == decimals);
         match asset {
             Some(asset) => AmountView {
@@ -537,6 +351,7 @@ impl Scan<'_> {
     /// 转入租金,分配空间,初始化三步,地址和 authority 都必须是本钱包的.
     /// 这个标题是点按确认,所以交易里除了优先费不能有别的指令,否则转账会藏在标题后面.
     fn nonce_creation(&mut self, index: usize) -> Option<Effect> {
+        let (payer, nonce) = self.own?;
         let instructions = &self.message.instructions;
         let fund = instructions.get(index)?;
         let allocate = instructions.get(index + 1)?;
@@ -551,29 +366,32 @@ impl Scan<'_> {
             && self.program(fund) == SYSTEM_PROGRAM
             && self.program(allocate) == SYSTEM_PROGRAM
             && self.program(initialize) == SYSTEM_PROGRAM
-            && allocate.data == allocate_nonce_data(&self.payer)
-            && initialize.data == initialize_nonce_data(&self.payer)
-            && self.accounts_are(fund, &[self.payer, self.nonce])
-            && self.accounts_are(allocate, &[self.nonce, self.payer])
-            && self.accounts_are(initialize, &[self.nonce, RECENT_BLOCKHASHES_SYSVAR, RENT_SYSVAR]);
+            && allocate.data == allocate_nonce_data(&payer)
+            && initialize.data == initialize_nonce_data(&payer)
+            && self.accounts_are(fund, &[payer, nonce])
+            && self.accounts_are(allocate, &[nonce, payer])
+            && self.accounts_are(initialize, &[nonce, RECENT_BLOCKHASHES_SYSVAR, RENT_SYSVAR]);
         if !own {
             return None;
         }
-        if lamports as u128 > policy::fee_ceiling(self.network) {
-            self.alerts.push("存入 nonce 账户的金额明显偏高".to_string());
-        }
+        self.creation = Some(index..index + 3);
+        self.deposit_high = self
+            .known
+            .is_some_and(|network| lamports as u128 > policy::fee_ceiling(network));
         let mut effect = Effect::new(Risk::Recognized, CREATE_NONCE_TITLE);
         effect.rows = vec![
-            Row::mono("nonce 账户", base58(&self.nonce)),
+            Row::mono("nonce 账户", base58(&nonce)),
             Row::text("存入金额", self.sol(lamports)),
         ];
         effect.amount = Some(self.sol_view(lamports));
-        effect.counterparty = Some(("nonce 账户", base58(&self.nonce)));
+        effect.counterparty = Some(("nonce 账户", base58(&nonce)));
         Some(effect)
     }
 
     fn own_advance(&self, index: usize, ix: &Instruction) -> bool {
-        index == 0 && ix.data.len() == 4 && self.accounts_are(ix, &[self.nonce, RECENT_BLOCKHASHES_SYSVAR, self.payer])
+        self.own.is_some_and(|(payer, nonce)| {
+            index == 0 && ix.data.len() == 4 && self.accounts_are(ix, &[nonce, RECENT_BLOCKHASHES_SYSVAR, payer])
+        })
     }
 
     fn recipient_owner(&self, program: &[u8; 32], mint: &[u8; 32], destination: &[u8; 32]) -> Option<[u8; 32]> {
@@ -581,13 +399,17 @@ impl Scan<'_> {
             .filter(|owner| associated_token_address(owner, mint, program).as_ref() == Ok(destination))
     }
 
-    /// 只有经典 Token 程序的规范形式才可能算普通转账.Token-2022 的扩展能改变实际效果,
+    /// 只有规范形式才显示清单里的符号.Token-2022 的扩展能改变实际效果,清单声明过才算,
     /// 账户多余,数据有尾部字节或地址来自查找表时节点照样转账,所以金额和目标都要显示,金额用原始整数.
     fn transfer_checked(&self, ix: &Instruction, program: &[u8; 32], rest: &[u8]) -> Option<Effect> {
         let amount = le_u64(rest)?;
         let decimals = *rest.get(8)?;
-        let exact = *program == TOKEN_PROGRAM && rest.len() == 9 && ix.accounts.len() == 4 && !self.uses_lookup(ix);
         let (mint, destination) = (self.account(ix, 1), self.account(ix, 2));
+        let declared = mint
+            .and_then(|mint| self.manifest.lookup(self.network, &base58(&mint)))
+            .is_some_and(|asset| asset.extensions.is_some());
+        let plain_program = *program == TOKEN_PROGRAM || declared;
+        let exact = plain_program && rest.len() == 9 && ix.accounts.len() == 4 && !self.uses_lookup(ix);
         let view = self.token_view(mint.as_ref().filter(|_| exact), Some(decimals), amount);
         let listed = view.symbol.is_some();
         let mut effect = if listed {
@@ -732,24 +554,14 @@ impl Scan<'_> {
         recognized().unwrap_or_else(|| Effect::unknown("其他关联代币账户指令"))
     }
 
-    /// 节点解码时同样忽略尾部字节,所以手续费按前缀算.形式不规范的指令按无法识别展示.
-    fn compute_budget(&mut self, ix: &Instruction) -> Option<Effect> {
-        let plain = ix.accounts.is_empty();
-        match ix.data.split_first() {
-            Some((2, rest)) if rest.len() >= 4 => {
-                let units = u32::from_le_bytes(*rest.first_chunk::<4>()?);
-                let exact = plain && rest.len() == 4 && self.unit_limit.is_none();
-                self.unit_limit = Some(self.unit_limit.unwrap_or(0).max(units));
-                (!exact).then(|| Effect::unknown("SetComputeUnitLimit"))
-            }
-            Some((3, rest)) if rest.len() >= 8 => {
-                let price = le_u64(rest)?;
-                let exact = plain && rest.len() == 8 && self.unit_price.is_none();
-                self.unit_price = Some(self.unit_price.unwrap_or(0).max(price));
-                (!exact).then(|| Effect::unknown("SetComputeUnitPrice"))
-            }
-            _ => Some(Effect::unknown("其他 ComputeBudget 指令")),
-        }
+    /// 不算动作.形式不规范的指令按无法识别展示,手续费由解码树算出.
+    fn compute_budget(&self, ix: &Instruction) -> Option<Effect> {
+        let width = match ix.data.first() {
+            Some(1 | 2 | 4) => 4,
+            Some(3) => 8,
+            Some(_) | None => return Some(Effect::unknown("ComputeBudget 指令")),
+        };
+        (ix.data.len() != width + 1 || !ix.accounts.is_empty()).then(|| Effect::unknown("ComputeBudget 指令"))
     }
 
     fn run(&mut self) -> Vec<Effect> {
@@ -763,8 +575,7 @@ impl Scan<'_> {
                     if self.own_advance(index, ix) {
                         None
                     } else {
-                        self.alerts
-                            .push("AdvanceNonceAccount 不在第一条,或 nonce 账户不属于本钱包".to_string());
+                        self.foreign_advances.push(index);
                         Some(Effect::unknown("AdvanceNonceAccount"))
                     }
                 } else if let Some(effect) = self.nonce_creation(index) {
@@ -798,18 +609,6 @@ impl Scan<'_> {
         }
         effects
     }
-
-    fn base_fee(&self) -> u64 {
-        LAMPORTS_PER_SIGNATURE * self.message.required_signatures as u64
-    }
-
-    /// 微 lamports 单价乘单元数,向上取整到 lamports.结果超过 64 位时取上限,节点也是饱和计算.
-    fn priority_fee(&self) -> u64 {
-        let default_units = self.message.instructions.len() as u64 * DEFAULT_UNITS_PER_INSTRUCTION;
-        let units = self.unit_limit.map_or(default_units, u64::from).min(MAX_COMPUTE_UNITS);
-        let total = (self.unit_price.unwrap_or(0) as u128 * units as u128).div_ceil(MICRO_LAMPORTS_PER_LAMPORT);
-        u64::try_from(total).unwrap_or(u64::MAX)
-    }
 }
 
 /// 消息不是 ABI 编码,方法选择器和疑似地址这些提示不适用.
@@ -819,30 +618,212 @@ fn plain_lines(bytes: &[u8]) -> Vec<RawLine> {
     lines
 }
 
-pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forbid> {
-    let path = signer_path(request, network)?;
-    if request.kind != KIND_TRANSACTION {
-        return Err(Forbid::MessageSigning);
-    }
-    let payer = ctx.keys.ed25519(&path)?;
-    let message = Message::decode(&request.payload)?;
-    if message.keys[0] != payer {
-        return Err(Forbid::AddressMismatch);
-    }
+/// 页面顶部的摘要和旧字段,第 9 节删除.类别和告警都来自策略.
+#[derive(Default)]
+struct Summary {
+    amount: Option<AmountView>,
+    counterparty_label: Option<String>,
+    counterparty: Option<String>,
+    actions: Vec<ActionView>,
+    rows: Vec<Row>,
+    title: Option<&'static str>,
+    facts: SolanaFacts,
+}
 
-    let native = ctx.native(network);
-    let mut scan = Scan {
-        message: &message,
-        network,
-        manifest: ctx.manifest,
-        native: &native,
-        payer,
-        nonce: nonce_account_address(&payer).map_err(|_| Forbid::AddressMismatch)?,
-        hint: request.hint.as_deref().and_then(|hint| parse_solana_address(hint).ok()),
-        unit_limit: None,
-        unit_price: None,
-        alerts: Vec::new(),
+/// 按名字取指令节点的子节点.名字来自 IDL.
+fn section<'a>(node: &'a Node, name: &str) -> &'a [Node] {
+    node.children
+        .iter()
+        .find(|child| child.name == name)
+        .map_or(&[], |child| child.children.as_slice())
+}
+
+fn account_of<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
+    let account = section(node, ACCOUNTS_ROW).iter().find(|child| child.name == name)?;
+    if let Value::Address(text) = &account.value {
+        Some(text)
+    } else {
+        None
+    }
+}
+
+fn account_key(node: &Node, name: &str) -> Option<[u8; 32]> {
+    parse_solana_address(account_of(node, name)?).ok()
+}
+
+fn number_of(value: &Value) -> Option<u64> {
+    let raw = if let Value::Uint(raw) = value {
+        raw
+    } else if let Value::Amount(amount) = value {
+        &amount.raw
+    } else {
+        return None;
     };
+    let mut wide = [0u8; 8];
+    let start = wide.len().checked_sub(raw.len())?;
+    wide[start..].copy_from_slice(raw);
+    Some(u64::from_be_bytes(wide))
+}
+
+fn argument_of(node: &Node, name: &str) -> Option<u64> {
+    let found = section(node, DATA_ROW).iter().find(|child| child.name == name)?;
+    number_of(&found.value)
+}
+
+fn row_id(decoded: &Decoded, name: &str) -> NodeId {
+    let visits = decoded.visits();
+    visits
+        .iter()
+        .find(|visit| visit.node.name == name)
+        .map_or(0, |visit| visit.id)
+}
+
+/// 这棵子树里第一个叫这个名字的节点.
+fn descendant(decoded: &Decoded, root: NodeId, name: &str) -> Option<NodeId> {
+    let visits = decoded.visits();
+    let start = visits.get(root as usize)?;
+    visits
+        .iter()
+        .skip(root as usize + 1)
+        .take_while(|visit| visit.depth > start.depth)
+        .find(|visit| visit.node.name == name)
+        .map(|visit| visit.id)
+}
+
+fn lamports_row(decoded: &Decoded, name: &str) -> u64 {
+    let visits = decoded.visits();
+    visits
+        .iter()
+        .find(|visit| visit.node.name == name)
+        .and_then(|visit| number_of(&visit.node.value))
+        .unwrap_or(0)
+}
+
+fn finding(node: NodeId, kind: &'static str) -> SolanaFinding {
+    SolanaFinding {
+        node,
+        kind,
+        args: Vec::new(),
+    }
+}
+
+/// 代币转账的类别要看清单:mint 在清单内,小数位一致,账户恰好 4 个才是普通转账.
+/// Token-2022 的扩展是链上状态,只有清单声明过扩展的 mint 才可能是普通转账.
+fn token_facts(decoded: &Decoded, manifest: &Manifest, network: &str, facts: &mut SolanaFacts) {
+    for (id, node, kind) in decoded.actions() {
+        let (classic, name) = match (kind.strip_prefix(TOKEN_ACTIONS), kind.strip_prefix(TOKEN_2022_ACTIONS)) {
+            (Some(name), _) => (true, name),
+            (None, Some(name)) => (false, name),
+            (None, None) => continue,
+        };
+        let checked = CHECKED_TRANSFERS.contains(&name);
+        if !checked && name != TRANSFER {
+            continue;
+        }
+        let asset = account_of(node, MINT_ROW).and_then(|mint| manifest.lookup(network, mint));
+        if !classic && asset.is_none_or(|asset| asset.extensions.is_none()) {
+            facts.findings.push(finding(id, "token-2022-undeclared"));
+        }
+        if !checked {
+            continue;
+        }
+        let decimals = argument_of(node, DECIMALS_ROW);
+        match asset {
+            Some(asset) if decimals != Some(u64::from(asset.decimals)) => {
+                facts.findings.push(finding(id, "token-decimals-mismatch"));
+            }
+            Some(asset) if section(node, ACCOUNTS_ROW).len() == PLAIN_TOKEN_ACCOUNTS => {
+                let shown = argument_of(node, AMOUNT_ROW)
+                    .map(|amount| format!("{} {}", format_units(&amount.to_string(), asset.decimals), asset.symbol));
+                let row = descendant(decoded, id, AMOUNT_ROW);
+                facts.displays.extend(row.zip(shown));
+            }
+            Some(_) | None => facts.findings.push(finding(id, "token-unlisted")),
+        }
+    }
+}
+
+/// `create` 系列的地址必须由所有者,mint,程序推导得出.
+fn associated_facts(decoded: &Decoded, facts: &mut SolanaFacts) {
+    for (id, node, kind) in decoded.actions() {
+        if !ASSOCIATED_ACTIONS.contains(&kind) {
+            continue;
+        }
+        let valid = (|| {
+            let program = account_key(node, TOKEN_PROGRAM_ROW)?;
+            let owner = account_key(node, WALLET_ROW)?;
+            let mint = account_key(node, MINT_ROW)?;
+            let derived = format::associated_token_address(&owner, &mint, &program)?;
+            let system = account_key(node, SYSTEM_PROGRAM_ROW)? == SYSTEM_PROGRAM;
+            Some(system && is_token_program(&program) && account_key(node, ASSOCIATED_ACCOUNT_ROW)? == derived)
+        })();
+        if valid != Some(true) {
+            facts.findings.push(finding(id, "ata-underived"));
+        }
+    }
+}
+
+/// 相同的 ComputeBudget 指令节点只接受一条.
+fn budget_facts(decoded: &Decoded, facts: &mut SolanaFacts) {
+    let budgets: Vec<(NodeId, &str)> = decoded
+        .actions()
+        .into_iter()
+        .filter(|(_, _, kind)| kind.starts_with(COMPUTE_BUDGET_ACTIONS))
+        .map(|(id, _, kind)| (id, kind))
+        .collect();
+    for (position, (id, kind)) in budgets.iter().enumerate() {
+        if budgets[..position].iter().any(|(_, earlier)| earlier == kind) {
+            facts.findings.push(finding(*id, "compute-budget-repeated"));
+        }
+    }
+}
+
+/// 本钱包的 nonce 创建之外,初始化 nonce 账户或者给本钱包的 nonce 地址分配空间都不算已识别.
+fn nonce_facts(decoded: &Decoded, scan: &Scan, facts: &mut SolanaFacts) {
+    let visits = decoded.visits();
+    let instructions: Vec<NodeId> = visits
+        .iter()
+        .filter(|visit| visit.node.name == INSTRUCTION_ROW && visit.depth == INSTRUCTIONS_DEPTH)
+        .map(|visit| visit.id)
+        .collect();
+    facts.findings.extend(
+        scan.foreign_advances
+            .iter()
+            .filter_map(|index| instructions.get(*index))
+            .map(|id| finding(*id, "nonce-advance-foreign")),
+    );
+    let own_nonce = scan.own.map(|(_, nonce)| base58(&nonce));
+    let in_creation = |id: NodeId| {
+        let position = instructions.iter().position(|row| *row == id);
+        position.is_some_and(|position| scan.creation.as_ref().is_some_and(|range| range.contains(&position)))
+    };
+    for (id, node, kind) in decoded.actions() {
+        let step = kind == INITIALIZE_ACTION
+            || (kind == ALLOCATE_ACTION && account_of(node, ALLOCATED_ROW) == own_nonce.as_deref());
+        if step && !in_creation(id) {
+            facts.findings.push(finding(id, "nonce-step-foreign"));
+        }
+    }
+}
+
+fn signer_facts(payload: &SolanaPayload, signer: Option<&[u8; 32]>, decoded: &Decoded, facts: &mut SolanaFacts) {
+    let Some(required) = payload.signers() else {
+        return;
+    };
+    let keys = row_id(decoded, "account_keys");
+    if required.len() > 1 {
+        facts.findings.push(finding(keys, "other-signers"));
+    }
+    match (signer, payload) {
+        (None, _) => facts.findings.push(finding(keys, "signer-unverified")),
+        (Some(key), SolanaPayload::Message(_) | SolanaPayload::Partial { .. }) if required.first() != Some(key) => {
+            facts.findings.push(finding(keys, "fee-payer-foreign"));
+        }
+        (Some(_), _) => {}
+    }
+}
+
+fn summarize(message: &Message, scan: &mut Scan, decoded: &Decoded) -> Summary {
     let mut effects = scan.run();
     // 只推进 nonce:之前用这个 nonce 值签名的交易全部作废.这是 Solana 上取消交易的写法.
     let cancels = effects.is_empty()
@@ -851,14 +832,25 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
         });
     if cancels {
         let mut effect = Effect::new(Risk::Recognized, ADVANCE_NONCE_TITLE);
-        effect.rows = vec![Row::mono("nonce 账户", base58(&scan.nonce))];
+        effect.rows = scan
+            .own
+            .iter()
+            .map(|(_, nonce)| Row::mono("nonce 账户", base58(nonce)))
+            .collect();
         effects.push(effect);
-        // 这一笔会让之前签过的交易失效,不能点一下就过去.
-        scan.alerts.push("用当前 nonce 值签过名的交易都会作废".to_string());
     }
 
-    let mut builder = ReviewBuilder::default();
-    let mut unconfirmed = false;
+    let mut facts = SolanaFacts::default();
+    let root = 0;
+    if cancels {
+        // 这一笔会让之前签过的交易失效,不能点一下就过去.
+        facts
+            .findings
+            .push(finding(row_id(decoded, INSTRUCTION_ROW), "nonce-cancel"));
+    }
+    if scan.deposit_high {
+        facts.findings.push(finding(root, "nonce-deposit-high"));
+    }
     let nonce_creation = effects.iter().any(|e| e.title == CREATE_NONCE_TITLE);
     let token_accounts = effects.iter().filter(|e| e.title == CREATE_TOKEN_ACCOUNT_TITLE).count();
 
@@ -876,14 +868,16 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
         .max();
     let headline = tied == 1 && unnamed.is_none_or(|rank| Some(rank) < top.map(Risk::legacy_rank));
 
+    let mut summary = Summary::default();
+    let mut unconfirmed = false;
     for effect in effects {
         if headline && effect.counterparty.is_some() && Some(effect.risk) == top {
-            builder.amount = effect.amount;
-            builder.counterparty_label = effect.counterparty.as_ref().map(|(label, _)| label.to_string());
-            builder.counterparty = effect.counterparty.map(|(_, value)| value);
+            summary.amount = effect.amount;
+            summary.counterparty_label = effect.counterparty.as_ref().map(|(label, _)| label.to_string());
+            summary.counterparty = effect.counterparty.map(|(_, value)| value);
         }
         unconfirmed |= effect.unconfirmed_owner;
-        builder.actions.push(ActionView {
+        summary.actions.push(ActionView {
             risk: effect.risk,
             title: effect.title,
             rows: effect.rows,
@@ -893,31 +887,42 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
     let lookup_row = (!message.lookups.is_empty())
         .then(|| Row::text("地址查找表", format!("{} 个地址无法离线解析", message.lookup_count())));
     if let Some(row) = &lookup_row {
-        builder.actions.push(ActionView {
+        summary.actions.push(ActionView {
             risk: Risk::Unknown,
             title: "地址查找表".to_string(),
             rows: vec![row.clone()],
         });
     }
 
-    if message.required_signatures > 1 {
-        scan.alerts.push("这笔交易还需要其他账户签名".to_string());
-    }
     if named_count > 1 {
-        scan.alerts
-            .push(format!("这笔交易包含 {named_count} 个转账,授权或权限变更,请逐个核对"));
+        facts.findings.push(SolanaFinding {
+            node: root,
+            kind: "actions-many",
+            args: vec![named_count.to_string()],
+        });
     }
     if unconfirmed {
-        scan.alerts.push("无法确认代币收款方的所有者".to_string());
+        facts.findings.push(finding(root, "owner-unconfirmed"));
     }
     if token_accounts > 1 {
-        scan.alerts
-            .push(format!("这笔交易创建 {token_accounts} 个代币账户,每个都要付租金"));
+        facts.findings.push(SolanaFinding {
+            node: root,
+            kind: "token-accounts-many",
+            args: vec![token_accounts.to_string()],
+        });
     }
-    let (base_fee, priority_fee) = (scan.base_fee(), scan.priority_fee());
-    if (base_fee as u128 + priority_fee as u128) > policy::fee_ceiling(network) {
-        scan.alerts.push("手续费明显偏高".to_string());
-    }
+
+    let (base_fee, priority_fee) = (
+        lamports_row(decoded, BASE_FEE_ROW),
+        lamports_row(decoded, PRIORITY_FEE_ROW),
+    );
+    facts.fee_high = scan
+        .known
+        .is_some_and(|network| (base_fee as u128 + priority_fee as u128) > policy::fee_ceiling(network));
+    nonce_facts(decoded, scan, &mut facts);
+    token_facts(decoded, scan.manifest, scan.network, &mut facts);
+    associated_facts(decoded, &mut facts);
+    budget_facts(decoded, &mut facts);
 
     let signers: Vec<String> = message.keys[..message.required_signatures as usize]
         .iter()
@@ -928,37 +933,160 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
         .first()
         .filter(|ix| scan.program(ix) == SYSTEM_PROGRAM && ix.data.starts_with(&4u32.to_le_bytes()))
         .map_or_else(|| "无".to_string(), |ix| scan.shown(ix, 0));
-    builder.rows.push(Row::text("网络", network.label()));
-    builder.rows.push(Row::mono("手续费支付者", base58(&payer)));
-    builder.rows.push(Row::mono("派生路径", path.to_string()));
-    builder.rows.push(Row::mono("全部签名者", signers.join("\n")));
-    builder.rows.push(Row::mono("nonce 账户", nonce_account));
-    builder.rows.push(Row::text(
+    summary.rows.push(Row::mono("手续费支付者", base58(&message.keys[0])));
+    summary.rows.push(Row::mono("全部签名者", signers.join("\n")));
+    summary.rows.push(Row::mono("nonce 账户", nonce_account));
+    summary.rows.push(Row::text(
         "消息版本",
         match message.version {
             Version::Legacy => "legacy",
             Version::V0 => "v0",
+            Version::V1(_) => "v1",
         },
     ));
-    builder
+    summary
         .rows
         .push(Row::text("指令数", message.instructions.len().to_string()));
-    builder.rows.push(Row::text("基础费", scan.sol(base_fee)));
-    builder.rows.push(Row::text("优先费", scan.sol(priority_fee)));
-    builder.rows.extend(lookup_row);
+    summary.rows.push(Row::text("基础费", scan.sol(base_fee)));
+    summary.rows.push(Row::text("优先费", scan.sol(priority_fee)));
+    summary.rows.extend(lookup_row);
     if unconfirmed {
-        builder.rows.push(Row::text("收款地址", "无法确认所有者"));
+        summary.rows.push(Row::text("收款地址", "无法确认所有者"));
     }
-    builder.alerts = std::mem::take(&mut scan.alerts);
-    builder.raw = plain_lines(&request.payload);
+    summary.title = if cancels {
+        Some(ADVANCE_NONCE_TITLE)
+    } else if nonce_creation {
+        Some(CREATE_NONCE_TITLE)
+    } else {
+        None
+    };
+    summary.facts = facts;
+    summary
+}
 
-    let mut review = builder.finish(network.id());
-    if review.risk == Risk::Recognized && nonce_creation {
-        review.title = CREATE_NONCE_TITLE.to_string();
+/// 路径不设白名单,只有全部硬化才能派生 ed25519 私钥.
+fn request_path(request: &SignRequest, declared: Option<Network>) -> Result<DerivationPath, Forbid> {
+    let [path] = request.paths.as_slice() else {
+        return Err(Forbid::PathNotAllowed);
+    };
+    let path = DerivationPath::parse(path).map_err(|_| Forbid::PathNotAllowed)?;
+    if path.0.len() > MAX_PATH_DEPTH {
+        return Err(Forbid::PathNotAllowed);
     }
-    if cancels {
-        review.title = ADVANCE_NONCE_TITLE.to_string();
+    check_solana_path(&path, declared).map_err(|error| match error {
+        Error::PathNetworkMismatch => Forbid::PathNetworkMismatch,
+        _ => Forbid::PathNotAllowed,
+    })?;
+    Ok(path)
+}
+
+/// 没有导出的路径保存的公钥算不出来,解锁后用私钥核对.
+fn signer_key(ctx: &ReviewContext, path: &DerivationPath) -> Result<Option<[u8; 32]>, Forbid> {
+    match ctx.keys.ed25519(path) {
+        Ok(key) => Ok(Some(key)),
+        Err(Forbid::PathNotAllowed) => Ok(None),
+        Err(reason) => Err(reason),
     }
+}
+
+fn coin_of(network: Network) -> Coin {
+    let (unit, decimals) = network.native_coin();
+    Coin { unit, decimals }
+}
+
+pub fn review(declared: Option<Network>, request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forbid> {
+    let path = request_path(request, declared)?;
+    if request.kind != KIND_TRANSACTION {
+        return Err(Forbid::MessageSigning);
+    }
+    let signer = signer_key(ctx, &path)?;
+    let parsed = parse_solana(&request.payload);
+    if let (Some(key), Ok(payload)) = (&signer, &parsed)
+        && payload.signers().is_some_and(|required| !required.contains(key))
+    {
+        return Err(Forbid::AddressMismatch);
+    }
+    let network = request.network.as_str();
+    let hint = request.hint.as_deref().and_then(|hint| parse_solana_address(hint).ok());
+    let walker = SolanaWalker {
+        coin: declared.map(coin_of),
+        hint,
+    };
+    let mode = declared.map_or_else(|| solana_path_mode(&path).unwrap_or(Mode::Mainnet), Network::mode);
+    let address = signer.as_ref().map(base58);
+    let decoded = decode::decode(
+        &walker,
+        &decode::Input {
+            chain: Chain::Solana,
+            mode: Some(mode),
+            network,
+            kind: request.kind,
+            paths: &request.paths,
+            payload: &request.payload,
+            signer: address.as_deref(),
+        },
+    );
+    let decoded = match decoded {
+        Ok(decoded) => decoded,
+        Err(failure) => return Ok(Review::undecodable(&request.network, &failure)),
+    };
+    let payload = parsed.map_err(|_| Forbid::ParseFailed)?;
+    let native: Option<Cow<'_, Asset>> = declared.map(|network| ctx.native(network));
+    let own = signer
+        .map(|key| Ok((key, nonce_account_address(&key)?)))
+        .transpose()
+        .map_err(|_: Error| Forbid::AddressMismatch)?;
+    let mut summary = match &payload {
+        SolanaPayload::Message(message) => {
+            let mut scan = Scan {
+                message,
+                network,
+                known: declared,
+                manifest: ctx.manifest,
+                native: native.as_deref(),
+                own,
+                hint,
+                creation: None,
+                foreign_advances: Vec::new(),
+                deposit_high: false,
+            };
+            summarize(message, &mut scan, &decoded)
+        }
+        SolanaPayload::Partial { .. } | SolanaPayload::Offchain { .. } | SolanaPayload::Unknown => Summary::default(),
+    };
+    signer_facts(&payload, signer.as_ref(), &decoded, &mut summary.facts);
+    summary.facts.signer = address;
+    summary.facts.unusual_path = (!is_usual_solana_path(&path)).then(|| path.to_string());
+    let label = declared.map_or_else(
+        || decode::escape_text(&request.network),
+        |network| network.label().to_string(),
+    );
+    let mut rows = vec![Row::text("网络", label), Row::mono("派生路径", path.to_string())];
+    rows.append(&mut summary.rows);
+    let Summary {
+        amount,
+        counterparty_label,
+        counterparty,
+        actions,
+        rows: _,
+        title,
+        facts,
+    } = summary;
+    let assessment = policy::assess_solana(&decoded, &facts);
+    let assessed = Review::assessed(&decoded, assessment);
+    let review = Review {
+        amount,
+        counterparty_label,
+        counterparty,
+        actions,
+        rows,
+        raw: plain_lines(&request.payload),
+        title: title
+            .filter(|_| assessed.risk == Risk::Recognized)
+            .map_or_else(|| assessed.title.clone(), str::to_string),
+        ..assessed
+    };
+    // `tx::review` 只给本机认识的网络检查清单.
     Ok(review)
 }
 
@@ -1196,13 +1324,37 @@ pub fn build_create_nonce(payer: &str, recent_blockhash: [u8; 32], lamports: u64
     Ok(compile(payer, recent_blockhash, &calls).encode())
 }
 
+fn check_message_signature(payload: &[u8], signature: &[u8; 64], signer: &[u8; 32]) -> Result<(), Error> {
+    let key = VerifyingKey::from_bytes(signer).map_err(|_| Error::InvalidKey)?;
+    key.verify_strict(payload, &Signature::from_bytes(signature))
+        .map_err(|_| Error::BadSignature)
+}
+
+/// 消息和未知的格式没有可以广播的形式,结果只有核验过的签名.
+fn signature_only(payload: &[u8], signature: &[u8; 64], signer: &[u8]) -> Result<Verified, Error> {
+    let signer: &[u8; 32] = signer.try_into().map_err(|_| Error::InvalidKey)?;
+    check_message_signature(payload, signature, signer)?;
+    Ok(Verified {
+        raw: signature.to_vec(),
+        hash: Sha256::digest(payload).to_lower_hex_string(),
+        fee_unconfirmed: false,
+        signature_only: true,
+    })
+}
+
 /// `signer` 是手续费支付者的公钥,必须和消息里的账户 0 一致.
 pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> Result<Verified, Error> {
     let [signature] = response.signatures.as_slice() else {
         return Err(Error::BadSignature);
     };
     let signature: &[u8; 64] = signature.as_slice().try_into().map_err(|_| Error::BadSignature)?;
-    let message = Message::decode(&request.payload).map_err(|_| Error::InvalidParams)?;
+    let parsed = parse_solana(&request.payload).map_err(|_| Error::InvalidParams)?;
+    let message = match parsed {
+        SolanaPayload::Message(message) => message,
+        SolanaPayload::Partial { .. } | SolanaPayload::Offchain { .. } | SolanaPayload::Unknown => {
+            return signature_only(&request.payload, signature, signer);
+        }
+    };
     // 还缺其他人的签名时,这笔交易不能广播.
     if message.required_signatures != 1 {
         return Err(Error::InvalidParams);
@@ -1211,13 +1363,17 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
     if message.keys[0] != *signer {
         return Err(Error::BadSignature);
     }
-    let key = VerifyingKey::from_bytes(signer).map_err(|_| Error::InvalidKey)?;
-    key.verify_strict(&request.payload, &Signature::from_bytes(signature))
-        .map_err(|_| Error::BadSignature)?;
+    check_message_signature(&request.payload, signature, signer)?;
     let mut raw = Vec::with_capacity(1 + 64 + request.payload.len());
-    put_len(&mut raw, 1);
-    raw.extend_from_slice(signature);
-    raw.extend_from_slice(&request.payload);
+    // v1 的签名在消息之后,数量由头部决定,没有长度前缀.
+    if matches!(message.version, Version::V1(_)) {
+        raw.extend_from_slice(&request.payload);
+        raw.extend_from_slice(signature);
+    } else {
+        put_len(&mut raw, 1);
+        raw.extend_from_slice(signature);
+        raw.extend_from_slice(&request.payload);
+    }
     Ok(Verified {
         raw,
         hash: bitcoin::base58::encode(signature),
@@ -1279,28 +1435,6 @@ mod tests {
     }
 
     #[test]
-    fn compact_u16_edges() {
-        let cases: [(usize, &[u8]); 5] = [
-            (0, &[0]),
-            (127, &[0x7f]),
-            (128, &[0x80, 0x01]),
-            (16383, &[0xff, 0x7f]),
-            (65535, &[0xff, 0xff, 0x03]),
-        ];
-        for (value, bytes) in cases {
-            let mut out = Vec::new();
-            put_len(&mut out, value);
-            assert_eq!(out, bytes);
-            assert_eq!(read_len(&mut &*out), Ok(value));
-        }
-        // 超过 16 位和 4 字节编码都不合法.
-        let too_big: &[u8] = &[0xff, 0xff, 0x04];
-        assert_eq!(read_len(&mut &*too_big), Err(Forbid::ParseFailed));
-        let too_long: &[u8] = &[0x80, 0x80, 0x80, 0x01];
-        assert_eq!(read_len(&mut &*too_long), Err(Forbid::ParseFailed));
-    }
-
-    #[test]
     fn round_trip_legacy_and_v0() {
         for message in [message(), v0()] {
             assert_eq!(Message::decode(&message.encode()).unwrap(), message);
@@ -1334,13 +1468,15 @@ mod tests {
         }
     }
 
+    /// 第 1.1 节:本机不认识的版本可以签,但这里只认交易消息.
     #[test]
-    fn unsupported_versions_are_refused() {
+    fn other_versions_are_not_transaction_messages() {
         let mut bytes = v0().encode();
-        bytes[0] = 0x81;
-        assert_eq!(Message::decode(&bytes), Err(Forbid::Unsupported));
-        bytes[0] = 0xff;
-        assert_eq!(Message::decode(&bytes), Err(Forbid::Unsupported));
+        for first in [0x82, 0xfe, 0xff] {
+            bytes[0] = first;
+            assert_eq!(Message::decode(&bytes), Err(Forbid::Unsupported), "{first:#x}");
+        }
+        assert!(matches!(parse_solana(&bytes), Ok(SolanaPayload::Unknown)));
     }
 
     #[test]

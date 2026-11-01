@@ -1,6 +1,6 @@
 //! 派生路径,见 docs/04-security.md 第 2.6 节.
 //!
-//! 路径决定链和私钥类型.Bitcoin,EVM 路径不设白名单,任意路径都可以花费,页面显示路径并告警.
+//! 路径决定链和私钥类型.Bitcoin,EVM,Solana 路径不设白名单,任意路径都可以花费,页面显示路径并告警.
 
 use crate::{Chain, Error, Mode, Network};
 use minicbor::{Decode, Encode};
@@ -194,6 +194,45 @@ pub fn check_evm_path(path: &DerivationPath) -> Result<(), Error> {
         return Err(Error::PathNetworkMismatch);
     }
     Ok(())
+}
+
+/// 每一级都是硬化的.SLIP-0010 的 ed25519 没有非硬化派生.
+pub fn is_all_hardened(path: &DerivationPath) -> bool {
+    path.0.iter().all(|level| level & HARDENED != 0)
+}
+
+/// Solana 路径里的 coin type 能说明的私钥类型.`501'` 是主网,`1'` 是测试币,其他值说明不了.
+pub fn solana_path_mode(path: &DerivationPath) -> Option<Mode> {
+    match path.0.as_slice() {
+        [purpose, coin, ..] if *purpose == h(44) && *coin == h(501) => Some(Mode::Mainnet),
+        [purpose, coin, ..] if *purpose == h(44) && *coin == h(1) => Some(Mode::Testnet),
+        _ => None,
+    }
+}
+
+/// Solana 请求里的路径有没有矛盾.全部硬化的路径都可以签,只有非硬化的路径算不出私钥,
+/// 以及路径的 coin type 和本机认识的网络属于不同的私钥才算.
+pub fn check_solana_path(path: &DerivationPath, network: Option<Network>) -> Result<(), Error> {
+    if !is_all_hardened(path) {
+        let foreign = classify(path).is_ok_and(|info| info.chain != Chain::Solana);
+        return Err(if foreign {
+            Error::PathNetworkMismatch
+        } else {
+            Error::PathNotAllowed
+        });
+    }
+    match (solana_path_mode(path), network) {
+        (Some(mode), Some(network)) if mode != network.mode() => Err(Error::PathNetworkMismatch),
+        _ => Ok(()),
+    }
+}
+
+/// 路径是不是本机导出的 Solana 账户.其余路径可以签名,但要告警.
+pub fn is_usual_solana_path(path: &DerivationPath) -> bool {
+    let text = path.to_string();
+    all_account_specs(true)
+        .iter()
+        .any(|spec| spec.chain == Chain::Solana && spec.path == text)
 }
 
 /// 路径是不是本机导出的 EVM 账户.其余路径可以签名,但要告警.
@@ -393,6 +432,42 @@ mod tests {
         assert!(is_usual_evm_path(&p("m/44'/60'/0'/0/0")));
         assert!(!is_usual_evm_path(&p("m/44'/60'/0'/0/1")));
         assert!(!is_usual_evm_path(&p("m/44'/195'/0'/0/0")));
+    }
+
+    #[test]
+    fn any_hardened_solana_path_signs_on_its_own_key() {
+        for free in ["m/44'/501'/7'/0'", "m/44'/501'/0'", "m/0'", "m"] {
+            assert_eq!(check_solana_path(&p(free), Some(Network::Solana)), Ok(()), "{free}");
+            assert_eq!(check_solana_path(&p(free), None), Ok(()), "{free}");
+        }
+        assert_eq!(
+            check_solana_path(&p("m/44'/501'/7'/0'"), Some(Network::SolanaDevnet)),
+            Err(Error::PathNetworkMismatch)
+        );
+        assert_eq!(
+            check_solana_path(&p("m/44'/1'/0'/0'"), Some(Network::Solana)),
+            Err(Error::PathNetworkMismatch)
+        );
+        assert_eq!(check_solana_path(&p("m/44'/1'/0'/0'"), None), Ok(()));
+    }
+
+    #[test]
+    fn a_solana_path_with_a_normal_level_has_no_key() {
+        assert_eq!(
+            check_solana_path(&p("m/44'/501'/0'/0"), None),
+            Err(Error::PathNotAllowed)
+        );
+        assert_eq!(
+            check_solana_path(&p("m/44'/60'/0'/0/0"), Some(Network::Solana)),
+            Err(Error::PathNetworkMismatch)
+        );
+    }
+
+    #[test]
+    fn only_the_exported_solana_accounts_are_usual() {
+        assert!(is_usual_solana_path(&p("m/44'/501'/0'/0'")));
+        assert!(is_usual_solana_path(&p("m/44'/1'/0'/0'")));
+        assert!(!is_usual_solana_path(&p("m/44'/501'/1'/0'")));
     }
 
     #[test]
