@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { BTC_ADDRESS, EVM_ADDRESS, TRON_ADDRESS, USDT, initCore, must } from "../testing";
 import type { Account } from "../data/db";
 import { lookupAsset } from "../core/manifest";
-import { assetShares, groupPending, groupRows, largestRow, type AssetRow } from "./assets";
+import { assetShares, groupPending, groupRows, largestRow, receiveRows, type AssetRow } from "./assets";
 
 beforeAll(initCore);
 
@@ -23,6 +23,18 @@ function row(network: string, asset: string, amount: bigint, extra: Partial<Asse
         ...extra,
     };
 }
+
+describe("receiveRows", () => {
+    it("列出清单里的资产,旧式账户不收款", () => {
+        const rows = receiveRows(
+            [account("evm"), { id: "old", chain: "bitcoin", kind: "legacy" } as Account],
+            "mainnet",
+        );
+        expect(rows.every((item) => item.account.id === "evm")).toBe(true);
+        expect(rows[0]?.entry.native).toBe(true);
+        expect(rows.filter((item) => item.entry.icon === "usdt").map((item) => item.network)).toContain("bsc");
+    });
+});
 
 describe("groupRows", () => {
     it("同一个币跨网络合并,不同小数位先换算", () => {

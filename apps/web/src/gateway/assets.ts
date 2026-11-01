@@ -1,7 +1,7 @@
 // 把账户,地址和网关余额合成资产表.
 import { isLegacyKind, networksFor, type Mode } from "../core";
 import { usdCents } from "../core/amount";
-import { lookupAsset, priceKey, type AssetEntry, type IconName } from "../core/manifest";
+import { assetsOf, lookupAsset, priceKey, type AssetEntry, type IconName } from "../core/manifest";
 import type { Account, Address, TxRecord } from "../data/db";
 import { addressKey, type Balance, type PriceMap } from "./client";
 
@@ -112,6 +112,22 @@ export type ManifestRow = AssetRow & { entry: AssetEntry };
 
 export function inManifest(row: AssetRow): row is ManifestRow {
     return row.entry !== null;
+}
+
+export type ReceiveRow = Pick<ManifestRow, "id" | "account" | "network" | "entry">;
+
+/** 能收的资产.只看内置清单,不看余额,新钱包和网关断开时也选得到. */
+export function receiveRows(accounts: readonly Account[], mode: Mode): ReceiveRow[] {
+    return accounts
+        .filter((account) => !isLegacyKind(account.kind))
+        .flatMap((account) =>
+            networksFor(account.chain, mode).flatMap(({ id: network }) =>
+                assetsOf(network).flatMap((asset) => {
+                    const entry = lookupAsset(network, asset);
+                    return entry ? [{ id: `${account.id}|${network}|${asset}`, account, network, entry }] : [];
+                }),
+            ),
+        );
 }
 
 /** 同一个币在各个网络和账户上的持仓.清单外的代币不进这里,它们的符号可以伪造. */

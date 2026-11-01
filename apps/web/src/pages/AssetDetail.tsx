@@ -20,7 +20,16 @@ import { FeedItem } from "../ui/FeedItem";
 import { GatewayDown } from "../ui/GatewayDown";
 import { Icon } from "../ui/Icon";
 import { accountKind } from "../ui/labels";
-import { ChildTitle, Empty, LinkButton, ListRow, Section, SectionTitle, SkeletonRows } from "../ui/primitives";
+import {
+    BigAmount,
+    ChildTitle,
+    Empty,
+    LinkButton,
+    ListRow,
+    Section,
+    SectionTitle,
+    SkeletonRows,
+} from "../ui/primitives";
 import { receiveLink } from "../ui/Sheet";
 import { TokenIcon, networkIcon } from "../ui/TokenIcon";
 import { t } from "../core/i18n";
@@ -43,7 +52,7 @@ function Position({ row, group, prices }: { row: ManifestRow; group: AssetGroup;
                 <>
                     {isLegacyKind(row.account.kind) ? null : (
                         <LinkButton
-                            {...receiveLink(row.account.id, { asset: group.key })}
+                            {...receiveLink(row.account.id, { asset: group.key, network: row.network })}
                             variant="ghost"
                             size="sm"
                             aria-label={t("从 {0} 收款", rowTitle(row))}
@@ -91,16 +100,17 @@ function Detail({ group, prices }: { group: AssetGroup; prices: PriceMap | null 
                 <div className="flex flex-wrap items-center gap-s4">
                     <TokenIcon asset={entry} size={48} />
                     <div className="flex min-w-0 flex-1 flex-col">
-                        <span className="text-t7 font-semibold [overflow-wrap:anywhere]">
-                            {formatUnits(group.amount, group.decimals, { min: entry.minFraction })} {entry.symbol}
-                        </span>
+                        <BigAmount>{`${formatUnits(group.amount, group.decimals, { min: entry.minFraction })} ${entry.symbol}`}</BigAmount>
                         <span className="text-t3 text-text-2">
                             {group.cents === null ? t("暂无价格") : formatUsd(group.cents)}
                         </span>
                     </div>
                     <div className="grid w-full grid-cols-2 gap-s2 @split:flex @split:w-auto">
                         {isLegacyKind(top.account.kind) ? null : (
-                            <LinkButton {...receiveLink(top.account.id, { asset: group.key })} size="lg">
+                            <LinkButton
+                                {...receiveLink(top.account.id, { asset: group.key, network: top.network })}
+                                size="lg"
+                            >
                                 <Icon name="receive" />
                                 {t("收款")}
                             </LinkButton>

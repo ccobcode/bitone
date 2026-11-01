@@ -345,6 +345,20 @@ class GuardedActionsTest {
     }
 
     @Test
+    fun receiveListsManifestAssetsAndFollowsThePick() = runTest {
+        val rig = ready()
+        rig.flow.receive.open(bitcoin)
+        advanceUntilIdle()
+        assertEquals(listOf("ETH", "USDT"), rig.flow.receive.tokens.map { it.symbol })
+
+        rig.flow.receive.pickAsset(rig.flow.receive.tokens.last())
+        advanceUntilIdle()
+        assertEquals("USDT", rig.flow.receive.asset?.symbol)
+        assertEquals(listOf(ethereum), rig.flow.receive.accounts)
+        assertEquals(ethereum, rig.flow.receive.account)
+    }
+
+    @Test
     fun navigationKeepsTheLastAccount() = runTest {
         val rig = ready()
         rig.flow.receive.open()

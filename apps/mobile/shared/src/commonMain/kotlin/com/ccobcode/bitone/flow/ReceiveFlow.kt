@@ -3,6 +3,8 @@ package com.ccobcode.bitone.flow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.ccobcode.bitone.platform.ManifestEntry
+import com.ccobcode.bitone.platform.NATIVE_CONTRACT
 import com.ccobcode.bitone.platform.QrMatrix
 import com.ccobcode.bitone.platform.WalletCoreException
 import kotlinx.coroutines.withContext
@@ -16,6 +18,20 @@ class ReceiveFlow internal constructor(private val host: FlowHost) {
 
     var account by mutableStateOf<AccountRow?>(null)
         private set
+
+    /** 内置清单里这些账户能收的资产.资产只决定页面上写什么,地址跟着账户走. */
+    private var assets by mutableStateOf(emptyList<ManifestEntry>())
+
+    var asset by mutableStateOf<ManifestEntry?>(null)
+        private set
+
+    /** 可选的资产,同一个币只列一次. */
+    val tokens: List<ManifestEntry>
+        get() = assets.distinctBy { it.icon }
+
+    /** 能收当前资产的账户. */
+    val accounts: List<AccountRow>
+        get() = session.accounts.filter { row -> assets.any { it.icon == asset?.icon && row.holds(it) } }
 
     var address by mutableStateOf<String?>(null)
         private set
@@ -35,10 +51,23 @@ class ReceiveFlow internal constructor(private val host: FlowHost) {
     fun open(next: AccountRow? = null) {
         if (session.meta == null) return
         host.guarded {
-            account = next ?: account ?: session.accounts.first()
+            val current = next ?: account ?: session.accounts.first()
+            account = current
             host.stack = listOf(Screen.Receive)
+            assets =
+                withContext(work) { core.manifestEntries(session.manifestPackage()) }
+                    .filter { entry -> session.accounts.any { it.holds(entry) } }
+            if (next != null || asset == null) {
+                asset = assets.firstOrNull { current.holds(it) && it.contract == NATIVE_CONTRACT }
+            }
             load()
         }
+    }
+
+    /** 当前账户收不了这个币时,换到第一个能收的账户. */
+    fun pickAsset(entry: ManifestEntry) {
+        asset = entry
+        if (account !in accounts) accounts.firstOrNull()?.let(::select)
     }
 
     fun select(next: AccountRow) {
@@ -102,6 +131,7 @@ class ReceiveFlow internal constructor(private val host: FlowHost) {
 
     internal fun clear() {
         account = null
+        asset = null
         address = null
         qr = null
         history = emptyList()

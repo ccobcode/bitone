@@ -216,8 +216,8 @@ export default function Settings() {
             <NoticeGroup />
 
             <Group id="h-gw" title={t("网关")}>
-                <Setting label={t("网关地址")} hint={t("和网页端同域部署,不能修改")}>
-                    <span className="font-mono text-t2 [overflow-wrap:anywhere]">{location.origin}</span>
+                <Setting label={t("网关地址")}>
+                    <span className="font-mono text-t2 [overflow-wrap:anywhere]">{location.host}</span>
                 </Setting>
                 <Setting label="HTTP">
                     {gateway.httpOk && gateway.latency !== null ? (

@@ -384,6 +384,15 @@ export function Collapse({ open, children }: { open: boolean; children: ReactNod
     );
 }
 
+/** 手机上 t7 一行放得下的字数,图标占一列时也放得下. */
+const BIG_AMOUNT = 13;
+
+/** 这一屏的主金额.手机上放不下一行时缩一档,金额不截断. */
+export function BigAmount({ children }: { children: string }) {
+    const size = children.length > BIG_AMOUNT ? "text-t5 @split:text-t7" : "text-t7";
+    return <span className={`font-semibold [overflow-wrap:anywhere] ${size}`}>{children}</span>;
+}
+
 /** 标签和值一行,靠行距分组,不画分隔线. */
 export function Fact({ label, children, mono }: { label: string; children: ReactNode; mono?: boolean }) {
     return (
