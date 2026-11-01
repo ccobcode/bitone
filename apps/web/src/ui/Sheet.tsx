@@ -1,6 +1,6 @@
 import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { Dialog } from "@base-ui/react/dialog";
-import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { Icon } from "./Icon";
 import { buttonClass, type ButtonVariant } from "./primitives";
@@ -11,10 +11,14 @@ export function overlayLink(search: string) {
     return { to: { search }, state: { overlay: true } };
 }
 
-/** 打开收款浮层.asset 是清单里的资产键,verify 直接进核对. */
-export function receiveLink(accountId: string, { asset, verify }: { asset?: string; verify?: boolean } = {}) {
+/** 打开收款浮层.asset 是清单里的资产键,network 是网络标识,verify 直接进核对. */
+export function receiveLink(
+    accountId: string,
+    { asset, network, verify }: { asset?: string; network?: string; verify?: boolean } = {},
+) {
     const params = new URLSearchParams({ receive: accountId });
     if (asset) params.set("asset", asset);
+    if (network) params.set("network", network);
     if (verify) params.set("verify", "1");
     return overlayLink(`?${params}`);
 }
@@ -76,10 +80,18 @@ interface SheetProps {
 /** 浮层的外框.一次性的轻任务放在这里,关掉回到原处. */
 export function Sheet({ title, width = 560, children }: SheetProps) {
     const close = useCloseOverlay();
+    const [open, setOpen] = useState(true);
     const popup = useRef<HTMLDivElement>(null);
     useKeyboardInset();
     return (
-        <Dialog.Root open onOpenChange={(open) => (open ? undefined : close())}>
+        // 放完离场动效才改网址.ponytail: 浏览器返回和保存后关闭直接卸载,没有离场动效,要有就得让 Overlays 延迟卸载.
+        <Dialog.Root
+            open={open}
+            onOpenChange={(next) => setOpen(next)}
+            onOpenChangeComplete={(next) => {
+                if (!next) close();
+            }}
+        >
             <Dialog.Portal>
                 <Dialog.Backdrop className="scrim fixed inset-0 z-30" />
                 {/* 焦点放在浮层本身,打开时关闭按钮不显示焦点环. */}

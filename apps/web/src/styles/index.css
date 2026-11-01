@@ -271,7 +271,7 @@
     .setting-main {
         display: flex;
         min-width: 0;
-        flex: 1 1 8rem;
+        flex: 1 1 min-content;
         flex-direction: column;
         gap: 2px;
     }
@@ -376,8 +376,6 @@
 
     /* 浮层:宽屏居中,手机上从底部升起.内容自成容器,里面的栅格按浮层宽度切换. */
     .sheet {
-        --sheet-x: 0;
-        --sheet-y: 0;
         position: fixed;
         z-index: 30;
         inset-inline: 0;

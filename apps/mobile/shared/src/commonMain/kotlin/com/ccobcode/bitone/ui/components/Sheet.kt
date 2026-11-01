@@ -1,11 +1,12 @@
 package com.ccobcode.bitone.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,7 +30,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import com.ccobcode.bitone.flow.WalletFlow
 import com.ccobcode.bitone.ui.theme.BitOneTheme
 import com.ccobcode.bitone.ui.theme.FontSize
@@ -68,16 +68,16 @@ internal fun BoxScope.Sheet(
     CloseOnBack(flow, visible, onClose)
     val c = BitOneTheme.colors
     val shape = RoundedCornerShape(topStart = Radius.r4, topEnd = Radius.r4)
-    val rise = with(LocalDensity.current) { Motion.rise.roundToPx() }
     AnimatedVisibility(
         visible,
         Modifier.matchParentSize(),
-        enter = fadeIn(stateSpec()),
-        exit = fadeOut(exitSpec(Motion.fast)),
+        enter = EnterTransition.None,
+        exit = ExitTransition.None,
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Box(
                 Modifier.fillMaxSize()
+                    .animateEnterExit(enter = fadeIn(stateSpec()), exit = fadeOut(exitSpec()))
                     .background(c.camera.copy(alpha = Motion.scrim))
                     .clickable(interactionSource = null, indication = null, onClick = onClose)
             )
@@ -85,8 +85,8 @@ internal fun BoxScope.Sheet(
                 Column(
                     Modifier.contentColumn()
                         .animateEnterExit(
-                            enter = slideInVertically(enterSpec()) { rise } + scaleIn(enterSpec(), Motion.popScale),
-                            exit = scaleOut(exitSpec(Motion.fast), Motion.popScale),
+                            enter = slideInVertically(enterSpec()) { it },
+                            exit = slideOutVertically(exitSpec()) { it },
                         )
                         .elevation(BitOneTheme.elevation.elevation3, shape)
                         .background(c.surface2, shape)
