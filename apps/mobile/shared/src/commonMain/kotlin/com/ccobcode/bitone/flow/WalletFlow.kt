@@ -46,6 +46,9 @@ class WalletFlow(
 
     private var noticeSerial = 0
 
+    /** 操作进行中离开了前台,[onBackground] 没有动页面.系统屏幕锁确认也会这样,回到前台时清掉. */
+    private var leftWhileBusy = false
+
     var report by mutableStateOf<SelfCheckReport?>(null)
         private set
 
@@ -144,6 +147,7 @@ class WalletFlow(
 
     /** 启动和每次回到前台都调用,见 docs/04 §2.2. */
     fun onResume() {
+        leftWhileBusy = false
         scope.launch {
             recheck()
             // 从系统设置授权回来,直接进扫码.
@@ -216,6 +220,9 @@ class WalletFlow(
                 block()
             } finally {
                 busy = false
+                // 操作结束时人还不在,助记词不留在页面上.
+                if (leftWhileBusy && Screen.ViewWords in stack) settings.leaveViewWords()
+                leftWhileBusy = false
             }
         }
     }
@@ -319,7 +326,10 @@ class WalletFlow(
         pin.clearInput()
         scan.holdCancel()
         // 系统屏幕锁确认也会走到这里,操作进行中不动页面.
-        if (busy) return
+        if (busy) {
+            leftWhileBusy = true
+            return
+        }
         if (settings.changingPin) settings.leaveChangePin()
         if (Screen.ViewWords in stack) settings.leaveViewWords()
         if (session.passphraseRequired) forgetSessionKeys()

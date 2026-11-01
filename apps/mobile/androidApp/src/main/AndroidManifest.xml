@@ -32,12 +32,13 @@
         android:theme="@style/Theme.BitOne"
         tools:ignore="UnusedAttribute">
 
-        <!-- 配置变化不重建 Activity,秘密输入不经过 saved instance state. -->
+        <!-- 配置变化不重建 Activity,秘密输入不经过 saved instance state.亲和性为空,别的应用不能把页面放进本应用的任务. -->
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
             android:exported="true"
             android:launchMode="singleTask"
+            android:taskAffinity=""
             android:windowSoftInputMode="stateAlwaysHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

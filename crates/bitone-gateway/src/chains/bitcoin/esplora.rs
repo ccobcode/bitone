@@ -4,7 +4,7 @@ use super::shape::{FINAL_CONFIRMATIONS, fee_rates, history_item, is_already_know
 use super::{Queries, Utxo};
 use crate::upstream::{
     Balance, Broadcast, Cursor, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, RawTx, StreamPage, Tx, TxStatus,
-    Upstream, balance, merge_pages, rejected, run_all, stream_index, streams,
+    Upstream, balance, merge_pages, read_text, rejected, run_all, stream_index, streams,
 };
 use bitcoin::hex::FromHex;
 use bitone_core::Network;
@@ -139,7 +139,7 @@ impl Esplora {
     async fn submit(&self, raw: &RawTx) -> Result<Broadcast, Broadcast> {
         let response = self.http.request(Method::POST, "/tx").body(raw.hex()).send().await?;
         let status = response.status();
-        let text = response.text().await.map_err(|_| Broadcast::Unknown)?;
+        let text = read_text(response).await.map_err(|_| Broadcast::Unknown)?;
         if status.is_success() {
             return Ok(Broadcast::Accepted);
         }

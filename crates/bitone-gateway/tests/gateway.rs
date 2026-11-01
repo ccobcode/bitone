@@ -155,7 +155,7 @@ fn evm_config(urls: &[&str], extra: &str) -> String {
 
 #[tokio::test]
 async fn version_lists_only_configured_networks() {
-    let config = "[networks.solana]\nupstreams = ['http://a']\n[networks.bitcoin]\nupstreams = ['http://b']\n[networks.sepolia]\nupstreams = []";
+    let config = "[networks.solana]\nupstreams = ['https://a']\n[networks.bitcoin]\nupstreams = ['https://b']\n[networks.sepolia]\nupstreams = []";
     let gateway = Gateway::start(config).await;
     let body: Value = gateway.get("/v1/version").await.json().await.unwrap();
     assert_eq!(
@@ -166,8 +166,8 @@ async fn version_lists_only_configured_networks() {
 
 #[tokio::test]
 async fn version_lists_networks_without_history() {
-    let config = "[networks.ethereum]\nupstreams = ['http://a']\nindexer = 'http://b'\n\
-                  [networks.bsc]\nupstreams = ['http://a']\n[networks.solana]\nupstreams = ['http://a']";
+    let config = "[networks.ethereum]\nupstreams = ['https://a']\nindexer = 'https://b'\n\
+                  [networks.bsc]\nupstreams = ['https://a']\n[networks.solana]\nupstreams = ['https://a']";
     let gateway = Gateway::start(config).await;
     let body: Value = gateway.get("/v1/version").await.json().await.unwrap();
     assert_eq!(body["noHistory"], json!(["bsc"]));
@@ -819,6 +819,28 @@ async fn ws_address_cap_is_per_connection() {
     // 另一个连接的额度是独立的.
     let mut other = gateway.ws().await;
     assert!(call(&mut other, subscribe_message(1, &addresses)).await["result"].is_string());
+}
+
+/// 上限按 IP 累计,开再多连接也一样.退订后名额归还.
+#[tokio::test]
+async fn ws_addresses_are_limited_per_ip_across_connections() {
+    let (_, url) = EvmNode::start("0x1").await;
+    let gateway = Gateway::start(&evm_config(&[&url], "ws_max_addresses_per_ip = 150")).await;
+    let addresses: Vec<String> = (0..100).map(|i| format!("0x{i:040x}")).collect();
+
+    let mut first = gateway.ws().await;
+    let reply = call(&mut first, subscribe_message(1, &addresses)).await;
+    assert!(reply["result"].is_string(), "{reply}");
+
+    let mut second = gateway.ws().await;
+    let refused = call(&mut second, subscribe_message(1, &addresses)).await;
+    assert_eq!(refused["error"]["data"]["code"], "too_many_addresses");
+    let fits = call(&mut second, subscribe_message(2, &addresses[..50])).await;
+    assert!(fits["result"].is_string(), "{fits}");
+
+    let unsubscribe = json!({"jsonrpc": "2.0", "id": 3, "method": "unsubscribe", "params": [fits["result"]]});
+    assert_eq!(call(&mut second, unsubscribe).await["result"], true);
+    assert!(call(&mut second, subscribe_message(4, &addresses[..50])).await["result"].is_string());
 }
 
 #[tokio::test]

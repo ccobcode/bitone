@@ -29,6 +29,7 @@ import {
     type Route,
 } from "../testing";
 import { clearLocalData, db, planOf } from "./db";
+import { CONFLICT_SPACING } from "./machine";
 import { broadcastTx, createReplacement, createSetup, createTransfer, replaceAndCancel, resendTx } from "./transfer";
 import { applyObservation, cancelTx, markSigned, sweepExpired, withAccountLock } from "./txs";
 
@@ -165,6 +166,62 @@ describe("EVM 构建", () => {
         expect((await db.txs.get(tx.id))?.state).toBe("uncertain");
         await expect(createTransfer(evmDraft())).rejects.toMatchObject({ code: "duplicate" });
         expect(planOf(await createTransfer(evmDraft(999n)), "evm").nonce).toBe(8);
+    });
+
+    describe("网关谎报序号已被用掉", () => {
+        const unknown = {
+            hash: "0x1",
+            status: "unknown",
+            stage: null,
+            confirmations: 0,
+            block: null,
+            fee: null,
+        } as const;
+
+        async function sent() {
+            evmGateway(7, { "ethereum/broadcast": () => ({ hash: "0x1", status: "accepted" }) });
+            const tx = await createTransfer(evmDraft());
+            await markSigned(tx.id, { raw: "aa", hash: "0x1" });
+            await broadcastTx(tx.id);
+            return tx;
+        }
+
+        it("占用不释放,同样的转账发不出去,nonce 不会被跳过", async () => {
+            const tx = await sent();
+            const now = Date.now();
+            await applyObservation(tx.id, unknown, { now, conflict: true });
+            await applyObservation(tx.id, unknown, { now: now + CONFLICT_SPACING, conflict: true });
+            expect((await db.txs.get(tx.id))?.state).toBe("uncertain");
+            expect(await db.reservations.toArray()).toMatchObject([{ value: "7", txIds: [tx.id] }]);
+            await expect(createTransfer(evmDraft())).rejects.toMatchObject({ code: "duplicate" });
+        });
+
+        it("早先标成已替换,但替换交易不是这个浏览器发出的,同样的转账也发不出去", async () => {
+            const tx = await sent();
+            await db.txs.update(tx.id, { state: "replaced" });
+            await expect(createTransfer(evmDraft())).rejects.toMatchObject({ code: "duplicate" });
+            expect(planOf(await createTransfer(evmDraft(999n)), "evm").nonce).toBe(8);
+        });
+
+        it("这个浏览器发出的替换交易上链后是定论,可以再发", async () => {
+            const tx = await sent();
+            await db.txs.update(tx.id, { state: "replaced", replacedBy: "TX-2" });
+            expect((await createTransfer(evmDraft())).state).toBe("signing");
+        });
+
+        it("这个浏览器的替换交易上链才标成已替换,原交易和它共用占用", async () => {
+            const tx = await sent();
+            const now = Date.now();
+            await applyObservation(tx.id, unknown, { now, conflict: true });
+            await applyObservation(tx.id, unknown, { now: now + CONFLICT_SPACING, conflict: true });
+            const next = await createReplacement(must(await db.txs.get(tx.id)), "rebuild", side(PATHS.evm));
+            await markSigned(next.id, { raw: "bb", hash: "0x2" });
+            evmGateway(7, { "ethereum/broadcast": () => ({ hash: "0x2", status: "accepted" }) });
+            await broadcastTx(next.id);
+            const included = { ...unknown, hash: "0x2", status: "included", stage: "latest", block: 5 } as const;
+            await applyObservation(next.id, included, { now });
+            expect(await db.txs.get(tx.id)).toMatchObject({ state: "replaced", replacedBy: next.id });
+        });
     });
 
     it("本地过期释放占用,已过期的待签名交易变成已放弃", async () => {

@@ -119,7 +119,7 @@ class SetupFlow internal constructor(private val host: FlowHost, private val pin
 
     /** 换长度就是换一组新助记词,已抄写的作废. */
     fun setBackupWordCount(count: Int) = host.guarded {
-        if (count == wordCount) return@guarded
+        if (count == wordCount || !host.recheck()) return@guarded
         replaceDraft(withContext(work) { core.generateDraft(count) }, count)
         loadBackupWords()
     }
@@ -164,6 +164,7 @@ class SetupFlow internal constructor(private val host: FlowHost, private val pin
     }
 
     fun backToBackup() = host.guarded {
+        if (!host.recheck()) return@guarded
         quiz = emptyList()
         picks = emptyMap()
         verifyState = VerifyState.Pending
@@ -299,6 +300,8 @@ class SetupFlow internal constructor(private val host: FlowHost, private val pin
         val passphrase = passphraseEnabled
         host.guarded {
             pin.error = null
+            // 抄写和设 PIN 可能停留很久,加密落盘之前再自检一次.
+            if (!host.recheck()) return@guarded
             try {
                 val saved =
                     withContext(work) {

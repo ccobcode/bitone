@@ -99,6 +99,14 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
 
     private var holdJob: Job? = null
 
+    /** A6 的内容看到底才能确认.一屏放得下时一进页面就是 true,看过之后不再收回. */
+    var reviewRead by mutableStateOf(false)
+        private set
+
+    fun reviewScrolled(canScrollForward: Boolean) {
+        if (!canScrollForward) reviewRead = true
+    }
+
     // AS
 
     var failure by mutableStateOf("")
@@ -239,6 +247,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
             }
             reviewed.refused -> refuse(reviewed.alerts.firstOrNull() ?: "这笔交易包含禁止的动作")
             else -> {
+                reviewRead = false
                 result = ScanResult.Request(reviewed)
                 host.stack = listOf(Screen.Home, Screen.Review)
             }
@@ -282,12 +291,13 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
     // A6
 
     fun confirmTap() {
-        if (review?.confirm == ConfirmMode.Tap && host.screen == Screen.Review) proceedToPin()
+        if (reviewRead && review?.confirm == ConfirmMode.Tap && host.screen == Screen.Review) proceedToPin()
     }
 
     /** 按下时开始计时,满 3 秒才继续,中途松手作废.Tap 和 Refuse 都走不到这里. */
     fun holdStart() {
-        if (review?.confirm != ConfirmMode.Hold || host.screen != Screen.Review || host.busy || holdJob != null) return
+        if (review?.confirm != ConfirmMode.Hold || host.screen != Screen.Review || host.busy) return
+        if (!reviewRead || holdJob != null) return
         holdJob =
             host.scope.launch {
                 repeat(HOLD_TICKS) { tick ->
@@ -335,9 +345,14 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         return SignOutcome.Signed(outcome.frames, wallet.fingerprint(), keys)
     }
 
-    private fun applySigned(outcome: SignOutcome) {
+    private suspend fun applySigned(outcome: SignOutcome) {
         when (outcome) {
             is SignOutcome.Signed -> {
+                // 解开钱包要几秒,这期间失败的自检不能被签名盖住.签名丢掉,回到 A7 可以重来.
+                if (!host.recheck() || host.screen != Screen.Unlock) {
+                    outcome.stream.close()
+                    return
+                }
                 session.remember(outcome.keys, outcome.fingerprint)
                 player.show(outcome.stream)
                 scanned = null

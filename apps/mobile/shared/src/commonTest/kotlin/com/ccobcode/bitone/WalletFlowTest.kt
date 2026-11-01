@@ -229,6 +229,44 @@ class WalletFlowTest {
     }
 
     @Test
+    fun selfCheckStopsSealingTheSeed() = runTest {
+        val rig = rig()
+        val flow = boot(rig)
+        passVerify(flow)
+        rig.check.facts = facts(wifiOn = true)
+        finishWithPin(flow)
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        assertEquals(0, rig.key.binds)
+        assertNull(rig.store.vault)
+    }
+
+    @Test
+    fun selfCheckStopsShowingTheSeedAgain() = runTest {
+        val rig = rig()
+        val flow = boot(rig)
+        toVerify(flow)
+        rig.check.facts = facts(wifiOn = true)
+        flow.setup.backToBackup()
+        advanceUntilIdle()
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        assertTrue(flow.setup.backupWords.isEmpty())
+    }
+
+    @Test
+    fun selfCheckStopsShowingANewSeed() = runTest {
+        val rig = rig()
+        val flow = boot(rig)
+        flow.setup.startCreate()
+        advanceUntilIdle()
+        val old = rig.core.lastDraft!!
+        rig.check.facts = facts(wifiOn = true)
+        flow.setup.setBackupWordCount(24)
+        advanceUntilIdle()
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        assertEquals(old, rig.core.lastDraft)
+    }
+
+    @Test
     fun failedVerifyCannotBeCorrectedInPlace() = runTest {
         val rig = rig()
         val flow = boot(rig)

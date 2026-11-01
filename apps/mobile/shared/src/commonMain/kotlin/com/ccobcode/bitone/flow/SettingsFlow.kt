@@ -55,8 +55,11 @@ class SettingsFlow internal constructor(private val host: FlowHost, private val 
                 UnlockTask(
                     use = { wallet, _ -> wallet.words() },
                     finish = { words ->
-                        viewWords = words
-                        host.showOnly(Screen.ViewWords)
+                        // 解开钱包要几秒,这期间失败的自检不能被助记词盖住.
+                        if (host.recheck() && host.screen == Screen.Unlock) {
+                            viewWords = words
+                            host.showOnly(Screen.ViewWords)
+                        }
                     },
                 )
             }

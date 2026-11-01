@@ -2,7 +2,7 @@
 
 use crate::upstream::{
     Balance, Broadcast, Cursor, Failed, HistoryItem, HistoryPage, Http, NATIVE, Query, RawTx, Signal, StreamPage, Tx,
-    TxStatus, Upstream, balance, decimal, merge_pages, rejected, run_all, stream_index, streams,
+    TxStatus, Upstream, balance, decimal, merge_pages, read_json, rejected, run_all, stream_index, streams,
 };
 use bitcoin::base58;
 use bitcoin::hex::FromHex;
@@ -392,7 +392,7 @@ impl Tron {
         if !response.status().is_success() {
             return Ok(Broadcast::Unknown);
         }
-        let reply: Value = response.json().await.map_err(|_| Broadcast::Unknown)?;
+        let reply = read_json(response).await.map_err(|_| Broadcast::Unknown)?;
         Ok(match submitted(&reply) {
             Ok(()) => Broadcast::Accepted,
             Err(Some(message)) => rejected(self, raw, message).await,

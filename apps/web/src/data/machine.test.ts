@@ -11,6 +11,7 @@ import {
     holdsReservation,
     isOverdue,
     isWatched,
+    mayStillLand,
     observe,
     transition,
     type ChainObservation,
@@ -74,6 +75,7 @@ const EDGES: [TxState, TxEvent, TxState][] = [
     ["uncertain", "seen", "broadcast"],
     ["uncertain", "replaced", "replaced"],
     ["broadcast", "included", "confirming"],
+    ["broadcast", "conflict", "uncertain"],
     ["broadcast", "replaced", "replaced"],
     ["broadcast", "expired", "expired"],
     ["confirming", "reorg", "broadcast"],
@@ -94,6 +96,7 @@ const EVENTS: TxEvent[] = [
     "rejected",
     "retry",
     "seen",
+    "conflict",
     "replaced",
     "expired",
     "included",
@@ -209,14 +212,20 @@ describe("observe", () => {
         expect(observe(tx("uncertain"), seen("unknown"), { now: NOW }).state).toBe("uncertain");
     });
 
-    it("连续两轮看到证据才算被替换", () => {
+    it("证据只来自网关时不算被替换,连续两轮后是结果不明,不释放占用", () => {
         for (const state of ["broadcast", "uncertain"] as const) {
             const first = observe(tx(state), seen("unknown"), { now: NOW, conflict: true });
             expect(first).toMatchObject({ state, conflicts: 1 });
             const second = observe(first, seen("unknown"), { now: NOW + CONFLICT_SPACING, conflict: true });
-            expect(second.state).toBe("replaced");
+            expect(second.state).toBe("uncertain");
             expect(second.conflicts).toBe(CONFLICT_ROUNDS);
+            expect(holdsReservation(second)).toBe(true);
         }
+        const moved = observe(tx("broadcast", { conflicts: 1 }), seen("unknown"), { now: NOW, conflict: true });
+        expect(moved.lastError).toContain("没有定论");
+        expect(moved.timeline).toHaveLength(2);
+        const again = observe(moved, seen("unknown"), { now: NOW + CONFLICT_SPACING, conflict: true });
+        expect(again.timeline).toHaveLength(2);
     });
 
     it("挨着的两次查询不算两轮", () => {
@@ -293,6 +302,13 @@ describe("占用和超时", () => {
         for (const state of ["confirmed", "failed", "replaced", "expired"] as const) {
             expect(holdsReservation(tx(state))).toBe(false);
         }
+    });
+
+    it("已替换要有本地的替换交易才算定论", () => {
+        expect(mayStillLand(tx("uncertain"))).toBe(true);
+        expect(mayStillLand(tx("replaced"))).toBe(true);
+        expect(mayStillLand(tx("replaced", { replacedBy: "TX-2" }))).toBe(false);
+        expect(mayStillLand(tx("broadcast"))).toBe(false);
     });
 
     it("已广播超时:Bitcoin 24 小时,EVM 30 分钟,其他链不提示", () => {

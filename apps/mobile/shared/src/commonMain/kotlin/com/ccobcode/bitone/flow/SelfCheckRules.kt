@@ -15,8 +15,12 @@ class SelfCheckReport(val items: List<CheckItem>) {
     val failed: Int
         get() = items.count { it.state == CheckState.Fail }
 
+    /** 不拦截,但签名之前也要让用户看到. */
+    val warnings: List<CheckItem>
+        get() = items.filter { it.state == CheckState.Warn }
+
     val warned: Int
-        get() = items.count { it.state == CheckState.Warn }
+        get() = warnings.size
 
     /** 有未通过项时,创建,解锁,显示助记词都不允许. */
     val blocked: Boolean

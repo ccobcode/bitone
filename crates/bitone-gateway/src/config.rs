@@ -29,6 +29,8 @@ pub struct Config {
     /// 只有来自这些 IP 的请求才读 X-Forwarded-For.默认为空,不信任任何代理.
     pub trusted_proxies: Vec<IpAddr>,
     pub ws_max_connections_per_ip: usize,
+    /// 一个 IP 全部连接合计能订阅的地址数.
+    pub ws_max_addresses_per_ip: usize,
     pub prices: Option<PricesConfig>,
     #[serde(deserialize_with = "networks")]
     pub networks: HashMap<Network, NetworkConfig>,
@@ -65,6 +67,7 @@ impl Default for Config {
             rate_limit_per_second: 20.0,
             trusted_proxies: Vec::new(),
             ws_max_connections_per_ip: 64,
+            ws_max_addresses_per_ip: 20_000,
             prices: None,
             networks: HashMap::new(),
         }
@@ -178,6 +181,9 @@ impl Config {
         }
         if self.ws_max_connections_per_ip == 0 {
             return Err("ws_max_connections_per_ip 至少为 1".into());
+        }
+        if self.ws_max_addresses_per_ip == 0 {
+            return Err("ws_max_addresses_per_ip 至少为 1".into());
         }
         if let Some(dir) = &self.web_dir
             && !dir.join("index.html").is_file()
@@ -323,31 +329,75 @@ mod tests {
             "trusted_proxies = ['10.0.0.1', '2001:db8::1']\n\
              [prices]\napi_key_header = 'x-cg-demo-api-key'\napi_key = 'k'\n\
              [prices.ids]\n'ethereum:{USDT}' = 'tether'\n\
-             [networks.tron]\nupstreams = ['http://a']\ntron_api_key = 'k'\n\
-             [networks.ethereum]\nupstreams = ['http://a']\nindexer = 'https://eth.blockscout.com/api'\n"
+             [networks.tron]\nupstreams = ['https://a']\ntron_api_key = 'k'\n\
+             [networks.ethereum]\nupstreams = ['https://a']\nindexer = 'https://eth.blockscout.com/api'\n"
         );
         let config = Config::parse(&text).unwrap();
         assert_eq!(config.trusted_proxies.len(), 2);
         assert_eq!(config.networks[&Network::Tron].tron_api_key.as_deref(), Some("k"));
     }
 
+    fn network(id: &str, option: &str, url: &str) -> Result<Config, String> {
+        Config::parse(&format!(
+            "[networks.{id}]\n{option} = '{url}'\nupstreams = ['https://a']"
+        ))
+    }
+
+    fn upstream(id: &str, url: &str) -> Result<Config, String> {
+        Config::parse(&format!("[networks.{id}]\nupstreams = ['{url}']"))
+    }
+
+    #[test]
+    fn mainnet_refuses_plaintext_to_public_servers() {
+        for url in [
+            "tcp://electrum.example:50001",
+            "tcp://8.8.8.8:50001",
+            "http://node.example",
+        ] {
+            assert!(upstream("bitcoin", url).is_err(), "{url}");
+            assert!(upstream("btc-testnet4", url).is_ok(), "{url}");
+        }
+        assert!(upstream("ethereum", "http://node.example").is_err());
+        assert!(upstream("tron", "http://8.8.8.8:8090").is_err());
+        assert!(upstream("solana", "http://node.example").is_err());
+        assert!(network("ethereum", "indexer", "http://indexer.example").is_err());
+        assert!(network("sepolia", "indexer", "http://indexer.example").is_ok());
+    }
+
+    /// 自建节点常常不加密,流量不出这台机器或内网.
+    #[test]
+    fn mainnet_accepts_plaintext_to_local_servers() {
+        for url in [
+            "tcp://127.0.0.1:50001",
+            "tcp://localhost:50001",
+            "tcp://10.0.0.5:50001",
+            "http://192.168.1.2:3000",
+            "http://172.20.0.3:3000",
+            "http://[::1]:3000",
+            "http://[fd00::1]:3000",
+        ] {
+            assert!(upstream("bitcoin", url).is_ok(), "{url}");
+        }
+    }
+
     #[test]
     fn rejects_bad_config() {
         for text in [
-            "[networks.dogecoin]\nupstreams = ['http://a']",
+            "[networks.dogecoin]\nupstreams = ['https://a']",
             "[networks.bitcoin]\nupstreams = ['ftp://a']",
-            "[networks.bitcoin]\nupstreams = ['http://a']\ntokens = ['x']",
-            "[networks.ethereum]\nupstreams = ['http://a']\ntokens = ['0x12']",
-            "[networks.ethereum]\nupstreams = ['http://a']\ntron_api_key = 'k'",
-            "[networks.tron]\nupstreams = ['http://a']\ntron_api_key = \"a\nb\"",
-            "[networks.tron]\nupstreams = ['http://a']\nindexer = 'http://b'",
-            "[networks.ethereum]\nupstreams = ['http://a']\nindexer = 'ftp://b'",
-            "[networks.ethereum]\nupstreams = ['http://a']\nindexer_token = 'k'",
-            "[networks.ethereum]\nupstreams = ['http://a']\nindexer = 'http://b'\nindexer_token = \"a\nb\"",
+            "[networks.bitcoin]\nupstreams = ['https://a']\ntokens = ['x']",
+            "[networks.ethereum]\nupstreams = ['https://a']\ntokens = ['0x12']",
+            "[networks.ethereum]\nupstreams = ['https://a']\ntron_api_key = 'k'",
+            "[networks.tron]\nupstreams = ['https://a']\ntron_api_key = \"a\nb\"",
+            "[networks.tron]\nupstreams = ['https://a']\nindexer = 'https://b'",
+            "[networks.ethereum]\nupstreams = ['https://a']\nindexer = 'ftp://b'",
+            "[networks.ethereum]\nupstreams = ['https://a']\nindexer_token = 'k'",
+            "[networks.ethereum]\nupstreams = ['https://a']\nindexer = 'https://b'\nindexer_token = \"a\nb\"",
             "web_dir = '/nonexistent/bitone'",
             "ws_heartbeat_ms = 0",
             "follow_poll_interval_ms = 0",
             "ws_max_connections_per_ip = 0",
+            "ws_max_addresses_per_ip = 0",
             "rate_limit_burst = 0",
             "trusted_proxies = ['10.0.0.0/8']",
             "trusted_proxies = ['not-an-ip']",

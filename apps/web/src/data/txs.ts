@@ -273,7 +273,7 @@ async function releaseHolder(id: string): Promise<void> {
     announce();
 }
 
-/** 已放弃的交易这一轮的序号是否已被用掉.和被替换的判定一样,要连续看到才释放. */
+/** 已放弃的交易这一轮的序号是否已被用掉.要连续看到才释放. */
 export async function noteSpent(id: string, spent: boolean, now = Date.now()): Promise<void> {
     const tx = await db.txs.get(id);
     if (!tx) return;

@@ -4,6 +4,7 @@
 use crate::cache::Cached;
 use crate::config::PricesConfig;
 use crate::error::ApiError;
+use crate::upstream::read_json;
 use reqwest::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::Value;
@@ -67,7 +68,7 @@ impl Prices {
         let query = [("ids", ids.join(",")), ("vs_currencies", CURRENCY.to_string())];
         let request = self.client.get(&self.url).headers(self.headers.clone()).query(&query);
         let response = request.send().await.ok()?.error_for_status().ok()?;
-        parse(&response.json().await.ok()?, &self.ids)
+        parse(&read_json(response).await.ok()?, &self.ids)
     }
 
     pub async fn get(&self) -> Result<PriceMap, ApiError> {

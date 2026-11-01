@@ -4,7 +4,7 @@ import { formatAsset, lookupAsset, type AssetEntry } from "../core/manifest";
 import { shortAddress } from "../core/text";
 import { txKey, type ChainEntry, type FeedCursor, type Note, type TxRecord, type TxState } from "../data/db";
 import { walletView } from "../data/feed";
-import { STATE_LABELS, failureNote, isOverdue, type ChainStatus } from "../data/machine";
+import { STATE_LABELS, failureNote, isOverdue, mayStillLand, type ChainStatus } from "../data/machine";
 import type { Target } from "./assets";
 import { MAX_ADDRESSES, addressKey, chunks, type HistoryItem } from "./client";
 import { t } from "../core/i18n";
@@ -97,7 +97,9 @@ function localNote(tx: TxRecord): Pick<FeedRow, "note" | "noteTone"> {
         case "failed":
             return { note: failureNote(tx), noteTone: "danger" };
         case "replaced":
-            return { note: t("被同一序号的交易替换"), noteTone: "muted" };
+            return mayStillLand(tx)
+                ? { note: t("替换没有定论,这笔仍可能上链"), noteTone: "warn" }
+                : { note: t("被同一序号的交易替换"), noteTone: "muted" };
         case "expired":
             return { note: t("超过过期时间,未上链"), noteTone: "muted" };
         case "abandoned":

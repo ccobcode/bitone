@@ -1,0 +1,137 @@
+package com.ccobcode.bitone
+
+import com.ccobcode.bitone.flow.CURRENT_CONTROLLER
+import com.ccobcode.bitone.flow.NEW_CONTROLLER
+import com.ccobcode.bitone.flow.ReviewStyle
+import com.ccobcode.bitone.flow.actionRows
+import com.ccobcode.bitone.flow.controllerCard
+import com.ccobcode.bitone.flow.evaluate
+import com.ccobcode.bitone.flow.isMainnet
+import com.ccobcode.bitone.platform.ConfirmMode
+import com.ccobcode.bitone.platform.HardwareLevel
+import com.ccobcode.bitone.platform.ReviewAction
+import com.ccobcode.bitone.platform.ReviewResult
+import com.ccobcode.bitone.platform.ReviewRow
+import com.ccobcode.bitone.platform.Risk
+import com.ccobcode.bitone.ui.screens.FIRST_SCREEN_LABELS
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+private const val PAYER = "payer"
+private const val HARMLESS = "harmless"
+private const val ATTACKER = "attacker"
+
+class ReviewRulesTest {
+    private fun change(current: String, next: String) =
+        ReviewAction(
+            Risk.PermissionChange,
+            "SetAuthority",
+            listOf(
+                ReviewRow(CURRENT_CONTROLLER, current, true),
+                ReviewRow(NEW_CONTROLLER, next, true),
+                ReviewRow("账户", "token", true),
+            ),
+        )
+
+    private fun permission(vararg actions: ReviewAction, payerLabel: String = "付款账户", counterparty: String = "") =
+        reviewOf(
+            Risk.PermissionChange,
+            ConfirmMode.Hold,
+            actions = actions.toList(),
+            rows = listOf(ReviewRow(payerLabel, PAYER, true)),
+            counterparty = counterparty,
+        )
+
+    /** 页面在动作里列出的某个标签的值,按动作分组. */
+    private fun shown(review: ReviewResult, label: String) =
+        actionRows(review, ReviewStyle.Permission).map { rows -> rows.filter { it.label == label }.map { it.value } }
+
+    @Test
+    fun everyNewControllerStaysInItsAction() {
+        val review = permission(change(PAYER, HARMLESS), change(PAYER, ATTACKER))
+        assertNull(controllerCard(review))
+        assertEquals(listOf(listOf(HARMLESS), listOf(ATTACKER)), shown(review, NEW_CONTROLLER))
+        assertEquals(listOf(listOf(PAYER), listOf(PAYER)), shown(review, CURRENT_CONTROLLER))
+    }
+
+    /** EVM 把最后一个委托放进 counterparty,其余的委托不能因此消失. */
+    @Test
+    fun severalDelegatesAreAllShown() {
+        val review = permission(change(PAYER, HARMLESS), change(PAYER, ATTACKER), counterparty = ATTACKER)
+        assertNull(controllerCard(review))
+        assertEquals(listOf(listOf(HARMLESS), listOf(ATTACKER)), shown(review, NEW_CONTROLLER))
+    }
+
+    @Test
+    fun differentCurrentControllersAreNotFolded() {
+        val review = permission(change(PAYER, ATTACKER), change("other", ATTACKER))
+        assertNull(controllerCard(review))
+        assertEquals(listOf(listOf(PAYER), listOf("other")), shown(review, CURRENT_CONTROLLER))
+    }
+
+    @Test
+    fun oneControlChangeMovesToTheCard() {
+        val review = permission(change(PAYER, ATTACKER), change(PAYER, ATTACKER))
+        val card = assertNotNull(controllerCard(review))
+        assertEquals(PAYER, card.current)
+        assertEquals(ATTACKER, card.next)
+        assertEquals(listOf(emptyList(), emptyList()), shown(review, NEW_CONTROLLER))
+        assertEquals(listOf(listOf("token"), listOf("token")), shown(review, "账户"))
+    }
+
+    @Test
+    fun ownChipNeedsThePayer() {
+        assertTrue(controllerCard(permission(change(PAYER, ATTACKER)))!!.own)
+        assertTrue(controllerCard(permission(change(PAYER, ATTACKER), payerLabel = "手续费支付者"))!!.own)
+        assertFalse(controllerCard(permission(change("other", ATTACKER)))!!.own)
+        assertFalse(controllerCard(permission(change("缺失", ATTACKER), payerLabel = "别的标签"))!!.own)
+    }
+
+    @Test
+    fun otherPagesKeepEveryRow() {
+        val action = change(PAYER, ATTACKER)
+        assertEquals(listOf(action.rows), actionRows(permission(action), ReviewStyle.Plain))
+    }
+
+    /** 和核心库的 `Network::ALL` 逐个对应. */
+    @Test
+    fun modeMatchesTheCore() {
+        listOf("bitcoin", "ethereum", "bsc", "polygon", "tron", "solana").forEach { assertTrue(isMainnet(it), it) }
+        listOf(
+                "btc-testnet4",
+                "btc-signet",
+                "btc-testnet3",
+                "sepolia",
+                "hoodi",
+                "bsc-testnet",
+                "amoy",
+                "tron-nile",
+                "tron-shasta",
+                "solana-devnet",
+                "solana-testnet",
+            )
+            .forEach { assertFalse(isMainnet(it), it) }
+    }
+
+    @Test
+    fun anUnknownNetworkStillGetsThePrompt() {
+        assertTrue(isMainnet("dogecoin"))
+    }
+
+    @Test
+    fun priorityFeeIsOnTheFirstScreen() {
+        assertTrue("优先费" in FIRST_SCREEN_LABELS)
+    }
+
+    @Test
+    fun warningsReachTheReviewPage() {
+        val report = evaluate(facts(keystore = HardwareLevel.Tee, overlayApps = 2))
+        assertFalse(report.blocked)
+        assertEquals(listOf("硬件密钥库", "悬浮窗应用"), report.warnings.map { it.label })
+        assertTrue(evaluate(GoodFacts).warnings.isEmpty())
+    }
+}

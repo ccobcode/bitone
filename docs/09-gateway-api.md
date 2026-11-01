@@ -32,7 +32,7 @@
 }
 ```
 
-没有 `contract` 时是原生币.`since` 是这批地址上次的 `checkpoint`.`group` 是客户端的分批编号,同一网络,同一 `since`,同一 `group` 的条目一起查询,一组最多 100 个地址.一次最多 1000 个条目.
+没有 `contract` 时是原生币.`since` 是这批地址上次的 `checkpoint`.`group` 是客户端的分批编号,同一网络,同一 `since`,同一 `group` 的条目一起查询,一组最多 100 个地址.一次最多 1000 个条目.每组消耗一个限流令牌,不够时整个请求返回 `rate_limited`.
 
 ```text
 {"network":"ethereum","addresses":["0x..."],"height":20000100,"balances":[{"address":"0x...","asset":"native","amount":"1"}],"history":{"items":[],"cursor":null,"checkpoint":"20000040","unchanged":false}}
@@ -263,7 +263,7 @@ JSON-RPC 2.0.`addresses` 频道:
 
 `ping` 方法返回 `"pong"`.浏览器看不到 WebSocket 的 ping 帧,要靠它发现连接已经断了.
 
-订阅只存在于当前连接的内存里.Bitcoin 的余额只算已确认.
+订阅只存在于当前连接的内存里.Bitcoin 的余额只算已确认.单连接或单 IP 的地址数超过上限时返回 `too_many_addresses`.
 
 `tx` 频道:
 

@@ -1,10 +1,12 @@
 //! 快照:一次取回多个网络的余额,高度和历史.
 
 use super::query::history_reply;
+use super::{AppState, ClientIp};
 use crate::chains::is_valid;
-use crate::chains::request::{Body, MAX_ADDRESSES, Shared, checked, parse, present};
+use crate::chains::request::{Body, MAX_ADDRESSES, checked, parse, present};
 use crate::error::ApiError;
 use crate::upstream::{NATIVE, Networks};
+use axum::Extension;
 use axum::extract::State;
 use axum::http::header::CONTENT_TYPE;
 use axum::response::Response;
@@ -14,10 +16,11 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashSet};
 use std::convert::Infallible;
+use std::sync::Arc;
 
 /// 一次快照的条目上限,和 WebSocket 单连接的地址上限一致.
 const MAX_SNAPSHOT_ITEMS: usize = 1000;
-/// 一个快照同时查询的组数.组由客户端指定,一个请求只消耗一个限流令牌,不能打出任意多的上游并发.
+/// 一个快照同时查询的组数.组由客户端指定,不能打出任意多的上游并发.
 const MAX_SNAPSHOT_QUERIES: usize = Network::ALL.len();
 
 #[derive(Deserialize)]
@@ -86,8 +89,13 @@ async fn snapshot_group(
 }
 
 /// 一次取回多个网络的最新状态.响应是一行一个 JSON,哪批先查完就先发,慢的网络不拖累其他网络.
-/// 一个网络失败不影响其他网络,那一行的 `error` 带错误码.
-pub async fn snapshot(State(networks): Shared, body: Body) -> Result<Response, ApiError> {
+/// 一个网络失败不影响其他网络,那一行的 `error` 带错误码.每组消耗一个限流令牌,上游成本跟着组数走.
+pub async fn snapshot(
+    State(state): State<Arc<AppState>>,
+    Extension(ClientIp(ip)): Extension<ClientIp>,
+    body: Body,
+) -> Result<Response, ApiError> {
+    let networks = &state.networks;
     let request: SnapshotRequest = parse(body)?;
     if request.items.len() > MAX_SNAPSHOT_ITEMS {
         return Err(ApiError::TooManyAddresses);
@@ -109,6 +117,9 @@ pub async fn snapshot(State(networks): Shared, body: Body) -> Result<Response, A
         group
             .assets
             .insert(asset_key(&item.address, contract.unwrap_or(NATIVE)));
+    }
+    if !state.limiter.charge(ip, groups.len().saturating_sub(1)) {
+        return Err(ApiError::RateLimited);
     }
     let mut queries = Vec::with_capacity(groups.len());
     for ((id, since, _), mut group) in groups {

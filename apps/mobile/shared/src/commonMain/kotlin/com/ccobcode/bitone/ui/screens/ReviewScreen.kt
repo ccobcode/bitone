@@ -15,20 +15,30 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import com.ccobcode.bitone.flow.CURRENT_CONTROLLER
+import com.ccobcode.bitone.flow.NEW_CONTROLLER
+import com.ccobcode.bitone.flow.NO_CONTROLLER
 import com.ccobcode.bitone.flow.Network
+import com.ccobcode.bitone.flow.PARTY_LABELS
 import com.ccobcode.bitone.flow.ReviewStyle
 import com.ccobcode.bitone.flow.WalletFlow
+import com.ccobcode.bitone.flow.actionRows
+import com.ccobcode.bitone.flow.controllerCard
+import com.ccobcode.bitone.flow.isMainnet
 import com.ccobcode.bitone.flow.networkInfo
 import com.ccobcode.bitone.flow.reviewStyle
 import com.ccobcode.bitone.flow.shortAddress
@@ -65,20 +75,20 @@ import com.ccobcode.bitone.ui.theme.Radius
 import com.ccobcode.bitone.ui.theme.Space
 
 private const val FROM_WEB = "BitOne 网页端不会发起这类交易."
+private const val SCROLL_FIRST = "滚到底部后确认"
 
 /** 每个输入固定这几行,A6e 要把它们从详情里分出来. */
 private val INPUT_LABELS = setOf("付款账户", "派生路径", "输入金额")
-private val PARTY_LABELS = setOf("收款地址", "目标合约", "被授权方")
 
 /** 第一屏直接显示的字段,其余进"详情".这只是展示分组. */
-private val FIRST_SCREEN_LABELS = setOf("网络", "手续费上限", "手续费", "基础费", "fee_limit")
-private const val CURRENT_CONTROLLER = "当前控制方"
-private const val NEW_CONTROLLER = "新控制方"
+internal val FIRST_SCREEN_LABELS = setOf("网络", "手续费上限", "手续费", "基础费", "优先费", "fee_limit")
 
 /**
  * A6 到 A6e.分类全部来自核心库,这里按 [reviewStyle] 选样式,字段原样画出来.
  *
  * 第一屏只放金额,对方地址,风险,网络和手续费,进入时不做错开,只随页面一起出现.其余字段放在"详情"里,一项都不省略,普通交易默认折叠,高风险样式默认展开.分组只看标签,风险判断全在核心库.
+ *
+ * 主网请求在最上面提示,网络名在金额上方.内容滚到底之后确认按钮才可用.
  */
 @Composable
 fun ReviewScreen(flow: WalletFlow) {
@@ -86,12 +96,17 @@ fun ReviewScreen(flow: WalletFlow) {
     val c = BitOneTheme.colors
     val style = reviewStyle(review)
     val network = networkInfo(review.network)
+    val scroll = rememberScrollState()
+    LaunchedEffect(scroll) { snapshotFlow { scroll.canScrollForward }.collect { flow.scan.reviewScrolled(it) } }
     Page(
         header = { TitleBar("核对交易", onBack = { flow.back() }) { StyleChip(review, style) } },
         contentGap = if (style == ReviewStyle.Plain) Space.s5 else Space.s4,
         bottom = { ReviewActions(flow, review) },
+        scroll = scroll,
     ) {
+        if (isMainnet(review.network)) RiskBanner("主网,真实资产", emptyList(), warn = true)
         Banner(review, style)
+        Txt(network?.name ?: review.network, weight = Medium, color = c.text2)
         when (style) {
             ReviewStyle.Plain -> {
                 AmountBlock(review, network?.icon, kind = kindLabel(review))
@@ -118,6 +133,7 @@ fun ReviewScreen(flow: WalletFlow) {
         }
         val inline = Actions(review, style)
         Rows(review.rows.filter { it.label in FIRST_SCREEN_LABELS })
+        flow.report?.warnings?.forEach { RiskBanner(it.label, listOf(it.value), warn = true) }
         val rest = inline + review.rows.filterNot { it.label in FIRST_SCREEN_LABELS }
         Details(rest, style, bitcoin = network?.icon == Network.Bitcoin)
         RawData(review.raw, initiallyOpen = style == ReviewStyle.Unknown)
@@ -173,6 +189,7 @@ private fun Banner(review: ReviewResult, style: ReviewStyle) {
         ReviewStyle.Unknown ->
             RiskBanner(
                 warn = true,
+                icon = Icons.Unknown,
                 title = "本机无法解析这笔交易",
                 lines = listOf("只在确认来源可信时签名.", FROM_WEB) + review.alerts,
             )
@@ -190,7 +207,7 @@ private fun Banner(review: ReviewResult, style: ReviewStyle) {
 }
 
 @Composable
-private fun RiskBanner(title: String, lines: List<String>, warn: Boolean = false) {
+private fun RiskBanner(title: String, lines: List<String>, warn: Boolean = false, icon: String = Icons.Alert) {
     val c = BitOneTheme.colors
     val tone = if (warn) c.warn else c.danger
     Row(
@@ -199,7 +216,7 @@ private fun RiskBanner(title: String, lines: List<String>, warn: Boolean = false
             .padding(Space.s4),
         horizontalArrangement = Arrangement.spacedBy(Space.s3),
     ) {
-        LineIcon(if (warn) Icons.Unknown else Icons.Alert, 20.dp, tone)
+        LineIcon(icon, 20.dp, tone)
         Column(verticalArrangement = Arrangement.spacedBy(Space.s1)) {
             Txt(title, weight = SemiBold, color = tone)
             lines.forEach { Txt(it, size = FontSize.t2) }
@@ -305,37 +322,26 @@ private fun PackedParties(review: ReviewResult) {
     parties.forEach { AddressCard(it.label, it.value) }
 }
 
-/** A6d.当前控制方在动作的行里,没有时就是付款账户. */
+/** A6d.当前控制方在动作的行里,没有时就是付款账户.控制方不止一组时没有卡片,都在下面的动作里. */
 @Composable
 private fun Controllers(review: ReviewResult) {
     val c = BitOneTheme.colors
-    val inner = review.actions.flatMap { it.rows }
-    val current =
-        inner.firstOrNull { it.label == CURRENT_CONTROLLER }?.value
-            ?: review.rows.firstOrNull { it.label == "付款账户" }?.value
-    val next = review.counterparty ?: inner.firstOrNull { it.label == NEW_CONTROLLER }?.value
-    if (current != null) {
-        AddressCard(CURRENT_CONTROLLER, current) { Chip("本账户", c.okSoft, c.ok) }
+    val card = controllerCard(review) ?: return
+    if (card.current != null) {
+        AddressCard(CURRENT_CONTROLLER, card.current) { if (card.own) Chip("本账户", c.okSoft, c.ok) }
     }
-    if (next != null) {
-        AddressCard(NEW_CONTROLLER, next, c.dangerSoft) { Chip("外部地址", c.surface, c.danger) }
+    if (card.next != null) {
+        AddressCard(NEW_CONTROLLER, card.next, c.dangerSoft) {
+            if (card.next != NO_CONTROLLER) Chip("外部地址", c.surface, c.danger)
+        }
     }
 }
 
-/** 全部动作.Bitcoin 的动作就是全部输出,多个动作也都留在第一屏,不能折叠起来.控制方已经在上面的卡片里,这里不重复.只有一个动作时不用标题,返回它的字段,放进"详情". */
+/** 全部动作.Bitcoin 的动作就是全部输出,多个动作也都留在第一屏,不能折叠起来.只有一个动作时不用标题,返回它的字段,放进"详情". */
 @Composable
 private fun Actions(review: ReviewResult, style: ReviewStyle): List<ReviewRow> {
     val bitcoin = networkInfo(review.network)?.icon == Network.Bitcoin
-    val shown =
-        review.actions.map { action ->
-            if (style == ReviewStyle.Permission) {
-                action.rows.filterNot {
-                    it.label == CURRENT_CONTROLLER || it.label == NEW_CONTROLLER || it.label in PARTY_LABELS
-                }
-            } else {
-                action.rows
-            }
-        }
+    val shown = actionRows(review, style)
     if (bitcoin || review.actions.size > 1) {
         Section(if (bitcoin) "全部输出" else "全部动作") {
             review.actions.forEachIndexed { index, action -> ActionBlock(action.title, action.risk, shown[index]) }
@@ -443,19 +449,24 @@ private fun RawData(lines: List<RawLine>, initiallyOpen: Boolean) {
     }
 }
 
-/** 普通交易的主按钮是确认,拒绝是文字按钮.高风险时拒绝是主按钮,长按放在下面. */
+/** 普通交易的主按钮是确认,拒绝是文字按钮.高风险时拒绝是主按钮,长按放在下面.拒绝不用等滚到底. */
 @Composable
 private fun ReviewActions(flow: WalletFlow, review: ReviewResult) {
+    val read = flow.scan.reviewRead
     ActionArea {
         if (review.confirm == ConfirmMode.Tap) {
-            PrimaryButton("确认并签名", enabled = !flow.busy, onClick = flow.scan::confirmTap)
+            PrimaryButton(
+                if (read) "确认并签名" else SCROLL_FIRST,
+                enabled = read && !flow.busy,
+                onClick = flow.scan::confirmTap,
+            )
             TextButton("拒绝", onClick = flow.scan::exitRequest)
         } else {
             PrimaryButton("拒绝", onClick = flow.scan::exitRequest)
             HoldButton(
-                "长按签名",
+                if (read) "长按签名" else SCROLL_FIRST,
                 flow.scan.holdProgress,
-                enabled = !flow.busy,
+                enabled = read && !flow.busy,
                 onPress = flow.scan::holdStart,
                 onRelease = flow.scan::holdCancel,
             )

@@ -110,19 +110,60 @@ describe("savePairing", () => {
         expect(await db.accounts.count()).toBe(10);
     });
 
-    it("同一路径的公钥不同时保留本地账户", async () => {
-        await save("主钱包");
+    describe("公钥和手机不同", () => {
         const accountId = `${id}:m/84'/0'/0'`;
-        await db.addresses.update([accountId, 0, 0], { verified: true });
-        const other = must(await db.accounts.get(`${id}:m/86'/0'/0'`)).key;
-        const changed = {
-            ...pairing,
-            accounts: pairing.accounts.map((a) => (a.path === "m/84'/0'/0'" ? { ...a, key: other } : a)),
-        };
-        await savePairing(changed, { name: "主钱包", paths: allPaths(), mode: "mainnet" });
-        const row = await db.addresses.get([accountId, 0, 0]);
-        expect(row?.verified).toBe(true);
-        expect(row?.address).toBe("bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu");
+        const genuine = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu";
+
+        async function poison(): Promise<string> {
+            await save("主钱包");
+            const key = must(await db.accounts.get(`${id}:m/86'/0'/0'`)).key;
+            await db.accounts.update(accountId, { key });
+            await db.addresses.where("accountId").equals(accountId).modify({ address: "bc1qattacker", verified: true });
+            return `${id}:bitcoin:bc1qattacker`;
+        }
+
+        it("换成手机的公钥,地址重新派生,都未核对", async () => {
+            await poison();
+            await save("主钱包");
+            const phone = pairing.accounts.find((a) => a.path === "m/84'/0'/0'");
+            expect((await db.accounts.get(accountId))?.key).toEqual(phone?.key);
+            const rows = await db.addresses.where("accountId").equals(accountId).toArray();
+            expect(rows).toHaveLength(GAP_LIMIT * 2);
+            expect(rows.every((row) => !row.verified)).toBe(true);
+            expect((await db.addresses.get([accountId, 0, 0]))?.address).toBe(genuine);
+        });
+
+        it("没有勾选这个账户时也要换,被污染的账户不能留着", async () => {
+            await poison();
+            await save("主钱包", new Set([EVM_PATH]));
+            expect((await db.addresses.get([accountId, 0, 0]))?.address).toBe(genuine);
+        });
+
+        it("旧地址的同步进度和记录一起清掉,别的批次不受影响", async () => {
+            const stream = await poison();
+            const row = { walletId: id, network: "bitcoin", amount: "1", asset: "native", hash: "h", txKey: "k" };
+            const cursor = { network: "bitcoin", checkpoint: "1", older: null };
+            await db.feedCursors.bulkPut([
+                { ...cursor, id: stream, addresses: ["bc1qattacker"] },
+                { ...cursor, id: `${id}:bitcoin:keep`, addresses: ["keep"] },
+            ]);
+            await db.chainTxs.bulkPut([
+                { ...row, id: "a", stream, time: 1, from: null, to: null, status: "finalized" },
+                { ...row, id: "b", stream: `${id}:bitcoin:keep`, time: 1, from: null, to: null, status: "finalized" },
+            ]);
+            await db.settings.put({ key: `discovery:${accountId}:bitcoin`, value: 1 });
+            await save("主钱包");
+            expect((await db.feedCursors.toArray()).map((item) => item.id)).toEqual([`${id}:bitcoin:keep`]);
+            expect((await db.chainTxs.toArray()).map((item) => item.id)).toEqual(["b"]);
+            expect(await db.settings.get(`discovery:${accountId}:bitcoin`)).toBeUndefined();
+        });
+
+        it("公钥相同时核对状态保持不变", async () => {
+            await save("主钱包");
+            await db.addresses.update([accountId, 0, 0], { verified: true });
+            await save("主钱包");
+            expect((await db.addresses.get([accountId, 0, 0]))?.verified).toBe(true);
+        });
     });
 
     it("派生失败时什么都不写", async () => {

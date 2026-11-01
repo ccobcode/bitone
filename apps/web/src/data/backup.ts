@@ -5,13 +5,14 @@
 // 地址从公钥重新派生,路径只接受白名单,导入的账户全部未核对,联系人全部待确认.
 // 已配对的钱包不接受备份改动账户:同一路径公钥不同时保留本地的,本地没有的路径也不写入,
 // 指纹是公开的 4 字节,否则备份能往已配对的钱包里塞进攻击者的公钥.只能由冷钱包重新配对添加.
+// 全新浏览器导入的公钥同样不可信,重新配对时以手机为准.
 import { deriveAddress, isChain } from "../chains";
 import { accountSpecList, primaryNetwork, validateAddress, type AccountKind, type Chain, type Mode } from "../core";
 import { cleanText, isRecord } from "../core/text";
 import { addressKey } from "../gateway/client";
 import { MAX_CONTACT_NAME } from "./contacts";
 import { db, type Account, type Wallet } from "./db";
-import { addressRows, walletId } from "./pairing";
+import { addressRows, sameBytes, walletId } from "./pairing";
 import { t } from "../core/i18n";
 
 export const BACKUP_FORMAT = "bitone-backup";
@@ -253,12 +254,12 @@ export async function importBackup(text: string, passphrase: string): Promise<Im
 
     return db.transaction("rw", [db.wallets, db.accounts, db.addresses, db.contacts, db.notes], async () => {
         const summary: ImportSummary = { wallets: 0, accounts: 0, conflicts: 0, contacts: 0, notes: 0, first: null };
-        const paired = new Set<string>();
+        // 本地已有的钱包都算已配对,不看文件的 wallets,否则 wallets 为空的文件能绕过.
+        const paired = new Set(await db.wallets.toCollection().primaryKeys());
         for (const item of wallets) {
             const id = walletId(item.fingerprint, item.mode);
             const existing = await db.wallets.get(id);
             if (existing) {
-                paired.add(id);
                 summary.first ??= existing;
                 continue;
             }
@@ -296,8 +297,4 @@ export async function importBackup(text: string, passphrase: string): Promise<Im
         }
         return summary;
     });
-}
-
-function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
-    return a.length === b.length && a.every((byte, i) => byte === b[i]);
 }

@@ -2,7 +2,7 @@
 
 use super::adapter::{BATCH_SIZE, Evm, TRANSFER, evm_call, item_status, log_topic, topic_address};
 use crate::upstream::{
-    Failed, HistoryItem, NATIVE, Signal, hex_to_decimal, hex_u64, next_message, open_socket, run_all, send_call,
+    Failed, HistoryItem, NATIVE, Signal, hex_to_decimal, hex_u64, next_message, open_socket, run_each, send_call,
 };
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -25,14 +25,23 @@ fn needs_baseline(natives: &HashMap<String, String>, owners: &HashMap<String, St
 
 impl Evm {
     /// 一批地址的原生币余额.比完整区块轻得多,还能发现区块交易列表里没有的内部转账.
+    /// 地址来自所有用户,一批失败时只少这批的结果.全部失败才算这个上游不可用.
     async fn native_balances(&self, addresses: &[String]) -> Result<HashMap<String, String>, Failed> {
         let calls: Vec<(&str, Value)> = addresses.iter().map(|a| evm_call(a, NATIVE)).collect();
-        let results = run_all(calls.chunks(BATCH_SIZE).map(|chunk| self.batch(chunk)).collect()).await?;
-        addresses
-            .iter()
-            .zip(&results)
-            .map(|(address, hex)| Ok((address.clone(), hex.as_str().ok_or(Failed)?.to_string())))
-            .collect()
+        let queries = calls.chunks(BATCH_SIZE).zip(addresses.chunks(BATCH_SIZE));
+        let queries = queries.map(|(calls, owners)| async move {
+            let results = self.batch(calls).await?;
+            owners
+                .iter()
+                .zip(&results)
+                .map(|(address, hex)| Ok((address.clone(), hex.as_str().ok_or(Failed)?.to_string())))
+                .collect::<Result<Vec<_>, Failed>>()
+        });
+        let replies = run_each(queries.collect()).await;
+        if !replies.is_empty() && replies.iter().all(Result::is_err) {
+            return Err(Failed);
+        }
+        Ok(replies.into_iter().flatten().flatten().collect())
     }
 
     /// 跟块.`newHeads` 给高度.代币转账用 `logs` 订阅,由节点按地址过滤,内部转账也在里面,
@@ -52,6 +61,8 @@ impl Evm {
         let mut owners: HashMap<String, String> = HashMap::new();
         let mut natives: HashMap<String, String> = HashMap::new();
         let mut checked = Instant::now();
+        // 上一次有地址没查到时不用每个块都重查,等固定的间隔.
+        let mut complete = true;
         addresses.mark_changed();
         loop {
             tokio::select! {
@@ -80,19 +91,26 @@ impl Evm {
                     } else if let Some(number) = result.get("number") {
                         signals.send(Signal::Head(hex_u64(number)?)).await.map_err(|_| Failed)?;
                         let fresh = needs_baseline(&natives, &owners);
-                        if fresh || checked.elapsed() >= NATIVE_CHECK {
+                        if (fresh && complete) || checked.elapsed() >= NATIVE_CHECK {
                             checked = Instant::now();
                             let watched: Vec<String> = owners.values().cloned().collect();
-                            let current = self.native_balances(&watched).await?;
+                            let mut current = self.native_balances(&watched).await?;
+                            complete = current.len() == watched.len();
                             let touched: Vec<String> = current
                                 .iter()
                                 .filter(|(address, amount)| natives.get(*address).is_some_and(|last| last != *amount))
                                 .map(|(address, _)| address.clone())
                                 .collect();
+                            // 没查到的地址留着上次的基线,下次接着比较.
+                            for address in &watched {
+                                if let Some(last) = natives.remove(address) {
+                                    current.entry(address.clone()).or_insert(last);
+                                }
+                            }
                             natives = current;
                             signals.send(Signal::Touched(touched)).await.map_err(|_| Failed)?;
                             // 这里的基线比订阅的基线晚,两者之间的变化要靠对账找回来.
-                            if fresh {
+                            if fresh && complete {
                                 signals.send(Signal::Reconcile).await.map_err(|_| Failed)?;
                             }
                         }

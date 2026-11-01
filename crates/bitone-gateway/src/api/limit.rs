@@ -1,4 +1,4 @@
-//! 按 IP 的令牌桶和 WebSocket 连接数上限.只用来控制成本,见 docs/04-security.md §5.
+//! 按 IP 的令牌桶和 WebSocket 的名额.只用来控制成本,见 docs/04-security.md §5.
 
 use axum::http::HeaderMap;
 use std::collections::{HashMap, HashSet};
@@ -55,7 +55,16 @@ impl RateLimiter {
         self.allow_at(ip, Instant::now())
     }
 
+    /// 再扣 `extra` 个令牌,请求本身的一个已经扣过.桶装不下时按桶的容量算,否则这个请求永远过不了.
+    pub fn charge(&self, ip: IpAddr, extra: usize) -> bool {
+        self.take(ip, (extra as f64).min(self.burst - 1.0), Instant::now())
+    }
+
     fn allow_at(&self, ip: IpAddr, now: Instant) -> bool {
+        self.take(ip, 1.0, now)
+    }
+
+    fn take(&self, ip: IpAddr, cost: f64, now: Instant) -> bool {
         let (burst, per_second) = (self.burst, self.per_second);
         let mut inner = self.inner.lock().unwrap();
         if now.duration_since(inner.swept) >= SWEEP_PERIOD {
@@ -72,9 +81,9 @@ impl RateLimiter {
         let bucket = inner.buckets.entry(bucket_key(ip)).or_insert(new_bucket);
         bucket.tokens = bucket.refilled(now, per_second).min(burst);
         bucket.updated = now;
-        let allowed = bucket.tokens >= 1.0;
+        let allowed = bucket.tokens >= cost;
         if allowed {
-            bucket.tokens -= 1.0;
+            bucket.tokens -= cost;
         }
         allowed
     }
@@ -102,19 +111,20 @@ pub fn client_ip(peer: IpAddr, trusted: &HashSet<IpAddr>, headers: &HeaderMap) -
     client
 }
 
-/// 每个 IP 同时打开的 WebSocket 连接数.计数归零就删除,IP 不在内存里多留.
-pub struct ConnectionLimit {
+/// 每个 IP 同时占用的名额,WebSocket 的连接数和订阅的地址数各有一个.计数归零就删除,IP 不在内存里多留.
+pub struct IpLimit {
     max: usize,
     counts: Arc<Mutex<HashMap<IpAddr, usize>>>,
 }
 
-/// 连接占用的名额,丢弃时归还.
-pub struct ConnectionSlot {
+/// 占用的名额,丢弃时归还.
+pub struct IpSlot {
     key: IpAddr,
+    units: usize,
     counts: Arc<Mutex<HashMap<IpAddr, usize>>>,
 }
 
-impl ConnectionLimit {
+impl IpLimit {
     pub fn new(max: usize) -> Self {
         Self {
             max,
@@ -122,26 +132,27 @@ impl ConnectionLimit {
         }
     }
 
-    pub fn acquire(&self, ip: IpAddr) -> Option<ConnectionSlot> {
+    pub fn acquire(&self, ip: IpAddr, units: usize) -> Option<IpSlot> {
         let key = bucket_key(ip);
         let mut counts = self.counts.lock().unwrap();
-        let count = counts.entry(key).or_insert(0);
-        if *count >= self.max {
+        let used = counts.get(&key).copied().unwrap_or(0);
+        if used + units > self.max {
             return None;
         }
-        *count += 1;
-        Some(ConnectionSlot {
+        counts.insert(key, used + units);
+        Some(IpSlot {
             key,
+            units,
             counts: self.counts.clone(),
         })
     }
 }
 
-impl Drop for ConnectionSlot {
+impl Drop for IpSlot {
     fn drop(&mut self) {
         let mut counts = self.counts.lock().unwrap();
         if let Some(count) = counts.get_mut(&self.key) {
-            *count -= 1;
+            *count -= self.units;
             if *count == 0 {
                 counts.remove(&self.key);
             }
@@ -194,6 +205,16 @@ mod tests {
         limiter.allow_at(ip("2.2.2.2"), now + SWEEP_PERIOD);
         let buckets = &limiter.inner.lock().unwrap().buckets;
         assert_eq!(buckets.keys().copied().collect::<Vec<_>>(), vec![ip("2.2.2.2")]);
+    }
+
+    #[test]
+    fn charge_takes_the_extra_tokens_and_never_exceeds_the_bucket() {
+        let limiter = RateLimiter::new(10.0, 0.001);
+        assert!(limiter.charge(ip("1.1.1.1"), 4));
+        assert!(!limiter.charge(ip("1.1.1.1"), 7));
+        assert!(limiter.charge(ip("1.1.1.1"), 6));
+        assert!(limiter.charge(ip("2.2.2.2"), 1000), "桶是满的时候大请求也能过");
+        assert!(!limiter.charge(ip("2.2.2.2"), 1000));
     }
 
     fn forwarded(values: &[&str]) -> HeaderMap {
@@ -252,24 +273,36 @@ mod tests {
     }
 
     #[test]
-    fn connection_slots_are_returned_on_drop() {
-        let limit = ConnectionLimit::new(2);
-        let first = limit.acquire(ip("1.1.1.1")).unwrap();
-        let second = limit.acquire(ip("1.1.1.1")).unwrap();
-        assert!(limit.acquire(ip("1.1.1.1")).is_none());
-        assert!(limit.acquire(ip("2.2.2.2")).is_some());
+    fn slots_are_returned_on_drop() {
+        let limit = IpLimit::new(2);
+        let first = limit.acquire(ip("1.1.1.1"), 1).unwrap();
+        let second = limit.acquire(ip("1.1.1.1"), 1).unwrap();
+        assert!(limit.acquire(ip("1.1.1.1"), 1).is_none());
+        assert!(limit.acquire(ip("2.2.2.2"), 1).is_some());
         drop(first);
-        let third = limit.acquire(ip("1.1.1.1")).unwrap();
+        let third = limit.acquire(ip("1.1.1.1"), 1).unwrap();
         drop((second, third));
         assert!(limit.counts.lock().unwrap().is_empty(), "IP 不能留在内存里");
     }
 
     #[test]
-    fn connection_limit_shares_a_64_and_mapped_addresses() {
-        let limit = ConnectionLimit::new(1);
-        let _slot = limit.acquire(ip("2001:db8:1:2::1")).unwrap();
-        assert!(limit.acquire(ip("2001:db8:1:2::2")).is_none());
-        let _mapped = limit.acquire(ip("1.2.3.4")).unwrap();
-        assert!(limit.acquire(ip("::ffff:1.2.3.4")).is_none());
+    fn slots_count_units_and_a_refused_request_takes_nothing() {
+        let limit = IpLimit::new(10);
+        let held = limit.acquire(ip("1.1.1.1"), 8).unwrap();
+        assert!(limit.acquire(ip("1.1.1.1"), 3).is_none());
+        let rest = limit.acquire(ip("1.1.1.1"), 2).unwrap();
+        drop(held);
+        drop(rest);
+        assert!(limit.acquire(ip("1.1.1.1"), 11).is_none());
+        assert!(limit.counts.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn slots_share_a_64_and_mapped_addresses() {
+        let limit = IpLimit::new(1);
+        let _slot = limit.acquire(ip("2001:db8:1:2::1"), 1).unwrap();
+        assert!(limit.acquire(ip("2001:db8:1:2::2"), 1).is_none());
+        let _mapped = limit.acquire(ip("1.2.3.4"), 1).unwrap();
+        assert!(limit.acquire(ip("::ffff:1.2.3.4"), 1).is_none());
     }
 }

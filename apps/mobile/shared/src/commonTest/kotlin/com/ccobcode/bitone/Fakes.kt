@@ -25,8 +25,10 @@ import com.ccobcode.bitone.platform.Platform
 import com.ccobcode.bitone.platform.QrMatrix
 import com.ccobcode.bitone.platform.QrScanner
 import com.ccobcode.bitone.platform.QuizItem
+import com.ccobcode.bitone.platform.ReviewAction
 import com.ccobcode.bitone.platform.ReviewAmount
 import com.ccobcode.bitone.platform.ReviewResult
+import com.ccobcode.bitone.platform.ReviewRow
 import com.ccobcode.bitone.platform.Risk
 import com.ccobcode.bitone.platform.ScreenGuard
 import com.ccobcode.bitone.platform.SecureStore
@@ -99,6 +101,9 @@ fun reviewOf(
     alerts: List<String> = emptyList(),
     mismatch: Boolean = false,
     requestFingerprint: String? = null,
+    actions: List<ReviewAction> = emptyList(),
+    rows: List<ReviewRow> = emptyList(),
+    counterparty: String = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
 ) =
     ReviewResult(
         risk = risk,
@@ -107,10 +112,10 @@ fun reviewOf(
         title = "普通转账",
         amount = ReviewAmount("1", "ETH", "ethereum:native", "eth", false),
         counterpartyLabel = "收款地址",
-        counterparty = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        counterparty = counterparty,
         alerts = alerts,
-        actions = emptyList(),
-        rows = emptyList(),
+        actions = actions,
+        rows = rows,
         raw = emptyList(),
         fingerprintMismatch = mismatch,
         requestFingerprint = requestFingerprint,
@@ -296,6 +301,9 @@ class FakeCore : WalletCore {
     /** 模拟 Argon2 途中被杀进程. */
     var killDuringOpen = false
 
+    /** Argon2 途中发生的事,比如按 Home 或者打开 Wi-Fi. */
+    var onOpen: () -> Unit = {}
+
     /** 下一次核对的结果. */
     var review = reviewOf()
 
@@ -332,6 +340,7 @@ class FakeCore : WalletCore {
 
     override fun open(sealed: ByteArray, pin: String, tag: ByteArray, passphrase: String): UnlockedWallet {
         opens++
+        onOpen()
         if (killDuringOpen) error("进程被杀")
         if (sealed.decodeToString() != "sealed:$pin:${tag.decodeToString()}") throw WalletCoreException.WrongPin()
         return FakeWallet(passphrase, this).also { lastWallet = it }
