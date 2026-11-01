@@ -6,6 +6,11 @@ import { Chip } from "./primitives";
 import { AssetIcon } from "./TokenIcon";
 import { t } from "../core/i18n";
 
+/** 宽度只放得下三位数,一秒以上换成秒. */
+function latencyText(ms: number): string {
+    return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+}
+
 /** 连接状态和延迟.正常时只有圆点和延迟,出问题才显示文字和颜色.窄屏时不显示文字,放不下时也不显示延迟.延迟宽度固定,数字变化时不推动旁边的内容. */
 function LiveState() {
     const { socket, down, latency } = useGateway();
@@ -17,11 +22,11 @@ function LiveState() {
             ? { label: t("重连中"), dot: "bg-warn", text: "text-warn" }
             : { label: "", dot: "bg-ok", text: "text-text-3" };
     return (
-        <span className={`flex items-center gap-s1 text-t2 transition-colors ${state.text}`}>
+        <span className={`flex items-center gap-s1 text-t2 whitespace-nowrap transition-colors ${state.text}`}>
             <span aria-hidden="true" className={`size-2 rounded-full transition-colors ${state.dot}`} />
             {state.label ? <span className="sr-only nav:not-sr-only">{state.label}</span> : null}
             <span className="hidden w-12 tabular-nums min-[23rem]:inline">
-                {down || latency === null ? "—" : `${latency} ms`}
+                {down || latency === null ? "—" : latencyText(latency)}
             </span>
         </span>
     );

@@ -1,9 +1,10 @@
 //! WebSocket,JSON-RPC 2.0.
 //!
 //! 每个订阅是一个任务,句柄只存在于连接的内存里,连接结束时任务随之中止.
-//! 地址频道由 follow.rs 共用的跟块任务推送,其余频道各自轮询.单 IP 的连接数和单连接的订阅数都有上限.
+//! 地址频道由 follow.rs 共用的跟块任务推送,其余频道各自轮询.
+//! 单 IP 的连接数和地址总数,单连接的订阅数都有上限.
 
-use super::limit::ConnectionSlot;
+use super::limit::IpSlot;
 use super::{AppState, ClientIp};
 use crate::chains::is_valid_hash;
 use crate::chains::request::checked;
@@ -48,7 +49,7 @@ pub async fn upgrade(
     State(state): State<Arc<AppState>>,
     Extension(ClientIp(ip)): Extension<ClientIp>,
 ) -> Response {
-    let Some(slot) = state.ws_connections.acquire(ip) else {
+    let Some(slot) = state.ws_connections.acquire(ip, 1) else {
         return ApiError::RateLimited.into_response();
     };
     upgrade
@@ -165,6 +166,8 @@ struct Subscription {
     quota: Quota,
     units: usize,
     _poll: AbortOnDrop,
+    /// 地址频道占着单 IP 的地址名额.
+    _addresses: Option<IpSlot>,
 }
 
 struct Connection {
@@ -217,6 +220,16 @@ impl Connection {
         if matches!(&params, SubscribeParams::Addresses { addresses, .. } if addresses.is_empty()) {
             return Some(rpc_error(id, INVALID_PARAMS, "参数无效"));
         }
+        // 校验失败时名额随之归还.
+        let addresses = match &params {
+            SubscribeParams::Addresses { addresses, .. } => {
+                match self.state.ws_addresses.acquire(self.ip, addresses.len()) {
+                    Some(slot) => Some(slot),
+                    None => return Some(api_error(id, &ApiError::TooManyAddresses)),
+                }
+            }
+            _ => None,
+        };
         let subscription = (self.next_id + 1).to_string();
         match self.start(&subscription, id.clone(), params) {
             Ok((quota, units, task)) => {
@@ -227,6 +240,7 @@ impl Connection {
                         quota,
                         units,
                         _poll: AbortOnDrop(task),
+                        _addresses: addresses,
                     },
                 );
                 None
@@ -343,7 +357,7 @@ impl Connection {
 }
 
 /// `_slot` 占着单 IP 的连接名额,这个函数返回时归还.
-async fn run(mut socket: WebSocket, state: Arc<AppState>, ip: IpAddr, _slot: ConnectionSlot) {
+async fn run(mut socket: WebSocket, state: Arc<AppState>, ip: IpAddr, _slot: IpSlot) {
     let period = state.heartbeat;
     let mut closing = state.closing.subscribe();
     let (out, mut outbound) = mpsc::channel(OUTBOUND_QUEUE);

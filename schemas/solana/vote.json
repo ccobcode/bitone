@@ -1,0 +1,394 @@
+{
+    "kind": "rootNode",
+    "standard": "codama",
+    "version": "1.0.0",
+    "additionalPrograms": [],
+    "program": {
+        "kind": "programNode",
+        "name": "vote",
+        "publicKey": "Vote111111111111111111111111111111111111111",
+        "version": "7.3.0",
+        "origin": "solana-vote-interface",
+        "accounts": [],
+        "pdas": [],
+        "errors": [],
+        "definedTypes": [
+            {
+                "kind": "definedTypeNode",
+                "name": "voteInit",
+                "type": {
+                    "kind": "structTypeNode",
+                    "fields": [
+                        { "kind": "structFieldTypeNode", "name": "nodePubkey", "type": { "kind": "publicKeyTypeNode" } },
+                        { "kind": "structFieldTypeNode", "name": "authorizedVoter", "type": { "kind": "publicKeyTypeNode" } },
+                        { "kind": "structFieldTypeNode", "name": "authorizedWithdrawer", "type": { "kind": "publicKeyTypeNode" } },
+                        { "kind": "structFieldTypeNode", "name": "commission", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" } }
+                    ]
+                }
+            },
+            {
+                "kind": "definedTypeNode",
+                "name": "voteInitV2",
+                "type": {
+                    "kind": "structTypeNode",
+                    "fields": [
+                        { "kind": "structFieldTypeNode", "name": "nodePubkey", "type": { "kind": "publicKeyTypeNode" } },
+                        { "kind": "structFieldTypeNode", "name": "authorizedVoter", "type": { "kind": "publicKeyTypeNode" } },
+                        {
+                            "kind": "structFieldTypeNode",
+                            "name": "authorizedVoterBlsPubkey",
+                            "type": { "kind": "fixedSizeTypeNode", "size": 48, "type": { "kind": "bytesTypeNode" } }
+                        },
+                        {
+                            "kind": "structFieldTypeNode",
+                            "name": "authorizedVoterBlsProofOfPossession",
+                            "type": { "kind": "fixedSizeTypeNode", "size": 96, "type": { "kind": "bytesTypeNode" } }
+                        },
+                        { "kind": "structFieldTypeNode", "name": "authorizedWithdrawer", "type": { "kind": "publicKeyTypeNode" } },
+                        { "kind": "structFieldTypeNode", "name": "inflationRewardsCommissionBps", "type": { "kind": "numberTypeNode", "format": "u16", "endian": "le" } },
+                        { "kind": "structFieldTypeNode", "name": "blockRevenueCommissionBps", "type": { "kind": "numberTypeNode", "format": "u16", "endian": "le" } }
+                    ]
+                }
+            },
+            {
+                "kind": "definedTypeNode",
+                "name": "voteAuthorize",
+                "type": {
+                    "kind": "enumTypeNode",
+                    "size": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                    "variants": [
+                        { "kind": "enumEmptyVariantTypeNode", "name": "voter" },
+                        { "kind": "enumEmptyVariantTypeNode", "name": "withdrawer" },
+                        {
+                            "kind": "enumStructVariantTypeNode",
+                            "name": "voterWithBls",
+                            "struct": {
+                                "kind": "structTypeNode",
+                                "fields": [
+                                    {
+                                        "kind": "structFieldTypeNode",
+                                        "name": "blsPubkey",
+                                        "type": { "kind": "fixedSizeTypeNode", "size": 48, "type": { "kind": "bytesTypeNode" } }
+                                    },
+                                    {
+                                        "kind": "structFieldTypeNode",
+                                        "name": "blsProofOfPossession",
+                                        "type": { "kind": "fixedSizeTypeNode", "size": 96, "type": { "kind": "bytesTypeNode" } }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "kind": "definedTypeNode",
+                "name": "commissionKind",
+                "type": {
+                    "kind": "enumTypeNode",
+                    "size": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                    "variants": [
+                        { "kind": "enumEmptyVariantTypeNode", "name": "inflationRewards" },
+                        { "kind": "enumEmptyVariantTypeNode", "name": "blockRevenue" }
+                    ]
+                }
+            }
+        ],
+        "instructions": [
+            {
+                "kind": "instructionNode",
+                "name": "initializeAccount",
+                "optionalAccountStrategy": "omitted",
+                "accounts": [
+                    { "kind": "instructionAccountNode", "name": "voteAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "rentSysvar", "isWritable": false, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "clockSysvar", "isWritable": false, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "nodeIdentity", "isWritable": false, "isSigner": true, "isOptional": false }
+                ],
+                "arguments": [
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "discriminator",
+                        "type": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                        "defaultValue": { "kind": "numberValueNode", "number": 0 },
+                        "defaultValueStrategy": "omitted"
+                    },
+                    { "kind": "instructionArgumentNode", "name": "voteInit", "type": { "kind": "definedTypeLinkNode", "name": "voteInit" } }
+                ],
+                "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }]
+            },
+            {
+                "kind": "instructionNode",
+                "name": "authorize",
+                "optionalAccountStrategy": "omitted",
+                "accounts": [
+                    { "kind": "instructionAccountNode", "name": "voteAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "clockSysvar", "isWritable": false, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "authority", "isWritable": false, "isSigner": true, "isOptional": false }
+                ],
+                "arguments": [
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "discriminator",
+                        "type": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                        "defaultValue": { "kind": "numberValueNode", "number": 1 },
+                        "defaultValueStrategy": "omitted"
+                    },
+                    { "kind": "instructionArgumentNode", "name": "newAuthority", "type": { "kind": "publicKeyTypeNode" } },
+                    { "kind": "instructionArgumentNode", "name": "authorizationType", "type": { "kind": "definedTypeLinkNode", "name": "voteAuthorize" } }
+                ],
+                "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }]
+            },
+            {
+                "kind": "instructionNode",
+                "name": "withdraw",
+                "optionalAccountStrategy": "omitted",
+                "accounts": [
+                    { "kind": "instructionAccountNode", "name": "voteAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "recipient", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "withdrawAuthority", "isWritable": false, "isSigner": true, "isOptional": false }
+                ],
+                "arguments": [
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "discriminator",
+                        "type": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                        "defaultValue": { "kind": "numberValueNode", "number": 3 },
+                        "defaultValueStrategy": "omitted"
+                    },
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "lamports",
+                        "type": {
+                            "kind": "numberTypeNode",
+                            "format": "u64",
+                            "endian": "le",
+                            "display": { "kind": "amountNumberDisplayNode", "decimals": { "kind": "numberValueNode", "number": 9 }, "unit": { "kind": "stringValueNode", "string": "SOL" } }
+                        }
+                    }
+                ],
+                "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }]
+            },
+            {
+                "kind": "instructionNode",
+                "name": "updateValidatorIdentity",
+                "optionalAccountStrategy": "omitted",
+                "accounts": [
+                    { "kind": "instructionAccountNode", "name": "voteAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "nodeIdentity", "isWritable": false, "isSigner": true, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "withdrawAuthority", "isWritable": false, "isSigner": true, "isOptional": false }
+                ],
+                "arguments": [
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "discriminator",
+                        "type": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                        "defaultValue": { "kind": "numberValueNode", "number": 4 },
+                        "defaultValueStrategy": "omitted"
+                    }
+                ],
+                "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }]
+            },
+            {
+                "kind": "instructionNode",
+                "name": "updateCommission",
+                "optionalAccountStrategy": "omitted",
+                "accounts": [
+                    { "kind": "instructionAccountNode", "name": "voteAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "withdrawAuthority", "isWritable": false, "isSigner": true, "isOptional": false }
+                ],
+                "arguments": [
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "discriminator",
+                        "type": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                        "defaultValue": { "kind": "numberValueNode", "number": 5 },
+                        "defaultValueStrategy": "omitted"
+                    },
+                    { "kind": "instructionArgumentNode", "name": "commission", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" } }
+                ],
+                "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }]
+            },
+            {
+                "kind": "instructionNode",
+                "name": "authorizeChecked",
+                "optionalAccountStrategy": "omitted",
+                "accounts": [
+                    { "kind": "instructionAccountNode", "name": "voteAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "clockSysvar", "isWritable": false, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "authority", "isWritable": false, "isSigner": true, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "newAuthority", "isWritable": false, "isSigner": true, "isOptional": false }
+                ],
+                "arguments": [
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "discriminator",
+                        "type": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                        "defaultValue": { "kind": "numberValueNode", "number": 7 },
+                        "defaultValueStrategy": "omitted"
+                    },
+                    { "kind": "instructionArgumentNode", "name": "authorizationType", "type": { "kind": "definedTypeLinkNode", "name": "voteAuthorize" } }
+                ],
+                "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }]
+            },
+            {
+                "kind": "instructionNode",
+                "name": "authorizeWithSeed",
+                "optionalAccountStrategy": "omitted",
+                "accounts": [
+                    { "kind": "instructionAccountNode", "name": "voteAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "clockSysvar", "isWritable": false, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "authorityBase", "isWritable": false, "isSigner": true, "isOptional": false }
+                ],
+                "arguments": [
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "discriminator",
+                        "type": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                        "defaultValue": { "kind": "numberValueNode", "number": 10 },
+                        "defaultValueStrategy": "omitted"
+                    },
+                    { "kind": "instructionArgumentNode", "name": "authorizationType", "type": { "kind": "definedTypeLinkNode", "name": "voteAuthorize" } },
+                    { "kind": "instructionArgumentNode", "name": "currentAuthorityDerivedKeyOwner", "type": { "kind": "publicKeyTypeNode" } },
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "currentAuthorityDerivedKeySeed",
+                        "type": {
+                            "kind": "sizePrefixTypeNode",
+                            "prefix": { "kind": "numberTypeNode", "format": "u64", "endian": "le" },
+                            "type": { "kind": "stringTypeNode", "encoding": "utf8" }
+                        }
+                    },
+                    { "kind": "instructionArgumentNode", "name": "newAuthority", "type": { "kind": "publicKeyTypeNode" } }
+                ],
+                "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }]
+            },
+            {
+                "kind": "instructionNode",
+                "name": "authorizeCheckedWithSeed",
+                "optionalAccountStrategy": "omitted",
+                "accounts": [
+                    { "kind": "instructionAccountNode", "name": "voteAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "clockSysvar", "isWritable": false, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "authorityBase", "isWritable": false, "isSigner": true, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "newAuthority", "isWritable": false, "isSigner": true, "isOptional": false }
+                ],
+                "arguments": [
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "discriminator",
+                        "type": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                        "defaultValue": { "kind": "numberValueNode", "number": 11 },
+                        "defaultValueStrategy": "omitted"
+                    },
+                    { "kind": "instructionArgumentNode", "name": "authorizationType", "type": { "kind": "definedTypeLinkNode", "name": "voteAuthorize" } },
+                    { "kind": "instructionArgumentNode", "name": "currentAuthorityDerivedKeyOwner", "type": { "kind": "publicKeyTypeNode" } },
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "currentAuthorityDerivedKeySeed",
+                        "type": {
+                            "kind": "sizePrefixTypeNode",
+                            "prefix": { "kind": "numberTypeNode", "format": "u64", "endian": "le" },
+                            "type": { "kind": "stringTypeNode", "encoding": "utf8" }
+                        }
+                    }
+                ],
+                "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }]
+            },
+            {
+                "kind": "instructionNode",
+                "name": "initializeAccountV2",
+                "optionalAccountStrategy": "omitted",
+                "accounts": [
+                    { "kind": "instructionAccountNode", "name": "voteAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "nodeIdentity", "isWritable": false, "isSigner": true, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "inflationRewardsCollector", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "blockRevenueCollector", "isWritable": true, "isSigner": false, "isOptional": false }
+                ],
+                "arguments": [
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "discriminator",
+                        "type": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                        "defaultValue": { "kind": "numberValueNode", "number": 16 },
+                        "defaultValueStrategy": "omitted"
+                    },
+                    { "kind": "instructionArgumentNode", "name": "voteInit", "type": { "kind": "definedTypeLinkNode", "name": "voteInitV2" } }
+                ],
+                "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }]
+            },
+            {
+                "kind": "instructionNode",
+                "name": "updateCommissionCollector",
+                "optionalAccountStrategy": "omitted",
+                "accounts": [
+                    { "kind": "instructionAccountNode", "name": "voteAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "newCollector", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "withdrawAuthority", "isWritable": false, "isSigner": true, "isOptional": false }
+                ],
+                "arguments": [
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "discriminator",
+                        "type": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                        "defaultValue": { "kind": "numberValueNode", "number": 17 },
+                        "defaultValueStrategy": "omitted"
+                    },
+                    { "kind": "instructionArgumentNode", "name": "commissionKind", "type": { "kind": "definedTypeLinkNode", "name": "commissionKind" } }
+                ],
+                "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }]
+            },
+            {
+                "kind": "instructionNode",
+                "name": "updateCommissionBps",
+                "optionalAccountStrategy": "omitted",
+                "accounts": [
+                    { "kind": "instructionAccountNode", "name": "voteAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "withdrawAuthority", "isWritable": false, "isSigner": true, "isOptional": false }
+                ],
+                "arguments": [
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "discriminator",
+                        "type": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                        "defaultValue": { "kind": "numberValueNode", "number": 18 },
+                        "defaultValueStrategy": "omitted"
+                    },
+                    { "kind": "instructionArgumentNode", "name": "commissionBps", "type": { "kind": "numberTypeNode", "format": "u16", "endian": "le" } },
+                    { "kind": "instructionArgumentNode", "name": "commissionKind", "type": { "kind": "definedTypeLinkNode", "name": "commissionKind" } }
+                ],
+                "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }]
+            },
+            {
+                "kind": "instructionNode",
+                "name": "depositDelegatorRewards",
+                "optionalAccountStrategy": "omitted",
+                "accounts": [
+                    { "kind": "instructionAccountNode", "name": "voteAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "source", "isWritable": true, "isSigner": true, "isOptional": false },
+                    { "kind": "instructionAccountNode", "name": "systemProgram", "isWritable": false, "isSigner": false, "isOptional": false }
+                ],
+                "arguments": [
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "discriminator",
+                        "type": { "kind": "numberTypeNode", "format": "u32", "endian": "le" },
+                        "defaultValue": { "kind": "numberValueNode", "number": 19 },
+                        "defaultValueStrategy": "omitted"
+                    },
+                    {
+                        "kind": "instructionArgumentNode",
+                        "name": "deposit",
+                        "type": {
+                            "kind": "numberTypeNode",
+                            "format": "u64",
+                            "endian": "le",
+                            "display": { "kind": "amountNumberDisplayNode", "decimals": { "kind": "numberValueNode", "number": 9 }, "unit": { "kind": "stringValueNode", "string": "SOL" } }
+                        }
+                    }
+                ],
+                "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }]
+            }
+        ]
+    }
+}

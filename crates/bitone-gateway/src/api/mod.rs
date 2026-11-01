@@ -14,7 +14,7 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use bitone_core::Network;
-use limit::{ConnectionLimit, RateLimiter};
+use limit::{IpLimit, RateLimiter};
 use metrics::Metrics;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -57,7 +57,8 @@ pub struct AppState {
     followers: HashMap<Network, Arc<Follower>>,
     prices: Option<Prices>,
     limiter: RateLimiter,
-    ws_connections: ConnectionLimit,
+    ws_connections: IpLimit,
+    ws_addresses: IpLimit,
     trusted_proxies: HashSet<IpAddr>,
     pub metrics: Metrics,
     /// 退出信号.发送端的 `closed()` 用来等 WebSocket 连接收尾,所以这里不保存接收端.
@@ -91,7 +92,8 @@ impl AppState {
                 .as_ref()
                 .map(|prices| Prices::new(prices, &client, upstream_timeout)),
             limiter: RateLimiter::new(config.rate_limit_burst, config.rate_limit_per_second),
-            ws_connections: ConnectionLimit::new(config.ws_max_connections_per_ip),
+            ws_connections: IpLimit::new(config.ws_max_connections_per_ip),
+            ws_addresses: IpLimit::new(config.ws_max_addresses_per_ip),
             trusted_proxies: config.trusted_proxies.iter().map(|ip| ip.to_canonical()).collect(),
             metrics: Metrics::default(),
             closing: watch::Sender::new(false),
@@ -156,10 +158,6 @@ async fn record_metrics(State(state): State<Arc<AppState>>, request: Request, ne
 pub fn router(state: Arc<AppState>, web_dir: Option<&std::path::Path>) -> Router {
     // 这些接口只读网络,各条链自己的接口也在这一组.
     let queries = Router::new()
-        .route(
-            "/snapshot",
-            post(snapshot::snapshot).layer(DefaultBodyLimit::max(MAX_SNAPSHOT_BODY)),
-        )
         .route("/{network}/balances", post(query::balances))
         .route("/{network}/fees", get(query::fees))
         .route("/{network}/estimate", post(query::estimate))
@@ -176,6 +174,10 @@ pub fn router(state: Arc<AppState>, web_dir: Option<&std::path::Path>) -> Router
         .route("/version", get(version))
         .route("/prices", get(query::prices))
         .route("/ws", get(ws::upgrade))
+        .route(
+            "/snapshot",
+            post(snapshot::snapshot).layer(DefaultBodyLimit::max(MAX_SNAPSHOT_BODY)),
+        )
         .merge(queries)
         .fallback(|| async { StatusCode::NOT_FOUND })
         .layer(from_fn_with_state(state.clone(), rate_limit))

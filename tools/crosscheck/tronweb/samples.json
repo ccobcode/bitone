@@ -1,0 +1,274 @@
+{
+    "contracts": {
+        "AccountCreateContract": {
+            "ownerAddress": "@owner",
+            "accountAddress": "@peer",
+            "type": { "$enum": "AccountType", "name": "AssetIssue" }
+        },
+        "TransferContract": { "ownerAddress": "@owner", "toAddress": "@peer", "amount": 1500000 },
+        "TransferAssetContract": {
+            "assetName": "text:1002000",
+            "ownerAddress": "@owner",
+            "toAddress": "@peer",
+            "amount": 5
+        },
+        "VoteAssetContract": {
+            "ownerAddress": "@owner",
+            "voteAddress": ["@peer", "@owner"],
+            "support": true,
+            "count": 5
+        },
+        "VoteWitnessContract": {
+            "ownerAddress": "@owner",
+            "votes": [
+                { "$type": "VoteWitnessContract.Vote", "voteAddress": "@peer", "voteCount": 3 },
+                { "$type": "VoteWitnessContract.Vote", "voteAddress": "@owner", "voteCount": 4 }
+            ],
+            "support": true
+        },
+        "WitnessCreateContract": { "ownerAddress": "@owner", "url": "text:https://example.org" },
+        "AssetIssueContract": {
+            "ownerAddress": "@owner",
+            "name": "text:Token",
+            "abbr": "text:TK",
+            "totalSupply": 1000000,
+            "frozenSupply": [{ "$type": "AssetIssueContract.FrozenSupply", "frozenAmount": 7, "frozenDays": 30 }],
+            "trxNum": 1000000,
+            "precision": 6,
+            "num": 2,
+            "startTime": 1800000000000,
+            "endTime": 1800086400000,
+            "order": 1,
+            "voteScore": 1,
+            "description": "text:说明",
+            "url": "text:https://example.org",
+            "freeAssetNetLimit": 10,
+            "publicFreeAssetNetLimit": 20,
+            "publicFreeAssetNetUsage": 30,
+            "publicLatestFreeNetTime": 40
+        },
+        "WitnessUpdateContract": { "ownerAddress": "@owner", "updateUrl": "text:https://example.org" },
+        "ParticipateAssetIssueContract": {
+            "ownerAddress": "@owner",
+            "toAddress": "@peer",
+            "assetName": "text:1002000",
+            "amount": 9
+        },
+        "AccountUpdateContract": { "accountName": "text:bitone", "ownerAddress": "@owner" },
+        "FreezeBalanceContract": {
+            "ownerAddress": "@owner",
+            "frozenBalance": 1000000,
+            "frozenDuration": 3,
+            "resource": { "$enum": "ResourceCode", "name": "ENERGY" },
+            "receiverAddress": "@peer"
+        },
+        "UnfreezeBalanceContract": {
+            "ownerAddress": "@owner",
+            "resource": { "$enum": "ResourceCode", "name": "TRON_POWER" },
+            "receiverAddress": "@peer"
+        },
+        "WithdrawBalanceContract": { "ownerAddress": "@owner" },
+        "UnfreezeAssetContract": { "ownerAddress": "@owner" },
+        "UpdateAssetContract": {
+            "ownerAddress": "@owner",
+            "description": "text:说明",
+            "url": "text:https://example.org",
+            "newLimit": 5,
+            "newPublicLimit": 6
+        },
+        "ProposalCreateContract": {
+            "ownerAddress": "@owner",
+            "parameters": {
+                "$map": [
+                    [0, 5],
+                    [9, 0],
+                    [10, 7]
+                ]
+            }
+        },
+        "ProposalApproveContract": { "ownerAddress": "@owner", "proposalId": 4, "isAddApproval": true },
+        "ProposalDeleteContract": { "ownerAddress": "@owner", "proposalId": 4 },
+        "SetAccountIdContract": { "accountId": "text:bitone-id", "ownerAddress": "@owner" },
+        "CreateSmartContract": {
+            "ownerAddress": "@owner",
+            "newContract": {
+                "$type": "SmartContract",
+                "originAddress": "@owner",
+                "contractAddress": "@peer",
+                "abi": {
+                    "$type": "SmartContract.ABI",
+                    "entrys": [
+                        {
+                            "$type": "SmartContract.ABI.Entry",
+                            "anonymous": true,
+                            "constant": true,
+                            "name": "str:transfer",
+                            "inputs": [
+                                {
+                                    "$type": "SmartContract.ABI.Entry.Param",
+                                    "indexed": true,
+                                    "name": "str:to",
+                                    "type": "str:address"
+                                }
+                            ],
+                            "outputs": [
+                                { "$type": "SmartContract.ABI.Entry.Param", "name": "str:ok", "type": "str:bool" }
+                            ],
+                            "type": { "$enum": "SmartContract.ABI.Entry.EntryType", "name": "Function" },
+                            "payable": true,
+                            "statemutability": {
+                                "$enum": "SmartContract.ABI.Entry.StateMutabilityType",
+                                "name": "Payable"
+                            }
+                        }
+                    ]
+                },
+                "bytecode": "hex:6080",
+                "callValue": 1000000,
+                "consumeUserResourcePercent": 30,
+                "name": "str:Demo",
+                "originEnergyLimit": 10000000,
+                "codeHash": "hex:aabb",
+                "trxHash": "hex:ccdd",
+                "version": 1
+            },
+            "callTokenValue": 8,
+            "tokenId": 1000001
+        },
+        "TriggerSmartContract": {
+            "ownerAddress": "@owner",
+            "contractAddress": "@peer",
+            "callValue": 2000000,
+            "data": "hex:deadbeef",
+            "callTokenValue": 7,
+            "tokenId": 1000001
+        },
+        "UpdateSettingContract": {
+            "ownerAddress": "@owner",
+            "contractAddress": "@peer",
+            "consumeUserResourcePercent": 40
+        },
+        "ExchangeCreateContract": {
+            "ownerAddress": "@owner",
+            "firstTokenId": "text:_",
+            "firstTokenBalance": 100,
+            "secondTokenId": "text:1002000",
+            "secondTokenBalance": 200
+        },
+        "ExchangeInjectContract": { "ownerAddress": "@owner", "exchangeId": 1, "tokenId": "text:_", "quant": 10 },
+        "ExchangeWithdrawContract": { "ownerAddress": "@owner", "exchangeId": 1, "tokenId": "text:_", "quant": 10 },
+        "ExchangeTransactionContract": {
+            "ownerAddress": "@owner",
+            "exchangeId": 1,
+            "tokenId": "text:_",
+            "quant": 10,
+            "expected": 9
+        },
+        "UpdateEnergyLimitContract": { "ownerAddress": "@owner", "contractAddress": "@peer", "originEnergyLimit": 77 },
+        "AccountPermissionUpdateContract": {
+            "ownerAddress": "@owner",
+            "owner": {
+                "$type": "Permission",
+                "permissionName": "str:owner",
+                "threshold": 1,
+                "keys": [{ "$type": "Key", "address": "@peer", "weight": 1 }]
+            },
+            "witness": {
+                "$type": "Permission",
+                "type": { "$enum": "Permission.PermissionType", "name": "Witness" },
+                "id": 1,
+                "permissionName": "str:witness",
+                "threshold": 1,
+                "keys": [{ "$type": "Key", "address": "@peer", "weight": 1 }]
+            },
+            "actives": [
+                {
+                    "$type": "Permission",
+                    "type": { "$enum": "Permission.PermissionType", "name": "Active" },
+                    "id": 2,
+                    "permissionName": "str:active",
+                    "threshold": 2,
+                    "parentId": 1,
+                    "operations": "hex:7fff1fc0033e0000000000000000000000000000000000000000000000000000",
+                    "keys": [{ "$type": "Key", "address": "@owner", "weight": 1 }]
+                }
+            ]
+        },
+        "ClearABIContract": { "ownerAddress": "@owner", "contractAddress": "@peer" },
+        "UpdateBrokerageContract": { "ownerAddress": "@owner", "brokerage": 20 },
+        "FreezeBalanceV2Contract": {
+            "ownerAddress": "@owner",
+            "frozenBalance": 1000000,
+            "resource": { "$enum": "ResourceCode", "name": "ENERGY" }
+        },
+        "UnfreezeBalanceV2Contract": {
+            "ownerAddress": "@owner",
+            "unfreezeBalance": 1000000,
+            "resource": { "$enum": "ResourceCode", "name": "ENERGY" }
+        },
+        "WithdrawExpireUnfreezeContract": { "ownerAddress": "@owner" },
+        "DelegateResourceContract": {
+            "ownerAddress": "@owner",
+            "resource": { "$enum": "ResourceCode", "name": "ENERGY" },
+            "balance": 3000000,
+            "receiverAddress": "@peer",
+            "lock": true,
+            "lockPeriod": 86400
+        },
+        "UnDelegateResourceContract": {
+            "ownerAddress": "@owner",
+            "resource": { "$enum": "ResourceCode", "name": "ENERGY" },
+            "balance": 3000000,
+            "receiverAddress": "@peer"
+        },
+        "CancelAllUnfreezeV2Contract": { "ownerAddress": "@owner" }
+    },
+    "wire": {
+        "MarketSellAssetContract": [
+            [1, "owner_address", "bytes", "@owner"],
+            [2, "sell_token_id", "bytes", "text:_"],
+            [3, "sell_token_quantity", "int64", 100],
+            [4, "buy_token_id", "bytes", "text:1002000"],
+            [5, "buy_token_quantity", "int64", 90]
+        ],
+        "MarketCancelOrderContract": [
+            [1, "owner_address", "bytes", "@owner"],
+            [2, "order_id", "bytes", "hex:0011223344556677889900112233445566778899001122334455667788990011"]
+        ],
+        "ShieldedTransferContract": [
+            [1, "transparent_from_address", "bytes", "@owner"],
+            [2, "from_amount", "int64", 10],
+            [
+                3,
+                "spend_description",
+                "repeated",
+                [
+                    [1, "value_commitment", "bytes", "hex:01"],
+                    [2, "anchor", "bytes", "hex:02"],
+                    [3, "nullifier", "bytes", "hex:03"],
+                    [4, "rk", "bytes", "hex:04"],
+                    [5, "zkproof", "bytes", "hex:05"],
+                    [6, "spend_authority_signature", "bytes", "hex:06"]
+                ]
+            ],
+            [
+                4,
+                "receive_description",
+                "repeated",
+                [
+                    [1, "value_commitment", "bytes", "hex:07"],
+                    [2, "note_commitment", "bytes", "hex:08"],
+                    [3, "epk", "bytes", "hex:09"],
+                    [4, "c_enc", "bytes", "hex:0a"],
+                    [5, "c_out", "bytes", "hex:0b"],
+                    [6, "zkproof", "bytes", "hex:0c"]
+                ]
+            ],
+            [5, "binding_signature", "bytes", "hex:0d"],
+            [6, "transparent_to_address", "bytes", "@peer"],
+            [7, "to_amount", "int64", 4]
+        ]
+    },
+    "no_message": ["CustomContract", "GetContract"],
+    "not_filled": ["AssetIssueContract.id"]
+}

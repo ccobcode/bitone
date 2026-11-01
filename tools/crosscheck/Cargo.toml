@@ -1,0 +1,26 @@
+# 对照工具在工作区之外,有自己的锁文件和工具链.
+[package]
+name = "crosscheck"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+bitcoin = { version = "=0.32.102", default-features = false, features = ["std"] }
+bitone-core = { path = "../../crates/bitone-core" }
+psbt-v2 = { version = "=0.3.0", default-features = false, features = ["std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "=0.11.1"
+
+# 官方没有 Vote 的 IDL,schemas/solana/vote.json 是手写的,要和 interface crate 比较.
+# Stake 的两种账户布局由两个版本的构建函数生成.都不进产物.
+[dev-dependencies]
+solana-hash = "=4.7.0"
+solana-instruction = "=4.0.0"
+solana-pubkey = "=4.4.0"
+solana-vote-interface = { version = "=7.3.0", features = ["bincode"] }
+stake-current = { package = "solana-stake-interface", version = "=5.1.1", features = ["bincode"] }
+stake-older = { package = "solana-stake-interface", version = "=4.4.0", features = ["bincode"] }

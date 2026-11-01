@@ -7,10 +7,10 @@ enum class HardwareLevel {
 }
 
 sealed class HardwareKeyException(message: String) : Exception(message) {
-    /** 设备没有硬件密钥库,或系统屏幕锁未设置.拒绝创建钱包. */
+    /** 这次用不了:设备没有硬件密钥库,屏幕锁未设置,或 Keystore 报了别的错.密钥还在,可以重试. */
     class Unavailable(message: String) : HardwareKeyException(message)
 
-    /** 密钥被系统删除或永久失效,只能用助记词恢复. */
+    /** 密钥确实不在了:被系统删除或永久失效,只能用助记词恢复. */
     class Lost(message: String) : HardwareKeyException(message)
 
     /** 用户取消了系统屏幕锁确认.不算 PIN 错误. */
@@ -28,7 +28,7 @@ interface HardwareKey {
     /** 去掉旧格式外面的硬件加密,只用于迁移. */
     suspend fun unwrap(wrapped: ByteArray): ByteArray
 
-    /** 钱包存在时用来判断是否进入"需恢复". */
+    /** 钱包存在时用来判断是否进入"需恢复".只有密钥确实不在了才是 true,其他 Keystore 错误不算. */
     fun isLost(): Boolean
 
     fun delete()

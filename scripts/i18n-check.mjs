@@ -66,6 +66,18 @@ for (const path of [...rust, "crates/bitone-gateway/src/error.rs"]) {
     }
 }
 
+// 字段名和规则的告警在核心库的数据文件里,显示时同样按词典翻译.
+for (const label of Object.values(JSON.parse(readFileSync("crates/bitone-core/assets/field-labels.json", "utf8")))) {
+    need(label);
+}
+const rules = JSON.parse(readFileSync("crates/bitone-core/assets/rules.json", "utf8"));
+for (const rule of Object.values(rules).flatMap(Object.values)) {
+    if (rule.alert) need(rule.alert);
+    if (rule.note) need(rule.note);
+    if (rule.summary?.label) need(rule.summary.label);
+    if (rule.summary?.none) need(rule.summary.none);
+}
+
 for (const key of missing) console.error(`缺少英文:${key}`);
 for (const line of leaked) console.error(`没有翻译的文案:${line}`);
 process.exit(missing.size + leaked.length > 0 ? 1 : 0);

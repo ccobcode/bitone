@@ -1,0 +1,405 @@
+{
+    "source": {
+        "official": {
+            "repository": "ethereum/tests",
+            "commit": "c67e485ff8b5be9abc8ad15345ec21aa22e290d9",
+            "directory": "TransactionTests"
+        },
+        "independent": {
+            "package": "viem",
+            "version": "2.57.7"
+        }
+    },
+    "transactions": [
+        {
+            "case": "旧式,没有 Chain ID",
+            "origin": "viem",
+            "unsigned": "e807843b9aca008252089470997970c51812dc3a010c7d01b50e0d17dc79c88814d1120d7b16000080",
+            "signature": "a22c888f71a178bb3dd30f12ffe72f9076925d3170868b38783e9bd1f333f1315e5e36f72b475d0ef57fb3c633038bc471318d19105fea1d758ad237b18cc1cd01",
+            "signed": "f86b07843b9aca008252089470997970c51812dc3a010c7d01b50e0d17dc79c88814d1120d7b160000801ca0a22c888f71a178bb3dd30f12ffe72f9076925d3170868b38783e9bd1f333f131a05e5e36f72b475d0ef57fb3c633038bc471318d19105fea1d758ad237b18cc1cd",
+            "hash": "e77ce7b1b9d9ab0ae26d366e4d906d718b44a85a40c021c4b33d8bc86cd9fb59",
+            "sender": "f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "fields": {
+                "nonce": "7",
+                "gas_price": "1000000000",
+                "gas_limit": "21000",
+                "to": "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "value": "1500000000000000000",
+                "data": ""
+            },
+            "access_list": [],
+            "authorization_list": [],
+            "blob_versioned_hashes": []
+        },
+        {
+            "case": "旧式,EIP-155",
+            "origin": "viem",
+            "unsigned": "ef0784b2d05e008252089470997970c51812dc3a010c7d01b50e0d17dc79c88814d1120d7b16000084deadbeef388080",
+            "signature": "4fc3dba7cbf033b63afb5ec289c48484126405b32bb4601a763d1d122ee390e14b43907a6a62794ca48ac2081bca00492b3472adea212fcf97f5c9a399fbc85200",
+            "signed": "f8700784b2d05e008252089470997970c51812dc3a010c7d01b50e0d17dc79c88814d1120d7b16000084deadbeef8193a04fc3dba7cbf033b63afb5ec289c48484126405b32bb4601a763d1d122ee390e1a04b43907a6a62794ca48ac2081bca00492b3472adea212fcf97f5c9a399fbc852",
+            "hash": "3bba4e40415099fabddbcabc637242c619f15ae34d94be403a0fee0b6e82a140",
+            "sender": "f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "fields": {
+                "chain_id": "56",
+                "nonce": "7",
+                "gas_price": "3000000000",
+                "gas_limit": "21000",
+                "to": "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "value": "1500000000000000000",
+                "data": "deadbeef"
+            },
+            "access_list": [],
+            "authorization_list": [],
+            "blob_versioned_hashes": []
+        },
+        {
+            "case": "EIP-2930",
+            "origin": "viem",
+            "unsigned": "01f89d0107843b9aca008252089470997970c51812dc3a010c7d01b50e0d17dc79c88814d1120d7b16000080f872f8599470997970c51812dc3a010c7d01b50e0d17dc79c8f842a01111111111111111111111111111111111111111111111111111111111111111a02222222222222222222222222222222222222222222222222222222222222222d6940000000000000000000000000000000000000000c0",
+            "signature": "3ecbd007b42526ba09ed73c2736d9b1907681d4968cf7b62cd0961df0d5c8b406509dcc7d3e2d41b31a02e271f0748f7c0c4b3b53d7b9339a36db29618271c5301",
+            "signed": "01f8e00107843b9aca008252089470997970c51812dc3a010c7d01b50e0d17dc79c88814d1120d7b16000080f872f8599470997970c51812dc3a010c7d01b50e0d17dc79c8f842a01111111111111111111111111111111111111111111111111111111111111111a02222222222222222222222222222222222222222222222222222222222222222d6940000000000000000000000000000000000000000c001a03ecbd007b42526ba09ed73c2736d9b1907681d4968cf7b62cd0961df0d5c8b40a06509dcc7d3e2d41b31a02e271f0748f7c0c4b3b53d7b9339a36db29618271c53",
+            "hash": "8f130e0eb66845bc8188fb2022e0df2aed936cb653ef0438f3e0ce4ea05e2fe4",
+            "sender": "f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "fields": {
+                "chain_id": "1",
+                "nonce": "7",
+                "gas_price": "1000000000",
+                "gas_limit": "21000",
+                "to": "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "value": "1500000000000000000",
+                "data": ""
+            },
+            "access_list": [
+                {
+                    "address": "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                    "storage_keys": [
+                        "1111111111111111111111111111111111111111111111111111111111111111",
+                        "2222222222222222222222222222222222222222222222222222222222222222"
+                    ]
+                },
+                {
+                    "address": "0000000000000000000000000000000000000000",
+                    "storage_keys": []
+                }
+            ],
+            "authorization_list": [],
+            "blob_versioned_hashes": []
+        },
+        {
+            "case": "EIP-1559",
+            "origin": "viem",
+            "unsigned": "02f8a3010784773594008506fc23ac008252089470997970c51812dc3a010c7d01b50e0d17dc79c88814d1120d7b16000001f872f8599470997970c51812dc3a010c7d01b50e0d17dc79c8f842a01111111111111111111111111111111111111111111111111111111111111111a02222222222222222222222222222222222222222222222222222222222222222d6940000000000000000000000000000000000000000c0",
+            "signature": "bb4b14d0fc3cb075b87bf6e36fdf1aef4d59938ad6b22653881f9f58ad61d203501c7c70155a0b4d0792ee1771c7bdf1f6285c94de8a0f01d615806270f7084a01",
+            "signed": "02f8e6010784773594008506fc23ac008252089470997970c51812dc3a010c7d01b50e0d17dc79c88814d1120d7b16000001f872f8599470997970c51812dc3a010c7d01b50e0d17dc79c8f842a01111111111111111111111111111111111111111111111111111111111111111a02222222222222222222222222222222222222222222222222222222222222222d6940000000000000000000000000000000000000000c001a0bb4b14d0fc3cb075b87bf6e36fdf1aef4d59938ad6b22653881f9f58ad61d203a0501c7c70155a0b4d0792ee1771c7bdf1f6285c94de8a0f01d615806270f7084a",
+            "hash": "5b320e8c2751d2dea3a721dc001e71c76e76d8e29bba4e477b16afc47756db7f",
+            "sender": "f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "fields": {
+                "chain_id": "1",
+                "nonce": "7",
+                "max_priority_fee_per_gas": "2000000000",
+                "max_fee_per_gas": "30000000000",
+                "gas_limit": "21000",
+                "to": "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "value": "1500000000000000000",
+                "data": "01"
+            },
+            "access_list": [
+                {
+                    "address": "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                    "storage_keys": [
+                        "1111111111111111111111111111111111111111111111111111111111111111",
+                        "2222222222222222222222222222222222222222222222222222222222222222"
+                    ]
+                },
+                {
+                    "address": "0000000000000000000000000000000000000000",
+                    "storage_keys": []
+                }
+            ],
+            "authorization_list": [],
+            "blob_versioned_hashes": []
+        },
+        {
+            "case": "EIP-1559,创建合约",
+            "origin": "viem",
+            "unsigned": "02d881898084773594008506fc23ac0083015f908080826080c0",
+            "signature": "9d8a6325c482e338a4c094cb97848ad22fd9a3f2151f88eb5821fa4290eb572c07058e92af3e6b78ff23e88f6a02a941a032d90adf0e509920cc3f62677f913301",
+            "signed": "02f85b81898084773594008506fc23ac0083015f908080826080c001a09d8a6325c482e338a4c094cb97848ad22fd9a3f2151f88eb5821fa4290eb572ca007058e92af3e6b78ff23e88f6a02a941a032d90adf0e509920cc3f62677f9133",
+            "hash": "93d1cc502cbd0e24c46ee56ee9d76569f869164a632d9d4d9424a0a50984feb7",
+            "sender": "f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "fields": {
+                "chain_id": "137",
+                "nonce": "0",
+                "max_priority_fee_per_gas": "2000000000",
+                "max_fee_per_gas": "30000000000",
+                "gas_limit": "90000",
+                "to": "创建合约",
+                "value": "0",
+                "data": "6080"
+            },
+            "access_list": [],
+            "authorization_list": [],
+            "blob_versioned_hashes": []
+        },
+        {
+            "case": "EIP-4844",
+            "origin": "viem",
+            "unsigned": "03f875010784773594008506fc23ac008252089470997970c51812dc3a010c7d01b50e0d17dc79c88814d1120d7b16000080c005f842a00133333333333333333333333333333333333333333333333333333333333333a00144444444444444444444444444444444444444444444444444444444444444",
+            "signature": "1cf6d30fa3e1ffc7b5b15ba6b6aeb699d716312c405968190a101bd02d5956825e50f5c02fe69c5fa51e586208a022609a1ff8f9a777dd03cc0868676be616c700",
+            "signed": "03f8b8010784773594008506fc23ac008252089470997970c51812dc3a010c7d01b50e0d17dc79c88814d1120d7b16000080c005f842a00133333333333333333333333333333333333333333333333333333333333333a0014444444444444444444444444444444444444444444444444444444444444480a01cf6d30fa3e1ffc7b5b15ba6b6aeb699d716312c405968190a101bd02d595682a05e50f5c02fe69c5fa51e586208a022609a1ff8f9a777dd03cc0868676be616c7",
+            "hash": "1a91cf89906e7fbe655285ed2c0d09b6abedccbc67195f243f043414dc6c3873",
+            "sender": "f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "fields": {
+                "chain_id": "1",
+                "nonce": "7",
+                "max_priority_fee_per_gas": "2000000000",
+                "max_fee_per_gas": "30000000000",
+                "gas_limit": "21000",
+                "to": "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "value": "1500000000000000000",
+                "data": "",
+                "max_fee_per_blob_gas": "5"
+            },
+            "access_list": [],
+            "authorization_list": [],
+            "blob_versioned_hashes": [
+                "0133333333333333333333333333333333333333333333333333333333333333",
+                "0144444444444444444444444444444444444444444444444444444444444444"
+            ]
+        },
+        {
+            "case": "EIP-7702",
+            "origin": "viem",
+            "unsigned": "04f901a4010784773594008506fc23ac008252089470997970c51812dc3a010c7d01b50e0d17dc79c88814d1120d7b16000080c0f90171f85a019470997970c51812dc3a010c7d01b50e0d17dc79c80501a054414ca17520ef4c6aca64057315e05a73245c7493b434d278013ac3ba950a60a03d78b130aacafce212c7e20076d5f8cefd05285356e326f39717ffb742fd4f6bf85a809470997970c51812dc3a010c7d01b50e0d17dc79c80580a04a04e2552a2cad8c2f0253ef31c5b6b609e00ed3968371779a8d8c1d62d8275fa061a897bfa2061ac1481d5657d5a93b37dbfa8c77905b524f2e864d64ec1b225bf85b81899470997970c51812dc3a010c7d01b50e0d17dc79c80580a0f7e0dbe8968e9d997370f8bc9e81538fa794159b933dc73ec1dfe2379c0e84f4a04782128238f1cabbeb149ebbab67212cde53c3a5b162c6674be25f402ed6862ff85a019400000000000000000000000000000000000000000580a07c866e0bd8af68c981b6a59a6bc24a492ba3ef3973e1d6392327398716899816a077ebfaa72aeb3c959d26495e4c1be2fb66e35eace4f2336c39192e7a7030bf61",
+            "signature": "5904021e83db8c5e0423e1bb34f85e93243ab7f29de25ece3b8fd31f99c6a0776e9f86fc1b792ef6699ea44caf8bdadd29a1435282cb4ae86ff62d7ea3c03ef300",
+            "signed": "04f901e7010784773594008506fc23ac008252089470997970c51812dc3a010c7d01b50e0d17dc79c88814d1120d7b16000080c0f90171f85a019470997970c51812dc3a010c7d01b50e0d17dc79c80501a054414ca17520ef4c6aca64057315e05a73245c7493b434d278013ac3ba950a60a03d78b130aacafce212c7e20076d5f8cefd05285356e326f39717ffb742fd4f6bf85a809470997970c51812dc3a010c7d01b50e0d17dc79c80580a04a04e2552a2cad8c2f0253ef31c5b6b609e00ed3968371779a8d8c1d62d8275fa061a897bfa2061ac1481d5657d5a93b37dbfa8c77905b524f2e864d64ec1b225bf85b81899470997970c51812dc3a010c7d01b50e0d17dc79c80580a0f7e0dbe8968e9d997370f8bc9e81538fa794159b933dc73ec1dfe2379c0e84f4a04782128238f1cabbeb149ebbab67212cde53c3a5b162c6674be25f402ed6862ff85a019400000000000000000000000000000000000000000580a07c866e0bd8af68c981b6a59a6bc24a492ba3ef3973e1d6392327398716899816a077ebfaa72aeb3c959d26495e4c1be2fb66e35eace4f2336c39192e7a7030bf6180a05904021e83db8c5e0423e1bb34f85e93243ab7f29de25ece3b8fd31f99c6a077a06e9f86fc1b792ef6699ea44caf8bdadd29a1435282cb4ae86ff62d7ea3c03ef3",
+            "hash": "3e3eddfacc85afc6c8ddd9275002d9a0ee9002e622ad118bde892fc8a8d37e04",
+            "sender": "f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "fields": {
+                "chain_id": "1",
+                "nonce": "7",
+                "max_priority_fee_per_gas": "2000000000",
+                "max_fee_per_gas": "30000000000",
+                "gas_limit": "21000",
+                "to": "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                "value": "1500000000000000000",
+                "data": ""
+            },
+            "access_list": [],
+            "authorization_list": [
+                {
+                    "chain_id": "1",
+                    "address": "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                    "nonce": "5",
+                    "y_parity": "1",
+                    "r": "54414ca17520ef4c6aca64057315e05a73245c7493b434d278013ac3ba950a60",
+                    "s": "3d78b130aacafce212c7e20076d5f8cefd05285356e326f39717ffb742fd4f6b",
+                    "authority": "f39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+                },
+                {
+                    "chain_id": "0",
+                    "address": "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                    "nonce": "5",
+                    "y_parity": "0",
+                    "r": "4a04e2552a2cad8c2f0253ef31c5b6b609e00ed3968371779a8d8c1d62d8275f",
+                    "s": "61a897bfa2061ac1481d5657d5a93b37dbfa8c77905b524f2e864d64ec1b225b",
+                    "authority": "f39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+                },
+                {
+                    "chain_id": "137",
+                    "address": "70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                    "nonce": "5",
+                    "y_parity": "0",
+                    "r": "f7e0dbe8968e9d997370f8bc9e81538fa794159b933dc73ec1dfe2379c0e84f4",
+                    "s": "4782128238f1cabbeb149ebbab67212cde53c3a5b162c6674be25f402ed6862f",
+                    "authority": "f39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+                },
+                {
+                    "chain_id": "1",
+                    "address": "0000000000000000000000000000000000000000",
+                    "nonce": "5",
+                    "y_parity": "0",
+                    "r": "7c866e0bd8af68c981b6a59a6bc24a492ba3ef3973e1d6392327398716899816",
+                    "s": "77ebfaa72aeb3c959d26495e4c1be2fb66e35eace4f2336c39192e7a7030bf61",
+                    "authority": "f39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+                }
+            ],
+            "blob_versioned_hashes": []
+        },
+        {
+            "case": "ttEIP2930/accessListStorage32Bytes",
+            "origin": "ethereum/tests",
+            "unsigned": "01f857018001826a4094095e7baea6a6c7c4c2dfeb977efac326af552d878080f838f794a95e7baea6a6c7c4c2dfeb977efac326af552d87e1a0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "signature": "5cbd172231fc0735e0fb994dd5b1a4939170a260b36f0427a8a80866b063b9487c230f7f578dd61785c93361b9871c0706ebfa6d06e3f4491dc9558c5202ed3600",
+            "signed": "01f89a018001826a4094095e7baea6a6c7c4c2dfeb977efac326af552d878080f838f794a95e7baea6a6c7c4c2dfeb977efac326af552d87e1a0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff80a05cbd172231fc0735e0fb994dd5b1a4939170a260b36f0427a8a80866b063b948a07c230f7f578dd61785c93361b9871c0706ebfa6d06e3f4491dc9558c5202ed36",
+            "hash": "b4f8b14a7aaf85ec2f76be9fbe4155deae1f87b2da95af73be3c27ed8d4c8cb7",
+            "sender": "ebe76799923fd62804659fb00b4f0f1a94c0eb1e",
+            "fields": {
+                "chain_id": "1",
+                "nonce": "0",
+                "gas_price": "1",
+                "gas_limit": "27200",
+                "to": "095e7baea6a6c7c4c2dfeb977efac326af552d87",
+                "value": "0",
+                "data": ""
+            },
+            "access_list": [
+                {
+                    "address": "a95e7baea6a6c7c4c2dfeb977efac326af552d87",
+                    "storage_keys": ["ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"]
+                }
+            ],
+            "authorization_list": [],
+            "blob_versioned_hashes": []
+        },
+        {
+            "case": "ttNonce/TransactionWithHighNonce32",
+            "origin": "ethereum/tests",
+            "unsigned": "e18501000000000182520894095e7baea6a6c7c4c2dfeb977efac326af552d878080",
+            "signature": "48b55bfa915ac795c431978d8a6a992b628d557da5ff759b307d495a366493531fffd310ac743f371de3b9f7f9cb56c0b28ad43601b4ab949f53faa07bd2c80400",
+            "signed": "f8648501000000000182520894095e7baea6a6c7c4c2dfeb977efac326af552d8780801ba048b55bfa915ac795c431978d8a6a992b628d557da5ff759b307d495a36649353a01fffd310ac743f371de3b9f7f9cb56c0b28ad43601b4ab949f53faa07bd2c804",
+            "hash": "11bbd603b39380a6af8653aa37d14af2a995febefa5c496848531fef266e8b62",
+            "sender": "f3dac79274af6e51fbefe9d74a07bdef53d48ea1",
+            "fields": {
+                "nonce": "4294967296",
+                "gas_price": "1",
+                "gas_limit": "21000",
+                "to": "095e7baea6a6c7c4c2dfeb977efac326af552d87",
+                "value": "0",
+                "data": ""
+            },
+            "access_list": [],
+            "authorization_list": [],
+            "blob_versioned_hashes": []
+        },
+        {
+            "case": "ttVValue/V_equals37",
+            "origin": "ethereum/tests",
+            "unsigned": "e5808698852840a46f82d6d894095e7baea6a6c7c4c2dfeb977efac326af552d878080018080",
+            "signature": "98ff921201554726367d2be8c804a7ff89ccf285ebc57dff8ae4c44b9c19ac4a1887321be575c8095f789dd4c743dfe42c1820f9231f98a962b210e3ac2452a300",
+            "signed": "f865808698852840a46f82d6d894095e7baea6a6c7c4c2dfeb977efac326af552d87808025a098ff921201554726367d2be8c804a7ff89ccf285ebc57dff8ae4c44b9c19ac4aa01887321be575c8095f789dd4c743dfe42c1820f9231f98a962b210e3ac2452a3",
+            "hash": "4782cb5edcaeda1f0aef204b161214f124cefade9e146245183abbb9ca01bca5",
+            "sender": "2ea991808ba979ba103147edfd72304ebd95c028",
+            "fields": {
+                "chain_id": "1",
+                "nonce": "0",
+                "gas_price": "167697673397359",
+                "gas_limit": "55000",
+                "to": "095e7baea6a6c7c4c2dfeb977efac326af552d87",
+                "value": "0",
+                "data": ""
+            },
+            "access_list": [],
+            "authorization_list": [],
+            "blob_versioned_hashes": []
+        },
+        {
+            "case": "ttVValue/ValidChainID1ValidV0",
+            "origin": "ethereum/tests",
+            "unsigned": "df030182520894b94f5374fce5edbc8e2a8697c15331677e6ebf0b0a80018080",
+            "signature": "98ff921201554726367d2be8c804a7ff89ccf285ebc57dff8ae4c44b9c19ac4a1887321be575c8095f789dd4c743dfe42c1820f9231f98a962b210e3ac2452a300",
+            "signed": "f85f030182520894b94f5374fce5edbc8e2a8697c15331677e6ebf0b0a8025a098ff921201554726367d2be8c804a7ff89ccf285ebc57dff8ae4c44b9c19ac4aa01887321be575c8095f789dd4c743dfe42c1820f9231f98a962b210e3ac2452a3",
+            "hash": "4094a2899ea87c4766a03558b8217677d40641155cda9509feda3a5f098b6e90",
+            "sender": "e23eea3673ba147f207f2cf39636d6c343b2e9a3",
+            "fields": {
+                "chain_id": "1",
+                "nonce": "3",
+                "gas_price": "1",
+                "gas_limit": "21000",
+                "to": "b94f5374fce5edbc8e2a8697c15331677e6ebf0b",
+                "value": "10",
+                "data": ""
+            },
+            "access_list": [],
+            "authorization_list": [],
+            "blob_versioned_hashes": []
+        },
+        {
+            "case": "ttVValue/ValidChainID1ValidV1",
+            "origin": "ethereum/tests",
+            "unsigned": "df030182520894b94f5374fce5edbc8e2a8697c15331677e6ebf0b0a80018080",
+            "signature": "98ff921201554726367d2be8c804a7ff89ccf285ebc57dff8ae4c44b9c19ac4a1887321be575c8095f789dd4c743dfe42c1820f9231f98a962b210e3ac2452a301",
+            "signed": "f85f030182520894b94f5374fce5edbc8e2a8697c15331677e6ebf0b0a8026a098ff921201554726367d2be8c804a7ff89ccf285ebc57dff8ae4c44b9c19ac4aa01887321be575c8095f789dd4c743dfe42c1820f9231f98a962b210e3ac2452a3",
+            "hash": "e02990cad4cb38c5b32735af064f6bac6b11d2055497cd7e15f16c0294c55ff1",
+            "sender": "a498686d147f218089fc81cec973dea1cb01ef00",
+            "fields": {
+                "chain_id": "1",
+                "nonce": "3",
+                "gas_price": "1",
+                "gas_limit": "21000",
+                "to": "b94f5374fce5edbc8e2a8697c15331677e6ebf0b",
+                "value": "10",
+                "data": ""
+            },
+            "access_list": [],
+            "authorization_list": [],
+            "blob_versioned_hashes": []
+        }
+    ],
+    "invalid": [
+        {
+            "case": "ttAddress/AddressLessThan20",
+            "unsigned": "cf8001825208870b9331677e6ebf0a80"
+        },
+        {
+            "case": "ttEIP1559/maxFeePerGas00prefix",
+            "unsigned": "02f84401808477359400a100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff82520894095e7baea6a6c7c4c2dfeb977efac326af552d878080c0"
+        },
+        {
+            "case": "ttEIP1559/maxPriorityFeePerGas00prefix",
+            "unsigned": "02f8440180a100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff84b2d05e0082520894095e7baea6a6c7c4c2dfeb977efac326af552d878080c0"
+        },
+        {
+            "case": "ttEIP2930/accessListAddressLessThan20",
+            "unsigned": "01f879018001826a4094095e7baea6a6c7c4c2dfeb977efac326af552d878080f85af858939e7baea6a6c7c4c2dfeb977efac326af552d87f842a00000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000001"
+        },
+        {
+            "case": "ttEIP2930/accessListAddressPrefix00",
+            "unsigned": "01f87b018001826a4094095e7baea6a6c7c4c2dfeb977efac326af552d878080f85cf85a9500a95e7baea6a6c7c4c2dfeb977efac326af552d87f842a00000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000001"
+        },
+        {
+            "case": "ttEIP2930/accessListStorage0x0001",
+            "unsigned": "01f838018001826a4094095e7baea6a6c7c4c2dfeb977efac326af552d878080dad994a95e7baea6a6c7c4c2dfeb977efac326af552d87c3820001"
+        },
+        {
+            "case": "ttEIP2930/accessListStoragePrefix00",
+            "unsigned": "01f859018001826a4094095e7baea6a6c7c4c2dfeb977efac326af552d878080f83af83894a95e7baea6a6c7c4c2dfeb977efac326af552d87e2a1000000000000000000000000000000000000000000000000000000000000000001"
+        },
+        {
+            "case": "ttNonce/TransactionWithLeadingZerosNonce",
+            "unsigned": "de8200010182520894095e7baea6a6c7c4c2dfeb977efac326af552d870b80"
+        }
+    ],
+    "too_wide": [
+        {
+            "case": "ttVValue/V_equals38",
+            "unsigned": "f83b809f031eea408f8e1799cb883da2927b1336521d73c2c14accfebb70d5c5ae466982520894095e7baea6a6c7c4c2dfeb977efac326af552d878080"
+        }
+    ],
+    "messages": [
+        {
+            "case": "EIP-712 Permit 摘要",
+            "kind": "transaction",
+            "payload": "190162f507c502f2946a87703a6096974511c26f091642cf8311a08f7d58532be81278a01bbefa00d183907d47b5a712508fb2387975a915adcc79048c7064e90717",
+            "hash": "dddbb25ace7240c818b18f6e784b283bb720872733e1c4bc8f7508552abd9e0a"
+        },
+        {
+            "case": "EIP-7702 授权",
+            "kind": "transaction",
+            "payload": "05d7019470997970c51812dc3a010c7d01b50e0d17dc79c809",
+            "hash": "b959f0bb6d5d1956fc30b74d7e774e45f2e12de4608a13afeb500e9299c40508"
+        },
+        {
+            "case": "personal_sign",
+            "kind": "personal",
+            "payload": "68656c6c6f",
+            "hash": "50b2c43fd39106bafbba0da34fc430e1f91e3c96ea2acee2bc34119f92b37750"
+        },
+        {
+            "case": "personal_sign 字节",
+            "kind": "personal",
+            "payload": "fffe",
+            "hash": "8130afd3656ff8bf36ab88b43b5c15d8438c5b495a0ffc2987b7530c27878854"
+        }
+    ]
+}

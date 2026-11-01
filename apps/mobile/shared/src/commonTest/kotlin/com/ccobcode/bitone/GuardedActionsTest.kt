@@ -2,7 +2,6 @@ package com.ccobcode.bitone
 
 import com.ccobcode.bitone.flow.AccountRow
 import com.ccobcode.bitone.flow.Accounts
-import com.ccobcode.bitone.flow.MAX_PIN_FAILURES
 import com.ccobcode.bitone.flow.Network
 import com.ccobcode.bitone.flow.ScanResult
 import com.ccobcode.bitone.flow.Screen
@@ -119,15 +118,16 @@ class GuardedActionsTest {
     }
 
     @Test
-    fun lastWrongPinStillWipesThroughTheGuard() = runTest {
+    fun wrongPinsOnTheWipePageNeverErase() = runTest {
         val rig = ready {
-            it.store.pin = PinRecord(MAX_PIN_FAILURES - 1, it.clock.boot, 0)
+            it.store.pin = PinRecord(40, it.clock.boot, 0)
             it.clock.elapsed = 3_600_000
         }
         toWipePin(rig)
         submit(rig.flow, BAD_PIN)
-        assertEquals(Screen.Wiped, rig.flow.screen)
-        assertNull(rig.store.vault)
+        assertEquals(Screen.Unlock, rig.flow.screen)
+        assertNotNull(rig.store.vault)
+        assertEquals(41, rig.store.pin.failures)
     }
 
     @Test
@@ -345,6 +345,20 @@ class GuardedActionsTest {
     }
 
     @Test
+    fun receiveListsManifestAssetsAndFollowsThePick() = runTest {
+        val rig = ready()
+        rig.flow.receive.open(bitcoin)
+        advanceUntilIdle()
+        assertEquals(listOf("ETH", "USDT"), rig.flow.receive.tokens.map { it.symbol })
+
+        rig.flow.receive.pickAsset(rig.flow.receive.tokens.last())
+        advanceUntilIdle()
+        assertEquals("USDT", rig.flow.receive.asset?.symbol)
+        assertEquals(listOf(ethereum), rig.flow.receive.accounts)
+        assertEquals(ethereum, rig.flow.receive.account)
+    }
+
+    @Test
     fun navigationKeepsTheLastAccount() = runTest {
         val rig = ready()
         rig.flow.receive.open()
@@ -537,7 +551,7 @@ class GuardedActionsTest {
     }
 
     @Test
-    fun exhaustedCounterClearsEverySubflow() = runTest {
+    fun wipeClearsEverySubflow() = runTest {
         val rig = ready()
         val flow = rig.flow
 
@@ -566,15 +580,18 @@ class GuardedActionsTest {
         assertTrue(flow.settings.changingPin)
         assertNotNull(flow.session.fingerprint)
 
-        rig.store.pin = PinRecord(MAX_PIN_FAILURES, rig.clock.boot, 0)
-        flow.unlock.refreshStatus()
-        assertTrue(flow.unlock.failures > 0)
-        assertTrue(flow.unlock.waitMs > 0)
-
-        flow.onResume()
+        flow.settings.startWipe()
         advanceUntilIdle()
+        submit(flow, BAD_PIN)
+        assertTrue(flow.unlock.failures > 0)
+        rig.store.pin = PinRecord(5, rig.clock.boot, rig.clock.elapsed)
+        flow.unlock.refreshStatus()
+        assertTrue(flow.unlock.waitMs > 0)
+        rig.clock.elapsed += 30_000
+        flow.unlock.refreshStatus()
+        submit(flow, PIN)
 
-        assertEquals(listOf(Screen.Wiped), flow.stack)
+        assertEquals(listOf(Screen.Welcome), flow.stack)
         assertNull(rig.store.vault)
         assertTrue(stream.closed)
         assertNull(flow.player.frame)

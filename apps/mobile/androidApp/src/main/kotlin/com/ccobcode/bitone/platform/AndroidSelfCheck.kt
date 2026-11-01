@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.nfc.NfcAdapter
@@ -46,31 +47,43 @@ private val SU_DIRECTORIES =
         "/data/local/xbin",
     )
 
+/** 一项探测失败只影响这一项,判定时按无法确认处理,不能让应用崩溃. */
+private inline fun <T> probe(read: () -> T): T? =
+    try {
+        read()
+    } catch (_: Exception) {
+        null
+    } catch (_: LinkageError) {
+        null
+    }
+
 /** 用系统 API 采集 7 项状态.判定规则在共享层. */
 class AndroidSelfCheck(private val context: Context) : SelfCheck {
 
-    // 这两项探测要生成密钥,比较慢,而且一次开机内不会变.
-    private val keystoreLevel: HardwareLevel by lazy { probeKeystore() }
-    private val bootloaderLocked: Boolean? by lazy { attestBootloader() }
+    // 这两项探测要生成密钥,比较慢,确定的结果一次开机内不会变.
+    private val keystoreLevel = DefiniteResult(::probeKeystore)
+    private val bootloaderLocked = DefiniteResult(::attestBootloader)
 
-    override suspend fun collect(): DeviceFacts {
-        val facts =
-            DeviceFacts(
-                airplaneMode = globalFlag(Settings.Global.AIRPLANE_MODE_ON),
-                wifiOn = wifiOn(),
-                bluetoothOn = bluetoothOn(),
-                nfcOn = NfcAdapter.getDefaultAdapter(context)?.isEnabled == true,
-                rooted = rooted(),
-                bootloaderLocked = bootloaderLocked,
-                adbEnabled = globalFlag(Settings.Global.ADB_ENABLED),
-                usbDataConnected = usbDataConnected(),
-                keystore = keystoreLevel,
-                screenLockSet = context.getSystemService(KeyguardManager::class.java).isDeviceSecure,
-                thirdPartyAccessibility = thirdPartyAccessibilityServices(),
-                overlayApps = thirdPartyOverlayApps(),
-            )
-        return adjustFactsForDevelopment(context, facts)
-    }
+    /** 这里没有挂起点,加锁是因为密钥探测用固定的别名,回到前台和发起操作的检测可能同时跑. */
+    override suspend fun collect(): DeviceFacts =
+        synchronized(this) {
+            val facts =
+                DeviceFacts(
+                    airplaneMode = probe { globalFlag(Settings.Global.AIRPLANE_MODE_ON) },
+                    wifiOn = probe { wifiOn() },
+                    bluetoothOn = probe { bluetoothOn() },
+                    nfcOn = probe { NfcAdapter.getDefaultAdapter(context)?.isEnabled == true },
+                    rooted = probe { rooted() },
+                    bootloaderLocked = probe { bootloaderLocked.get() },
+                    adbEnabled = probe { globalFlag(Settings.Global.ADB_ENABLED) },
+                    usbDataConnected = probe { usbDataConnected() },
+                    keystore = probe { keystoreLevel.get() },
+                    screenLockSet = probe { context.getSystemService(KeyguardManager::class.java).isDeviceSecure },
+                    thirdPartyAccessibility = probe { thirdPartyAccessibilityServices() },
+                    overlayApps = probe { thirdPartyOverlayApps() },
+                )
+            adjustFactsForDevelopment(context, facts)
+        }
 
     private fun globalFlag(name: String): Boolean = Settings.Global.getInt(context.contentResolver, name, 0) != 0
 
@@ -133,8 +146,8 @@ class AndroidSelfCheck(private val context: Context) : SelfCheck {
         return battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) == BatteryManager.BATTERY_PLUGGED_USB
     }
 
-    /** StrongBox 优先.只认 KeyInfo 报告的实际级别,功能声明可能不准. */
-    private fun probeKeystore(): HardwareLevel {
+    /** StrongBox 优先.只认 KeyInfo 报告的实际级别,功能声明可能不准.每次都生成失败时返回 null,这不等于没有硬件. */
+    private fun probeKeystore(): HardwareLevel? {
         val store = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         val hasStrongBox = context.packageManager.hasSystemFeature(PackageManager.FEATURE_STRONGBOX_KEYSTORE)
         val attempts = if (hasStrongBox) listOf(true, false) else listOf(false)
@@ -151,7 +164,7 @@ class AndroidSelfCheck(private val context: Context) : SelfCheck {
                 }
             return level
         }
-        return HardwareLevel.None
+        return null
     }
 
     private fun probeKey(strongBox: Boolean): SecretKey {
@@ -188,12 +201,21 @@ class AndroidSelfCheck(private val context: Context) : SelfCheck {
 
     /** 第三方应用查不到别人的悬浮窗授权(AppOps 需要系统权限),所以统计声明了这个权限的第三方应用.比"已授权"更严,只影响警告,不锁定. */
     private fun thirdPartyOverlayApps(): Int =
-        context.packageManager
-            .getInstalledPackages(PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()))
-            .count { info ->
-                val system = (info.applicationInfo?.flags ?: 0) and ApplicationInfo.FLAG_SYSTEM != 0
-                !system &&
-                    info.packageName != context.packageName &&
-                    info.requestedPermissions?.contains(Manifest.permission.SYSTEM_ALERT_WINDOW) == true
-            }
+        packagesWithPermissions().count { info ->
+            val system = (info.applicationInfo?.flags ?: 0) and ApplicationInfo.FLAG_SYSTEM != 0
+            !system &&
+                info.packageName != context.packageName &&
+                info.requestedPermissions?.contains(Manifest.permission.SYSTEM_ALERT_WINDOW) == true
+        }
+
+    /** PackageInfoFlags 从 Android 13 才有,最低支持的是 12. */
+    @Suppress("DEPRECATION")
+    private fun packagesWithPermissions(): List<PackageInfo> {
+        val packages = context.packageManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packages.getInstalledPackages(PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()))
+        } else {
+            packages.getInstalledPackages(PackageManager.GET_PERMISSIONS)
+        }
+    }
 }

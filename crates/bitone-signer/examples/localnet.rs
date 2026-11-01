@@ -74,6 +74,7 @@ fn manifest_with(network: Network, contract: &str, decimals: u8, standard: &str)
         icon: "test".to_string(),
         standard: standard.to_string(),
         min_fraction: 2,
+        extensions: None,
     });
     manifest
 }
@@ -89,6 +90,7 @@ fn submit(network: Network, signing_path: &str, payload: Vec<u8>, hint: Option<&
         paths: vec![signing_path.to_string()],
         payload,
         hint: hint.map(str::to_string),
+        chain: None,
     };
     let (response, review) = wallet
         .sign(&request, &keys, manifest, HighestChange::default())
@@ -99,15 +101,16 @@ fn submit(network: Network, signing_path: &str, payload: Vec<u8>, hint: Option<&
         _ => keys.ed25519(&derivation).expect("有这个账户").to_vec(),
     };
     let verified = tx::verify(&request, &response, &signer).expect("签名有效");
-    let amount = review
+    let summary = review.summary;
+    let amount = summary
         .amount
         .map(|a| format!("{} {}", a.text, a.symbol.unwrap_or_default()));
     eprintln!(
         "{} {:?} {} {}",
-        review.title,
+        summary.title,
         review.confirm,
         amount.unwrap_or_default(),
-        review.counterparty.unwrap_or_default()
+        summary.counterparty.unwrap_or_default()
     );
     println!("{} {}", hex(&verified.raw), verified.hash);
 }

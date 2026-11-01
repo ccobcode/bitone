@@ -48,10 +48,13 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    /** 被其他窗口遮挡时丢弃触摸.在这里过滤覆盖全部按钮,比逐个标记敏感按钮可靠.filterTouchesWhenObscured 只看 FLAG_WINDOW_IS_OBSCURED,这里连部分遮挡一起挡. */
+    /** 被其他窗口遮挡时丢弃触摸并提示.在这里过滤覆盖全部按钮,比逐个标记敏感按钮可靠.filterTouchesWhenObscured 只看 FLAG_WINDOW_IS_OBSCURED,这里连部分遮挡一起挡. */
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         val obscured = MotionEvent.FLAG_WINDOW_IS_OBSCURED or MotionEvent.FLAG_WINDOW_IS_PARTIALLY_OBSCURED
-        if (event.flags and obscured != 0) return false
+        if (event.flags and obscured != 0) {
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) app.flow.touchObscured()
+            return false
+        }
         return super.dispatchTouchEvent(event)
     }
 }

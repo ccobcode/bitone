@@ -3,13 +3,17 @@ import { t } from "../../core/i18n";
 import { lookupAsset } from "../../core/manifest";
 import { reservationsOf } from "../../data/claims";
 import { planOf, type Account, type TxRecord } from "../../data/db";
-import type { Built, FeeSource } from "../spec";
+import type { Built, FeeSource, RawMode } from "../spec";
 import {
+    QUOTE_LIFETIME,
     TransferError,
     badFees,
     header,
+    pastedRequest,
     requestFields,
     reviewRequest,
+    type RawDraft,
+    type RawValues,
     type ReplaceDraft,
     type ReplaceMode,
     type SetupDraft,
@@ -59,7 +63,10 @@ export async function transfer(draft: TransferDraft, fees: FeeSource): Promise<B
     const [feeData, info, estimate] = await Promise.all([
         fees(network),
         fetchNonceAccount(network, nonceAccount),
-        token ? estimateSolana(network, to, asset) : Promise.resolve({ recipientTokenAccount: true, rent: 0n }),
+        // 查不到时按要创建算.指令是 CreateIdempotent,账户已存在也不会失败.
+        token
+            ? estimateSolana(network, to, asset).catch(() => ({ recipientTokenAccount: false, rent: 0n }))
+            : Promise.resolve({ recipientTokenAccount: true, rent: 0n }),
     ]);
     if (!info.exists) throw new TransferError("no-nonce-account", t("首次 Solana 转账前要先创建 nonce 账户."));
     if (feeData.kind !== "solana") throw badFees();
@@ -124,6 +131,38 @@ export async function setup(draft: SetupDraft): Promise<Built> {
         true,
     );
     return { fields, claims: [{ type: "solana-nonce", value: SOLANA_NONCE_CLAIM }] };
+}
+
+export function rawModes(): RawMode[] {
+    return [
+        {
+            id: "payload",
+            label: t("消息字节"),
+            fields: [
+                {
+                    id: "payload",
+                    label: t("消息字节"),
+                    hint: t("十六进制或 base64,不含签名"),
+                    multiline: true,
+                },
+            ],
+        },
+    ];
+}
+
+/** 消息用 blockhash 还是 durable nonce 这里不判断,给一个本地期限,否则这笔永远不会结束. */
+export async function raw(draft: RawDraft, _mode: string, values: RawValues): Promise<Built> {
+    const { head, request, target } = pastedRequest(draft, values);
+    const plan: SolanaPlan = {
+        chain: "solana",
+        nonceValue: null,
+        nonceAccount: solanaNonceAddress(draft.from),
+        priority: 0,
+        computeUnits: 0,
+        createAta: false,
+    };
+    const expiresAt = Date.now() + QUOTE_LIFETIME;
+    return { fields: requestFields(target, head.id, request, plan, "0", "raw", expiresAt, true), claims: [] };
 }
 
 /** Solana 没有手续费替换.取消只推进 nonce,用同一个 nonce 值签过名的交易随之作废. */

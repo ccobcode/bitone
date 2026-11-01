@@ -11,6 +11,7 @@ import {
     Collapse,
     Empty,
     Fact,
+    Helper,
     LinkButton,
     ListRow,
     Notice,
@@ -56,9 +57,12 @@ function ManifestCard() {
 
     return (
         <Section aria-labelledby="h-man">
-            <div className="flex flex-wrap items-start justify-between gap-s4">
-                <SectionTitle id="h-man">{t("内置清单")}</SectionTitle>
-                <div className="flex gap-s2">
+            <div className="flex flex-wrap items-center justify-between gap-s4">
+                <div className="flex min-w-0 flex-[1_1_16rem] flex-col gap-s1">
+                    <SectionTitle id="h-man">{t("内置清单")}</SectionTitle>
+                    <Helper>{t("冷钱包靠它识别代币,更新用厂商签名的清单包.")}</Helper>
+                </div>
+                <div className="flex grow gap-s2 *:flex-1 nav:grow-0">
                     <Button onClick={() => input.current?.click()}>{t("选择清单包")}</Button>
                     {pack ? (
                         <Button variant="primary" aria-expanded={shown} onClick={() => setShown(!shown)}>

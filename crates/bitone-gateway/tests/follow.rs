@@ -39,6 +39,8 @@ struct Scene {
     logs: Vec<Value>,
     broken_logs: bool,
     broken_calls: bool,
+    /// 查这个地址的 `eth_getBalance` 报错,它所在的那一批都拿不到结果.
+    broken_address: Option<String>,
 }
 
 type Chain = Arc<Mutex<Scene>>;
@@ -48,6 +50,9 @@ fn reply(chain: &Chain, method: &str, params: &Value) -> Value {
     let hex = |n: u64| format!("{n:#x}");
     match method {
         "eth_blockNumber" => ok(json!(hex(scene.block))),
+        "eth_getBalance" if scene.broken_address.as_deref() == params[0].as_str() => {
+            rpc_failure(-32000, "upstream busy")
+        }
         "eth_getBalance" => ok(json!(scene.native)),
         "eth_call" if scene.broken_calls => rpc_failure(-32000, "execution timeout"),
         "eth_call" => ok(json!(format!("{:#066x}", scene.token))),
@@ -825,6 +830,37 @@ async fn a_failed_balance_query_keeps_the_touched_address() {
     );
 }
 
+/// 长连接是所有用户共用的,一批余额查询失败不能把它断开.
+#[tokio::test]
+async fn a_failed_balance_batch_keeps_the_socket() {
+    let (chain, _) = evm_chain().await;
+    let addresses: Vec<String> = (1..=150).map(|i| format!("0x{i:040x}")).collect();
+    chain.lock().unwrap().broken_address = Some(addresses[0].clone());
+    let node = evm_socket_node(&chain).await;
+    let gateway = Gateway::start(&evm_config(&node.url)).await;
+    let mut ws = gateway.ws().await;
+    let list: Vec<&str> = addresses.iter().map(String::as_str).collect();
+    assert!(call(&mut ws, subscribe(&list)).await["result"].is_string());
+    node.wait_for("eth_subscribe", 3).await;
+
+    // 高度只有推送给得出,这条连接断开后再也看不到.节点本身一直报 10.
+    node.push(new_head(11));
+    let first = timeout(Duration::from_secs(5), next_json(&mut ws)).await.unwrap();
+    assert_eq!(first["params"]["height"], 11);
+    timeout(Duration::from_secs(5), async {
+        while node.calls.count("eth_getBalance") < 300 {
+            sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("基线和余额批量查询都要跑过");
+    node.push(new_head(12));
+    let second = timeout(Duration::from_secs(5), next_json(&mut ws))
+        .await
+        .expect("连接不能断");
+    assert_eq!(second["params"]["height"], 12);
+}
+
 /// HTTP 请求也要有时限.节点不回应时不能卡住长连接,否则既不换节点也不退回轮询.
 #[tokio::test]
 async fn a_node_that_stops_answering_falls_back_to_polling() {
@@ -925,6 +961,23 @@ async fn snapshot_limits_how_many_groups_run_at_once() {
     assert_eq!(lines.len(), 60);
     let peak = peak.load(Ordering::SeqCst);
     assert!(peak <= 17, "同时查询 {peak} 组");
+}
+
+/// 令牌按组扣,一个请求不能用一个令牌打出几十组上游查询.
+#[tokio::test]
+async fn snapshot_is_charged_by_group() {
+    let (_, url) = evm_chain().await;
+    let extra = "rate_limit_burst = 10\nrate_limit_per_second = 0.001\n";
+    let gateway = Gateway::start(&format!("{extra}{}", evm_config(&url))).await;
+    let items = |groups: u32| -> Vec<Value> {
+        (0..groups)
+            .map(|group| json!({"network": "ethereum", "address": EVM, "group": group}))
+            .collect()
+    };
+    assert_eq!(snapshot(&gateway, &json!({"items": items(9)})).await.len(), 9);
+    let (status, body) = gateway.post("/v1/snapshot", &json!({"items": items(2)})).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(error_code(&body), "rate_limited");
 }
 
 const SOLANA_OWNER: &str = "11111111111111111111111111111111";

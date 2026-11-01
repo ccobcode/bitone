@@ -36,12 +36,17 @@ import com.ccobcode.bitone.ui.theme.Space
 @Composable
 fun WelcomeScreen(flow: WalletFlow) {
     val c = BitOneTheme.colors
-    val ready = flow.report?.blocked == false && !flow.busy
+    val checked = flow.report != null && !flow.busy
     Page(
         bottom = {
             ActionArea {
-                PrimaryButton("创建新钱包", enabled = ready, onClick = flow.setup::startCreate)
-                SecondaryButton("导入助记词", enabled = ready, onClick = flow.setup::startImport)
+                PrimaryButton(
+                    "创建新钱包",
+                    enabled = checked && flow.report?.blocked == false,
+                    onClick = flow.setup::startCreate,
+                )
+                // 导入是找回资金的路,自检不过时确认后也能走.
+                SecondaryButton("导入助记词", enabled = checked, onClick = flow.setup::startImport)
             }
         }
     ) {

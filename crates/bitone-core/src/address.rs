@@ -103,7 +103,8 @@ pub fn evm_text(address: &[u8; 20]) -> String {
 /// 解析 EVM 地址.全大写或全小写不带校验,大小写混合时必须符合 EIP-55.
 pub fn parse_evm_address(text: &str) -> Result<[u8; 20], Error> {
     let hex = text.strip_prefix("0x").ok_or(Error::InvalidAddress)?;
-    if hex.len() != 40 || !hex.is_ascii() {
+    // `from_str_radix` 接受开头的 `+`,所以先逐字符检查.
+    if hex.len() != 40 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(Error::InvalidAddress);
     }
     let mut bytes = [0u8; 20];
@@ -172,6 +173,14 @@ mod tests {
         assert!(parse_evm_address("0x9858efFD232B4033E47d90003D41EC34EcaEda94").is_err());
         assert!(parse_evm_address("9858EfFD232B4033E47d90003D41EC34EcaEda94").is_err());
         assert!(parse_evm_address("0x9858").is_err());
+    }
+
+    #[test]
+    fn evm_address_rejects_signs_and_non_hex() {
+        let zeros = "00".repeat(19);
+        assert!(parse_evm_address(&format!("0x0a{zeros}")).is_ok());
+        assert!(parse_evm_address(&format!("0x+a{zeros}")).is_err());
+        assert!(parse_evm_address(&format!("0xzz{zeros}")).is_err());
     }
 
     #[test]

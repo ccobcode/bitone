@@ -30,6 +30,17 @@ impl Chain {
             .into_iter()
             .find(|chain| chain.id() == id)
     }
+
+    /// `SignRequest.chain` 的编号,和二维码协议里的链编号相同.这个版本不认识的编号是 `None`.
+    pub fn from_number(number: u8) -> Option<Self> {
+        match number {
+            0 => Some(Self::Bitcoin),
+            1 => Some(Self::Evm),
+            2 => Some(Self::Tron),
+            3 => Some(Self::Solana),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -129,6 +140,18 @@ impl Network {
         Network::ALL.into_iter().find(|n| n.id() == id)
     }
 
+    /// 原生币的符号和小数位,这是链本身的事实,不依赖清单.
+    pub fn native_coin(self) -> (&'static str, u8) {
+        match self {
+            Network::Bitcoin | Network::BtcTestnet4 | Network::BtcSignet | Network::BtcTestnet3 => ("BTC", 8),
+            Network::Ethereum | Network::Sepolia | Network::Hoodi => ("ETH", 18),
+            Network::Bsc | Network::BscTestnet => ("BNB", 18),
+            Network::Polygon | Network::Amoy => ("POL", 18),
+            Network::Tron | Network::TronNile | Network::TronShasta => ("TRX", 6),
+            Network::Solana | Network::SolanaDevnet | Network::SolanaTestnet => ("SOL", 9),
+        }
+    }
+
     pub fn chain(self) -> Chain {
         match self {
             Network::Bitcoin | Network::BtcTestnet4 | Network::BtcSignet | Network::BtcTestnet3 => Chain::Bitcoin,
@@ -162,6 +185,20 @@ impl Network {
             _ => None,
         }
     }
+
+    /// TIP-712 域里的 `chainId`,是 `block.chainid & 0xffffffff`.
+    pub fn tip712_chain_id(self) -> Option<u64> {
+        match self {
+            Network::Tron => Some(728126428),
+            Network::TronNile => Some(3448148188),
+            Network::TronShasta => Some(2494104990),
+            _ => None,
+        }
+    }
+
+    pub fn from_evm_chain_id(chain_id: u64) -> Option<Network> {
+        Network::ALL.into_iter().find(|n| n.evm_chain_id() == Some(chain_id))
+    }
 }
 
 #[cfg(test)]
@@ -192,5 +229,13 @@ mod tests {
         for n in Network::ALL {
             assert_eq!(n.evm_chain_id().is_some(), n.chain() == Chain::Evm);
         }
+    }
+
+    #[test]
+    fn chain_ids_round_trip() {
+        for n in Network::ALL.into_iter().filter(|n| n.chain() == Chain::Evm) {
+            assert_eq!(n.evm_chain_id().and_then(Network::from_evm_chain_id), Some(n));
+        }
+        assert_eq!(Network::from_evm_chain_id(31337), None);
     }
 }

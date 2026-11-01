@@ -5,6 +5,7 @@ import Assets from "./pages/Assets";
 import Contacts from "./pages/Contacts";
 import Device from "./pages/Device";
 import History, { Unsent } from "./pages/History";
+import Raw from "./pages/Raw";
 import Send from "./pages/Send";
 import Settings from "./pages/Settings";
 import Sign from "./pages/Sign";
@@ -33,6 +34,7 @@ export function App() {
                     <Route path="contacts" element={<Contacts />} />
                     <Route path="device" element={<Device />} />
                     <Route path="settings" element={<Settings />} />
+                    <Route path="raw" element={<Raw />} />
                     <Route path="send" element={<Send />} />
                     <Route path="sign/:id" element={<Sign />} />
                 </Route>

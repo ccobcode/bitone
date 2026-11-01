@@ -1,0 +1,36 @@
+[
+    { "file": "system.json" },
+    { "file": "compute-budget.json" },
+    {
+        "file": "token.json",
+        "batch": {
+            "instruction": "batch",
+            "argument": "data",
+            "accounts": "numberOfAccounts",
+            "payload": "instructionData",
+            "samples": ["transferChecked", "revoke"]
+        }
+    },
+    {
+        "file": "token-2022.json",
+        "batch": {
+            "instruction": "batch",
+            "argument": "data",
+            "accounts": "numberOfAccounts",
+            "payload": "instructionData",
+            "samples": ["transferChecked", "revoke"]
+        }
+    },
+    { "file": "associated-token-account.json", "emptyData": "create" },
+    {
+        "file": "memo.json",
+        "ids": [
+            "Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo",
+            "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+            "Memo4c2pN8afCj432Lb7RMVKi9PbQnnW7ewFFaV3oAH"
+        ]
+    },
+    { "file": "stake.json", "older": "stake-older.json" },
+    { "file": "vote.json" },
+    { "file": "address-lookup-table.json" }
+]

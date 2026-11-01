@@ -118,24 +118,18 @@ fn a_signed_package_overrides_the_builtin_manifest() {
 #[test]
 fn the_higher_version_of_builtin_and_imported_is_active() {
     let builtin = Manifest::builtin();
-    assert_eq!(*Manifest::active(None, &public()).unwrap(), *builtin);
+    assert_eq!(*Manifest::active(None, &public()), *builtin);
 
     let mut stale = manifest(builtin.version);
     stale.assets.clear();
-    assert_eq!(
-        *Manifest::active(Some(&signed(&stale, &SECRET)), &public()).unwrap(),
-        *builtin
-    );
+    assert_eq!(*Manifest::active(Some(&signed(&stale, &SECRET)), &public()), *builtin);
 
     let newer = manifest(builtin.version + 1);
-    assert_eq!(
-        *Manifest::active(Some(&signed(&newer, &SECRET)), &public()).unwrap(),
-        newer
-    );
+    assert_eq!(*Manifest::active(Some(&signed(&newer, &SECRET)), &public()), newer);
 }
 
 #[test]
-fn an_imported_package_with_a_bad_signature_is_an_error() {
+fn an_imported_package_with_a_bad_signature_falls_back_to_the_builtin_list() {
     let forged = package(Manifest::builtin().version + 1, &[7; 32]);
-    assert_eq!(Manifest::active(Some(&forged), &public()), Err(Error::BadSignature));
+    assert_eq!(*Manifest::active(Some(&forged), &public()), *Manifest::builtin());
 }

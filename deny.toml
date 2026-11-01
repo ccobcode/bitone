@@ -1,4 +1,13 @@
 # cargo deny check.依赖的许可证,来源和重复版本都在这里把关,新增依赖要写明理由.
+# tools/crosscheck/deps 走同一份配置.
+# alloy-dyn-abi,alloy-json-abi =1.7.3 已进入 bitone-core:按描述文件解码调用数据和 EIP-712,MIT OR Apache-2.0,和 alloy-primitives 同一个仓库.
+# 关掉默认特性,只开 std,eip712.alloy-sol-macro,syn-solidity,derive_more-impl 是过程宏,只在编译期运行.
+# psbt-v2 =0.3.0 已进入 bitone-core:rust-bitcoin 组织,CC0-1.0,只依赖 bitcoin.miniscript 只出现在锁文件里,不编译.
+# alloy-consensus,alloy-eips =2.5.0,alloy-primitives =1.7.3,alloy-rlp =0.3.17 已进入 bitone-core:EVM 的官方类型,MIT OR Apache-2.0,
+# 关掉默认特性,不启用 k256,kzg,serde.授权人恢复用现有的 secp256k1.
+# solana-vote-interface =7.3.0 和它的 solana-hash,solana-instruction,solana-pubkey 只是 tools/crosscheck 的 dev 依赖:Vote 的 IDL 是手写的,要和官方类型比较,不进产物.
+# prost =0.14.4 已进入 bitone-core:解码 TRON,Apache-2.0,纯 Rust,没有 C 依赖.类型由 tools/protogen 从 schemas/ 生成.
+# prost-derive 是过程宏,itertools 只跟着它,都不进产物.bytes 已经由 alloy 带入.
 
 [graph]
 targets = [
@@ -15,6 +24,8 @@ yanked = "deny"
 ignore = [
     # UniFFI 生成绑定时读配置用,不进运行时.UniFFI 换掉它之后删除这条.
     { id = "RUSTSEC-2026-0374", reason = "UniFFI 的构建期依赖" },
+    # paste 只是作者停止维护,没有漏洞.它是 alloy-primitives 的过程宏,只在编译期运行,不进产物.alloy 换掉它之后删除这条.
+    { id = "RUSTSEC-2024-0436", reason = "alloy-primitives 的编译期过程宏" },
 ]
 
 [bans]

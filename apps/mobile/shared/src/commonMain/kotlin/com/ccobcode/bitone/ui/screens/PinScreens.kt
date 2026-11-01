@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.ccobcode.bitone.flow.MAX_PIN_FAILURES
 import com.ccobcode.bitone.flow.PIN_LENGTH
 import com.ccobcode.bitone.flow.UnlockPurpose
 import com.ccobcode.bitone.flow.WalletFlow
@@ -31,6 +30,7 @@ import com.ccobcode.bitone.ui.components.PassphraseKeyboard
 import com.ccobcode.bitone.ui.components.PinPad
 import com.ccobcode.bitone.ui.components.SemiBold
 import com.ccobcode.bitone.ui.components.Steps
+import com.ccobcode.bitone.ui.components.TextButton
 import com.ccobcode.bitone.ui.components.TitleBar
 import com.ccobcode.bitone.ui.components.Txt
 import com.ccobcode.bitone.ui.components.rememberLatest
@@ -49,6 +49,7 @@ private fun PinPage(
     hintColor: Color,
     header: @Composable ColumnScope.() -> Unit,
     above: @Composable (() -> Unit)? = null,
+    below: @Composable (() -> Unit)? = null,
     keyboard: @Composable ColumnScope.() -> Unit,
 ) {
     Page(
@@ -62,6 +63,7 @@ private fun PinPage(
         Txt(prompt, size = FontSize.t5, weight = SemiBold)
         PinDots(length, errors)
         FadeText(hint, hintColor)
+        below?.invoke()
     }
 }
 
@@ -149,7 +151,7 @@ fun UnlockScreen(flow: WalletFlow) {
             flow.busy -> copy.working to c.text3
             flow.unlock.error != null -> flow.unlock.error.orEmpty() to c.danger
             waiting -> "${waitText(flow.unlock.waitMs)} 后可重试" to c.text2
-            else -> failureHint(flow.unlock.failures, flow.session.canWipe)
+            else -> (if (flow.unlock.failures == 0) "" else "已错 ${flow.unlock.failures} 次") to c.warn
         }
     PinPage(
         prompt = copy.prompt,
@@ -167,6 +169,8 @@ fun UnlockScreen(flow: WalletFlow) {
             } else {
                 null
             },
+        // 延时中也能点:这时最需要这条路.硬件报错或密文损坏时重试永远不会成功,靠它出去.
+        below = { TextButton("忘记 PIN,用助记词恢复", enabled = !flow.busy, onClick = flow::forgotPin) },
         keyboard = {
             if (editing) {
                 Box(Modifier.fillMaxWidth().padding(top = Space.s3, bottom = Space.s4)) {
@@ -184,18 +188,6 @@ fun UnlockScreen(flow: WalletFlow) {
             }
         },
     )
-}
-
-@Composable
-private fun failureHint(failures: Int, canWipe: Boolean): Pair<String, Color> {
-    val c = BitOneTheme.colors
-    val remain = MAX_PIN_FAILURES - failures
-    return when {
-        !canWipe -> (if (failures == 0) "" else "已错 $failures 次") to c.warn
-        failures == 0 -> "错误 10 次将抹除钱包" to c.text3
-        remain == 1 -> "再错 1 次将抹除钱包" to c.danger
-        else -> "已错 $failures 次,再错 $remain 次将抹除钱包" to c.warn
-    }
 }
 
 /** 向上取整,还剩 1 毫秒时也显示 1 秒. */

@@ -7,7 +7,7 @@ import { EXECUTION_FAILED } from "../view";
 import { parseFees } from "./api";
 import { BroadcastCard } from "./BroadcastCard";
 import { quote } from "./quote";
-import { transfer } from "./transfer";
+import { raw, rawModes, transfer } from "./transfer";
 import { view } from "./view";
 
 export const tron: ChainSpec = {
@@ -36,6 +36,8 @@ export const tron: ChainSpec = {
     transfer,
     // 没有序号,重建就是另一笔独立的交易,可能重复付款,所以不提供.
     replace: { refusal: () => t("TRON 不提供加速和重建,超过过期时间后自动失效.") },
+    rawModes,
+    raw,
     quote,
     view,
     BroadcastCard,

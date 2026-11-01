@@ -1,0 +1,414 @@
+{
+    "calls": [
+        {
+            "case": "transfer",
+            "abi": "function transfer(address to, uint256 amount)",
+            "args": ["0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "1250000000"]
+        },
+        {
+            "case": "transfer 金额 0",
+            "abi": "function transfer(address to, uint256 amount)",
+            "args": ["0x0000000000000000000000000000000000000001", "0"]
+        },
+        {
+            "case": "approve 无限",
+            "abi": "function approve(address spender, uint256 amount)",
+            "args": [
+                "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+                "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            ]
+        },
+        {
+            "case": "transferFrom",
+            "abi": "function transferFrom(address from, address to, uint256 amount)",
+            "args": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "7"]
+        },
+        {
+            "case": "increaseAllowance",
+            "abi": "function increaseAllowance(address spender, uint256 amount)",
+            "args": ["0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "9"]
+        },
+        {
+            "case": "increaseApproval",
+            "abi": "function increaseApproval(address spender, uint256 amount)",
+            "args": ["0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "9"]
+        },
+        {
+            "case": "decreaseAllowance",
+            "abi": "function decreaseAllowance(address spender, uint256 amount)",
+            "args": ["0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "9"]
+        },
+        {
+            "case": "decreaseApproval",
+            "abi": "function decreaseApproval(address spender, uint256 amount)",
+            "args": ["0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "9"]
+        },
+        {
+            "case": "setApprovalForAll",
+            "abi": "function setApprovalForAll(address operator, bool approved)",
+            "args": ["0x70997970C51812dc3A010C7d01b50e0d17dc79C8", true]
+        },
+        {
+            "case": "permit",
+            "abi": "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)",
+            "args": [
+                "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+                "100",
+                "1800000000",
+                27,
+                "0x1111111111111111111111111111111111111111111111111111111111111111",
+                "0x2222222222222222222222222222222222222222222222222222222222222222"
+            ]
+        },
+        {
+            "case": "Permit2 approve",
+            "abi": "function approve(address token, address spender, uint160 amount, uint48 expiration)",
+            "args": [
+                "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+                "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+                "1461501637330902918203684832716283019655932542975",
+                "1800000000"
+            ]
+        },
+        {
+            "case": "multicall",
+            "abi": "function multicall(bytes[] data)",
+            "args": [
+                [
+                    {
+                        "abi": "function transfer(address to, uint256 amount)",
+                        "args": ["0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "1"]
+                    },
+                    {
+                        "abi": "function approve(address spender, uint256 amount)",
+                        "args": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "2"]
+                    }
+                ]
+            ]
+        },
+        {
+            "case": "multicall 带截止时间,嵌套",
+            "abi": "function multicall(uint256 deadline, bytes[] data)",
+            "args": [
+                "1800000000",
+                [
+                    {
+                        "abi": "function multicall(bytes[] data)",
+                        "args": [
+                            [
+                                {
+                                    "abi": "function approve(address spender, uint256 amount)",
+                                    "args": ["0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "3"]
+                                }
+                            ]
+                        ]
+                    }
+                ]
+            ]
+        },
+        { "case": "空 multicall", "abi": "function multicall(bytes[] data)", "args": [[]] }
+    ],
+    "irregular": [
+        {
+            "case": "尾部字节",
+            "abi": "function approve(address spender, uint256 amount)",
+            "args": ["0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "1"],
+            "suffix": "00"
+        },
+        {
+            "case": "32 字节的尾部",
+            "abi": "function transfer(address to, uint256 amount)",
+            "args": ["0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "1"],
+            "suffix": "0000000000000000000000000000000000000000000000000000000000000001"
+        }
+    ],
+    "typed": [
+        {
+            "case": "EIP-712 规范的 Mail",
+            "types": {
+                "EIP712Domain": [
+                    { "name": "name", "type": "string" },
+                    { "name": "version", "type": "string" },
+                    { "name": "chainId", "type": "uint256" },
+                    { "name": "verifyingContract", "type": "address" }
+                ],
+                "Person": [
+                    { "name": "name", "type": "string" },
+                    { "name": "wallet", "type": "address" }
+                ],
+                "Mail": [
+                    { "name": "from", "type": "Person" },
+                    { "name": "to", "type": "Person" },
+                    { "name": "contents", "type": "string" }
+                ]
+            },
+            "primaryType": "Mail",
+            "domain": {
+                "name": "Ether Mail",
+                "version": "1",
+                "chainId": 1,
+                "verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
+            },
+            "message": {
+                "from": { "name": "Cow", "wallet": "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826" },
+                "to": { "name": "Bob", "wallet": "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB" },
+                "contents": "Hello, Bob!"
+            }
+        },
+        {
+            "case": "ERC-2612 Permit",
+            "types": {
+                "EIP712Domain": [
+                    { "name": "name", "type": "string" },
+                    { "name": "version", "type": "string" },
+                    { "name": "chainId", "type": "uint256" },
+                    { "name": "verifyingContract", "type": "address" }
+                ],
+                "Permit": [
+                    { "name": "owner", "type": "address" },
+                    { "name": "spender", "type": "address" },
+                    { "name": "value", "type": "uint256" },
+                    { "name": "nonce", "type": "uint256" },
+                    { "name": "deadline", "type": "uint256" }
+                ]
+            },
+            "primaryType": "Permit",
+            "domain": {
+                "name": "Tether",
+                "version": "1",
+                "chainId": "1",
+                "verifyingContract": "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+            },
+            "message": {
+                "owner": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                "spender": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+                "value": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+                "nonce": 0,
+                "deadline": "0x6b49d200"
+            }
+        },
+        {
+            "case": "Permit2 PermitBatch",
+            "types": {
+                "EIP712Domain": [
+                    { "name": "name", "type": "string" },
+                    { "name": "chainId", "type": "uint256" },
+                    { "name": "verifyingContract", "type": "address" }
+                ],
+                "PermitBatch": [
+                    { "name": "details", "type": "PermitDetails[]" },
+                    { "name": "spender", "type": "address" },
+                    { "name": "sigDeadline", "type": "uint256" }
+                ],
+                "PermitDetails": [
+                    { "name": "token", "type": "address" },
+                    { "name": "amount", "type": "uint160" },
+                    { "name": "expiration", "type": "uint48" },
+                    { "name": "nonce", "type": "uint48" }
+                ]
+            },
+            "primaryType": "PermitBatch",
+            "domain": {
+                "name": "Permit2",
+                "chainId": 1,
+                "verifyingContract": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+            },
+            "message": {
+                "details": [
+                    {
+                        "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+                        "amount": "1461501637330902918203684832716283019655932542975",
+                        "expiration": 1800000000,
+                        "nonce": 0
+                    },
+                    {
+                        "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+                        "amount": "5",
+                        "expiration": 1800000000,
+                        "nonce": 1
+                    }
+                ],
+                "spender": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+                "sigDeadline": "1800000000"
+            }
+        },
+        {
+            "case": "DAI 的 Permit",
+            "types": {
+                "EIP712Domain": [
+                    { "name": "name", "type": "string" },
+                    { "name": "version", "type": "string" },
+                    { "name": "chainId", "type": "uint256" },
+                    { "name": "verifyingContract", "type": "address" }
+                ],
+                "Permit": [
+                    { "name": "holder", "type": "address" },
+                    { "name": "spender", "type": "address" },
+                    { "name": "nonce", "type": "uint256" },
+                    { "name": "expiry", "type": "uint256" },
+                    { "name": "allowed", "type": "bool" }
+                ]
+            },
+            "primaryType": "Permit",
+            "domain": {
+                "name": "Dai Stablecoin",
+                "version": "1",
+                "chainId": 1,
+                "verifyingContract": "0x6B175474E89094C44Da98b954EedeAC495271d0F"
+            },
+            "message": {
+                "holder": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                "spender": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+                "nonce": 0,
+                "expiry": 0,
+                "allowed": true
+            }
+        },
+        {
+            "case": "全部原子类型",
+            "types": {
+                "EIP712Domain": [
+                    { "name": "name", "type": "string" },
+                    { "name": "chainId", "type": "uint256" },
+                    { "name": "salt", "type": "bytes32" }
+                ],
+                "Atoms": [
+                    { "name": "flag", "type": "bool" },
+                    { "name": "small", "type": "int8" },
+                    { "name": "wide", "type": "int256" },
+                    { "name": "byte", "type": "uint8" },
+                    { "name": "fixed4", "type": "bytes4" },
+                    { "name": "fixed32", "type": "bytes32" },
+                    { "name": "blob", "type": "bytes" },
+                    { "name": "empty", "type": "bytes" },
+                    { "name": "text", "type": "string" },
+                    { "name": "who", "type": "address" }
+                ]
+            },
+            "primaryType": "Atoms",
+            "domain": {
+                "name": "Atoms",
+                "chainId": 137,
+                "salt": "0x3333333333333333333333333333333333333333333333333333333333333333"
+            },
+            "message": {
+                "flag": true,
+                "small": -128,
+                "wide": "-57896044618658097711785492504343953926634992332820282019728792003956564819968",
+                "byte": 255,
+                "fixed4": "0xdeadbeef",
+                "fixed32": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                "blob": "0x0102",
+                "empty": "0x",
+                "text": "你好",
+                "who": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+            }
+        },
+        {
+            "case": "数组,定长数组和嵌套数组",
+            "types": {
+                "EIP712Domain": [
+                    { "name": "chainId", "type": "uint256" },
+                    { "name": "verifyingContract", "type": "address" }
+                ],
+                "Leaf": [{ "name": "id", "type": "uint16" }],
+                "Grid": [
+                    { "name": "fixed", "type": "uint8[3]" },
+                    { "name": "rows", "type": "uint8[][]" },
+                    { "name": "pairs", "type": "bytes4[2][]" },
+                    { "name": "leaves", "type": "Leaf[]" },
+                    { "name": "words", "type": "string[]" },
+                    { "name": "none", "type": "address[]" }
+                ]
+            },
+            "primaryType": "Grid",
+            "domain": { "chainId": 1, "verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC" },
+            "message": {
+                "fixed": [1, 2, 3],
+                "rows": [[1], [], [2, 3]],
+                "pairs": [["0x01020304", "0x05060708"]],
+                "leaves": [{ "id": 7 }, { "id": 8 }],
+                "words": ["a", "b"],
+                "none": []
+            }
+        },
+        {
+            "case": "自引用类型",
+            "types": {
+                "EIP712Domain": [{ "name": "name", "type": "string" }],
+                "Node": [
+                    { "name": "value", "type": "uint256" },
+                    { "name": "children", "type": "Node[]" }
+                ]
+            },
+            "primaryType": "Node",
+            "domain": { "name": "Tree" },
+            "message": { "value": 1, "children": [{ "value": 2, "children": [] }] }
+        },
+        {
+            "case": "类型互相引用",
+            "types": {
+                "EIP712Domain": [{ "name": "name", "type": "string" }],
+                "Left": [
+                    { "name": "id", "type": "uint8" },
+                    { "name": "next", "type": "Right[]" }
+                ],
+                "Right": [
+                    { "name": "id", "type": "uint8" },
+                    { "name": "next", "type": "Left[]" }
+                ]
+            },
+            "primaryType": "Left",
+            "domain": { "name": "Cycle" },
+            "message": { "id": 1, "next": [{ "id": 2, "next": [] }] }
+        },
+        {
+            "case": "域的字段不是规范顺序",
+            "types": {
+                "EIP712Domain": [
+                    { "name": "verifyingContract", "type": "address" },
+                    { "name": "chainId", "type": "uint256" },
+                    { "name": "name", "type": "string" }
+                ],
+                "Ping": [{ "name": "id", "type": "uint8" }]
+            },
+            "primaryType": "Ping",
+            "domain": {
+                "name": "Order",
+                "chainId": 1,
+                "verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
+            },
+            "message": { "id": 1 }
+        },
+        {
+            "case": "域没有 chainId 和合约",
+            "types": {
+                "EIP712Domain": [{ "name": "name", "type": "string" }],
+                "Ping": [{ "name": "id", "type": "uint8" }]
+            },
+            "primaryType": "Ping",
+            "domain": { "name": "Anywhere" },
+            "message": { "id": 1 }
+        },
+        {
+            "case": "types 里没有 EIP712Domain",
+            "types": { "Ping": [{ "name": "id", "type": "uint8" }] },
+            "primaryType": "Ping",
+            "domain": {
+                "name": "Implicit",
+                "version": "2",
+                "chainId": 1,
+                "verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
+            },
+            "message": { "id": 1 }
+        },
+        {
+            "case": "主类型是 EIP712Domain",
+            "types": { "EIP712Domain": [{ "name": "name", "type": "string" }] },
+            "primaryType": "EIP712Domain",
+            "domain": { "name": "Only" },
+            "message": {}
+        }
+    ]
+}

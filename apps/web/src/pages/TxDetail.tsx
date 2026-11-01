@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { chainOf, explorerLink } from "../chains";
 import { TransferError, type ReplaceMode } from "../chains/transfer";
@@ -30,6 +30,7 @@ import { GatewayDown } from "../ui/GatewayDown";
 import { Icon, type IconName } from "../ui/Icon";
 import { clockLabel, timeLabel } from "../ui/labels";
 import {
+    BigAmount,
     Button,
     ChildTitle,
     Chip,
@@ -47,6 +48,7 @@ import {
     SkeletonRows,
 } from "../ui/primitives";
 import { Confirm } from "../ui/Sheet";
+import { SignedTx } from "../ui/SignedTx";
 import { StateCard } from "../ui/StateCard";
 import { AssetIcon } from "../ui/TokenIcon";
 import { t, translate } from "../core/i18n";
@@ -109,6 +111,28 @@ function FinalityMeter({ tx }: { tx: TxRecord }) {
     );
 }
 
+interface AmountHeadProps {
+    icon: ReactNode;
+    amount: string;
+    party: ReactNode;
+    /** 状态,放在金额右边. */
+    children: ReactNode;
+}
+
+/** 金额,对方和状态.窄屏时金额独占一行,和冷钱包的核对页一样,数字不会被状态挤断. */
+function AmountHead({ icon, amount, party, children }: AmountHeadProps) {
+    return (
+        <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-s4 gap-y-s3 @split:grid-cols-[auto_minmax(0,1fr)_auto]">
+            {icon}
+            <div className="flex items-center justify-end gap-s3 @split:col-start-3 @split:row-start-1">{children}</div>
+            <div className="col-span-2 flex min-w-0 flex-col @split:col-span-1 @split:col-start-2 @split:row-start-1">
+                <BigAmount>{amount}</BigAmount>
+                <span className="truncate text-t3 text-text-2">{party}</span>
+            </div>
+        </div>
+    );
+}
+
 /** 这一屏的主角:这笔转账和它走到哪了. */
 function Hero({ tx, tracking }: { tx: TxRecord; tracking: boolean }) {
     const { icon, tone } = HEADS[tx.state];
@@ -116,27 +140,25 @@ function Hero({ tx, tracking }: { tx: TxRecord; tracking: boolean }) {
     const { progress, goal } = finality(tx);
     return (
         <Section aria-labelledby={tracking ? "h-conf" : undefined} className="flex flex-col gap-s5">
-            {/* 窄屏时金额独占一行,和冷钱包的核对页一样,数字不会被状态挤断. */}
-            <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-s4 gap-y-s3 @split:grid-cols-[auto_minmax(0,1fr)_auto]">
-                <AssetIcon entry={entry} network={tx.network} size={48} />
-                <div className="flex items-center justify-end gap-s3 @split:col-start-3 @split:row-start-1">
-                    <Chip tone={tx.reverted ? "danger" : TONES[tx.state]}>{STATE_LABELS[tx.state]}</Chip>
-                    <span
-                        key={tx.state}
-                        className={`flex size-12 items-center justify-center rounded-full ${tone} ${
-                            tx.state === "confirmed" || tx.state === "failed" ? "ring-once" : "rise"
-                        }`}
-                    >
-                        <Icon name={icon} size={24} draw={tx.state === "confirmed"} />
-                    </span>
-                </div>
-                <div className="col-span-2 flex min-w-0 flex-col @split:col-span-1 @split:col-start-2 @split:row-start-1">
-                    <span className="text-t7 font-semibold [overflow-wrap:anywhere]">{amountText(tx)}</span>
-                    <span className="truncate text-t3 text-text-2">
+            <AmountHead
+                icon={<AssetIcon entry={entry} network={tx.network} size={48} />}
+                amount={amountText(tx)}
+                party={
+                    <>
                         {t("至")} <span className="font-mono">{shortAddress(tx.to)}</span>
-                    </span>
-                </div>
-            </div>
+                    </>
+                }
+            >
+                <Chip tone={tx.reverted ? "danger" : TONES[tx.state]}>{STATE_LABELS[tx.state]}</Chip>
+                <span
+                    key={tx.state}
+                    className={`flex size-12 items-center justify-center rounded-full ${tone} ${
+                        tx.state === "confirmed" || tx.state === "failed" ? "ring-once" : "rise"
+                    }`}
+                >
+                    <Icon name={icon} size={24} draw={tx.state === "confirmed"} />
+                </span>
+            </AmountHead>
             {tracking ? (
                 <div className="flex flex-col gap-s3">
                     <div className="flex flex-wrap items-center justify-between gap-x-s4 gap-y-s1">
@@ -217,6 +239,7 @@ function Details({ tx }: { tx: TxRecord }) {
                     </Fact>
                 ))}
             </dl>
+            {tx.raw ? <SignedTx raw={tx.raw} /> : null}
             {tx.hash ? <Remark id={txKey(tx.network, tx.hash)} /> : null}
         </Section>
     );
@@ -552,17 +575,18 @@ function ChainView({ entries }: { entries: ChainEntry[] }) {
         <>
             <ChildTitle parent={HISTORY}>{row.title}</ChildTitle>
             <Section className="flex flex-col gap-s4">
-                <div className="flex min-w-0 items-center gap-s4">
-                    <AssetIcon entry={row.entry} network={row.network} size={48} />
-                    <div className="flex min-w-0 flex-1 flex-col">
-                        <span className="text-t7 font-semibold [overflow-wrap:anywhere]">{row.amount}</span>
-                        <span className="truncate text-t3 text-text-2">
+                <AmountHead
+                    icon={<AssetIcon entry={row.entry} network={row.network} size={48} />}
+                    amount={row.amount}
+                    party={
+                        <>
                             {row.direction === "in" ? t("来自") : t("至")}{" "}
                             <span className="font-mono">{party ? shortAddress(party) : "—"}</span>
-                        </span>
-                    </div>
+                        </>
+                    }
+                >
                     <Chip tone={row.tone}>{row.status}</Chip>
-                </div>
+                </AmountHead>
                 <HashLine network={entry.network} hash={entry.hash} />
             </Section>
             {stale ? (

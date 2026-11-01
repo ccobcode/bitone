@@ -58,6 +58,29 @@ async function decrypted(file: string, pass = PASS): Promise<string> {
     );
 }
 
+/** 解开备份,改动内容后用同样的参数重新加密,测试构造的恶意文件. */
+async function tampered(file: string, edit: (payload: Record<string, unknown>) => void): Promise<string> {
+    const head = JSON.parse(file) as Record<string, string>;
+    const bytes = (text: string | undefined) => Uint8Array.from(atob(text ?? ""), (c) => c.charCodeAt(0));
+    const payload = JSON.parse(await decrypted(file)) as Record<string, unknown>;
+    edit(payload);
+    const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(PASS), "PBKDF2", false, [
+        "deriveKey",
+    ]);
+    const key = await crypto.subtle.deriveKey(
+        { name: "PBKDF2", hash: "SHA-256", salt: bytes(head.salt), iterations: KDF_ITERATIONS },
+        material,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt"],
+    );
+    const { format, version, iterations, salt, iv } = head;
+    const additionalData = new TextEncoder().encode(`${format}\n${version}\n${iterations}\n${salt}\n${iv}`);
+    const plain = new TextEncoder().encode(JSON.stringify(payload));
+    const data = await crypto.subtle.encrypt({ name: "AES-GCM", iv: bytes(iv), additionalData }, key, plain);
+    return JSON.stringify({ ...head, data: btoa(String.fromCharCode(...new Uint8Array(data))) });
+}
+
 describe("导出", () => {
     it("文件带格式版本,用标准算法解得开,迭代 60 万次", async () => {
         const file = JSON.parse(await exportBackup(PASS)) as Record<string, unknown>;
@@ -167,6 +190,42 @@ describe("导入", () => {
         expect(summary.conflicts).toBeGreaterThan(0);
         expect(await db.accounts.get(`${ID}:${PATHS.segwit}`)).toBeUndefined();
         expect(await db.addresses.count()).toBe(before);
+    });
+
+    it("wallets 为空的文件不能给已配对的钱包加账户,也换不掉公钥", async () => {
+        const full = await exportBackup(PASS);
+        const crafted = await tampered(full, (payload) => {
+            payload.wallets = [];
+        });
+        await clearLocalData();
+        const pairing = loadPairing();
+        await savePairing(pairing, { name: "主钱包", paths: new Set([PATHS.evm]), mode: "mainnet" });
+        const before = await db.addresses.count();
+        const summary = await importBackup(crafted, PASS);
+        expect(summary).toMatchObject({ wallets: 0, accounts: 2, conflicts: 8, first: null });
+        expect(await db.accounts.get(`${ID}:${PATHS.segwit}`)).toBeUndefined();
+        expect(await db.addresses.count()).toBe(before);
+    });
+
+    it("全新浏览器导入的恶意公钥,重新配对后恢复", async () => {
+        const pairing = loadPairing();
+        const other = pairing.accounts.find((a) => a.path === PATHS.taproot)?.key;
+        const attacker = {
+            ...pairing,
+            accounts: pairing.accounts.map((a) => (a.path === PATHS.segwit ? { ...a, key: must(other) } : a)),
+        };
+        const paths = new Set(pairing.accounts.map((a) => a.path));
+        await clearLocalData();
+        await savePairing(attacker, { name: "攻击者", paths, mode: "mainnet" });
+        const file = await exportBackup(PASS);
+        await clearLocalData();
+        await importBackup(file, PASS);
+        expect((await db.addresses.get([`${ID}:${PATHS.segwit}`, 0, 0]))?.address).not.toBe(BTC_ADDRESS);
+        await savePairing(pairing, { name: "主钱包", paths, mode: "mainnet" });
+        expect(await db.addresses.get([`${ID}:${PATHS.segwit}`, 0, 0])).toMatchObject({
+            address: BTC_ADDRESS,
+            verified: false,
+        });
     });
 
     it("地址从公钥重新派生,与备份里写的无关", async () => {

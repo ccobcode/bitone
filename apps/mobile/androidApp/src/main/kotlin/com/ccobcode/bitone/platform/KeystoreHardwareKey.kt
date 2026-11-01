@@ -13,6 +13,7 @@ import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.security.keystore.UserNotAuthenticatedException
 import com.ccobcode.bitone.i18n.translate
+import java.io.IOException
 import java.security.GeneralSecurityException
 import java.security.KeyStore
 import java.security.ProviderException
@@ -58,21 +59,31 @@ class KeystoreHardwareKey(
 
     private fun keyStore(): KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
 
+    /** null 表示密钥不在了.系统把永久失效报成不带 cause 的 UnrecoverableKeyException,带 cause 的是这次没读出来,密钥还在. */
     private fun existingKey(alias: String): SecretKey? =
         try {
             keyStore().getKey(alias, null) as? SecretKey
-        } catch (_: UnrecoverableKeyException) {
+        } catch (e: UnrecoverableKeyException) {
+            if (e.cause != null) throw unavailable()
             null
+        } catch (_: GeneralSecurityException) {
+            throw unavailable()
+        } catch (_: ProviderException) {
+            throw unavailable()
+        } catch (_: IOException) {
+            throw unavailable()
         }
+
+    private fun unavailable() = HardwareKeyException.Unavailable("硬件密钥不可用")
 
     override suspend fun bind(pin: String): ByteArray {
         val key = existingKey(PIN_ALIAS) ?: throw HardwareKeyException.Lost("硬件密钥已不存在")
-        return authenticatedMac(key, pin, HardwareKeyException.Lost("硬件密钥已失效"))
+        return authenticatedMac(key, pin, unavailable())
     }
 
     override suspend fun enroll(pin: String): ByteArray {
         val key = existingKey(PIN_ALIAS) ?: createKey()
-        return authenticatedMac(key, pin, HardwareKeyException.Unavailable("硬件密钥不可用"))
+        return authenticatedMac(key, pin, unavailable())
     }
 
     /** 这次认证只对这一个 Mac 对象有效,所以一次确认只能算一个 PIN. */
@@ -92,7 +103,7 @@ class KeystoreHardwareKey(
     override suspend fun unwrap(wrapped: ByteArray): ByteArray {
         val key = existingKey(LEGACY_ALIAS) ?: throw HardwareKeyException.Lost("硬件密钥已不存在")
         if (wrapped.size <= IV_BYTES) throw HardwareKeyException.Lost("密文损坏")
-        return authorized(HardwareKeyException.Lost("硬件密钥已失效")) {
+        return authorized(unavailable()) {
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, wrapped, 0, IV_BYTES))
             cipher.updateAAD(AAD)
@@ -115,22 +126,28 @@ class KeystoreHardwareKey(
             false
         } catch (_: UserNotAuthenticatedException) {
             false
+        } catch (_: KeyPermanentlyInvalidatedException) {
+            true
         } catch (_: GeneralSecurityException) {
-            // 含 KeyPermanentlyInvalidatedException.其他错误也按失效处理,不删任何数据,下次检测恢复后自动回首页.
-            true
+            // 其他错误不代表密钥没了,不能让用户去导入.解锁时再报不可用,可以重试.
+            false
         } catch (_: ProviderException) {
-            true
+            false
+        } catch (_: HardwareKeyException.Unavailable) {
+            false
         }
 
-    override fun delete() {
-        keyStore().deleteEntry(PIN_ALIAS)
-        keyStore().deleteEntry(LEGACY_ALIAS)
-        keyStore().deleteEntry(PROBE_ALIAS)
+    /** 尽力而为.Keystore 坏了时删不掉也不能让导入和抹除崩溃,写新钱包时 [enroll] 会报不可用. */
+    private fun deleteEntries(vararg aliases: String) {
+        try {
+            val store = keyStore()
+            aliases.forEach(store::deleteEntry)
+        } catch (_: GeneralSecurityException) {} catch (_: ProviderException) {} catch (_: IOException) {}
     }
 
-    override fun dropLegacy() {
-        keyStore().deleteEntry(LEGACY_ALIAS)
-    }
+    override fun delete() = deleteEntries(PIN_ALIAS, LEGACY_ALIAS, PROBE_ALIAS)
+
+    override fun dropLegacy() = deleteEntries(LEGACY_ALIAS)
 
     override suspend fun confirmDeviceLock() = confirmCredential()
 
@@ -150,11 +167,11 @@ class KeystoreHardwareKey(
             false
         } catch (_: ProviderException) {
             false
+        } catch (_: IOException) {
+            false
         }
 
-    override fun acceptLock() {
-        keyStore().deleteEntry(PROBE_ALIAS)
-    }
+    override fun acceptLock() = deleteEntries(PROBE_ALIAS)
 
     private fun createProbe() {
         val biometrics = context.getSystemService(BiometricManager::class.java)
@@ -223,7 +240,7 @@ class KeystoreHardwareKey(
             }
         }
 
-    /** 密钥失效统一换成 [failure]. */
+    /** 永久失效是 Lost,其他错误换成 [failure]. */
     private suspend fun <T> rethrowing(failure: HardwareKeyException, block: suspend () -> T): T =
         try {
             block()

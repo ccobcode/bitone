@@ -31,12 +31,16 @@ export interface CoinInput {
     prevTx?: Uint8Array;
 }
 
+export interface BitcoinPayment {
+    address: string;
+    amount: number;
+}
+
 export interface BitcoinTransfer extends RequestHeader {
     keys: KeyEntry[];
     inputs: CoinInput[];
     /** 留空表示取消,全部回到 `changePath`,冷钱包显示转给自己. */
-    to?: string;
-    amount?: number;
+    payments: BitcoinPayment[];
     changePath?: string;
     change: number;
 }
@@ -50,8 +54,14 @@ export interface CoinSelection {
 }
 
 /** 选币.金额不够时抛错.选出后要取回前序交易才能构建. */
-export function selectCoins(utxos: CoinInput[], amount: bigint, feeRate: bigint, kind: AccountKind): CoinSelection {
-    return wasmSelectCoins(utxos, amount, feeRate, kind) as CoinSelection;
+export function selectCoins(
+    utxos: CoinInput[],
+    amount: bigint,
+    feeRate: bigint,
+    kind: AccountKind,
+    payments = 1,
+): CoinSelection {
+    return wasmSelectCoins(utxos, amount, payments, feeRate, kind) as CoinSelection;
 }
 
 export interface BitcoinFeeInfo {

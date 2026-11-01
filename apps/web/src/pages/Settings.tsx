@@ -216,8 +216,8 @@ export default function Settings() {
             <NoticeGroup />
 
             <Group id="h-gw" title={t("网关")}>
-                <Setting label={t("网关地址")} hint={t("和网页端同域部署,不能修改")}>
-                    <span className="font-mono text-t2 [overflow-wrap:anywhere]">{location.origin}</span>
+                <Setting label={t("网关地址")}>
+                    <span className="font-mono text-t2 [overflow-wrap:anywhere]">{location.host}</span>
                 </Setting>
                 <Setting label="HTTP">
                     {gateway.httpOk && gateway.latency !== null ? (
@@ -257,6 +257,12 @@ export default function Settings() {
             </Group>
 
             <BackupCard />
+
+            <Group id="h-adv" title={t("高级")}>
+                <Setting label={t("原始请求")} hint={t("转账表单不支持的交易,手动填写后由冷钱包签名")}>
+                    <LinkButton to="/raw">{t("打开")}</LinkButton>
+                </Setting>
+            </Group>
 
             <Group id="h-danger" title={t("危险操作")} tone="text-danger">
                 <Setting label={t("清除本地数据")} hint={t("钱包可重新扫码恢复,地址簿和备注只能从备份恢复")}>

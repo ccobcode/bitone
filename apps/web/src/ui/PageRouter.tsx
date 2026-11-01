@@ -6,7 +6,7 @@ import { Router, UNSAFE_createBrowserHistory, type Location, type NavigationType
 const history = UNSAFE_createBrowserHistory({ v5Compat: true });
 
 /** 前进还是返回看页面在产品里的先后,子页面排在父页面后面,从转账流程回到资产算返回. */
-const ORDER = ["welcome", "", "assets", "history", "contacts", "device", "settings", "send", "sign"];
+const ORDER = ["welcome", "", "assets", "history", "contacts", "device", "settings", "raw", "send", "sign"];
 
 function rank(pathname: string): number {
     const [, section = "", child] = pathname.split("/");

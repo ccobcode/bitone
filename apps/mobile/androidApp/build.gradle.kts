@@ -7,7 +7,7 @@ plugins {
 }
 
 // 发布时由 make 传入,和 tag 一致.versionCode 由它算出,只增不减,系统才允许覆盖安装.
-val appVersion = providers.gradleProperty("appVersion").getOrElse("0.1.0")
+val appVersion = providers.gradleProperty("appVersion").getOrElse("0.2.0")
 
 android {
     namespace = "com.ccobcode.bitone"

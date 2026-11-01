@@ -30,14 +30,20 @@ internal interface FlowHost {
 
     fun showNotice(text: String, failed: Boolean = false)
 
-    /** 重新跑一次自检,并按结果决定去哪一页.返回 true 表示没有未通过项. */
+    /** 重新跑一次自检,并按结果决定去哪一页.返回 true 表示没有要处理的未通过项:都通过了,或这次操作已经确认过. */
     suspend fun recheck(): Boolean
+
+    /** 生成新钱包之前的自检.确认不算数,有未通过项就停在 AS. */
+    suspend fun recheckNewWallet(): Boolean
+
+    /** 一次操作.自检有未确认的失败时停在 AS,确认后接着做 [block].确认只对这一次操作有效. */
+    fun operation(block: suspend () -> Unit)
 
     /** 进 A7,解开钱包做完 [request] 这一件事. */
     fun unlock(request: UnlockRequest)
 
-    /** 公钥不在手边时进 A7 读公钥,读到之后回到发起的页面. */
-    fun loadKeys()
+    /** 公钥不在手边时进 A7 读公钥,读到之后回到发起的页面.这也算一次操作. */
+    suspend fun loadKeys()
 
     fun walletSaved(saved: WalletMeta)
 
@@ -47,7 +53,7 @@ internal interface FlowHost {
     /** 在后台线程调用. */
     fun eraseData()
 
-    /** 钱包已抹除,清掉全部子流程的状态. */
+    /** 用户抹除了钱包,清掉全部子流程的状态. */
     fun walletErased()
 
     suspend fun manifestChanged()

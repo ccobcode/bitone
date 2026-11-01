@@ -185,7 +185,12 @@ async function apply(id: string, change: (tx: TxRecord) => TxRecord, now: number
 export function markSigned(id: string, verified: Verified, now = Date.now()): Promise<TxRecord> {
     return apply(
         id,
-        (tx) => ({ ...transition(tx, "signed", now, t("签名与构建记录一致")), raw: verified.raw, hash: verified.hash }),
+        (tx) => ({
+            ...transition(tx, "signed", now, t("签名与构建记录一致")),
+            raw: verified.raw,
+            hash: verified.hash,
+            feeUnconfirmed: verified.feeUnconfirmed === true,
+        }),
         now,
     );
 }
@@ -273,7 +278,7 @@ async function releaseHolder(id: string): Promise<void> {
     announce();
 }
 
-/** 已放弃的交易这一轮的序号是否已被用掉.和被替换的判定一样,要连续看到才释放. */
+/** 已放弃的交易这一轮的序号是否已被用掉.要连续看到才释放. */
 export async function noteSpent(id: string, spent: boolean, now = Date.now()): Promise<void> {
     const tx = await db.txs.get(id);
     if (!tx) return;

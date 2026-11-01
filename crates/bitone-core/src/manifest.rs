@@ -1,7 +1,7 @@
 //! 内置清单.图标,符号,小数位都只按"网络加合约地址"查,没有按符号查找的入口.
 //! 清单包用厂商公钥验签,版本只增不减.
 
-use crate::Error;
+use crate::{Error, Network};
 use p256::ecdsa::signature::Verifier;
 use p256::ecdsa::{DerSignature, VerifyingKey};
 use p256::pkcs8::DecodePublicKey;
@@ -23,6 +23,9 @@ pub struct Asset {
     pub icon: String,
     pub standard: String,
     pub min_fraction: u8,
+    /// Token-2022 的 mint 声明的扩展.扩展是链上状态,声明过才可能是普通转账.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extensions: Option<Vec<String>>,
 }
 
 impl Asset {
@@ -30,16 +33,60 @@ impl Asset {
     pub fn key(&self) -> String {
         format!("{}:{}", self.network, self.contract)
     }
+
+    /// 清单没有这个网络的原生币时用的数据,只来自链本身,没有图标.
+    pub fn plain_native(network: Network) -> Self {
+        let (symbol, decimals) = network.native_coin();
+        Self {
+            network: network.id().to_string(),
+            contract: "native".to_string(),
+            symbol: symbol.to_string(),
+            name: symbol.to_string(),
+            decimals,
+            icon: String::new(),
+            standard: String::new(),
+            min_fraction: decimals,
+            extensions: None,
+        }
+    }
 }
 
-/// 已知的函数.只影响展示,不能降低风险类别.
+/// 一个字段的展示方式,格式和 ERC-7730 的 `display.formats` 相同.`path` 是顶层参数名.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayField {
+    pub path: String,
+    pub label: String,
+    #[serde(default)]
+    pub format: Option<String>,
+    #[serde(default)]
+    pub params: DisplayParams,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KnownFunction {
+pub struct DisplayParams {
+    #[serde(default)]
+    pub token_path: Option<String>,
+    #[serde(default)]
+    pub threshold: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayFormat {
+    pub intent: String,
+    #[serde(default)]
+    pub fields: Vec<DisplayField>,
+}
+
+/// 描述文件.只决定字段名和展示,类别由策略判定.只通过验签的清单到达.
+/// 按网络,合约绑定.选择器由 `signature` 算出,`signature` 是带参数名的函数,比如 `stake(uint256 amount)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Descriptor {
     pub network: String,
     pub contract: String,
-    pub selector: String,
-    pub title: String,
+    pub signature: String,
+    #[serde(flatten)]
+    pub format: DisplayFormat,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,7 +94,7 @@ pub struct Manifest {
     pub version: u32,
     pub assets: Vec<Asset>,
     #[serde(default)]
-    pub functions: Vec<KnownFunction>,
+    pub descriptors: Vec<Descriptor>,
 }
 
 static BUILTIN: OnceLock<Manifest> = OnceLock::new();
@@ -74,11 +121,16 @@ impl Manifest {
         self.lookup(network, "native")
     }
 
-    pub fn function(&self, network: &str, contract: &str, selector: &str) -> Option<&KnownFunction> {
-        self.functions.iter().find(|f| {
-            f.network == network
-                && f.contract.eq_ignore_ascii_case(contract)
-                && f.selector.eq_ignore_ascii_case(selector)
+    /// 绑定到这个合约的描述文件.
+    pub fn descriptors<'a>(&'a self, network: &'a str, contract: &'a str) -> impl Iterator<Item = &'a Descriptor> {
+        let hex = contract.starts_with("0x");
+        self.descriptors.iter().filter(move |d| {
+            d.network == network
+                && if hex {
+                    d.contract.eq_ignore_ascii_case(contract)
+                } else {
+                    d.contract == contract
+                }
         })
     }
 
@@ -98,16 +150,12 @@ impl Manifest {
     }
 
     /// 生效的清单:内置清单和已导入的清单包里版本高的一份.升级到内置版本更高的 APK 后,旧包不再生效.
-    /// 包每次都重新验签,本机文件也不信任.
-    pub fn active(package: Option<&[u8]>, key: &[u8]) -> Result<Cow<'static, Self>, Error> {
+    /// 包每次都重新验签,本机文件也不信任.包缺失或损坏时用内置清单,清单不影响能不能签名.
+    pub fn active(package: Option<&[u8]>, key: &[u8]) -> Cow<'static, Self> {
         let builtin = Self::builtin();
-        let Some(package) = package else {
-            return Ok(Cow::Borrowed(builtin));
-        };
-        match Self::from_package(package, key, builtin.version) {
-            Err(Error::StaleManifest) => Ok(Cow::Borrowed(builtin)),
-            imported => imported.map(Cow::Owned),
-        }
+        package
+            .and_then(|package| Self::from_package(package, key, builtin.version).ok())
+            .map_or(Cow::Borrowed(builtin), Cow::Owned)
     }
 }
 
@@ -151,5 +199,41 @@ mod tests {
         for network in crate::Network::ALL {
             assert!(Manifest::builtin().native(network.id()).is_some(), "{}", network.id());
         }
+    }
+
+    #[test]
+    fn plain_chain_data_matches_the_builtin_rows() {
+        for network in crate::Network::ALL {
+            let builtin = Manifest::builtin().native(network.id()).unwrap();
+            let plain = Asset::plain_native(network);
+            assert_eq!(plain.key(), builtin.key());
+            assert_eq!((&plain.symbol, plain.decimals), (&builtin.symbol, builtin.decimals));
+        }
+    }
+
+    #[test]
+    fn a_signed_manifest_without_descriptors_still_parses() {
+        let manifest: Manifest = serde_json::from_str("{\"version\":9,\"assets\":[]}").unwrap();
+        assert!(manifest.descriptors.is_empty());
+    }
+
+    #[test]
+    fn a_descriptor_keeps_the_erc7730_shape() {
+        let text = "{\"version\":9,\"assets\":[],\"descriptors\":[{\"network\":\"ethereum\",\"contract\":\"0xAB\",
+            \"signature\":\"stake(uint256 amount)\",\"intent\":\"Stake\",
+            \"fields\":[{\"path\":\"amount\",\"label\":\"Amount\",\"format\":\"tokenAmount\",
+            \"params\":{\"tokenPath\":\"@.to\"}}]}]}";
+        let manifest: Manifest = serde_json::from_str(text).unwrap();
+        let found: Vec<_> = manifest.descriptors("ethereum", "0xab").collect();
+        assert_eq!(found[0].format.fields[0].params.token_path.as_deref(), Some("@.to"));
+        assert_eq!(manifest.descriptors("polygon", "0xab").count(), 0);
+    }
+
+    #[test]
+    fn a_missing_or_corrupt_package_is_the_builtin_list() {
+        let builtin = Manifest::builtin();
+        assert_eq!(*Manifest::active(None, &VENDOR_KEY), *builtin);
+        assert_eq!(*Manifest::active(Some(&[]), &VENDOR_KEY), *builtin);
+        assert_eq!(*Manifest::active(Some(&[0x30, 0x02, 0x01]), &VENDOR_KEY), *builtin);
     }
 }

@@ -84,10 +84,8 @@ fun SettingsScreen(flow: WalletFlow, onLanguage: () -> Unit, onWipe: () -> Unit)
                 )
             }
         }
-        if (flow.session.canWipe) {
-            Card(Modifier.staggerIn(3).fillMaxWidth()) {
-                ListRow(onClick = onWipe) { Txt("抹除钱包", Modifier.weight(1f), color = c.danger) }
-            }
+        Card(Modifier.staggerIn(3).fillMaxWidth()) {
+            ListRow(onClick = onWipe) { Txt("抹除钱包", Modifier.weight(1f), color = c.danger) }
         }
     }
 }

@@ -5,6 +5,7 @@ import init, {
     accountAddress,
     accountSpecs,
     addressFrame,
+    buildPayloadRequest as wasmBuildPayload,
     initSync,
     networkLabel,
     networks,
@@ -196,6 +197,14 @@ export interface RequestHeader {
     network: string;
 }
 
+export interface PayloadRequest extends RequestHeader {
+    path: string;
+    payload: Uint8Array;
+}
+
+/** 把粘贴的载荷放进请求,这里不解析. */
+export const buildPayloadRequest = (args: PayloadRequest): Uint8Array => wasmBuildPayload(args);
+
 /** 校验清单包,返回版本号.网页端不知道冷钱包现在的版本,版本回退由冷钱包判断. */
 export function manifestPackageVersion(bytes: Uint8Array): number {
     return verifyManifestPackage(bytes, 0);
@@ -203,26 +212,49 @@ export function manifestPackageVersion(bytes: Uint8Array): number {
 
 export type Risk = "transfer" | "recognized" | "unknown" | "approval" | "permission-change" | "forbidden";
 
-export interface Review {
-    risk: Risk;
-    confirm: "tap" | "hold" | "refuse";
+/** 字段列表的一行,解码树的一个节点.`value` 已经由核心库格式化. */
+export interface FieldRow {
+    id: number;
+    depth: number;
+    name: string;
+    kind: string;
+    value: string;
+    own: boolean;
+}
+
+/** 页面顶部,不能代替字段列表. */
+export interface ReviewSummary {
     title: string;
     amount?: { text: string; symbol?: string; asset?: string; unlimited: boolean } | null;
+    counterpartyLabel?: string | null;
     counterparty?: string | null;
+}
+
+export interface Review {
+    risk: Risk;
+    confirm: "tap" | "hold" | "hold-confirm" | "refuse";
+    summary: ReviewSummary;
     alerts: string[];
-    actions: { title: string }[];
-    raw: { text: string }[];
+    fields: FieldRow[];
 }
 
 /** 用和冷钱包相同的代码预览.结果只用于提示,判断以冷钱包屏幕为准. */
 export function previewRequest(request: Uint8Array, keys: KeyEntry[]): Review {
     const review = wasmPreview(request, keys) as Review;
-    return { ...review, title: translate(review.title), alerts: review.alerts.map(translate) };
+    return {
+        ...review,
+        summary: { ...review.summary, title: translate(review.summary.title) },
+        alerts: review.alerts.map(translate),
+    };
 }
 
 export interface Verified {
     raw: string;
     hash: string;
+    /** Bitcoin 的手续费没有经过前序交易确认. */
+    feeUnconfirmed?: boolean;
+    /** 消息和未知的交易类型没有可以广播的形式,`raw` 是签名本身. */
+    signatureOnly?: boolean;
 }
 
 /** 广播前核验.`signer` 是付款账户公钥,Bitcoin 的公钥在 PSBT 里,传空数组. */

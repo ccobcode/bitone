@@ -2,6 +2,9 @@
 :root {
     --vt-in: var(--page-in);
     --vt-out: calc(var(--page-out) * -1);
+    /* 手机上的弹层走完自己的高度,全程不透明. */
+    --sheet-travel: 100%;
+    --sheet-fade: 1;
 }
 :root[data-nav="back"] {
     --vt-in: calc(var(--page-in) * -1);
@@ -91,6 +94,24 @@
     from {
         opacity: 0;
         transform: translate(var(--sheet-x), var(--sheet-y)) translateY(var(--rise)) scale(var(--pop-scale));
+    }
+}
+@keyframes sheet-out {
+    to {
+        opacity: 0;
+        transform: translate(var(--sheet-x), var(--sheet-y)) scale(var(--pop-scale));
+    }
+}
+@keyframes sheet-up {
+    from {
+        opacity: var(--sheet-fade);
+        transform: translateY(var(--sheet-travel));
+    }
+}
+@keyframes sheet-down {
+    to {
+        opacity: var(--sheet-fade);
+        transform: translateY(var(--sheet-travel));
     }
 }
 @keyframes rise {
@@ -468,7 +489,14 @@
             max-height: calc(100dvh - var(--safe-top) - var(--s8));
             border-radius: var(--r4) var(--r4) 0 0;
             padding: var(--s2) var(--s1) calc(var(--s4) + var(--safe-bottom));
-            transform-origin: bottom;
+        }
+        .picker[data-starting-style],
+        .picker[data-ending-style] {
+            opacity: var(--sheet-fade);
+            transform: translateY(var(--sheet-travel));
+        }
+        .picker[data-ending-style] {
+            transition-duration: var(--dur-normal);
         }
         .picker .popup-item {
             min-height: var(--h-row);
@@ -489,18 +517,34 @@
         cursor: not-allowed;
         opacity: 0.5;
     }
-    /* 浮层由网址打开,挂载时已经是打开的,进场用关键帧. */
+    /* 浮层由网址打开,挂载时已经是打开的,进场用关键帧.手机上和冷钱包的弹层相同:整块升起,沿原路下沉. */
     .sheet {
-        animation: sheet-in var(--dur-normal) var(--ease-emphasized) both;
+        animation: sheet-up var(--dur-normal) var(--ease-emphasized) both;
+    }
+    .sheet[data-ending-style] {
+        animation: sheet-down var(--dur-normal) var(--ease-exit) both;
     }
     .scrim {
         animation: fade-in var(--dur-normal) var(--ease-standard) both;
         background: color-mix(in srgb, var(--camera) var(--scrim), transparent);
-        transition: opacity var(--dur-normal) var(--ease-standard);
+        /* iOS 只给看起来能点的元素发 click,没有手形光标时点遮罩关不掉浮层. */
+        cursor: pointer;
     }
-    .scrim[data-starting-style],
+    /* 进场的关键帧一直填充着透明度,离场也要用关键帧,用过渡不生效. */
     .scrim[data-ending-style] {
-        opacity: 0;
+        animation: fade-out var(--dur-normal) var(--ease-exit) both;
+    }
+    /* 宽屏居中,不是从哪里升起的,原地放大,缩回 96% 并淡出. */
+    @media (width >= 60rem) {
+        .sheet {
+            animation-name: sheet-in;
+        }
+        .sheet[data-ending-style] {
+            animation: sheet-out var(--dur-fast) var(--ease-exit) both;
+        }
+        .scrim[data-ending-style] {
+            animation-duration: var(--dur-fast);
+        }
     }
 
     /* 向下的箭头,打开时翻转. */
@@ -626,6 +670,8 @@
         --rise: 0px;
         --vt-in: 0px;
         --vt-out: 0px;
+        --sheet-travel: 0px;
+        --sheet-fade: 0;
     }
     .segmented-thumb,
     .tabbar-mark,

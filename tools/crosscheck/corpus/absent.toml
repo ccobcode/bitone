@@ -1,0 +1,6 @@
+# 主网上确实没有样本的 TRON 合约类型.
+
+[tron]
+3 = "VoteAssetContract 有消息定义,没有执行器"
+20 = "CustomContract 只有枚举值,没有消息和执行器"
+32 = "GetContract 只有枚举值,没有消息和执行器"

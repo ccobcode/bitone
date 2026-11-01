@@ -1,7 +1,7 @@
 import { chainOf } from "../chains";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
-import { UrReceiver, accountKeyList, previewRequest, verifyResponse, type Review } from "../core";
+import { UrReceiver, accountKeyList, previewRequest, verifyResponse, type Review, type Verified } from "../core";
 import { useApp, useLive } from "../data/app";
 import { db, type TxRecord } from "../data/db";
 import { txHref } from "../gateway/history";
@@ -41,6 +41,7 @@ import {
 } from "../ui/primitives";
 import { ScanProgress } from "../ui/ScanProgress";
 import { Confirm } from "../ui/Sheet";
+import { SignedTx } from "../ui/SignedTx";
 import { StateCard } from "../ui/StateCard";
 import { AssetIcon } from "../ui/TokenIcon";
 import { t, translate } from "../core/i18n";
@@ -90,7 +91,7 @@ function ScanPanel({
     children,
 }: {
     tx: TxRecord;
-    onVerified(raw: string, hash: string): void;
+    onVerified(verified: Verified): void;
     children: ReactNode;
 }) {
     const { accounts } = useApp();
@@ -127,7 +128,7 @@ function ScanPanel({
                 const verified = verifyResponse(tx.request, message, chainOf(tx.chain).signerKey(account));
                 setScanning(false);
                 buzz();
-                onVerified(verified.raw, verified.hash);
+                onVerified(verified);
             } catch (error) {
                 setScanning(false);
                 setRejected(verifyFailure(error));
@@ -301,12 +302,12 @@ function SigningView({ tx }: { tx: TxRecord }) {
     const [qrError, setQrError] = useState("");
     const entry = lookupAsset(tx.network, tx.asset);
     const review = usePreview(tx);
-    const refused = review === null || review?.confirm === "refuse";
+    const refused = review?.confirm === "refuse";
 
     const onVerified = useCallback(
-        (raw: string, hash: string) => {
+        (verified: Verified) => {
             // 页面跟着状态走,下一步是广播.扫描期间交易可能已经到期,这时切到已结束的状态.
-            void markSigned(tx.id, { raw, hash }).catch(() => undefined);
+            void markSigned(tx.id, verified).catch(() => undefined);
         },
         [tx.id],
     );
@@ -315,49 +316,42 @@ function SigningView({ tx }: { tx: TxRecord }) {
         <>
             <ChildTitle parent={ASSETS}>{t("冷钱包签名")}</ChildTitle>
             <div className="grid grid-cols-12 items-start gap-s4 @split:gap-s5">
-                {refused ? (
-                    <div className="col-span-12 min-w-0 @split:col-span-7">
-                        <StateCard
-                            tone="danger"
-                            icon="alert"
-                            title={t("禁止签名")}
-                            body={review?.alerts[0] ?? t("这个请求无法解析,没有显示二维码.")}
-                            facts={[{ label: t("编号"), value: tx.id }]}
-                        />
-                    </div>
-                ) : (
-                    <Section
-                        aria-labelledby="h-qr"
-                        className="col-span-12 flex min-w-0 flex-col gap-s4 @split:col-span-7"
-                    >
-                        <div className="flex flex-wrap items-center justify-between gap-s2">
-                            <SectionTitle id="h-qr">{t("待签名二维码")}</SectionTitle>
-                            <div className="flex flex-wrap items-center gap-s2">
-                                <Countdown tx={tx} />
-                                {review ? (
-                                    <Chip tone={review.confirm === "tap" ? "ok" : "warn"}>{review.title}</Chip>
-                                ) : null}
-                            </div>
+                <Section aria-labelledby="h-qr" className="col-span-12 flex min-w-0 flex-col gap-s4 @split:col-span-7">
+                    <div className="flex flex-wrap items-center justify-between gap-s2">
+                        <SectionTitle id="h-qr">{t("待签名二维码")}</SectionTitle>
+                        <div className="flex flex-wrap items-center gap-s2">
+                            <Countdown tx={tx} />
+                            {review ? (
+                                <Chip tone={refused ? "danger" : review.confirm === "tap" ? "ok" : "warn"}>
+                                    {review.summary.title}
+                                </Chip>
+                            ) : null}
                         </div>
-                        {review?.alerts.map((alert) => (
-                            <Notice key={alert} tone="warn">
-                                {t("冷钱包会提示:")}
-                                {alert}
-                            </Notice>
-                        ))}
-                        {qrError ? (
-                            <Notice tone="danger">{qrError}</Notice>
-                        ) : (
-                            <AnimatedQr
-                                message={tx.request}
-                                type="request"
-                                size={QR_SIZE}
-                                label={t("待签名交易动态二维码")}
-                                onError={setQrError}
-                            />
-                        )}
-                    </Section>
-                )}
+                    </div>
+                    {review === null ? (
+                        <Notice tone="warn">{t("这个请求本机解析不了,判断以冷钱包屏幕为准.")}</Notice>
+                    ) : null}
+                    {refused ? (
+                        <Notice tone="danger">{t("本机预览认为冷钱包会拒绝这个请求,判断以冷钱包屏幕为准.")}</Notice>
+                    ) : null}
+                    {review?.alerts.map((alert) => (
+                        <Notice key={alert} tone="warn">
+                            {t("冷钱包会提示:")}
+                            {alert}
+                        </Notice>
+                    ))}
+                    {qrError ? (
+                        <Notice tone="danger">{qrError}</Notice>
+                    ) : (
+                        <AnimatedQr
+                            message={tx.request}
+                            type="request"
+                            size={QR_SIZE}
+                            label={t("待签名交易动态二维码")}
+                            onError={setQrError}
+                        />
+                    )}
+                </Section>
                 <ScanPanel tx={tx} onVerified={onVerified}>
                     <dl aria-label={t("交易摘要")} className="flex flex-col text-t2">
                         <Fact label={t("发送")}>
@@ -400,15 +394,19 @@ function SignedView({ tx }: { tx: TxRecord }) {
             <ChildTitle parent={ASSETS}>{t("广播")}</ChildTitle>
             <Section aria-labelledby="h-send" className="gap-s4">
                 <SectionTitle id="h-send">{t("核验通过")}</SectionTitle>
+                {tx.feeUnconfirmed ? (
+                    <Notice tone="warn">{t("手续费无法确认,输入金额只是声明,实际手续费可能和这里显示的不同.")}</Notice>
+                ) : null}
                 <dl aria-label={t("交易摘要")} className="flex flex-col text-t2">
                     <Fact label={t("发送")}>{amountText(tx)}</Fact>
                     <Fact label={t("收款")}>
-                        <FullAddress address={tx.to} className="justify-end" />
+                        {tx.to ? <FullAddress address={tx.to} className="justify-end" /> : "—"}
                     </Fact>
                     <Fact label={fee.label} mono={fee.mono}>
                         {fee.value}
                     </Fact>
                 </dl>
+                {tx.raw ? <SignedTx raw={tx.raw} /> : null}
                 <div className="flex justify-end gap-s2">
                     <Button disabled={busy} onClick={() => void cancelTx(tx.id, t("用户取消,签名仍然有效"))}>
                         {t("放弃")}

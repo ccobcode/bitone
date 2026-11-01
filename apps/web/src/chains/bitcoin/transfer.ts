@@ -3,17 +3,23 @@ import { accountKeyList } from "../../core";
 import { t } from "../../core/i18n";
 import { storeAddress } from "../../data/addresses";
 import { reservationsOf, type Claim } from "../../data/claims";
-import { db, planOf, type Account, type TxRecord, type Wallet } from "../../data/db";
+import { db, planOf, type Account, type TxKind, type TxRecord, type Wallet } from "../../data/db";
 import type { FeeTier } from "../../gateway/client";
 import type { Fees } from "../index";
-import type { Built, FeeSource } from "../spec";
+import type { Built, FeeSource, RawMode } from "../spec";
 import {
     QUOTE_LIFETIME,
+    RAW_TIER,
     TransferError,
     badFees,
+    checkedAddress,
     header,
+    rawText,
     requestFields,
     reviewRequest,
+    wholeNumber,
+    type RawDraft,
+    type RawValues,
     type ReplaceDraft,
     type ReplaceMode,
     type TransferDraft,
@@ -25,6 +31,7 @@ import {
     buildBitcoinTransfer,
     deriveAddress,
     selectCoins,
+    type BitcoinPayment,
     type BitcoinReplacement,
     type CoinInput,
     type CoinSelection,
@@ -48,6 +55,8 @@ export interface BitcoinPlan {
     feeRate: number;
     /** 虚拟大小,替换交易按它计算手续费. */
     vsize: number;
+    /** 原始请求的全部收款,替换交易要原样带上. */
+    payments?: BitcoinPayment[];
 }
 
 export type BitcoinClaim = "utxo" | "change";
@@ -141,19 +150,30 @@ function tierRate(fees: Fees, tier: FeeTier): bigint {
     return fees[tier];
 }
 
-function pickCoins(coins: SpendableCoin[], amount: bigint, rate: bigint, account: Account): CoinSelection {
+function pickCoins(
+    coins: SpendableCoin[],
+    amount: bigint,
+    rate: bigint,
+    account: Account,
+    payments: number,
+): CoinSelection {
     try {
-        return selectCoins(coins, amount, rate, account.kind);
+        return selectCoins(coins, amount, rate, account.kind, payments);
     } catch {
         throw new TransferError("insufficient", t("可用余额不足,部分余额被待处理的交易占用."));
     }
 }
 
-export async function transfer(draft: TransferDraft, fees: FeeSource): Promise<Built> {
-    const { account, network, to, amount, wallet } = draft;
+async function spend(
+    draft: Omit<TransferDraft, "entry">,
+    payments: BitcoinPayment[],
+    kind: TxKind,
+    fees: FeeSource,
+): Promise<Built> {
+    const { account, network, amount, wallet } = draft;
     const rate = tierRate(await fees(network), draft.tier);
     const coins = await spendableCoins(account, network);
-    const selection = pickCoins(coins, amount, rate, account);
+    const selection = pickCoins(coins, amount, rate, account, payments.length);
     const changeIndex = selection.change > 0 ? await nextChangeIndex(account, network, wallet.mode) : null;
     const changePath = changeIndex === null ? null : coinPath(account, 1, changeIndex);
     const addresses = new Map(coins.map((coin) => [`${coin.txid}:${coin.vout}`, coin.address]));
@@ -166,8 +186,7 @@ export async function transfer(draft: TransferDraft, fees: FeeSource): Promise<B
         ...head,
         keys: accountKeyList(draft.accounts),
         inputs: await withPrevTx(network, selection.inputs),
-        to,
-        amount: Number(amount),
+        payments,
         ...(changePath ? { changePath } : {}),
         change: selection.change,
     });
@@ -180,6 +199,7 @@ export async function transfer(draft: TransferDraft, fees: FeeSource): Promise<B
         change: selection.change,
         feeRate: Number(rate),
         ...bitcoinFeeInfo(request),
+        ...(kind === "raw" ? { payments } : {}),
     };
     const claims: Claim[] = selection.inputs.map((input) => ({
         type: "utxo",
@@ -192,11 +212,55 @@ export async function transfer(draft: TransferDraft, fees: FeeSource): Promise<B
         request,
         plan,
         amount.toString(),
-        "transfer",
+        kind,
         Date.now() + QUOTE_LIFETIME,
         false,
     );
     return { fields, claims };
+}
+
+export function transfer(draft: TransferDraft, fees: FeeSource): Promise<Built> {
+    return spend(draft, [{ address: draft.to, amount: Number(draft.amount) }], "transfer", fees);
+}
+
+export function rawModes(): RawMode[] {
+    return [
+        {
+            id: "payments",
+            label: t("多个收款"),
+            fields: [
+                {
+                    id: "payments",
+                    label: t("收款列表"),
+                    hint: t("每行一个地址和金额,用空格分开,金额单位是 sat"),
+                    multiline: true,
+                },
+            ],
+        },
+    ];
+}
+
+function parsePayments(network: string, text: string): BitcoinPayment[] {
+    const lines = text
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+    if (lines.length === 0) throw new TransferError("invalid", t("要填写收款列表."));
+    return lines.map((line) => {
+        const [address = "", amount = ""] = line.split(/\s+/);
+        const sats = wholeNumber(amount, t("金额"));
+        if (sats === 0n || sats > BigInt(Number.MAX_SAFE_INTEGER)) {
+            throw new TransferError("invalid", t("金额无效."));
+        }
+        return { address: checkedAddress(network, address, t("收款地址")), amount: Number(sats) };
+    });
+}
+
+export function raw(draft: RawDraft, _mode: string, values: RawValues, fees: FeeSource): Promise<Built> {
+    const payments = parsePayments(draft.network, rawText(values, "payments"));
+    const amount = payments.reduce((sum, item) => sum + BigInt(item.amount), 0n);
+    const to = payments[0]?.address ?? "";
+    return spend({ ...draft, asset: "native", to, amount, tier: RAW_TIER }, payments, "raw", fees);
 }
 
 function replacementFees(plan: BitcoinPlan, amount: bigint, fast: bigint, account: Account): BitcoinReplacement {
@@ -235,7 +299,7 @@ export async function replace(tx: TxRecord, mode: ReplaceMode, draft: ReplaceDra
         ...head,
         keys: accountKeyList(draft.accounts),
         inputs: await withPrevTx(tx.network, inputs),
-        ...(cancel ? {} : { to, amount: Number(amount) }),
+        payments: cancel ? [] : (plan.payments ?? [{ address: to, amount: Number(amount) }]),
         ...(changePath ? { changePath } : {}),
         change,
     });

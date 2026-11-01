@@ -12,6 +12,7 @@ export type TxEvent =
     | "rejected"
     | "retry"
     | "seen"
+    | "conflict"
     | "replaced"
     | "expired"
     | "included"
@@ -24,7 +25,7 @@ export const TRANSITIONS: Record<TxState, Partial<Record<TxEvent, TxState>>> = {
     signed: { cancel: "abandoned", submit: "broadcasting", expired: "expired" },
     broadcasting: { accepted: "broadcast", rejected: "uncertain" },
     uncertain: { retry: "broadcasting", seen: "broadcast", replaced: "replaced", expired: "expired" },
-    broadcast: { included: "confirming", replaced: "replaced", expired: "expired" },
+    broadcast: { included: "confirming", conflict: "uncertain", replaced: "replaced", expired: "expired" },
     confirming: { reorg: "broadcast", finalized: "confirmed", reverted: "failed" },
     replaced: { included: "confirming" },
     confirmed: {},
@@ -71,10 +72,12 @@ export interface ObserveContext {
     conflict?: boolean;
 }
 
-/** 连续这么多轮看到证据才算被替换.上游之间有延迟,这一步判错没有回头路. */
+/** 连续这么多轮看到证据才算序号已被用掉.上游之间有延迟. */
 export const CONFLICT_ROUNDS = 2;
 /** 两轮之间至少隔这么久.重连和新订阅都会触发轮询,挨着的两次查询不算两轮. */
 export const CONFLICT_SPACING = 10_000;
+
+const SEQUENCE_USED = "序号已被别的交易用掉,这笔还没有定论";
 
 /** 过期时间过后再等一会儿,节点的时钟和打包都可能晚一点. */
 export const EXPIRY_GRACE = 60_000;
@@ -136,7 +139,12 @@ export function observe(tx: TxRecord, seen: ChainObservation, { now, conflict }:
                 next = { ...next, conflicts: next.conflicts + 1, conflictAt: now };
             if (next.conflicts >= CONFLICT_ROUNDS) {
                 if (expired) fire("expired", "超过过期时间,未上链");
-                else fire("replaced", "链上出现替换交易");
+                // 证据只来自网关,可能是假的.这笔继续占着序号,同样的转账也发不出去.
+                // 只有这个浏览器发出的交易上链才算被替换,见 txs.ts 的 retireSiblings.
+                else if (next.state === "broadcast") {
+                    fire("conflict", SEQUENCE_USED);
+                    next = { ...next, lastError: SEQUENCE_USED };
+                }
             }
         }
     }
@@ -173,6 +181,11 @@ export function holdsReservation(tx: Pick<TxRecord, "state" | "raw">): boolean {
         default:
             return false;
     }
+}
+
+/** 这笔还可能上链.已替换要有这个浏览器发出的交易上链才算定论. */
+export function mayStillLand(tx: Pick<TxRecord, "state" | "replacedBy">): boolean {
+    return tx.state === "uncertain" || (tx.state === "replaced" && tx.replacedBy === undefined);
 }
 
 /** 已广播超时,提示加速或取消. */

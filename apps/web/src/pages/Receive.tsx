@@ -1,18 +1,18 @@
 import { chainOf } from "../chains";
 import { useMemo, useState } from "react";
 import { useLocation, useSearchParams } from "react-router";
-import { addressFrame, isLegacyKind, type Mode } from "../core";
-import { symbolOf } from "../core/manifest";
+import { addressFrame, networkName, type Mode } from "../core";
 import { shortAddress } from "../core/text";
 import { saveSetting, useApp, useLive } from "../data/app";
-import { db, type Account, type Address, type Wallet } from "../data/db";
-import { addressPath, ensureAddress, firstAddress } from "../data/pairing";
-import { accountIcon, accountName, accountNetworks } from "../ui/labels";
+import { db, type Address, type Wallet } from "../data/db";
+import { addressPath, ensureAddress } from "../data/pairing";
+import { receiveRows, type ReceiveRow } from "../gateway/assets";
+import { accountKind } from "../ui/labels";
 import { Picker } from "../ui/Picker";
 import { Button, Chip, Fact, FullAddress, LABEL, Notice, SelectList, SelectRow, SkeletonRows } from "../ui/primitives";
 import { QrCode } from "../ui/QrCode";
 import { Sheet, SheetActions } from "../ui/Sheet";
-import { TokenIcon } from "../ui/TokenIcon";
+import { TokenIcon, networkIcon } from "../ui/TokenIcon";
 import { t } from "../core/i18n";
 
 /** 发放过的地址,最新的在前. */
@@ -27,20 +27,25 @@ function useIssued(accountId: string) {
     return { indexKey, latest, issued };
 }
 
-function AccountLine({ account, addresses }: { account: Account; addresses: readonly Address[] }) {
-    const first = firstAddress(addresses, account.id);
+function AssetLine({ row }: { row: ReceiveRow }) {
     return (
         <>
-            <TokenIcon network={accountIcon(account)} size={32} />
-            <span className="flex min-w-0 flex-1 flex-col text-left">
-                <span className="truncate text-t3 font-medium">{accountName(account)}</span>
-                <span className="truncate font-mono text-t1 text-text-3">
-                    {first ? shortAddress(first.address) : ""}
-                </span>
+            <TokenIcon asset={row.entry} size={24} />
+            <span className="truncate text-t3 font-medium">{row.entry.symbol}</span>
+        </>
+    );
+}
+
+function NetworkLine({ row }: { row: ReceiveRow }) {
+    return (
+        <>
+            <TokenIcon network={networkIcon(row.network)} size={24} />
+            <span className="flex min-w-0 flex-col">
+                <span className="text-t3 leading-5 font-medium">{networkName(row.network)}</span>
+                {row.account.kind === "single" ? null : (
+                    <span className="truncate text-t1 text-text-3">{accountKind(row.account)}</span>
+                )}
             </span>
-            {first?.verified ? null : (
-                <span role="img" aria-label={t("未核对")} className="size-2 shrink-0 rounded-full bg-warn" />
-            )}
         </>
     );
 }
@@ -49,18 +54,19 @@ type View = "main" | "verify" | "list";
 
 interface PanelProps {
     wallet: Wallet;
-    account: Account;
+    row: ReceiveRow;
     mode: Mode;
-    start: View;
+    view: View;
+    setView(view: View): void;
     onIndex(index: number | null): void;
     index: string | null;
 }
 
 /** 一个账户的收款地址.收款,核对,地址列表在这里切换,不离开浮层. */
-function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelProps) {
+function AddressPanel({ wallet, row: asset, mode, view, setView, index, onIndex }: PanelProps) {
+    const { account } = asset;
     const { indexKey, latest, issued } = useIssued(account.id);
     const row = issued.find((item) => String(item.index) === index) ?? issued[0];
-    const [view, setView] = useState<View>(start);
     const [copied, setCopied] = useState(false);
     const [error, setError] = useState("");
 
@@ -134,7 +140,8 @@ function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelPro
     const verifying = view === "verify";
     return (
         <div className="flex min-w-0 flex-col gap-s4">
-            <div className="mx-auto w-full nav:max-w-[297px]">
+            {/* 手机上按屏幕高度收窄,核对和收款都不用滚动.30rem 是浮层里除了二维码的高度. */}
+            <div className="mx-auto flex w-full max-w-[max(11rem,calc(100dvh-30rem-var(--safe-top)-var(--safe-bottom)))] justify-center">
                 {verifying ? (
                     <QrCode value={frame} size={297} label={t("地址核对二维码")} />
                 ) : (
@@ -156,20 +163,19 @@ function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelPro
                         <Chip tone={row.verified ? "ok" : "warn"}>{row.verified ? t("已核对") : t("未核对")}</Chip>
                     </span>
                 </div>
-                {/* 最长的地址手机上三行,宽屏两行,短地址也留出同样的高度,换账户时下面的内容不跳. */}
-                <FullAddress
-                    address={row.address}
-                    className="min-h-[calc(3lh+2*var(--s1))] content-start text-t3 @2xl:min-h-[calc(2lh+var(--s1))]"
-                />
+                {/* 最长的地址也是两行,短地址留出同样的高度,换账户时下面的内容不跳. */}
+                <FullAddress address={row.address} className="min-h-[calc(2lh+var(--s1))] content-start text-t2" />
             </div>
-            <dl className="flex flex-col text-t2">
-                <Fact label={t("网络")}>{accountNetworks(account.chain, mode)}</Fact>
-                {verifying ? (
+            {verifying ? (
+                <dl className="flex flex-col text-t2">
+                    <Fact label={t("网络")}>
+                        {networkName(asset.network)} {accountKind(account)}
+                    </Fact>
                     <Fact label={t("路径")} mono>
                         {path}
                     </Fact>
-                ) : null}
-            </dl>
+                </dl>
+            ) : null}
             {verifying ? (
                 <Notice tone="warn">{t("用冷钱包扫这个码,不要发给付款方.显示属于本钱包并且逐段一致,才算通过.")}</Notice>
             ) : row.verified ? null : (
@@ -204,16 +210,22 @@ function AddressPanel({ wallet, account, mode, start, index, onIndex }: PanelPro
     );
 }
 
-/** 收款是动作,不是页面.从哪里打开,关掉就回到哪里. */
+/** 收款是动作,不是页面.从哪里打开,关掉就回到哪里.选的是资产和网络,地址跟着账户走. */
 export default function ReceiveDialog() {
-    const { wallet, accounts, addresses, mode } = useApp();
+    const { wallet, accounts, mode } = useApp();
     const [params, setParams] = useSearchParams();
     const { state } = useLocation();
-    const list = accounts.filter((account) => !isLegacyKind(account.kind));
-    const account = list.find((item) => item.id === params.get("receive")) ?? list[0];
-    const selected = account ? list.indexOf(account) : -1;
-    const asset = params.get("asset");
-    const symbol = asset ? symbolOf(asset) : null;
+    const rows = receiveRows(accounts, mode);
+    const [view, setView] = useState<View>(params.has("verify") ? "verify" : "main");
+    // 网址只是意向,资产优先,其次账户,最后网络.都对不上时落到第一行.
+    const fit = (item: ReceiveRow) =>
+        (item.entry.icon === params.get("asset") ? 4 : 0) +
+        (item.account.id === params.get("receive") ? 2 : 0) +
+        (item.network === params.get("network") ? 1 : 0);
+    const row = rows.reduce<ReceiveRow | undefined>(
+        (best, item) => (best && fit(best) >= fit(item) ? best : item),
+        undefined,
+    );
 
     function update(change: (next: URLSearchParams) => void) {
         const next = new URLSearchParams(params);
@@ -221,62 +233,68 @@ export default function ReceiveDialog() {
         setParams(next, { replace: true, state });
     }
 
-    function pick(id: string) {
+    function pick(change: Record<string, string>) {
         update((next) => {
-            next.set("receive", id);
+            for (const [key, value] of Object.entries(change)) next.set(key, value);
             next.delete("index");
             next.delete("verify");
         });
+        setView("main");
     }
 
     return (
-        <Sheet title={symbol ? t("收款 {0}", symbol) : t("收款")} width={760}>
-            {wallet && account ? (
-                <div className="grid grid-cols-1 items-start gap-s4 @2xl:grid-cols-[15rem_minmax(0,1fr)] @2xl:gap-s6">
-                    <div className="min-w-0">
-                        <div className="hidden @2xl:block">
-                            <SelectList selected={selected}>
-                                {list.map((item) => (
-                                    <SelectRow
-                                        key={item.id}
-                                        selected={item.id === account.id}
-                                        onClick={() => pick(item.id)}
-                                    >
-                                        <AccountLine account={item} addresses={addresses} />
-                                    </SelectRow>
-                                ))}
-                            </SelectList>
-                        </div>
-                        <div className="@2xl:hidden">
+        <Sheet title={row ? t("收款 {0}", row.entry.symbol) : t("收款")}>
+            {wallet && row ? (
+                <div className="flex min-w-0 flex-col gap-s4">
+                    {/* 面板按账户重建,选择器放在外面,换账户时才放得完离场动效.核对和地址列表只看地址,不显示. */}
+                    {view === "main" ? (
+                        <div className="grid grid-cols-[2fr_3fr] gap-s2">
                             <Picker
-                                id="receive-account"
-                                label={t("账户")}
-                                value={<AccountLine account={account} addresses={addresses} />}
-                                items={list.map((item) => ({
-                                    key: item.id,
-                                    node: <AccountLine account={item} addresses={addresses} />,
-                                    selected: item.id === account.id,
-                                }))}
-                                onPick={pick}
+                                id="receive-asset"
+                                label={t("资产")}
+                                value={<AssetLine row={row} />}
+                                items={[...new Map(rows.map((item) => [item.entry.icon, item])).values()].map(
+                                    (item) => ({
+                                        key: item.entry.icon,
+                                        node: <AssetLine row={item} />,
+                                        selected: item.entry.icon === row.entry.icon,
+                                    }),
+                                )}
+                                onPick={(icon) => pick({ asset: icon })}
+                            />
+                            <Picker
+                                id="receive-network"
+                                label={t("网络")}
+                                value={<NetworkLine row={row} />}
+                                items={rows
+                                    .filter((item) => item.entry.icon === row.entry.icon)
+                                    .map((item) => ({
+                                        key: item.id,
+                                        node: <NetworkLine row={item} />,
+                                        selected: item.id === row.id,
+                                    }))}
+                                onPick={(id) => {
+                                    const item = rows.find((other) => other.id === id);
+                                    if (item) pick({ receive: item.account.id, network: item.network });
+                                }}
                             />
                         </div>
-                    </div>
-                    <div className="min-w-0">
-                        <AddressPanel
-                            key={account.id}
-                            wallet={wallet}
-                            account={account}
-                            mode={mode}
-                            start={params.has("verify") ? "verify" : "main"}
-                            index={params.get("index")}
-                            onIndex={(index) =>
-                                update((next) => {
-                                    if (index === null) next.delete("index");
-                                    else next.set("index", String(index));
-                                })
-                            }
-                        />
-                    </div>
+                    ) : null}
+                    <AddressPanel
+                        key={row.account.id}
+                        wallet={wallet}
+                        row={row}
+                        mode={mode}
+                        view={view}
+                        setView={setView}
+                        index={params.get("index")}
+                        onIndex={(index) =>
+                            update((next) => {
+                                if (index === null) next.delete("index");
+                                else next.set("index", String(index));
+                            })
+                        }
+                    />
                 </div>
             ) : (
                 <SkeletonRows />

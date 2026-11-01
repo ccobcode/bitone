@@ -11,7 +11,7 @@ use thiserror::Error;
 pub enum Error {
     #[error("助记词无效")]
     InvalidMnemonic,
-    #[error("单词数量只能是 12 或 24")]
+    #[error("单词数量只能是 12,15,18,21 或 24")]
     InvalidWordCount,
     #[error("PIN 必须是 6 位数字")]
     InvalidPin,

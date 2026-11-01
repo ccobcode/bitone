@@ -1,0 +1,22 @@
+{
+    "interface": "solana-stake-interface 4.4.0",
+    "checked": "@solana/web3.js 1.99.0 StakeProgram",
+    "sysvars": {
+        "clockSysvar": "SysvarC1ock11111111111111111111111111111111",
+        "rentSysvar": "SysvarRent111111111111111111111111111111111",
+        "stakeHistorySysvar": "SysvarStakeHistory1111111111111111111111111",
+        "stakeConfig": "StakeConfig11111111111111111111111111111111"
+    },
+    "instructions": {
+        "initialize": ["stake", "rentSysvar"],
+        "initializeChecked": ["stake", "rentSysvar", "stakeAuthority", "withdrawAuthority"],
+        "authorize": ["stake", "clockSysvar", "authority", "lockupAuthority"],
+        "authorizeWithSeed": ["stake", "base", "clockSysvar", "lockupAuthority"],
+        "authorizeChecked": ["stake", "clockSysvar", "authority", "newAuthority", "lockupAuthority"],
+        "authorizeCheckedWithSeed": ["stake", "base", "clockSysvar", "newAuthority", "lockupAuthority"],
+        "delegateStake": ["stake", "vote", "clockSysvar", "stakeHistorySysvar", "stakeConfig", "stakeAuthority"],
+        "withdraw": ["stake", "recipient", "clockSysvar", "stakeHistorySysvar", "withdrawAuthority", "lockupAuthority"],
+        "deactivate": ["stake", "clockSysvar", "stakeAuthority"],
+        "merge": ["destinationStake", "sourceStake", "clockSysvar", "stakeHistorySysvar", "stakeAuthority"]
+    }
+}

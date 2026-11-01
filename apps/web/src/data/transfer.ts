@@ -1,10 +1,12 @@
 // 构建待签名交易.各链的数据和编码在 `chains/` 里,这里统一加锁和写入.
-// 顺序固定:在账户锁里取链上数据,分配序号,构建,预览,全部通过后才写入占用和 txs.
-// 任何一步失败都什么也不写,所以 Forbidden 的交易不会留下记录,也不会有二维码.
+// 顺序固定:在账户锁里取链上数据,分配序号,构建,全部通过后才写入占用和 txs.
+// 任何一步失败都什么也不写.预览只是提示,不算失败,判断以冷钱包屏幕为准.
 import { chainOf, fetchFees } from "../chains";
 import type { Built } from "../chains/spec";
 import {
     TransferError,
+    type RawDraft,
+    type RawValues,
     type ReplaceDraft,
     type ReplaceMode,
     type SetupDraft,
@@ -13,17 +15,19 @@ import {
 import { GatewayError, addressKey, broadcastRaw } from "../gateway/client";
 import { sharedClaims } from "./claims";
 import { db, type TxRecord, type TxState } from "./db";
+import { mayStillLand } from "./machine";
 import { beginBroadcast, cancelTx, finishBroadcast, insertTx, withAccountLock } from "./txs";
 import { t } from "../core/i18n";
 
 /**
- * 同样的转账结果不明时不让再发.那一笔可能已经上链,新交易用的是下一个序号,两笔都会生效.
+ * 同样的转账还可能上链时不让再发.那一笔可能已经上链,新交易用的是下一个序号,两笔都会生效.
  * 重建走 createReplacement,复用原来的序号.
  */
 async function rejectTwin({ account, network, asset, to, amount }: TransferDraft): Promise<void> {
-    const rows = await db.txs.where("state").equals("uncertain").toArray();
+    const rows = await db.txs.where("state").anyOf("uncertain", "replaced").toArray();
     const twin = rows.find(
         (tx) =>
+            mayStillLand(tx) &&
             tx.accountId === account.id &&
             tx.network === network &&
             addressKey(tx.asset) === addressKey(asset) &&
@@ -49,6 +53,12 @@ export function createSetup(draft: SetupDraft): Promise<TxRecord> {
     const { setup } = chainOf(draft.account.chain);
     if (!setup) return Promise.reject(new TransferError("unsupported", t("这笔交易不能签名.")));
     return withAccountLock(draft.account.id, async () => save(await setup(draft)));
+}
+
+/** 原始请求页.内容由各链解释,之后的二维码,核验和广播都和转账相同. */
+export function createRaw(draft: RawDraft, mode: string, values: RawValues): Promise<TxRecord> {
+    const { raw } = chainOf(draft.account.chain);
+    return withAccountLock(draft.account.id, async () => save(await raw(draft, mode, values, fetchFees)));
 }
 
 /** 已上链的交易不能再替换.已放弃但已签名的交易仍然有效,可以发替换交易作废. */

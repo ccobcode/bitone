@@ -4,19 +4,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.ccobcode.bitone.flow.AccountRow
 import com.ccobcode.bitone.flow.WalletFlow
 import com.ccobcode.bitone.flow.networkName
 import com.ccobcode.bitone.flow.shortAddress
 import com.ccobcode.bitone.platform.Brightness
 import com.ccobcode.bitone.ui.components.ActionArea
 import com.ccobcode.bitone.ui.components.AddressChunks
+import com.ccobcode.bitone.ui.components.AssetIcon
 import com.ccobcode.bitone.ui.components.Card
 import com.ccobcode.bitone.ui.components.Chip
 import com.ccobcode.bitone.ui.components.Icons
@@ -43,7 +44,12 @@ private const val ADDRESS_LINES = 3
 
 /** A11 收款.地址从本机公钥算出,不经过网页端,也不显示派生路径.冷钱包不用剪贴板,所以没有复制按钮.版式和网页端的收款相同. */
 @Composable
-fun ReceiveScreen(flow: WalletFlow, brightness: Brightness, onPickAccount: () -> Unit) {
+fun ReceiveScreen(
+    flow: WalletFlow,
+    brightness: Brightness,
+    onPickAsset: () -> Unit,
+    onPickAccount: () -> Unit,
+) {
     val c = BitOneTheme.colors
     ShowingQr(flow, brightness)
     Page(
@@ -53,7 +59,20 @@ fun ReceiveScreen(flow: WalletFlow, brightness: Brightness, onPickAccount: () ->
         contentAlignment = Alignment.CenterHorizontally,
         overlay = { Toast(flow) },
     ) {
-        AccountSelect(flow.receive.account, onPickAccount)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+            Select(Modifier.weight(2f), onPickAsset) {
+                flow.receive.asset?.let {
+                    AssetIcon(it.icon, null, 24.dp)
+                    Txt(it.symbol, Modifier.weight(1f), weight = Medium)
+                }
+            }
+            Select(Modifier.weight(3f), onPickAccount) {
+                flow.receive.account?.let {
+                    NetworkIcon(it.network, 24.dp)
+                    Txt(it.name, Modifier.weight(1f), weight = Medium)
+                }
+            }
+        }
         QrView(flow.receive.qr, frame = 0, total = 0, label = "收款二维码")
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
             Row(
@@ -81,27 +100,46 @@ fun ReceiveScreen(flow: WalletFlow, brightness: Brightness, onPickAccount: () ->
     }
 }
 
-/** 顶部的账户选择,点开底部弹层.弹层放在 [MainTabs],要盖住导航. */
+/** 顶部的资产或网络选择,点开底部弹层.弹层放在 [MainTabs],要盖住导航. */
 @Composable
-private fun AccountSelect(account: AccountRow?, onClick: () -> Unit) {
+private fun Select(modifier: Modifier, onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
     val c = BitOneTheme.colors
-    Card {
+    Card(modifier) {
         ListRow(onClick = onClick) {
-            account?.let {
-                NetworkIcon(it.network, 24.dp)
-                Txt(it.name, Modifier.weight(1f), weight = Medium)
-            }
+            content()
             LineIcon(Icons.Chevron, 16.dp, c.text3)
         }
     }
 }
 
-/** 账户列表.选中后回到收款页. */
+/** 资产列表.选中后回到收款页,收不了这个币的账户跟着换. */
+@Composable
+internal fun BoxScope.AssetSheet(visible: Boolean, flow: WalletFlow, onClose: () -> Unit) {
+    Sheet(flow, visible, "资产", onClose, list = true) {
+        Column {
+            flow.receive.tokens.forEach { entry ->
+                ListRow(
+                    selected = entry.icon == flow.receive.asset?.icon,
+                    inset = Space.s1,
+                    onClick = {
+                        flow.receive.pickAsset(entry)
+                        onClose()
+                    },
+                ) {
+                    AssetIcon(entry.icon, null, 24.dp)
+                    Txt(entry.symbol, Modifier.weight(1f), weight = Medium)
+                }
+            }
+        }
+    }
+}
+
+/** 能收当前资产的账户.选中后回到收款页. */
 @Composable
 internal fun BoxScope.AccountSheet(visible: Boolean, flow: WalletFlow, onClose: () -> Unit) {
-    Sheet(flow, visible, "账户", onClose, list = true) {
+    Sheet(flow, visible, "网络", onClose, list = true) {
         Column {
-            flow.session.accounts.forEach { account ->
+            flow.receive.accounts.forEach { account ->
                 ListRow(
                     selected = account == flow.receive.account,
                     inset = Space.s1,

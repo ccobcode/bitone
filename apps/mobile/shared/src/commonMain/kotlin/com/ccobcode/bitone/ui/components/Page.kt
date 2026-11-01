@@ -68,7 +68,7 @@ fun Modifier.contentColumn(): Modifier =
  *
  * 左右边线只在这里实现:标题区,内容和吸底区都缩进 [Size.gutter],页面和组件不写边距.内容没有滚到底时,用底色渐隐过渡到吸底区,不画分隔线.
  *
- * [floatingSpace] 是悬浮在页面之上的底部导航占的高度,内容末尾留出这段,滚到底时不会被盖住.
+ * [floatingSpace] 是悬浮在页面之上的底部导航占的高度,内容末尾留出这段,滚到底时不会被盖住.[scroll] 由要知道滚动位置的页面传入.
  */
 @Composable
 fun Page(
@@ -79,10 +79,10 @@ fun Page(
     contentAlignment: Alignment.Horizontal = Alignment.Start,
     contentAnchor: Alignment.Vertical = Alignment.Top,
     overlay: @Composable (BoxScope.() -> Unit)? = null,
+    scroll: ScrollState = rememberScrollState(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val c = BitOneTheme.colors
-    val scroll = rememberScrollState()
     val navigationBar = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val floating = if (floatingSpace > 0.dp) floatingSpace + navigationBar else 0.dp
     Box(Modifier.fillMaxSize().background(c.bg), contentAlignment = Alignment.TopCenter) {

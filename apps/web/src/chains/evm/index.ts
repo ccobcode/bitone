@@ -10,7 +10,7 @@ import { SpeedCard } from "../SpeedCard";
 import type { ChainSpec } from "../spec";
 import { parseFees } from "./api";
 import { quote } from "./quote";
-import { replace, spentFlags, transfer } from "./transfer";
+import { raw, rawModes, replace, spentFlags, transfer } from "./transfer";
 import { view } from "./view";
 
 export const evm: ChainSpec = {
@@ -66,6 +66,8 @@ export const evm: ChainSpec = {
     spentFlags,
     transfer,
     replace: { build: replace },
+    rawModes,
+    raw,
     quote,
     view,
     BroadcastCard: SpeedCard,

@@ -18,7 +18,7 @@ use base64::engine::general_purpose::STANDARD;
 use bitcoin::hex::DisplayHex;
 pub use cursor::{Cursor, StreamPage, merge_pages, parse_cursor, stream_index, streams};
 use futures_util::future::BoxFuture;
-pub use http::{Http, run_all};
+pub use http::{Http, read_json, read_text, run_all, run_each};
 pub use number::{decimal, decimal_to_hex, hex_to_decimal, hex_u64, hex_u128};
 pub use pool::{Networks, Pool};
 use serde::Serialize;

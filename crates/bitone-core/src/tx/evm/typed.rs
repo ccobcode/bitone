@@ -1,344 +1,153 @@
-//! EIP-712.只接受 Permit 和 Permit2,其余一律禁止.
+//! EIP-712 和 TIP-712 的页面顶部.解码和摘要在 `decode::parse_typed`,类别和告警都来自策略.
 
-use super::{keccak, signer_path_row};
-use crate::Network;
-use crate::address::{evm_text, parse_evm_address};
-use crate::path::DerivationPath;
-use crate::request::SignRequest;
-use crate::review::{ActionView, AmountView, Forbid, Review, ReviewBuilder, Risk, Row};
-use crate::tx::ReviewContext;
-use crate::units::{decimal_from_be, format_units};
-use bitcoin::hex::FromHex;
-use serde_json::Value;
-use std::collections::BTreeSet;
+use crate::decode::{TypedMessage, typed_member};
+use crate::policy::PermitFact;
+use crate::review::AmountView;
+use crate::tx::abi::Style;
+use crate::units::format_units;
+use alloy_dyn_abi::DynSolValue;
+use alloy_primitives::U256;
 
-/// 接受的消息和它们的规范类型串,逐字比对.名字相同但字段不同的是另一种消息,
-/// 比如 DAI 的 Permit 用 `allowed` 代替 `value`,这里显示的额度就和实际授权无关.
-const ACCEPTED: [(&str, &str); 5] = [
-    (
-        "Permit",
-        "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)",
-    ),
-    (
-        "PermitSingle",
-        "PermitSingle(PermitDetails details,address spender,uint256 sigDeadline)\
-         PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)",
-    ),
-    (
-        "PermitBatch",
-        "PermitBatch(PermitDetails[] details,address spender,uint256 sigDeadline)\
-         PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)",
-    ),
-    (
-        "PermitTransferFrom",
-        "PermitTransferFrom(TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline)\
-         TokenPermissions(address token,uint256 amount)",
-    ),
-    (
-        "PermitBatchTransferFrom",
-        "PermitBatchTransferFrom(TokenPermissions[] permitted,address spender,uint256 nonce,uint256 deadline)\
-         TokenPermissions(address token,uint256 amount)",
-    ),
-];
+/// 代币和额度.
+struct Grant {
+    token: Option<String>,
+    amount: U256,
+}
 
-fn field_list<'a>(types: &'a Value, name: &str) -> Result<Vec<(&'a str, &'a str)>, Forbid> {
-    types[name]
-        .as_array()
-        .ok_or(Forbid::ParseFailed)?
+fn uint(value: &DynSolValue) -> Option<U256> {
+    value.as_uint().map(|(number, _)| number)
+}
+
+fn grant_of(style: &Style, entry: &DynSolValue) -> Option<Grant> {
+    Some(Grant {
+        token: typed_member(entry, "token")?
+            .as_address()
+            .map(|address| (style.format)(&address.into_array())),
+        amount: uint(typed_member(entry, "amount")?)?,
+    })
+}
+
+fn grants_of(style: &Style, list: &DynSolValue) -> Option<Vec<Grant>> {
+    match list {
+        DynSolValue::Array(items) => items.iter().map(|item| grant_of(style, item)).collect(),
+        item => Some(vec![grant_of(style, item)?]),
+    }
+}
+
+/// 被授权方,代币和额度.批量授权取全部代币.类型串已经逐字比对过,这些成员一定在.
+fn permit_grants(parsed: &TypedMessage, style: &Style) -> Option<(String, Vec<Grant>)> {
+    let message = &parsed.message;
+    let spender = typed_member(message, "spender")?.as_address()?;
+    let grants = match parsed.primary.as_str() {
+        "Permit" => vec![Grant {
+            token: parsed
+                .verifying_contract()
+                .map(|address| (style.format)(&address.into_array())),
+            amount: uint(typed_member(message, "value")?)?,
+        }],
+        "PermitSingle" | "PermitBatch" => grants_of(style, typed_member(message, "details")?)?,
+        "PermitTransferFrom" | "PermitBatchTransferFrom" => grants_of(style, typed_member(message, "permitted")?)?,
+        _ => return None,
+    };
+    Some(((style.format)(&spender.into_array()), grants))
+}
+
+/// 页面顶部.
+#[derive(Default)]
+pub(crate) struct TypedView {
+    pub amount: Option<AmountView>,
+    pub counterparty_label: Option<String>,
+    pub counterparty: Option<String>,
+    pub permit: Option<PermitFact>,
+}
+
+fn permit_view(parsed: &TypedMessage, style: &Style) -> Option<TypedView> {
+    let (spender, grants) = permit_grants(parsed, style)?;
+    let shown: Vec<AmountView> = grants
         .iter()
-        .map(|f| {
-            Ok((
-                f["name"].as_str().ok_or(Forbid::ParseFailed)?,
-                f["type"].as_str().ok_or(Forbid::ParseFailed)?,
-            ))
-        })
-        .collect()
-}
-
-fn base_type(kind: &str) -> &str {
-    kind.split('[').next().unwrap_or(kind)
-}
-
-fn dependencies<'a>(types: &'a Value, name: &'a str, found: &mut BTreeSet<&'a str>) -> Result<(), Forbid> {
-    if found.contains(name) || types.get(name).is_none() {
-        return Ok(());
-    }
-    found.insert(name);
-    for (_, kind) in field_list(types, name)? {
-        dependencies(types, base_type(kind), found)?;
-    }
-    Ok(())
-}
-
-fn encode_type(types: &Value, primary: &str) -> Result<String, Forbid> {
-    let mut found = BTreeSet::new();
-    dependencies(types, primary, &mut found)?;
-    found.remove(primary);
-    let mut out = String::new();
-    for name in std::iter::once(primary).chain(found.iter().copied()) {
-        let fields: Vec<String> = field_list(types, name)?
-            .iter()
-            .map(|(n, k)| format!("{k} {n}"))
-            .collect();
-        out.push_str(&format!("{name}({})", fields.join(",")));
-    }
-    Ok(out)
-}
-
-/// 数值可以是 JSON 数字,十进制字符串或十六进制字符串.
-fn uint_word(value: &Value) -> Result<[u8; 32], Forbid> {
-    let text = match value {
-        Value::Number(n) => n.as_u64().ok_or(Forbid::ParseFailed)?.to_string(),
-        Value::String(s) => s.clone(),
-        _ => return Err(Forbid::ParseFailed),
-    };
-    let bytes = match text.strip_prefix("0x") {
-        Some(hex) => {
-            let padded = if hex.len().is_multiple_of(2) {
-                hex.to_string()
-            } else {
-                format!("0{hex}")
-            };
-            hex_bytes(&padded)?
-        }
-        None => super::be_from_decimal(&text).map_err(|_| Forbid::ParseFailed)?,
-    };
-    if bytes.len() > 32 {
-        return Err(Forbid::ParseFailed);
-    }
-    let mut word = [0u8; 32];
-    word[32 - bytes.len()..].copy_from_slice(&bytes);
-    Ok(word)
-}
-
-fn hex_bytes(hex: &str) -> Result<Vec<u8>, Forbid> {
-    Vec::from_hex(hex).map_err(|_| Forbid::ParseFailed)
-}
-
-fn encode_value(types: &Value, kind: &str, value: &Value) -> Result<[u8; 32], Forbid> {
-    if let Some(element) = kind.strip_suffix("[]") {
-        let items = value.as_array().ok_or(Forbid::ParseFailed)?;
-        let mut joined = Vec::with_capacity(items.len() * 32);
-        for item in items {
-            joined.extend_from_slice(&encode_value(types, element, item)?);
-        }
-        return Ok(keccak(&joined));
-    }
-    if types.get(kind).is_some() {
-        return hash_struct(types, kind, value);
-    }
-    match kind {
-        "address" => {
-            let text = value.as_str().ok_or(Forbid::ParseFailed)?;
-            let address = parse_evm_address(text).map_err(|_| Forbid::ParseFailed)?;
-            let mut word = [0u8; 32];
-            word[12..].copy_from_slice(&address);
-            Ok(word)
-        }
-        "bool" => {
-            let mut word = [0u8; 32];
-            word[31] = value.as_bool().ok_or(Forbid::ParseFailed)? as u8;
-            Ok(word)
-        }
-        "string" => Ok(keccak(value.as_str().ok_or(Forbid::ParseFailed)?.as_bytes())),
-        "bytes" => {
-            let text = value.as_str().ok_or(Forbid::ParseFailed)?;
-            Ok(keccak(&hex_bytes(text.strip_prefix("0x").ok_or(Forbid::ParseFailed)?)?))
-        }
-        _ if kind.starts_with("uint") => uint_word(value),
-        _ if kind.starts_with("bytes") => {
-            let text = value.as_str().ok_or(Forbid::ParseFailed)?;
-            let bytes = hex_bytes(text.strip_prefix("0x").ok_or(Forbid::ParseFailed)?)?;
-            if bytes.len() > 32 {
-                return Err(Forbid::ParseFailed);
+        .map(|Grant { token, amount }| {
+            let raw = amount.to_string();
+            let unlimited = *amount >= U256::from(alloy_primitives::U160::MAX);
+            let asset = token
+                .as_ref()
+                .and_then(|token| style.manifest.lookup(style.network, token));
+            match asset {
+                Some(asset) => AmountView {
+                    text: format_units(&raw, asset.decimals),
+                    symbol: Some(asset.symbol.clone()),
+                    asset: Some(asset.key()),
+                    unlimited,
+                },
+                None => AmountView {
+                    text: raw,
+                    symbol: None,
+                    asset: None,
+                    unlimited,
+                },
             }
-            let mut word = [0u8; 32];
-            word[..bytes.len()].copy_from_slice(&bytes);
-            Ok(word)
-        }
-        _ => Err(Forbid::Unsupported),
-    }
-}
-
-fn hash_struct(types: &Value, name: &str, value: &Value) -> Result<[u8; 32], Forbid> {
-    let fields = field_list(types, name)?;
-    // 不进哈希的键不能留下,否则屏幕上的内容可以和签名无关.
-    if value.as_object().map(|object| object.len()) != Some(fields.len()) {
-        return Err(Forbid::ParseFailed);
-    }
-    let mut encoded = keccak(encode_type(types, name)?.as_bytes()).to_vec();
-    for (field, kind) in fields {
-        let item = value.get(field).ok_or(Forbid::ParseFailed)?;
-        encoded.extend_from_slice(&encode_value(types, kind, item)?);
-    }
-    Ok(keccak(&encoded))
-}
-
-/// `eth_signTypedData_v4` 的哈希.
-pub fn typed_data_hash(data: &Value) -> Result<[u8; 32], Forbid> {
-    let types = &data["types"];
-    let primary = data["primaryType"].as_str().ok_or(Forbid::ParseFailed)?;
-    let mut preimage = vec![0x19, 0x01];
-    preimage.extend_from_slice(&hash_struct(types, "EIP712Domain", &data["domain"])?);
-    preimage.extend_from_slice(&hash_struct(types, primary, &data["message"])?);
-    Ok(keccak(&preimage))
-}
-
-/// 类型来自请求,不可信.核对读的字段都要确实进了哈希,域里的网络和合约也要真的被签名承诺.
-fn check_schema(data: &Value) -> Result<(), Forbid> {
-    let types = &data["types"];
-    let primary = data["primaryType"].as_str().ok_or(Forbid::MessageSigning)?;
-    let (_, canonical) = ACCEPTED
-        .iter()
-        .find(|(name, _)| *name == primary)
-        .ok_or(Forbid::MessageSigning)?;
-    if encode_type(types, primary)? != *canonical {
-        return Err(Forbid::MessageSigning);
-    }
-    let domain = field_list(types, "EIP712Domain")?;
-    if !domain.contains(&("chainId", "uint256")) {
-        return Err(Forbid::ChainIdMismatch);
-    }
-    if !domain.contains(&("verifyingContract", "address")) {
-        return Err(Forbid::MessageSigning);
-    }
-    Ok(())
-}
-
-fn text_field<'a>(value: &'a Value, name: &str) -> Result<&'a str, Forbid> {
-    value[name].as_str().ok_or(Forbid::ParseFailed)
-}
-
-type Grant = (String, [u8; 32]);
-
-/// 被授权方,代币和额度.批量授权取全部代币.
-fn permit_grants(data: &Value) -> Result<(String, Vec<Grant>), Forbid> {
-    let message = &data["message"];
-    let spender = text_field(message, "spender")?.to_string();
-    let grant = |token: &Value, amount: &Value| -> Result<Grant, Forbid> {
-        Ok((
-            token.as_str().ok_or(Forbid::ParseFailed)?.to_string(),
-            uint_word(amount)?,
-        ))
+        })
+        .collect();
+    let permit = PermitFact {
+        grants: shown.len(),
+        unlimited: shown.iter().filter(|amount| amount.unlimited).count(),
     };
-    let grants = match data["primaryType"].as_str() {
-        Some("Permit") => {
-            let token = &data["domain"]["verifyingContract"];
-            vec![grant(token, &message["value"])?]
-        }
-        Some("PermitSingle") => vec![grant(&message["details"]["token"], &message["details"]["amount"])?],
-        Some("PermitBatch") => message["details"]
-            .as_array()
-            .ok_or(Forbid::ParseFailed)?
-            .iter()
-            .map(|d| grant(&d["token"], &d["amount"]))
-            .collect::<Result<_, _>>()?,
-        Some("PermitTransferFrom") => vec![grant(&message["permitted"]["token"], &message["permitted"]["amount"])?],
-        Some("PermitBatchTransferFrom") => message["permitted"]
-            .as_array()
-            .ok_or(Forbid::ParseFailed)?
-            .iter()
-            .map(|p| grant(&p["token"], &p["amount"]))
-            .collect::<Result<_, _>>()?,
-        _ => return Err(Forbid::MessageSigning),
-    };
-    Ok((spender, grants))
-}
-
-pub fn review(
-    network: Network,
-    request: &SignRequest,
-    ctx: &ReviewContext,
-    payer: &str,
-    path: &DerivationPath,
-) -> Result<Review, Forbid> {
-    let data: Value = serde_json::from_slice(&request.payload).map_err(|_| Forbid::ParseFailed)?;
-    check_schema(&data)?;
-    let (spender, grants) = permit_grants(&data)?;
-    let expected = network.evm_chain_id().ok_or(Forbid::UnknownNetwork)?;
-    let chain_id = uint_word(data["domain"].get("chainId").ok_or(Forbid::ChainIdMismatch)?)
-        .map_err(|_| Forbid::ChainIdMismatch)?;
-    if chain_id[..24] != [0; 24] || u64::from_be_bytes(chain_id[24..].try_into().expect("8 字节")) != expected {
-        return Err(Forbid::ChainIdMismatch);
-    }
-    typed_data_hash(&data)?;
-
-    let mut builder = ReviewBuilder {
+    Some(TypedView {
+        // 多笔时顶部不放金额,否则小额会盖住后面的无限额度.全部额度都在字段列表里.
+        amount: <[AmountView; 1]>::try_from(shown).ok().map(|[only]| only),
         counterparty_label: Some("被授权方".into()),
-        counterparty: Some(evm_text(&parse_evm_address(&spender).map_err(|_| Forbid::ParseFailed)?)),
-        ..Default::default()
-    };
-    for (token, amount) in &grants {
-        let raw = decimal_from_be(amount);
-        let unlimited = amount[..12] != [0; 12] || amount[12..] == [0xff; 20];
-        let asset = ctx.manifest.lookup(network.id(), token);
-        let view = match asset {
-            Some(asset) => AmountView {
-                text: format_units(&raw, asset.decimals),
-                symbol: Some(asset.symbol.clone()),
-                asset: Some(asset.key()),
-                unlimited,
-            },
-            None => AmountView {
-                text: raw,
-                symbol: None,
-                asset: None,
-                unlimited,
-            },
-        };
-        let listed = if asset.is_some() {
-            "在内置清单"
-        } else {
-            "不在内置清单"
-        };
-        builder.actions.push(ActionView {
-            risk: Risk::Approval,
-            title: data["primaryType"].as_str().unwrap_or("Permit").to_string(),
-            rows: vec![
-                Row::mono("代币合约", token.clone()),
-                Row::text("合约清单", listed),
-                Row::text(
-                    "额度",
-                    if unlimited {
-                        "无限".to_string()
-                    } else {
-                        view.text.clone()
-                    },
-                ),
-            ],
-        });
-        builder.amount.get_or_insert(view);
-    }
-    builder.rows.extend(signer_path_row(network, expected, payer, path));
-    builder.rows.push(Row::text("交易类型", "EIP-712 消息"));
-    Ok(builder.finish(network.id()))
+        counterparty: Some(spender),
+        permit: Some(permit),
+    })
+}
+
+/// 描述文件给的字段名.绑定是网络,`verifyingContract`,类型串,类型串里已经有 `primaryType`.
+pub(crate) fn labels(parsed: &TypedMessage, style: &Style) -> Option<Vec<(String, String)>> {
+    let contract = (style.format)(&parsed.verifying_contract()?.into_array());
+    let mut found = style.manifest.descriptors(style.network, &contract);
+    let descriptor = found.find(|descriptor| descriptor.signature == parsed.encode_type)?;
+    let fields = descriptor.format.fields.iter();
+    Some(fields.map(|field| (field.path.clone(), field.label.clone())).collect())
+}
+
+pub(crate) fn view(parsed: &TypedMessage, style: &Style) -> TypedView {
+    parsed
+        .is_permit()
+        .then(|| permit_view(parsed, style))
+        .flatten()
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::address::evm_text;
+    use crate::decode::{Failure, Reject, TypedFlavor, parse_typed, permit_types};
+    use crate::tx::evm::{keccak, typed_data_hash};
     use bitcoin::hex::DisplayHex;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     /// 期望值是 EIP-2612 和 Permit2 合约里的常量,防止类型串抄错.
     #[test]
     fn accepted_types_match_the_contracts() {
         let hashes = [
             "6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9",
-            "f3841cd1ff0085026a6327b620b67997ce40f282c88a8e905a7a5626e310f3d0",
             "af1b0d30d2cab0380e68f0689007e3254993c596f2fdd0aaa7f4d04f79440863",
-            "939c21a48a8dbe3a9a2404a1d46691e4d39f6583d6ec6b35714604c986d80106",
             "fcf35f5ac6a2c28868dc44c302166470266239195f02b0ee408334829333b766",
+            "f3841cd1ff0085026a6327b620b67997ce40f282c88a8e905a7a5626e310f3d0",
+            "939c21a48a8dbe3a9a2404a1d46691e4d39f6583d6ec6b35714604c986d80106",
         ];
-        for ((name, canonical), hash) in ACCEPTED.iter().zip(hashes) {
-            assert_eq!(keccak(canonical.as_bytes()).to_lower_hex_string(), hash, "{name}");
+        let found: Vec<String> = permit_types()
+            .iter()
+            .map(|canonical| keccak(canonical.as_bytes()).to_lower_hex_string())
+            .collect();
+        for hash in hashes {
+            assert!(found.iter().any(|item| item == hash), "{hash}");
         }
+        assert_eq!(found.len(), hashes.len());
     }
 
-    /// EIP-712 规范里的 Mail 示例.
-    #[test]
-    fn matches_the_eip712_example() {
-        let data = json!({
+    fn mail() -> Value {
+        json!({
             "types": {
                 "EIP712Domain": [
                     {"name": "name", "type": "string"},
@@ -365,11 +174,157 @@ mod tests {
                 "to": {"name": "Bob", "wallet": "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"},
                 "contents": "Hello, Bob!"
             }
-        });
-        let hash = typed_data_hash(&data).unwrap();
+        })
+    }
+
+    fn parsed(data: &Value) -> Result<TypedMessage, Reject> {
+        parse_typed(&serde_json::to_vec(data).unwrap(), TypedFlavor::Eip712)
+    }
+
+    /// EIP-712 规范里的 Mail 示例.
+    #[test]
+    fn matches_the_eip712_example() {
+        let hash = typed_data_hash(&serde_json::to_vec(&mail()).unwrap()).unwrap();
         assert_eq!(
             hash.to_lower_hex_string(),
             "be609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2"
         );
+    }
+
+    /// `serde_json` 保留最后一个,签名和屏幕上的内容就能不一样.
+    #[test]
+    fn duplicate_keys_are_refused_at_every_level() {
+        let text = serde_json::to_string(&mail()).unwrap();
+        for (old, new) in [
+            ("\"contents\":\"Hello, Bob!\"", "\"contents\":\"A\",\"contents\":\"B\""),
+            ("\"chainId\":1", "\"chainId\":1,\"chainId\":137"),
+            (
+                "\"primaryType\":\"Mail\"",
+                "\"primaryType\":\"Mail\",\"primaryType\":\"Person\"",
+            ),
+            (
+                "\"contents\":\"Hello, Bob!\"",
+                "\"contents\":\"A\",\"\\u0063ontents\":\"B\"",
+            ),
+        ] {
+            let payload = text.replacen(old, new, 1);
+            assert_ne!(payload, text);
+            assert_eq!(
+                parse_typed(payload.as_bytes(), TypedFlavor::Eip712).unwrap_err(),
+                Reject::Malformed,
+                "{new}"
+            );
+        }
+        assert!(parse_typed(text.as_bytes(), TypedFlavor::Eip712).is_ok());
+    }
+
+    #[test]
+    fn every_member_must_be_consumed() {
+        let mut top = mail();
+        top["extra"] = 1.into();
+        let mut message = mail();
+        message["message"]["from"]["hidden"] = "x".into();
+        let mut domain = mail();
+        domain["domain"]["salt"] = "x".into();
+        let mut field = mail();
+        field["types"]["Person"][0]["internalType"] = "x".into();
+        let mut missing = mail();
+        missing["message"].as_object_mut().unwrap().remove("contents");
+        for data in [top, message, domain, field, missing] {
+            assert!(parsed(&data).is_err(), "{data}");
+        }
+        let mut no_message = mail();
+        no_message.as_object_mut().unwrap().remove("message");
+        assert!(parsed(&no_message).is_err());
+    }
+
+    #[test]
+    fn numbers_that_parsers_disagree_on_are_refused() {
+        for number in [
+            "1.5",
+            "1e3",
+            "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+        ] {
+            let text = serde_json::to_string(&mail()).unwrap();
+            let payload = text.replacen("\"chainId\":1", &format!("\"chainId\":{number}"), 1);
+            assert!(
+                parse_typed(payload.as_bytes(), TypedFlavor::Eip712).is_err(),
+                "{number}"
+            );
+        }
+    }
+
+    #[test]
+    fn values_must_fit_their_types() {
+        let mut data = json!({
+            "types": {"EIP712Domain": [], "T": [{"name": "x", "type": "uint8"}]},
+            "primaryType": "T",
+            "domain": {},
+            "message": {"x": 256}
+        });
+        assert!(parsed(&data).is_err());
+        data["message"]["x"] = 255.into();
+        assert!(parsed(&data).is_ok());
+        data["types"]["T"][0]["type"] = "uint8[2]".into();
+        data["message"]["x"] = json!([1]);
+        assert!(parsed(&data).is_err());
+        for kind in ["(uint8)", "function", "Missing", "uint7", "trcToken"] {
+            data["types"]["T"][0]["type"] = kind.into();
+            data["message"]["x"] = 1.into();
+            assert!(parsed(&data).is_err(), "{kind}");
+        }
+    }
+
+    /// 域按请求写的类型哈希,和 viem 一致.alloy 的 `Eip712Domain` 固定顺序,不能用来算这一步.
+    #[test]
+    fn the_domain_follows_its_declared_type() {
+        let mut data = mail();
+        let hash = |data: &Value| parsed(data).unwrap().domain_separator;
+        let first = hash(&data);
+        data["types"]["EIP712Domain"].as_array_mut().unwrap().reverse();
+        assert_ne!(hash(&data), first);
+    }
+
+    #[test]
+    fn a_missing_domain_type_is_inferred_from_its_members() {
+        let mut data = mail();
+        let declared = parsed(&data).unwrap().digest;
+        data["types"].as_object_mut().unwrap().remove("EIP712Domain");
+        assert_eq!(parsed(&data).unwrap().digest, declared);
+        data["domain"]["extra"] = 1.into();
+        assert!(parsed(&data).is_err());
+    }
+
+    #[test]
+    fn a_domain_only_message_must_be_empty() {
+        let mut data = json!({
+            "types": {"EIP712Domain": [{"name": "name", "type": "string"}]},
+            "primaryType": "EIP712Domain",
+            "domain": {"name": "Only"},
+            "message": {}
+        });
+        assert_eq!(parsed(&data).unwrap().hash_struct, None);
+        data["message"]["x"] = 1.into();
+        assert!(parsed(&data).is_err());
+    }
+
+    /// 类型里的字段按 JSON 顺序进哈希,不是字母序.
+    #[test]
+    fn the_tree_and_the_digest_share_one_value() {
+        let data = parsed(&mail()).unwrap();
+        let from = typed_member(&data.message, "from").unwrap();
+        assert_eq!(
+            evm_text(&typed_member(from, "wallet").unwrap().as_address().unwrap().into_array()),
+            "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"
+        );
+    }
+
+    #[test]
+    fn a_failure_keeps_the_reason() {
+        let failure = Failure {
+            reason: parsed(&json!({})).unwrap_err(),
+            digest: String::new(),
+        };
+        assert_eq!(failure.reason, Reject::Malformed);
     }
 }

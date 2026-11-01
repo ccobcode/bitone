@@ -7,6 +7,7 @@ import com.ccobcode.bitone.platform.Platform
 import com.ccobcode.bitone.platform.UnlockedWallet
 import com.ccobcode.bitone.platform.WalletCoreException
 import com.ccobcode.bitone.platform.WalletMeta
+import com.ccobcode.bitone.platform.walletMeta
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 
@@ -15,7 +16,7 @@ class Session internal constructor(platform: Platform, private val work: Corouti
     private val core = platform.core
     private val store = platform.store
 
-    var meta by mutableStateOf(store.readMeta())
+    var meta by mutableStateOf(store.walletMeta())
         internal set
 
     /** 本次解锁算出的指纹,只留在内存.启用 BIP39 密码时只有它是真指纹. */
@@ -27,6 +28,9 @@ class Session internal constructor(platform: Platform, private val work: Corouti
     val passphraseRequired: Boolean
         get() = meta?.passphrase == true
 
+    val passphraseOptional: Boolean
+        get() = meta?.passphraseOptional == true
+
     /** BIP39 密码钱包的公钥只放这里,不落盘. */
     private var sessionKeys: ByteArray? = null
 
@@ -37,10 +41,6 @@ class Session internal constructor(platform: Platform, private val work: Corouti
     /** A3 和 A11 列出的账户,公钥读到之后换成核心库给的. */
     var accounts by mutableStateOf(Accounts)
         private set
-
-    /** 指纹变更后不提供抹除,输对 PIN 后恢复. */
-    var canWipe by mutableStateOf(true)
-        internal set
 
     /** 由 A3 驱动,解锁回来时会重算. */
     suspend fun loadAddresses() {
@@ -69,7 +69,7 @@ class Session internal constructor(platform: Platform, private val work: Corouti
             }
         }
 
-    /** 本机保存的清单包.验不过就当没有,退回内置清单,不把损坏的文件交给核对. */
+    /** 本机保存的清单包.核心库读不了时当作没有. */
     internal fun manifestPackage(): ByteArray? =
         store.readManifest()?.takeIf { bytes ->
             try {

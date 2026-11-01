@@ -45,12 +45,6 @@ export function lookupAsset(network: string, asset: string): AssetEntry | null {
     return entries().get(key(network, asset)) ?? null;
 }
 
-/** 清单里这个 icon 对应的符号.来自网址的资产键要先过这一关,界面只显示清单里有的. */
-export function symbolOf(icon: string): string | null {
-    for (const entry of entries().values()) if (entry.icon === icon) return entry.symbol;
-    return null;
-}
-
 let pricedAs: Map<string, string> | undefined;
 
 /** 测试网资产到同链同符号的主网资产.只含清单里的资产,骗子代币起同样的符号也没有价格. */
