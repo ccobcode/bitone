@@ -9,20 +9,24 @@ enum class CheckState {
     Fail,
 }
 
-class CheckItem(val label: String, val state: CheckState, val value: String)
+data class CheckItem(val label: String, val state: CheckState, val value: String)
 
 class SelfCheckReport(val items: List<CheckItem>) {
-    val failed: Int
-        get() = items.count { it.state == CheckState.Fail }
+    /** 用户确认的就是这几项,之后新出现的失败要重新确认. */
+    val failures: Set<CheckItem>
+        get() = items.filter { it.state == CheckState.Fail }.toSet()
 
-    /** 不拦截,但签名之前也要让用户看到. */
+    val failed: Int
+        get() = failures.size
+
+    /** 不用确认,但签名之前也要让用户看到. */
     val warnings: List<CheckItem>
         get() = items.filter { it.state == CheckState.Warn }
 
     val warned: Int
         get() = warnings.size
 
-    /** 有未通过项时,创建,解锁,显示助记词都不允许. */
+    /** 有未通过项时不能创建钱包.已有钱包时每次操作都要用户确认,见 docs/04 §2.2. */
     val blocked: Boolean
         get() = failed > 0
 
@@ -43,64 +47,90 @@ fun evaluate(f: DeviceFacts): SelfCheckReport =
             rootAndBoot(f),
             debugAndUsb(f),
             keystore(f),
-            CheckItem(
+            item(
                 "系统屏幕锁",
-                if (f.screenLockSet) CheckState.Pass else CheckState.Fail,
-                if (f.screenLockSet) "已设置" else "未设置",
+                problem = "未设置".takeIf { f.screenLockSet == false },
+                unknown = UNCONFIRMED.takeIf { f.screenLockSet == null },
+                pass = "已设置",
             ),
-            CheckItem(
+            item(
                 "无障碍服务",
-                if (f.thirdPartyAccessibility == 0) CheckState.Pass else CheckState.Fail,
-                if (f.thirdPartyAccessibility == 0) "无第三方" else "${f.thirdPartyAccessibility} 个第三方",
+                problem = f.thirdPartyAccessibility?.takeIf { it > 0 }?.let { "$it 个第三方" },
+                unknown = UNCONFIRMED.takeIf { f.thirdPartyAccessibility == null },
+                pass = "无第三方",
             ),
             CheckItem(
                 "悬浮窗应用",
                 if (f.overlayApps == 0) CheckState.Pass else CheckState.Warn,
-                if (f.overlayApps == 0) "无授权" else "${f.overlayApps} 个应用",
+                when (f.overlayApps) {
+                    null -> UNCONFIRMED
+                    0 -> "无授权"
+                    else -> "${f.overlayApps} 个应用"
+                },
             ),
         )
     )
 
-private fun radios(f: DeviceFacts): CheckItem {
-    val problem =
-        when {
-            f.wifiOn -> "Wi-Fi 已开启"
-            f.bluetoothOn -> "蓝牙已开启"
-            f.nfcOn -> "NFC 已开启"
-            !f.airplaneMode -> "飞行模式未开"
-            else -> null
-        }
-    return CheckItem("飞行模式和无线", if (problem == null) CheckState.Pass else CheckState.Fail, problem ?: "已隔离")
-}
+private const val UNCONFIRMED = "无法确认"
 
-private fun rootAndBoot(f: DeviceFacts): CheckItem {
-    val problem =
-        when {
-            f.rooted -> "检测到 Root"
-            f.bootloaderLocked == null -> "无法确认 Bootloader"
-            !f.bootloaderLocked -> "Bootloader 未锁定"
-            else -> null
-        }
-    return CheckItem(
-        "Root 和 Bootloader",
-        if (problem == null) CheckState.Pass else CheckState.Fail,
-        problem ?: "未 Root,已锁定",
+/** 确定的问题优先.没有问题但有没读出来的项时是警告,读不出不等于有问题. */
+private fun item(label: String, problem: String?, unknown: String?, pass: String): CheckItem =
+    when {
+        problem != null -> CheckItem(label, CheckState.Fail, problem)
+        unknown != null -> CheckItem(label, CheckState.Warn, unknown)
+        else -> CheckItem(label, CheckState.Pass, pass)
+    }
+
+private fun radios(f: DeviceFacts): CheckItem =
+    item(
+        "飞行模式和无线",
+        problem =
+            when {
+                f.wifiOn == true -> "Wi-Fi 已开启"
+                f.bluetoothOn == true -> "蓝牙已开启"
+                f.nfcOn == true -> "NFC 已开启"
+                f.airplaneMode == false -> "飞行模式未开"
+                else -> null
+            },
+        unknown = UNCONFIRMED.takeIf { null in listOf(f.wifiOn, f.bluetoothOn, f.nfcOn, f.airplaneMode) },
+        pass = "已隔离",
     )
-}
 
-private fun debugAndUsb(f: DeviceFacts): CheckItem {
-    val problem =
-        when {
-            f.adbEnabled -> "USB 调试已开启"
-            f.usbDataConnected -> "USB 已连接数据"
-            else -> null
-        }
-    return CheckItem("调试和 USB", if (problem == null) CheckState.Pass else CheckState.Fail, problem ?: "已关闭")
-}
+private fun rootAndBoot(f: DeviceFacts): CheckItem =
+    item(
+        "Root 和 Bootloader",
+        problem =
+            when {
+                f.rooted == true -> "检测到 Root"
+                f.bootloaderLocked == false -> "Bootloader 未锁定"
+                else -> null
+            },
+        unknown =
+            when {
+                f.bootloaderLocked == null -> "无法确认 Bootloader"
+                f.rooted == null -> "无法确认 Root"
+                else -> null
+            },
+        pass = "未 Root,已锁定",
+    )
+
+private fun debugAndUsb(f: DeviceFacts): CheckItem =
+    item(
+        "调试和 USB",
+        problem =
+            when {
+                f.adbEnabled == true -> "USB 调试已开启"
+                f.usbDataConnected == true -> "USB 已连接数据"
+                else -> null
+            },
+        unknown = UNCONFIRMED.takeIf { f.adbEnabled == null || f.usbDataConnected == null },
+        pass = "已关闭",
+    )
 
 private fun keystore(f: DeviceFacts): CheckItem =
     when (f.keystore) {
         HardwareLevel.StrongBox -> CheckItem("硬件密钥库", CheckState.Pass, "StrongBox")
         HardwareLevel.Tee -> CheckItem("硬件密钥库", CheckState.Warn, "TEE")
         HardwareLevel.None -> CheckItem("硬件密钥库", CheckState.Fail, "不可用")
+        null -> CheckItem("硬件密钥库", CheckState.Warn, UNCONFIRMED)
     }

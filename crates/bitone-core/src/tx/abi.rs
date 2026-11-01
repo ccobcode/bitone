@@ -7,8 +7,8 @@ use bitcoin::hex::DisplayHex;
 
 pub type Word = [u8; 32];
 
-const TRANSFER: [u8; 4] = [0xa9, 0x05, 0x9c, 0xbb];
-const APPROVE: [u8; 4] = [0x09, 0x5e, 0xa7, 0xb3];
+pub(crate) const TRANSFER: [u8; 4] = [0xa9, 0x05, 0x9c, 0xbb];
+pub(crate) const APPROVE: [u8; 4] = [0x09, 0x5e, 0xa7, 0xb3];
 const INCREASE_ALLOWANCE: [u8; 4] = [0x39, 0x50, 0x93, 0x51];
 /// USDT 等旧合约用的名字.
 const INCREASE_APPROVAL: [u8; 4] = [0xd7, 0x3d, 0xd6, 0x23];
@@ -385,9 +385,9 @@ fn classify_at(style: &Style, contract: &[u8; 20], data: &[u8], has_value: bool,
             let top = inner
                 .iter()
                 .map(|c| c.risk)
-                .max()
-                .unwrap_or(Risk::Unknown)
-                .max(Risk::Unknown);
+                .chain([Risk::Unknown])
+                .max_by_key(|r| r.legacy_rank())
+                .unwrap_or(Risk::Unknown);
             let mut result = unknown(&contract_text, data);
             result.risk = top;
             result.title = "批量调用".to_string();
@@ -395,7 +395,7 @@ fn classify_at(style: &Style, contract: &[u8; 20], data: &[u8], has_value: bool,
             // 只有一个动作是最高风险时才放到页面顶部,否则金额和对方会误导用户.
             let mut leaders = inner.iter().filter(|c| c.risk == top);
             if let (Some(leader), None) = (leaders.next(), leaders.next())
-                && leader.risk > Risk::Unknown
+                && leader.risk.legacy_rank() > Risk::Unknown.legacy_rank()
             {
                 result.amount = leader.amount.clone();
                 result.counterparty_label = leader.counterparty_label.clone();

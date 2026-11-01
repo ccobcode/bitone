@@ -269,6 +269,7 @@ impl RequestHeader {
             paths,
             payload,
             hint,
+            chain: None,
         }
         .encode())
     }
@@ -321,6 +322,58 @@ pub fn build_evm_transfer(args: JsValue) -> Result<Vec<u8>, JsError> {
     })
     .map_err(js_error)?;
     args.header.request(vec![args.path], tx.encode(), None)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EvmCallArgs {
+    #[serde(flatten)]
+    header: RequestHeader,
+    path: String,
+    /// 留空是部署合约.
+    to: Option<String>,
+    value: String,
+    /// 十六进制,不带 `0x`.
+    data: String,
+    nonce: u64,
+    gas_limit: u64,
+    max_fee: String,
+    max_priority: String,
+}
+
+/// 任意调用.合约,数据和附带金额都不限制,判断在冷钱包屏幕上.
+#[wasm_bindgen(js_name = buildEvmCall)]
+pub fn build_evm_call(args: JsValue) -> Result<Vec<u8>, JsError> {
+    let args: EvmCallArgs = parse(args)?;
+    let tx = evm::build_call(&evm::CallParams {
+        network: network(&args.header.network)?,
+        to: args.to.as_deref(),
+        value: &args.value,
+        data: unhex(&args.data)?,
+        nonce: args.nonce,
+        gas_limit: args.gas_limit,
+        max_fee: number(&args.max_fee)?,
+        max_priority: number(&args.max_priority)?,
+    })
+    .map_err(js_error)?;
+    args.header.request(vec![args.path], tx.encode(), None)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PayloadArgs {
+    #[serde(flatten)]
+    header: RequestHeader,
+    path: String,
+    #[serde(with = "serde_bytes")]
+    payload: Vec<u8>,
+}
+
+/// 粘贴的载荷原样放进请求,这里不解析.
+#[wasm_bindgen(js_name = buildPayloadRequest)]
+pub fn build_payload_request(args: JsValue) -> Result<Vec<u8>, JsError> {
+    let args: PayloadArgs = parse(args)?;
+    args.header.request(vec![args.path], args.payload, None)
 }
 
 #[derive(Deserialize)]
@@ -436,6 +489,25 @@ pub fn build_solana_advance_nonce(args: JsValue) -> Result<Vec<u8>, JsError> {
     args.header.request(vec![args.path], payload, None)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TronPayloadInfo {
+    expiration_ms: u64,
+    fee_limit: u64,
+}
+
+/// 粘贴的 `raw_data` 的过期时间和 fee_limit.核心库解析不了时是 `undefined`,不算错误.
+#[wasm_bindgen(js_name = tronPayloadInfo)]
+pub fn tron_payload_info(payload: &[u8]) -> Result<JsValue, JsError> {
+    match tron::RawData::decode(payload) {
+        Ok(tx) => to_js(&TronPayloadInfo {
+            expiration_ms: tx.expiration,
+            fee_limit: tx.fee_limit,
+        }),
+        Err(_) => Ok(JsValue::UNDEFINED),
+    }
+}
+
 /// 本钱包的 nonce 账户地址.
 #[wasm_bindgen(js_name = solanaNonceAddress)]
 pub fn solana_nonce_address(payer: &str) -> Result<String, JsError> {
@@ -467,12 +539,19 @@ impl From<UtxoArgs> for bitcoin::Utxo {
     }
 }
 
-/// 选币.选出后页面要用 `raw-txs` 取回前序交易,再调用 `buildBitcoinTransfer`.
+/// 选币.`payments` 是收款输出的个数.选出后页面要用 `raw-txs` 取回前序交易,再调用 `buildBitcoinTransfer`.
 #[wasm_bindgen(js_name = selectBitcoinCoins)]
-pub fn select_bitcoin_coins(utxos: JsValue, amount: u64, fee_rate: u64, change_kind: &str) -> Result<JsValue, JsError> {
+pub fn select_bitcoin_coins(
+    utxos: JsValue,
+    amount: u64,
+    payments: u32,
+    fee_rate: u64,
+    change_kind: &str,
+) -> Result<JsValue, JsError> {
     let list: Vec<UtxoArgs> = parse(utxos)?;
     let list: Vec<bitcoin::Utxo> = list.into_iter().map(Into::into).collect();
-    to_js(&bitcoin::select_coins(&list, amount, fee_rate, kind(change_kind)?).map_err(js_error)?)
+    let selection = bitcoin::select_coins_for(&list, amount, payments.into(), fee_rate, kind(change_kind)?);
+    to_js(&selection.map_err(js_error)?)
 }
 
 #[derive(Serialize)]
@@ -501,6 +580,17 @@ pub fn bitcoin_replacement(
     change_kind: &str,
 ) -> Result<JsValue, JsError> {
     to_js(&bitcoin::replacement(total, amount, old_fee, vsize, fee_rate, kind(change_kind)?).map_err(js_error)?)
+}
+
+/// ERC-20 的 approve 调用数据,十六进制.额度为 0 就是撤销.
+#[wasm_bindgen(js_name = evmApproveData)]
+pub fn evm_approve_data(spender: &str, amount: &str) -> Result<String, JsError> {
+    let spender = address::parse_evm_address(spender).map_err(js_error)?;
+    let amount = evm::be_from_decimal(amount).map_err(js_error)?;
+    Ok(format!(
+        "0x{}",
+        evm::approve_data(&spender, &amount).to_lower_hex_string()
+    ))
 }
 
 /// ERC-20 的 transfer 调用数据,十六进制,用于估算 Gas.
@@ -557,6 +647,12 @@ fn public_keys(fingerprint: &str, keys: Vec<KeyArgs>) -> Result<PublicKeys, JsEr
 }
 
 #[derive(Deserialize)]
+struct PaymentArgs {
+    address: String,
+    amount: u64,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BitcoinArgs {
     #[serde(flatten)]
@@ -564,9 +660,7 @@ struct BitcoinArgs {
     keys: Vec<KeyArgs>,
     inputs: Vec<UtxoArgs>,
     /// 留空表示取消,全部回到找零.
-    to: Option<String>,
-    #[serde(default)]
-    amount: u64,
+    payments: Vec<PaymentArgs>,
     change_path: Option<String>,
     #[serde(default)]
     change: u64,
@@ -578,11 +672,13 @@ pub fn build_bitcoin_transfer(args: JsValue) -> Result<Vec<u8>, JsError> {
     let net = network(&args.header.network)?;
     let keys = public_keys(&args.header.fingerprint, args.keys)?;
     let inputs: Vec<bitcoin::Utxo> = args.inputs.into_iter().map(Into::into).collect();
-    let amount = args.amount;
     let payments: Vec<bitcoin::Payment> = args
-        .to
+        .payments
         .into_iter()
-        .map(|address| bitcoin::Payment { address, amount })
+        .map(|p| bitcoin::Payment {
+            address: p.address,
+            amount: p.amount,
+        })
         .collect();
     let change = args.change_path.as_deref().map(|path| (path, args.change));
     let payload = bitcoin::build_psbt(net, &keys, &inputs, &payments, change).map_err(js_error)?;

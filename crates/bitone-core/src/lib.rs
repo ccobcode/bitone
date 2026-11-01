@@ -1,6 +1,7 @@
 //! BitOne 核心库.不含任何私钥,冷钱包和网页端共用.
 
 pub mod address;
+pub mod decode;
 pub mod error;
 pub mod keys;
 pub mod manifest;

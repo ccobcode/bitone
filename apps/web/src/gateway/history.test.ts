@@ -226,17 +226,6 @@ describe("unsentRows", () => {
         });
     });
 
-    it("没有本地的替换交易时不说已被替换,要警告", () => {
-        expect(unsentRows([local({ state: "replaced" })], [])[0]).toMatchObject({
-            note: "替换没有定论,这笔仍可能上链",
-            noteTone: "warn",
-        });
-        expect(unsentRows([local({ state: "replaced", replacedBy: "TX-2" })], [])[0]).toMatchObject({
-            note: "被同一序号的交易替换",
-            noteTone: "muted",
-        });
-    });
-
     it("链上查到这笔时说明本地记录已过时", () => {
         const rows = unsentRows([local({ state: "expired" })], [remote({ status: "included" })]);
         expect(rows[0]).toMatchObject({ status: "确认中", noteTone: "warn", note: "链上查到这笔,本地记录已过时" });

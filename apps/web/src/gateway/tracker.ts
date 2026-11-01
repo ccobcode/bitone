@@ -46,7 +46,7 @@ async function reconcileAbandoned(supported: readonly string[], now: number): Pr
 
 /**
  * 查询全部未完成的交易.先取替换证据再取状态,顺序不能反:
- * 否则交易在两次查询之间上链时,看到的是"状态未知,序号已用",会被误判成序号被别的交易用掉.
+ * 否则交易在两次查询之间上链时,看到的是"状态未知,序号已用",会被误判成已替换.
  * 全部查询都失败时返回 false,交易状态保持不变.
  */
 export async function pollOpenTxs(supported: readonly string[], now = Date.now()): Promise<boolean> {

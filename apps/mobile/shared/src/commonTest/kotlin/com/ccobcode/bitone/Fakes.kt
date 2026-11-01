@@ -13,6 +13,9 @@ import com.ccobcode.bitone.platform.ChangeIndexes
 import com.ccobcode.bitone.platform.ClockReading
 import com.ccobcode.bitone.platform.ConfirmMode
 import com.ccobcode.bitone.platform.DeviceFacts
+import com.ccobcode.bitone.platform.FieldKind
+import com.ccobcode.bitone.platform.FieldRow
+import com.ccobcode.bitone.platform.FieldSource
 import com.ccobcode.bitone.platform.FrameReceiver
 import com.ccobcode.bitone.platform.FrameStream
 import com.ccobcode.bitone.platform.HardwareKey
@@ -104,6 +107,7 @@ fun reviewOf(
     actions: List<ReviewAction> = emptyList(),
     rows: List<ReviewRow> = emptyList(),
     counterparty: String = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    fields: List<FieldRow> = emptyList(),
 ) =
     ReviewResult(
         risk = risk,
@@ -117,8 +121,29 @@ fun reviewOf(
         actions = actions,
         rows = rows,
         raw = emptyList(),
+        fields = fields,
+        reviewDigest = REVIEW_DIGEST,
         fingerprintMismatch = mismatch,
         requestFingerprint = requestFingerprint,
+    )
+
+val REVIEW_DIGEST = "digest".encodeToByteArray()
+
+fun fieldOf(name: String, source: FieldSource = FieldSource.Signed, depth: UInt = 1u) =
+    FieldRow(
+        id = 0u,
+        parent = null,
+        depth = depth,
+        name = name,
+        label = name,
+        kind = FieldKind.Text,
+        value = name,
+        source = source,
+        offset = null,
+        len = null,
+        risk = null,
+        note = null,
+        own = false,
     )
 
 fun tagFor(pin: String) = "tag:$pin".encodeToByteArray()
@@ -185,6 +210,8 @@ class SignCall(
     val keys: String,
     val highestChange: UInt,
     val manifest: String?,
+    val reviewDigest: ByteArray,
+    val renderedFields: UInt,
 )
 
 class FakeWallet(private val passphrase: String, private val core: FakeCore) : UnlockedWallet {
@@ -211,6 +238,8 @@ class FakeWallet(private val passphrase: String, private val core: FakeCore) : U
         keys: ByteArray,
         highestChange: ChangeIndexes,
         manifest: ByteArray?,
+        reviewDigest: ByteArray,
+        renderedFields: UInt,
     ): SignOutcome {
         check(!closed) { "钱包已关闭" }
         if (core.signFails) throw WalletCoreException.Other("策略不允许")
@@ -220,6 +249,8 @@ class FakeWallet(private val passphrase: String, private val core: FakeCore) : U
                 keys.decodeToString(),
                 highestChange.mainnet,
                 manifest?.decodeToString(),
+                reviewDigest,
+                renderedFields,
             )
         return SignOutcome(FakeStream(2).also { core.lastStream = it }, core.nextChangeIndex, core.nextChangeIsTestnet)
     }
@@ -301,6 +332,9 @@ class FakeCore : WalletCore {
     /** 模拟 Argon2 途中被杀进程. */
     var killDuringOpen = false
 
+    /** 密文头部损坏,核心库认不出格式. */
+    var vaultDamaged = false
+
     /** Argon2 途中发生的事,比如按 Home 或者打开 Wi-Fi. */
     var onOpen: () -> Unit = {}
 
@@ -342,6 +376,7 @@ class FakeCore : WalletCore {
         opens++
         onOpen()
         if (killDuringOpen) error("进程被杀")
+        if (vaultDamaged) throw WalletCoreException.Other("密文格式不支持")
         if (sealed.decodeToString() != "sealed:$pin:${tag.decodeToString()}") throw WalletCoreException.WrongPin()
         return FakeWallet(passphrase, this).also { lastWallet = it }
     }
@@ -435,6 +470,9 @@ class FakeHardwareKey : HardwareKey {
     /** 只取消这个 PIN 的确认,比如修改 PIN 时的新 PIN. */
     var cancelFor: String? = null
     var unavailable = false
+
+    /** Keystore 这次报错,密钥还在. */
+    var bindFails = false
     var deleted = 0
     var legacyDropped = 0
     var binds = 0
@@ -444,6 +482,7 @@ class FakeHardwareKey : HardwareKey {
 
     override suspend fun bind(pin: String): ByteArray {
         if (lost) throw HardwareKeyException.Lost("失效")
+        if (bindFails) throw HardwareKeyException.Unavailable("无")
         if (cancelAuth || cancelFor == pin) throw HardwareKeyException.AuthCancelled()
         binds++
         return tagFor(pin)

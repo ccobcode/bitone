@@ -13,19 +13,17 @@ import {
 import { GatewayError, addressKey, broadcastRaw } from "../gateway/client";
 import { sharedClaims } from "./claims";
 import { db, type TxRecord, type TxState } from "./db";
-import { mayStillLand } from "./machine";
 import { beginBroadcast, cancelTx, finishBroadcast, insertTx, withAccountLock } from "./txs";
 import { t } from "../core/i18n";
 
 /**
- * 同样的转账还可能上链时不让再发.那一笔可能已经上链,新交易用的是下一个序号,两笔都会生效.
+ * 同样的转账结果不明时不让再发.那一笔可能已经上链,新交易用的是下一个序号,两笔都会生效.
  * 重建走 createReplacement,复用原来的序号.
  */
 async function rejectTwin({ account, network, asset, to, amount }: TransferDraft): Promise<void> {
-    const rows = await db.txs.where("state").anyOf("uncertain", "replaced").toArray();
+    const rows = await db.txs.where("state").equals("uncertain").toArray();
     const twin = rows.find(
         (tx) =>
-            mayStillLand(tx) &&
             tx.accountId === account.id &&
             tx.network === network &&
             addressKey(tx.asset) === addressKey(asset) &&

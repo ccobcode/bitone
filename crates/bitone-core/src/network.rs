@@ -129,6 +129,18 @@ impl Network {
         Network::ALL.into_iter().find(|n| n.id() == id)
     }
 
+    /// 原生币的符号和小数位,这是链本身的事实,不依赖清单.
+    pub fn native_coin(self) -> (&'static str, u8) {
+        match self {
+            Network::Bitcoin | Network::BtcTestnet4 | Network::BtcSignet | Network::BtcTestnet3 => ("BTC", 8),
+            Network::Ethereum | Network::Sepolia | Network::Hoodi => ("ETH", 18),
+            Network::Bsc | Network::BscTestnet => ("BNB", 18),
+            Network::Polygon | Network::Amoy => ("POL", 18),
+            Network::Tron | Network::TronNile | Network::TronShasta => ("TRX", 6),
+            Network::Solana | Network::SolanaDevnet | Network::SolanaTestnet => ("SOL", 9),
+        }
+    }
+
     pub fn chain(self) -> Chain {
         match self {
             Network::Bitcoin | Network::BtcTestnet4 | Network::BtcSignet | Network::BtcTestnet3 => Chain::Bitcoin,

@@ -49,6 +49,6 @@ enum class Screen {
     CameraDenied,
     /** AS 需恢复 */
     NeedsRecovery,
-    /** 错误 10 次后 */
-    Wiped,
+    /** AS 导入会覆盖本机钱包 */
+    ImportOverwrite,
 }

@@ -188,11 +188,7 @@ export default function PairDialog() {
                     className="field text-t3"
                 />
             </div>
-            {existing ? (
-                <Notice>
-                    {t("这个钱包已配对,导入后补上缺的账户.公钥和手机不同的账户改用手机的公钥,地址要重新核对.")}
-                </Notice>
-            ) : null}
+            {existing ? <Notice>{t("这个钱包已配对,导入后只补缺的账户.")}</Notice> : null}
             {saveError ? <Notice tone="danger">{saveError}</Notice> : null}
             <SheetActions>
                 <Button onClick={reset}>{t("重新扫描")}</Button>

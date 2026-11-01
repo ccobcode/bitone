@@ -1,12 +1,12 @@
 package com.ccobcode.bitone.platform
 
-/** 从低到高排序,分类全在核心库里完成,界面只负责画出来. */
+/** 从低到高排序,分类全在核心库里完成,界面只负责画出来.无法识别排在权限变更之上. */
 enum class Risk {
     Transfer,
     Recognized,
-    Unknown,
     Approval,
     PermissionChange,
+    Unknown,
     Forbidden,
 }
 
@@ -32,6 +32,49 @@ class ReviewAction(val risk: Risk, val title: String, val rows: List<ReviewRow>)
 /** 原始数据的一行.[note] 是核心库分析出的提示,比如疑似地址. */
 class RawLine(val text: String, val note: String?)
 
+enum class FieldKind {
+    Bool,
+    Int,
+    Uint,
+    Amount,
+    Address,
+    Hash,
+    Bytes,
+    Text,
+    Enum,
+    Time,
+    Script,
+    Struct,
+    List,
+    Opaque,
+}
+
+enum class FieldSource {
+    Signed,
+    Context,
+    Derived,
+    Manifest,
+    Descriptor,
+    Hint,
+}
+
+/** 解码树的一个节点,前序排列.[value] 已经由核心库格式化,这里原样显示. */
+class FieldRow(
+    val id: UInt,
+    val parent: UInt?,
+    val depth: UInt,
+    val name: String,
+    val label: String,
+    val kind: FieldKind,
+    val value: String,
+    val source: FieldSource,
+    val offset: UInt?,
+    val len: UInt?,
+    val risk: Risk?,
+    val note: String?,
+    val own: Boolean,
+)
+
 /** 核对页要显示的全部内容. */
 class ReviewResult(
     val risk: Risk,
@@ -45,6 +88,10 @@ class ReviewResult(
     val actions: List<ReviewAction>,
     val rows: List<ReviewRow>,
     val raw: List<RawLine>,
+    /** 不为空时核对页用通用字段列表.还没迁移的链是空的. */
+    val fields: List<FieldRow>,
+    /** 签名时原样传回核心库. */
+    val reviewDigest: ByteArray,
     /** 指纹对不上,要提示检查 BIP39 密码. */
     val fingerprintMismatch: Boolean,
     /** 请求里声明的指纹.数据解析不出来时为空. */

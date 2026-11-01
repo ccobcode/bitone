@@ -88,14 +88,14 @@ describe("轮询", () => {
         expect(await db.txs.get(tx.id)).toMatchObject({ state: "failed", fee: "42000" });
     });
 
-    it("序号被用掉后继续查询,这笔上链要如实显示", async () => {
+    it("已替换的交易继续查询,重组后上链要如实显示", async () => {
         chain({ tx: () => status("unknown") });
         const tx = await sent();
         chain({ nonce: 8, tx: () => status("unknown") });
         const now = Date.now();
         await pollOpenTxs(["ethereum"], now);
         await pollOpenTxs(["ethereum"], now + 15_000);
-        expect(await state(tx.id)).toBe("uncertain");
+        expect(await state(tx.id)).toBe("replaced");
         chain({ nonce: 8, tx: () => status("included", { stage: "latest", block: 12 }) });
         await pollOpenTxs(["ethereum"], now + 20_000);
         expect(await state(tx.id)).toBe("confirming");
@@ -121,7 +121,7 @@ describe("轮询", () => {
         expect(await state(tx.id)).toBe("confirming");
     });
 
-    it("nonce 被用掉且查不到交易,连续两轮后结果不明,占用不释放", async () => {
+    it("nonce 被用掉且查不到交易,连续两轮后才算已替换", async () => {
         chain({ nonce: 7, tx: () => status("unknown") });
         const tx = await sent();
         chain({ nonce: 8, tx: () => status("unknown") });
@@ -131,8 +131,8 @@ describe("轮询", () => {
         await pollOpenTxs(["ethereum"], now + 1000);
         expect(await state(tx.id)).toBe("broadcast");
         await pollOpenTxs(["ethereum"], now + 15_000);
-        expect(await state(tx.id)).toBe("uncertain");
-        expect(await db.reservations.count()).toBe(1);
+        expect(await state(tx.id)).toBe("replaced");
+        expect(await db.reservations.count()).toBe(0);
     });
 
     it("nonce 没变时查不到交易不算被替换", async () => {
@@ -152,14 +152,14 @@ describe("轮询", () => {
         expect(await state(tx.id)).toBe("broadcast");
     });
 
-    it("结果不明时序号被用掉,只有网关的说法,状态不变", async () => {
+    it("结果不明时被替换交易抢先也能结束", async () => {
         chain({ nonce: 7, extra: { "ethereum/broadcast": () => gatewayError("broadcast_rejected", "x", 422) } });
         const tx = await sent();
         chain({ nonce: 8, tx: () => status("unknown") });
         const now = Date.now();
         await pollOpenTxs(["ethereum"], now);
         await pollOpenTxs(["ethereum"], now + 15_000);
-        expect(await state(tx.id)).toBe("uncertain");
+        expect(await state(tx.id)).toBe("replaced");
     });
 
     it("网关断开时状态不变", async () => {

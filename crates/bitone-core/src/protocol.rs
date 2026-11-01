@@ -6,7 +6,9 @@ use crate::path::{DerivationPath, all_account_specs, validate_for_network};
 use crate::{AccountKind, Chain, Error, Network};
 use minicbor::data::Type;
 use minicbor::{Decode, Decoder, Encode};
+use std::collections::BTreeSet;
 
+/// 永远是 1,见 docs/10-tx-decoding.md 第 1.2 节.
 pub const VERSION: u8 = 1;
 
 pub const UR_ACCOUNTS: &str = "bitone-accounts";
@@ -60,11 +62,9 @@ impl AccountsExport {
     /// 只有内容全部通过校验才返回.路径不在白名单或与主网,测试网声明冲突的数据不会进入浏览器.
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         check_limits(bytes)?;
-        check_fields(bytes, &[0, 1, 3])?;
+        check_fields(bytes)?;
         let export: Self = minicbor::decode(bytes).map_err(|_| Error::Decode)?;
-        if export.version != VERSION {
-            return Err(Error::UnsupportedVersion);
-        }
+        check_version(export.version)?;
         export.validate()?;
         Ok(export)
     }
@@ -130,11 +130,9 @@ impl AddressCheck {
 
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         check_limits(bytes)?;
-        check_fields(bytes, &[0, 1, 2, 3, 4])?;
+        check_fields(bytes)?;
         let check: Self = minicbor::decode(bytes).map_err(|_| Error::Decode)?;
-        if check.version != VERSION {
-            return Err(Error::UnsupportedVersion);
-        }
+        check_version(check.version)?;
         let network = Network::from_id(&check.network).ok_or(Error::Decode)?;
         validate_for_network(&DerivationPath::parse(&check.path)?, network)?;
         Ok(check)
@@ -143,6 +141,15 @@ impl AddressCheck {
     /// 单帧二维码.内容是不区分大小写的 bytewords,所以 Base58 地址不会被大写破坏.
     pub fn frame(&self) -> Result<String, Error> {
         FrameEncoder::new(&self.encode(), UR_ADDRESS, MAX_PART_CHARS)?.next_part()
+    }
+}
+
+/// 更高的版本不拒绝:已知字段齐全就能读,冷钱包在核对页告警.
+pub(crate) fn check_version(version: u8) -> Result<(), Error> {
+    if version < VERSION {
+        Err(Error::UnsupportedVersion)
+    } else {
+        Ok(())
     }
 }
 
@@ -194,18 +201,17 @@ pub fn check_limits(bytes: &[u8]) -> Result<(), Error> {
     if stack.is_empty() { Ok(()) } else { Err(Error::Decode) }
 }
 
-/// 解析前走一遍顶层 map.派生的解码器会跳过未知键,重复键取最后一个,这些内容都不能进入核对.
+/// 解析前走一遍顶层 map.派生的解码器遇到重复键取最后一个,所以重复键和尾部字节都拒绝.
+/// 未知键放行,派生的解码器会跳过它们,旧手机才读得懂新网页端的请求.
 /// 不定长 map 没有合法来源,直接拒绝.要在 `check_limits` 之后调用.
-pub fn check_fields(bytes: &[u8], known: &[u32]) -> Result<(), Error> {
+pub fn check_fields(bytes: &[u8]) -> Result<(), Error> {
     let mut decoder = Decoder::new(bytes);
     let len = decoder.map().map_err(|_| Error::Decode)?.ok_or(Error::Decode)?;
-    let mut seen = Vec::with_capacity(known.len());
+    let mut seen = BTreeSet::new();
     for _ in 0..len {
-        let key = decoder.u32().map_err(|_| Error::Decode)?;
-        if !known.contains(&key) || seen.contains(&key) {
+        if !seen.insert(decoder.u32().map_err(|_| Error::Decode)?) {
             return Err(Error::Decode);
         }
-        seen.push(key);
         decoder.skip().map_err(|_| Error::Decode)?;
     }
     if decoder.position() == bytes.len() {
@@ -365,10 +371,21 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_version() {
+    fn a_higher_version_still_decodes_and_zero_does_not() {
         let mut export = sample();
         export.version = 9;
+        assert_eq!(AccountsExport::decode(&export.encode()), Ok(export.clone()));
+        export.version = 0;
         assert_eq!(AccountsExport::decode(&export.encode()), Err(Error::UnsupportedVersion));
+    }
+
+    #[test]
+    fn a_higher_address_check_still_decodes() {
+        let check = AddressCheck {
+            version: 9,
+            ..AddressCheck::new([1, 2, 3, 4], Network::Tron, "m/44'/195'/0'/0/0", "T").unwrap()
+        };
+        assert_eq!(AddressCheck::decode(&check.encode()), Ok(check));
     }
 
     #[test]
@@ -443,29 +460,51 @@ mod tests {
     }
 
     #[test]
-    fn accounts_reject_unknown_and_duplicate_fields() {
+    fn accounts_tolerate_unknown_fields_and_reject_duplicates() {
         let bytes = sample().encode();
-        for (key, value) in [(2, 0), (4, 0), (0, VERSION)] {
+        for key in [2, 4] {
             assert_eq!(
-                AccountsExport::decode(&with_field(&bytes, key, value)),
-                Err(Error::Decode),
+                AccountsExport::decode(&with_field(&bytes, key, 0)),
+                Ok(sample()),
                 "{key}"
             );
         }
+        assert_eq!(
+            AccountsExport::decode(&with_field(&bytes, 0, VERSION)),
+            Err(Error::Decode)
+        );
     }
 
     #[test]
-    fn address_check_rejects_unknown_and_duplicate_fields() {
-        let bytes = AddressCheck::new([1, 2, 3, 4], Network::Solana, "m/44'/501'/0'/0'", "x")
-            .unwrap()
-            .encode();
-        for (key, value) in [(5, 0), (0, VERSION)] {
-            assert_eq!(
-                AddressCheck::decode(&with_field(&bytes, key, value)),
-                Err(Error::Decode),
-                "{key}"
-            );
-        }
+    fn address_check_tolerates_unknown_fields_and_rejects_duplicates() {
+        let check = AddressCheck::new([1, 2, 3, 4], Network::Solana, "m/44'/501'/0'/0'", "x").unwrap();
+        let bytes = check.encode();
+        assert_eq!(AddressCheck::decode(&with_field(&bytes, 5, 0)), Ok(check));
+        assert_eq!(
+            AddressCheck::decode(&with_field(&bytes, 0, VERSION)),
+            Err(Error::Decode)
+        );
+    }
+
+    #[test]
+    fn an_unknown_field_can_hold_a_nested_value() {
+        let mut bytes = sample().encode();
+        bytes[0] += 1;
+        bytes.extend([0x09, 0xa1, 0x01, 0x82, 0x01, 0x02]);
+        assert_eq!(AccountsExport::decode(&bytes), Ok(sample()));
+    }
+
+    #[test]
+    fn repeated_unknown_keys_are_rejected() {
+        let bytes = with_field(&with_field(&sample().encode(), 9, 0), 9, 1);
+        assert_eq!(AccountsExport::decode(&bytes), Err(Error::Decode));
+    }
+
+    #[test]
+    fn an_unknown_field_cannot_carry_trailing_bytes() {
+        let mut bytes = with_field(&sample().encode(), 9, 0);
+        bytes.push(0);
+        assert_eq!(AccountsExport::decode(&bytes), Err(Error::Decode));
     }
 
     #[test]

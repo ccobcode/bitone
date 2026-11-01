@@ -1,21 +1,25 @@
 package com.ccobcode.bitone
 
 import androidx.compose.runtime.snapshots.Snapshot
+import com.ccobcode.bitone.flow.CheckState
 import com.ccobcode.bitone.flow.ChecksumState
-import com.ccobcode.bitone.flow.MAX_PIN_FAILURES
 import com.ccobcode.bitone.flow.Screen
 import com.ccobcode.bitone.flow.VerifyState
 import com.ccobcode.bitone.flow.WalletFlow
 import com.ccobcode.bitone.flow.changedLockDelayMs
+import com.ccobcode.bitone.flow.evaluate
 import com.ccobcode.bitone.flow.pinDelayMs
+import com.ccobcode.bitone.platform.DefiniteResult
 import com.ccobcode.bitone.platform.HardwareLevel
 import com.ccobcode.bitone.platform.PinRecord
 import com.ccobcode.bitone.platform.WalletMeta
+import com.ccobcode.bitone.platform.firstBound
 import com.ccobcode.bitone.ui.theme.Motion
 import com.ccobcode.bitone.ui.theme.Qr
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
@@ -160,7 +164,6 @@ class WalletFlowTest {
                 facts(screenLockSet = false),
                 facts(rooted = true),
                 facts(bootloaderLocked = false),
-                facts(bootloaderLocked = null),
                 facts(thirdPartyAccessibility = 1),
             )
             .forEach { deviceFacts ->
@@ -200,6 +203,16 @@ class WalletFlowTest {
         val flow = boot(rig)
         flow.setup.startImport()
         advanceUntilIdle()
+        assertEquals(Screen.ImportOverwrite, flow.screen)
+
+        // 返回不动原来的密文.
+        flow.back()
+        assertEquals(Screen.NeedsRecovery, flow.screen)
+        assertContentEquals("old".encodeToByteArray(), rig.store.vault)
+
+        flow.setup.startImport()
+        advanceUntilIdle()
+        flow.setup.confirmOverwrite()
         assertEquals(Screen.ImportWords, flow.screen)
         pickWords(flow)
         flow.setup.continueAfterImport()
@@ -207,6 +220,215 @@ class WalletFlowTest {
         assertEquals(Screen.Home, flow.screen)
         assertEquals(0, rig.store.pin.failures)
         assertEquals(1, rig.key.deleted)
+    }
+
+    @Test
+    fun recoveryImportContinuesAfterAnAcknowledgement() = runTest {
+        val rig =
+            rig({
+                it.hasWallet("old".encodeToByteArray())
+                it.key.lost = true
+            })
+        val flow = boot(rig)
+        rig.check.facts = facts(wifiOn = true)
+        flow.setup.startImport()
+        advanceUntilIdle()
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        assertEquals(Screen.ImportOverwrite, flow.screen)
+        flow.setup.confirmOverwrite()
+        pickWords(flow)
+        flow.setup.continueAfterImport()
+        finishWithPin(flow)
+        assertEquals(Screen.Home, flow.screen)
+        assertContentEquals(boundVault(PIN), rig.store.vault)
+    }
+
+    @Test
+    fun aPhoneWithoutAWalletCanStillImportThroughAFailedCheck() = runTest {
+        val rig = rig({ it.check.facts = facts(bootloaderLocked = false) })
+        val flow = boot(rig)
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        assertEquals(Screen.Welcome, flow.screen)
+
+        flow.setup.startImport()
+        advanceUntilIdle()
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        assertEquals(Screen.ImportWords, flow.screen)
+        pickWords(flow)
+        flow.setup.continueAfterImport()
+        finishWithPin(flow)
+        assertEquals(Screen.Home, flow.screen)
+    }
+
+    @Test
+    fun anAcknowledgementNeverGeneratesANewWallet() = runTest {
+        val rig = rig({ it.check.facts = facts(wifiOn = true) })
+        val flow = boot(rig)
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        flow.setup.startCreate()
+        advanceUntilIdle()
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        assertNull(rig.core.lastDraft)
+    }
+
+    /** 自检一直不过时不能只剩"重新检测". */
+    @Test
+    fun generatingCanBeAbandonedWhenTheCheckKeepsFailing() = runTest {
+        val rig = rig()
+        val flow = boot(rig)
+        toVerify(flow)
+        val draft = rig.core.lastDraft
+        rig.check.facts = facts(wifiOn = true)
+        flow.setup.backToBackup()
+        advanceUntilIdle()
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        assertFalse(flow.canAcknowledge)
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+
+        flow.setup.abandonCreate()
+        assertEquals(listOf(Screen.Welcome), flow.stack)
+        assertTrue(draft!!.closed)
+    }
+
+    // 忘记 PIN
+
+    private fun TestScope.finishRecovery(flow: WalletFlow) {
+        flow.setup.confirmOverwrite()
+        pickWords(flow)
+        flow.setup.continueAfterImport()
+        finishWithPin(flow)
+    }
+
+    @Test
+    fun aForgottenPinRecoversWithoutThePinEvenDuringADelay() = runTest {
+        val rig = ready()
+        val flow = rig.flow
+        openUnlock(flow)
+        repeat(6) { failOnce(rig) }
+        assertTrue(flow.unlock.waitMs > 0)
+        val opens = rig.core.opens
+
+        flow.forgotPin()
+        advanceUntilIdle()
+        assertEquals(listOf(Screen.Home, Screen.ImportOverwrite), flow.stack)
+
+        // 返回不动原来的钱包.
+        val vault = rig.store.vault
+        flow.back()
+        assertEquals(Screen.Home, flow.screen)
+        assertContentEquals(vault, rig.store.vault)
+
+        openUnlockAfterDelay(rig)
+        flow.forgotPin()
+        advanceUntilIdle()
+        finishRecovery(flow)
+        assertEquals(Screen.Home, flow.screen)
+        assertEquals(0, rig.store.pin.failures)
+        assertEquals(0, flow.unlock.failures)
+        assertEquals(opens + 1, rig.core.opens)
+    }
+
+    private fun TestScope.openUnlockAfterDelay(rig: Rig) {
+        rig.clock.elapsed += pinDelayMs(rig.store.pin.failures)
+        openUnlock(rig.flow)
+    }
+
+    @Test
+    fun aForgottenPinDropsTheOperationInProgress() = runTest {
+        val rig = ready()
+        val flow = rig.flow
+        flow.openSettings()
+        flow.settings.startChangePin()
+        advanceUntilIdle()
+        flow.typeSetPin("246813")
+        flow.typeSetPin("246813")
+        flow.settings.continueChangePin()
+        assertEquals(Screen.Unlock, flow.screen)
+
+        flow.forgotPin()
+        advanceUntilIdle()
+        assertFalse(flow.settings.changingPin)
+        finishRecovery(flow)
+        assertEquals(Screen.Home, flow.screen)
+        assertContentEquals(boundVault(PIN), rig.store.vault)
+    }
+
+    @Test
+    fun aForgottenPinStillShowsTheSelfCheckWarning() = runTest {
+        val rig = ready()
+        val flow = rig.flow
+        openUnlock(flow)
+        rig.check.facts = facts(wifiOn = true)
+        flow.forgotPin()
+        advanceUntilIdle()
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        assertEquals(Screen.ImportOverwrite, flow.screen)
+    }
+
+    // 没有死路
+
+    @Test
+    fun aDamagedVaultGoesToRecovery() = runTest {
+        val rig = ready()
+        val flow = rig.flow
+        openUnlock(flow)
+        rig.core.vaultDamaged = true
+        submit(flow, PIN)
+        assertEquals(Screen.NeedsRecovery, flow.screen)
+        flow.setup.startImport()
+        advanceUntilIdle()
+        assertEquals(Screen.ImportOverwrite, flow.screen)
+        assertNotNull(rig.store.vault)
+    }
+
+    /** 内容损坏和 PIN 错误分不开,一直报错的 Keystore 也重试不好,都要能走到导入. */
+    @Test
+    fun retriesThatCanNeverSucceedStillReachImport() = runTest {
+        val rig = ready()
+        val flow = rig.flow
+        openUnlock(flow)
+        rig.key.bindFails = true
+        repeat(3) { submit(flow, PIN) }
+        assertEquals(Screen.Unlock, flow.screen)
+        assertNotNull(flow.unlock.error)
+
+        flow.forgotPin()
+        advanceUntilIdle()
+        assertEquals(Screen.ImportOverwrite, flow.screen)
+        rig.key.bindFails = false
+        finishRecovery(flow)
+        assertEquals(Screen.Home, flow.screen)
+    }
+
+    @Test
+    fun aFreshInstallImportsWithoutTheOverwriteWarning() = runTest {
+        val flow = boot(rig())
+        flow.setup.startImport()
+        advanceUntilIdle()
+        assertEquals(Screen.ImportWords, flow.screen)
+    }
+
+    @Test
+    fun everyBip39LengthCanBeImported() = runTest {
+        val flow = boot(rig())
+        flow.setup.startImport()
+        advanceUntilIdle()
+        flow.setup.setImportWordCount(18)
+        pickWords(flow, List(18) { "word$it" })
+        assertEquals(ChecksumState.Valid, flow.setup.checksum)
+        flow.setup.continueAfterImport()
+        assertEquals(Screen.SetPin, flow.screen)
     }
 
     // 验证
@@ -565,38 +787,44 @@ class WalletFlowTest {
     }
 
     @Test
-    fun tenthFailureWipes() = runTest {
+    fun wrongPinsOnlyEverDelay() = runTest {
         val rig = ready()
         val flow = rig.flow
+        val deleted = rig.key.deleted
         openUnlock(flow)
-        repeat(MAX_PIN_FAILURES - 1) { failOnce(rig) }
-        assertEquals(9, rig.store.pin.failures)
+        repeat(30) { failOnce(rig) }
+        assertEquals(30, rig.store.pin.failures)
+        assertEquals(300_000L, flow.unlock.waitMs)
         assertEquals(Screen.Unlock, flow.screen)
         assertNotNull(rig.store.vault)
-        assertEquals(0, rig.key.deleted - 1)
+        assertEquals(deleted, rig.key.deleted)
 
-        failOnce(rig)
-        assertEquals(Screen.Wiped, flow.screen)
-        assertNull(rig.store.vault)
-        assertNull(rig.store.meta)
-        assertNull(flow.session.meta)
+        // 第 31 次输对照样能解开.
+        rig.clock.elapsed += 300_000
+        flow.unlock.refreshStatus()
+        submit(flow, PIN)
+        assertEquals(Screen.Export, flow.screen)
         assertEquals(0, rig.store.pin.failures)
-        assertEquals(2, rig.key.deleted)
-
-        flow.restartAfterWipe()
-        advanceUntilIdle()
-        assertEquals(Screen.Welcome, flow.screen)
     }
 
     @Test
-    fun killedDuringTenthAttemptWipesOnNextStart() = runTest {
+    fun aHighCounterAtLaunchKeepsTheWallet() = runTest {
         val rig =
             rig({
                 it.hasWallet(boundVault(PIN))
-                it.store.pin = PinRecord(MAX_PIN_FAILURES, 1, 0)
+                it.store.pin = PinRecord(99, 1, 0)
             })
-        assertEquals(Screen.Wiped, boot(rig).screen)
-        assertNull(rig.store.vault)
+        assertEquals(Screen.Home, boot(rig).screen)
+        assertNotNull(rig.store.vault)
+    }
+
+    @Test
+    fun theCounterIsWrittenBeforeDecrypting() = runTest {
+        val rig = ready()
+        openUnlock(rig.flow)
+        rig.core.onOpen = { assertEquals(1, rig.store.pin.failures) }
+        submit(rig.flow, PIN)
+        assertEquals(Screen.Export, rig.flow.screen)
     }
 
     /** 硬件结果按次认证,所以每猜一次 PIN 都要过一次系统屏幕锁. */
@@ -632,24 +860,29 @@ class WalletFlowTest {
         assertEquals(1, rig.key.legacyDropped)
     }
 
-    /** 迁移没走完时旧密文和旧密钥都在,下次还能解开. */
+    /** 迁移没走完不影响这次使用,旧密文和旧密钥都在,下次解锁再换. */
     @Test
-    fun cancelledMigrationKeepsTheLegacyVault() = runTest {
-        val rig = ready()
-        rig.store.vault = legacyVault(PIN)
-        val flow = rig.flow
-        openUnlock(flow)
-        rig.key.cancelFor = PIN
-        submit(flow, PIN)
-        assertEquals(Screen.Unlock, flow.screen)
-        assertContentEquals(legacyVault(PIN), rig.store.vault)
-        assertEquals(0, rig.key.legacyDropped)
-        assertEquals(0, rig.store.pin.failures)
+    fun failedMigrationKeepsTheLegacyVaultAndOpens() = runTest {
+        listOf<(Rig) -> Unit>({ it.key.cancelFor = PIN }, { it.key.unavailable = true }).forEach { fail ->
+            val rig = ready()
+            rig.store.vault = legacyVault(PIN)
+            val flow = rig.flow
+            openUnlock(flow)
+            fail(rig)
+            submit(flow, PIN)
+            assertEquals(Screen.Export, flow.screen)
+            assertContentEquals(legacyVault(PIN), rig.store.vault)
+            assertEquals(0, rig.key.legacyDropped)
+            assertEquals(0, rig.store.pin.failures)
 
-        rig.key.cancelFor = null
-        submit(flow, PIN)
-        assertContentEquals(boundVault(PIN), rig.store.vault)
-        assertEquals(1, rig.key.legacyDropped)
+            rig.key.cancelFor = null
+            rig.key.unavailable = false
+            flow.export.finish()
+            openUnlock(flow)
+            submit(flow, PIN)
+            assertContentEquals(boundVault(PIN), rig.store.vault)
+            assertEquals(1, rig.key.legacyDropped)
+        }
     }
 
     @Test
@@ -677,41 +910,27 @@ class WalletFlowTest {
     }
 
     @Test
-    fun changedFingerprintWaitsAndNeverWipes() = runTest {
+    fun changedFingerprintUsesTheLongerDelays() = runTest {
         val rig = ready()
         val flow = rig.flow
         openUnlock(flow)
         rig.key.changed = true
-        repeat(MAX_PIN_FAILURES + 3) {
+        repeat(13) {
             rig.clock.elapsed += changedLockDelayMs(rig.store.pin.failures)
             flow.unlock.refreshStatus()
             submit(flow, BAD_PIN)
         }
         assertEquals(Screen.Unlock, flow.screen)
         assertNotNull(rig.store.vault)
-        assertEquals(MAX_PIN_FAILURES - 1, rig.store.pin.failures)
+        assertEquals(13, rig.store.pin.failures)
         assertEquals(3_600_000, flow.unlock.waitMs)
-        assertEquals(false, flow.session.canWipe)
 
         // 输对 PIN 后恢复.
         rig.clock.elapsed += 3_600_000
         flow.unlock.refreshStatus()
         submit(flow, PIN)
         assertEquals(false, rig.key.changed)
-        assertEquals(true, flow.session.canWipe)
         assertEquals(0, rig.store.pin.failures)
-    }
-
-    @Test
-    fun changedFingerprintDoesNotFinishAnInterruptedWipe() = runTest {
-        val rig =
-            rig({
-                it.hasWallet(boundVault(PIN))
-                it.store.pin = PinRecord(MAX_PIN_FAILURES, 1, 0)
-                it.key.changed = true
-            })
-        assertEquals(Screen.Home, boot(rig).screen)
-        assertNotNull(rig.store.vault)
     }
 
     @Test
@@ -724,6 +943,23 @@ class WalletFlowTest {
         assertEquals(Screen.NeedsRecovery, flow.screen)
         assertEquals(0, rig.store.pin.failures)
         assertNotNull(rig.store.vault)
+    }
+
+    /** Keystore 这次出错不是钱包丢了,不能把人推去导入. */
+    @Test
+    fun aKeystoreErrorStaysOnTheUnlockPageForARetry() = runTest {
+        val rig = ready()
+        val flow = rig.flow
+        openUnlock(flow)
+        rig.key.bindFails = true
+        submit(flow, PIN)
+        assertEquals(Screen.Unlock, flow.screen)
+        assertNotNull(flow.unlock.error)
+        assertEquals(0, rig.store.pin.failures)
+
+        rig.key.bindFails = false
+        submit(flow, PIN)
+        assertEquals(Screen.Export, flow.screen)
     }
 
     @Test
@@ -934,5 +1170,234 @@ class WalletFlowTest {
         assertTrue(flow.back())
         assertEquals(Screen.Home, flow.screen)
         assertNotEquals(0, rig.check.runs)
+    }
+}
+
+/** 冷钱包可能放很多年,这些情况都不能把持有人挡在资金外面. */
+@OptIn(ExperimentalCoroutinesApi::class)
+class LockoutTest {
+    private fun TestScope.boot(setup: (Rig) -> Unit): Rig {
+        val rig = newRig()
+        setup(rig)
+        rig.flow.onResume()
+        advanceUntilIdle()
+        return rig
+    }
+
+    private fun Rig.hasWallet(pin: String = PIN) {
+        store.meta = WalletMeta(false, false, MAIN_FINGERPRINT)
+        store.vault = boundVault(pin)
+        store.publicKeys = keysFor(MAIN_FINGERPRINT)
+    }
+
+    // 自检
+
+    @Test
+    fun aFailedCheckAtLaunchIsAWarningWithAWayIn() = runTest {
+        val rig = boot {
+            it.hasWallet()
+            it.check.facts = facts(bootloaderLocked = false)
+        }
+        val flow = rig.flow
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        assertTrue(flow.canAcknowledge)
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        assertEquals(listOf(Screen.Home), flow.stack)
+    }
+
+    @Test
+    fun anAcknowledgementCoversOneOperation() = runTest {
+        val rig = readyRig(PIN)
+        val flow = rig.flow
+        rig.check.facts = facts(wifiOn = true)
+        flow.export.open()
+        advanceUntilIdle()
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        submit(flow, PIN)
+        assertEquals(Screen.Export, flow.screen)
+
+        flow.export.finish()
+        flow.export.open()
+        advanceUntilIdle()
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+    }
+
+    @Test
+    fun recheckIsStillThereAndClearsTheWarning() = runTest {
+        val rig = readyRig(PIN)
+        val flow = rig.flow
+        rig.check.facts = facts(wifiOn = true)
+        flow.scan.open()
+        advanceUntilIdle()
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        flow.retryCheck()
+        advanceUntilIdle()
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        passSelfCheck(rig)
+        assertEquals(Screen.Home, flow.screen)
+    }
+
+    @Test
+    fun manualWipeStaysReachableAfterAnAcknowledgement() = runTest {
+        val rig = readyRig(PIN)
+        val flow = rig.flow
+        flow.openSettings()
+        rig.check.facts = facts(wifiOn = true)
+        flow.settings.startWipe()
+        advanceUntilIdle()
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        assertEquals(Screen.Unlock, flow.screen)
+        submit(flow, PIN)
+        assertEquals(listOf(Screen.Welcome), flow.stack)
+        assertNull(rig.store.vault)
+    }
+
+    @Test
+    fun aMissingKeyCacheWarnsOverTheUnlockPage() = runTest {
+        val rig = readyRig(PIN, cached = false)
+        val flow = rig.flow
+        flow.receive.open(flow.session.accounts.first())
+        advanceUntilIdle()
+        assertEquals(Screen.Unlock, flow.screen)
+
+        rig.check.facts = facts(wifiOn = true)
+        flow.back()
+        advanceUntilIdle()
+        flow.receive.open(flow.session.accounts.first())
+        advanceUntilIdle()
+        assertEquals(Screen.SelfCheckFailed, flow.screen)
+        flow.acknowledgeCheck()
+        advanceUntilIdle()
+        assertEquals(Screen.Unlock, flow.screen)
+        submit(flow, PIN)
+        assertEquals(Screen.Receive, flow.screen)
+        assertNotNull(flow.receive.address)
+    }
+
+    @Test
+    fun anUnreadableProbeIsAWarningNotAFailure() {
+        val cases =
+            listOf(
+                GoodFacts.copy(wifiOn = null),
+                GoodFacts.copy(airplaneMode = null),
+                GoodFacts.copy(rooted = null),
+                GoodFacts.copy(bootloaderLocked = null),
+                GoodFacts.copy(adbEnabled = null),
+                GoodFacts.copy(usbDataConnected = null),
+                GoodFacts.copy(keystore = null),
+                GoodFacts.copy(screenLockSet = null),
+                GoodFacts.copy(thirdPartyAccessibility = null),
+                GoodFacts.copy(overlayApps = null),
+            )
+        cases.forEach { fact ->
+            val report = evaluate(fact)
+            assertFalse(report.blocked, fact.toString())
+            assertEquals(1, report.warned, fact.toString())
+        }
+    }
+
+    @Test
+    fun aDefiniteProblemBeatsAnUnreadableOneInTheSameRow() {
+        val report = evaluate(GoodFacts.copy(wifiOn = null, bluetoothOn = true))
+        assertEquals(CheckState.Fail, report.items.first().state)
+        assertEquals("蓝牙已开启", report.items.first().value)
+    }
+
+    @Test
+    fun bootloaderAttestation() {
+        fun row(locked: Boolean?) = evaluate(GoodFacts.copy(bootloaderLocked = locked)).items[1]
+        assertEquals(CheckState.Pass, row(true).state)
+        assertEquals(CheckState.Warn, row(null).state)
+        assertEquals("无法确认 Bootloader", row(null).value)
+        assertEquals(CheckState.Fail, row(false).state)
+    }
+
+    @Test
+    fun onlyDefiniteResultsAreRemembered() {
+        var runs = 0
+        val answers = listOf(null, false, true)
+        val result = DefiniteResult { answers[runs++] }
+        assertNull(result.get())
+        assertEquals(false, result.get())
+        assertEquals(false, result.get())
+        assertEquals(2, runs)
+    }
+
+    // PIN
+
+    @Test
+    fun delaysStayCappedAndNeverEnd() {
+        assertEquals(300_000L, pinDelayMs(9))
+        assertEquals(300_000L, pinDelayMs(10_000))
+    }
+
+    @Test
+    fun aTruncatedPinRecordReadsAsClean() {
+        val bytes =
+            ByteArray(20).also {
+                it[3] = 3
+                it[11] = 7
+                it[19] = 9
+            }
+        val record = PinRecord.decode(bytes)
+        assertEquals(listOf(3L, 7L, 9L), listOf(record.failures.toLong(), record.bootId, record.elapsedMs))
+        assertEquals(PinRecord.Clean, PinRecord.decode(bytes.copyOf(19)))
+        assertEquals(PinRecord.Clean, PinRecord.decode(ByteArray(0)))
+        assertEquals(PinRecord.Clean, PinRecord.decode(null))
+    }
+
+    // 钱包是否存在
+
+    @Test
+    fun lostPreferencesNeverHideARealVault() = runTest {
+        val rig = boot {
+            it.store.vault = boundVault(PIN)
+            it.store.meta = null
+        }
+        val flow = rig.flow
+        assertEquals(Screen.Home, flow.screen)
+
+        // 不知道有没有 BIP39 密码,可以留空也可以填.
+        flow.export.open()
+        advanceUntilIdle()
+        assertTrue(flow.unlock.needsPassphrase)
+        submit(flow, PIN)
+        assertEquals(Screen.Export, flow.screen)
+        assertNull(rig.store.publicKeys)
+    }
+
+    @Test
+    fun noVaultMeansNoWalletWhateverThePreferencesSay() = runTest {
+        val rig = boot { it.store.meta = WalletMeta(false, false, MAIN_FINGERPRINT) }
+        assertEquals(Screen.Welcome, rig.flow.screen)
+    }
+
+    // 遮挡和摄像头
+
+    @Test
+    fun anObscuredTouchSaysWhy() = runTest {
+        val rig = readyRig(PIN)
+        rig.flow.touchObscured()
+        assertEquals(true, rig.flow.notice?.contains("盖住"))
+        assertTrue(rig.flow.noticeFailed)
+    }
+
+    @Test
+    fun theNextCameraIsTriedWhenBindingFails() {
+        val tried = mutableListOf<String>()
+        firstBound(listOf("back", "front")) {
+            tried += it
+            check(it == "front")
+        }
+        assertEquals(listOf("back", "front"), tried)
+
+        firstBound(listOf("back", "front")) { tried += it }
+        assertEquals("back", tried.last())
+        assertEquals(3, tried.size)
+
+        assertFailsWith<IllegalStateException> { firstBound(listOf("back", "front")) { error("没有摄像头") } }
     }
 }

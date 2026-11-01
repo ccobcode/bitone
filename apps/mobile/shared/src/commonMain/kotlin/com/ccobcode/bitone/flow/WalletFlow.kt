@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.ccobcode.bitone.platform.Platform
 import com.ccobcode.bitone.platform.WalletMeta
+import com.ccobcode.bitone.platform.walletMeta
 import com.ccobcode.bitone.ui.theme.Motion
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -51,6 +52,16 @@ class WalletFlow(
 
     var report by mutableStateOf<SelfCheckReport?>(null)
         private set
+
+    /** 这次操作里用户确认过的未通过项.只在内存里,下一次操作重新确认. */
+    private var acknowledged = emptySet<CheckItem>()
+
+    /** 确认之后接着做的操作. */
+    private var resume: (suspend () -> Unit)? = null
+
+    /** AS 可以确认后继续.只有生成新钱包的路上不行,这时还没有要找回的资金. */
+    val canAcknowledge: Boolean
+        get() = Screen.Backup !in stack
 
     val session = Session(platform, work)
     val pin = PinEntry(platform.core)
@@ -101,9 +112,21 @@ class WalletFlow(
 
         override suspend fun recheck() = this@WalletFlow.recheck()
 
+        override suspend fun recheckNewWallet(): Boolean {
+            acknowledged = emptySet()
+            return this@WalletFlow.recheck()
+        }
+
+        override fun operation(block: suspend () -> Unit) = guarded { begin(block) }
+
         override fun unlock(request: UnlockRequest) = this@WalletFlow.unlock.open(request)
 
-        override fun loadKeys() = this@WalletFlow.unlock.open(keysRequest)
+        /** A7 先打开,自检有失败时 AS 盖在上面,确认后回到 A7. */
+        override suspend fun loadKeys() {
+            acknowledged = emptySet()
+            this@WalletFlow.unlock.open(keysRequest)
+            this@WalletFlow.recheck()
+        }
 
         override fun walletSaved(saved: WalletMeta) {
             session.saved(saved)
@@ -157,60 +180,69 @@ class WalletFlow(
         }
     }
 
-    /** 重新跑一次自检,并按结果决定去哪一页.返回 true 表示没有未通过项. */
-    private suspend fun recheck(): Boolean {
-        class Probe(
-            val result: SelfCheckReport,
-            val saved: WalletMeta?,
-            val lost: Boolean,
-            val mayWipe: Boolean,
-            val exhausted: Boolean,
-        ) {
-            val wallet: Boolean
-                get() = saved != null
-        }
+    /**
+     * 重新跑一次自检,并按结果决定去哪一页.返回 true 表示没有要处理的未通过项.
+     *
+     * 有未确认的失败时停在 AS.确认后执行 [retry],没有 [retry] 就回到原来的页面.生成新钱包不能确认,见 [canAcknowledge].
+     */
+    private suspend fun recheck(retry: (suspend () -> Unit)? = null): Boolean {
+        class Probe(val result: SelfCheckReport, val saved: WalletMeta?, val lost: Boolean)
         val probe =
             withContext(work) {
-                val saved = store.readMeta()?.takeIf { store.readVault() != null }
-                val wallet = saved != null
-                val mayWipe = guard.mayWipe()
-                Probe(
-                    result = evaluate(platform.selfCheck.collect()),
-                    saved = saved,
-                    lost = wallet && hardwareKey.isLost(),
-                    mayWipe = mayWipe,
-                    // 上次尝试时被杀进程,计数已经到顶,这里补上抹除.
-                    exhausted = wallet && mayWipe && guard.failures >= MAX_PIN_FAILURES,
-                )
+                val saved = store.walletMeta()
+                Probe(evaluate(platform.selfCheck.collect()), saved, saved != null && hardwareKey.isLost())
             }
         report = probe.result
         session.meta = probe.saved
-        session.canWipe = probe.mayWipe
-        val root = if (probe.wallet) Screen.Home else Screen.Welcome
+        val root = if (probe.saved != null) Screen.Home else Screen.Welcome
+        val pending = probe.result.failures - acknowledged
         when {
-            probe.exhausted -> {
-                withContext(work) { eraseData() }
-                clearSession()
-                stack = listOf(Screen.Wiped)
-            }
             probe.lost && Screen.NeedsRecovery !in stack -> walletLost()
-            probe.result.blocked -> {
-                // 助记词页也要锁定,内容不留到自检恢复之后.
+            pending.isNotEmpty() -> {
+                // 助记词不留在警告下面.
                 if (Screen.ViewWords in stack) settings.leaveViewWords()
+                if (retry != null) resume = retry
                 if (screen != Screen.SelfCheckFailed) push(Screen.SelfCheckFailed)
             }
             screen == Screen.SelfCheckFailed -> {
-                val below = stack.dropLast(1)
-                stack = if (below.isEmpty() || below.last() == Screen.Booting) listOf(root) else below
+                resume = null
+                leaveSelfCheck(root)
             }
             screen == Screen.Booting -> stack = listOf(root)
             screen == Screen.NeedsRecovery && !probe.lost -> stack = listOf(root)
         }
-        return !probe.result.blocked
+        return pending.isEmpty()
+    }
+
+    private fun leaveSelfCheck(root: Screen) {
+        val below = stack.dropLast(1)
+        stack = if (below.isEmpty() || below.last() == Screen.Booting) listOf(root) else below
+    }
+
+    /** 一次操作的入口,上一次的确认到这里作废. */
+    private suspend fun begin(block: suspend () -> Unit) {
+        acknowledged = emptySet()
+        proceed(block)
+    }
+
+    private suspend fun proceed(block: suspend () -> Unit) {
+        if (recheck(retry = { proceed(block) })) block()
     }
 
     /** AS 页的"重新检测". */
     fun retryCheck() = guarded { recheck() }
+
+    /** AS 页的"仍然继续".这次确认只放行当前的操作,不落盘. */
+    fun acknowledgeCheck() {
+        if (screen != Screen.SelfCheckFailed || !canAcknowledge) return
+        guarded {
+            acknowledged = report?.failures.orEmpty()
+            leaveSelfCheck(if (session.meta != null) Screen.Home else Screen.Welcome)
+            val next = resume
+            resume = null
+            next?.invoke()
+        }
+    }
 
     private fun guarded(block: suspend () -> Unit) {
         if (busy) return
@@ -267,6 +299,7 @@ class WalletFlow(
             Screen.Scan -> scan.close()
             Screen.Signed -> scan.finishSigned()
             Screen.ViewWords -> settings.leaveViewWords()
+            Screen.ImportOverwrite -> stack = stack.dropLast(1)
             Screen.Review,
             Screen.CheckAddress,
             Screen.FingerprintMismatch,
@@ -298,6 +331,20 @@ class WalletFlow(
             if (serial == noticeSerial) notice = null
         }
     }
+
+    /** A7 的"忘记 PIN".放弃这次操作,走导入.不用 PIN:被替换的密文反正打不开. */
+    fun forgotPin() {
+        if (busy) return
+        unlock.resetEntry()
+        pin.reset()
+        settings.cancelChangePin()
+        scan.dropRequest()
+        stack = listOf(Screen.Home)
+        setup.startImport()
+    }
+
+    /** 有窗口盖住应用时触摸被丢弃,要告诉用户,不然界面像卡死了. */
+    fun touchObscured() = showNotice("有其他窗口盖住了应用,关掉它才能操作", failed = true)
 
     private fun walletLost() {
         scan.dropRequest()
@@ -333,16 +380,13 @@ class WalletFlow(
         if (settings.changingPin) settings.leaveChangePin()
         if (Screen.ViewWords in stack) settings.leaveViewWords()
         if (session.passphraseRequired) forgetSessionKeys()
+        // 离开前台,这次确认作废.
+        acknowledged = emptySet()
+        resume = null
     }
 
     private fun forgetSessionKeys() {
         session.forgetKeys()
         receive.forgetAddress()
-    }
-
-    /** 错误 10 次之后的"重新开始". */
-    fun restartAfterWipe() {
-        stack = listOf(Screen.Booting)
-        onResume()
     }
 }

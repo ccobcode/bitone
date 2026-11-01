@@ -9,14 +9,17 @@ pub mod evm;
 pub mod solana;
 pub mod tron;
 
+use crate::decode::{Decoded, Failure};
 use crate::hex::DisplayHex;
 use crate::keys::PublicKeys;
-use crate::manifest::Manifest;
+use crate::manifest::{Asset, Manifest};
 use crate::path::{DerivationPath, validate_for_network};
-use crate::protocol::AddressCheck;
+use crate::policy::{self, AssetFact, Facts};
+use crate::protocol::{AddressCheck, VERSION};
 use crate::request::{SignRequest, SignResponse};
 use crate::review::{Forbid, RawLine, Review};
 use crate::{AccountKind, Chain, Error, Mode, Network};
+use std::borrow::Cow;
 
 /// 本机已签过的最高找零索引,见 docs/04-security.md 第 2.6 节.
 /// 测试币的索引不能放宽主网的告警,所以分开记.
@@ -41,8 +44,47 @@ pub struct ReviewContext<'a> {
     pub highest_change: HighestChange,
 }
 
+impl ReviewContext<'_> {
+    /// 原生币的符号和小数位.清单没有这一行时用链本身的数据,不拒绝签名,见 docs/10-tx-decoding.md 第 1.1 节.
+    fn native(&self, network: Network) -> Cow<'_, Asset> {
+        self.manifest
+            .native(network.id())
+            .map_or_else(|| Cow::Owned(Asset::plain_native(network)), Cow::Borrowed)
+    }
+}
+
+impl Facts for ReviewContext<'_> {
+    fn asset(&self, network: &str, contract: &str) -> Option<AssetFact> {
+        let asset = self.manifest.lookup(network, contract)?;
+        Some(AssetFact {
+            symbol: asset.symbol.clone(),
+            decimals: asset.decimals,
+        })
+    }
+
+    fn highest_change(&self, mode: Mode) -> u32 {
+        match mode {
+            Mode::Mainnet => self.highest_change.mainnet,
+            Mode::Testnet => self.highest_change.testnet,
+        }
+    }
+}
+
 pub fn review(request: &SignRequest, ctx: &ReviewContext) -> Review {
-    try_review(request, ctx).unwrap_or_else(|reason| Review::forbidden(&request.network, reason))
+    let review = try_review(request, ctx).unwrap_or_else(|reason| Review::forbidden(&request.network, reason));
+    if request.version > VERSION {
+        review.alerted("这个请求来自更高的协议版本,本机可能不认识其中的部分内容")
+    } else {
+        review
+    }
+}
+
+/// 迁移到解码标准的链从这里出结果.解码失败只有格式已识别而字节不合规一种情况.
+pub fn review_decoded(decoded: Result<Decoded, Failure>, network: &str, ctx: &ReviewContext) -> Review {
+    match decoded {
+        Ok(decoded) => Review::assessed(&decoded, policy::assess(&decoded, ctx)),
+        Err(failure) => Review::undecodable(network, &failure),
+    }
 }
 
 fn try_review(request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forbid> {
@@ -50,12 +92,17 @@ fn try_review(request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forb
         return Err(Forbid::FingerprintMismatch);
     }
     let network = Network::from_id(&request.network).ok_or(Forbid::UnknownNetwork)?;
-    match network.chain() {
+    let review = match network.chain() {
         Chain::Bitcoin => bitcoin::review(network, request, ctx),
         Chain::Evm => evm::review(network, request, ctx),
         Chain::Tron => tron::review(network, request, ctx),
         Chain::Solana => solana::review(network, request, ctx),
-    }
+    }?;
+    Ok(if ctx.manifest.native(network.id()).is_some() {
+        review
+    } else {
+        review.alerted("清单里没有这个网络的原生币,金额按链本身的数据显示")
+    })
 }
 
 /// 冷钱包核对收款地址的结果.见 docs/04-security.md 第 4 节.
@@ -178,4 +225,83 @@ pub fn raw_lines(data: &[u8]) -> Vec<RawLine> {
         lines.push(RawLine { text: hex(chunk), note });
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::decode::decode;
+    use crate::decode::fixture::{PARTIAL, Records, UNKNOWN_FORMAT, input};
+    use crate::review::{Confirm, Forbid, Risk};
+
+    fn keys() -> PublicKeys {
+        PublicKeys::new(crate::protocol::AccountsExport {
+            version: crate::protocol::VERSION,
+            fingerprint: [0; 4],
+            accounts: Vec::new(),
+        })
+    }
+
+    fn context(keys: &PublicKeys) -> ReviewContext<'_> {
+        ReviewContext {
+            keys,
+            manifest: Manifest::builtin(),
+            highest_change: HighestChange { mainnet: 7, testnet: 9 },
+        }
+    }
+
+    #[test]
+    fn facts_come_from_the_manifest_and_the_change_index() {
+        let keys = keys();
+        let ctx = context(&keys);
+        assert_eq!(ctx.asset("ethereum", "native").unwrap().symbol, "ETH");
+        assert_eq!(ctx.asset("ethereum", "0xdead"), None);
+        assert_eq!(Facts::highest_change(&ctx, Mode::Mainnet), 7);
+        assert_eq!(Facts::highest_change(&ctx, Mode::Testnet), 9);
+    }
+
+    #[test]
+    fn a_higher_version_reaches_the_review_with_a_warning() {
+        let keys = keys();
+        let ctx = context(&keys);
+        let mut request = SignRequest {
+            version: VERSION,
+            id: [1; 16],
+            fingerprint: [0; 4],
+            network: "ethereum".into(),
+            kind: 0,
+            paths: Vec::new(),
+            payload: Vec::new(),
+            hint: None,
+            chain: None,
+        };
+        assert_eq!(review(&request, &ctx).alerts.len(), 1);
+        request.version = VERSION + 1;
+        let alerts = review(&request, &ctx).alerts;
+        assert_eq!(alerts.len(), 2);
+        assert!(alerts[1].contains("协议版本"));
+    }
+
+    #[test]
+    fn unknown_content_reaches_the_user_as_signable() {
+        let keys = keys();
+        let ctx = context(&keys);
+        for payload in [vec![UNKNOWN_FORMAT, 1], PARTIAL.to_vec()] {
+            let review = review_decoded(decode(&Records, &input(&payload)), "ethereum", &ctx);
+            assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+            assert!(review.is_signable());
+            assert!(!review.fields.is_empty());
+            assert!(!review.alerts.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_failed_check_is_the_only_refusal_here() {
+        let keys = keys();
+        let ctx = context(&keys);
+        let review = review_decoded(decode(&Records, &input(&[1, 5])), "ethereum", &ctx);
+        assert_eq!(review.forbidden, Some(Forbid::ParseFailed));
+        assert!(!review.is_signable());
+        assert!(review.fields.is_empty());
+    }
 }

@@ -784,9 +784,12 @@ impl Scan<'_> {
             };
             if let Some(mut effect) = effect {
                 if self.uses_lookup(ix) {
-                    effect.risk = effect.risk.max(Risk::Unknown);
+                    effect.risk = [effect.risk, Risk::Unknown]
+                        .into_iter()
+                        .max_by_key(|r| r.legacy_rank())
+                        .unwrap_or(Risk::Unknown);
                 }
-                if effect.risk >= Risk::Unknown {
+                if effect.risk.legacy_rank() >= Risk::Unknown.legacy_rank() {
                     effect.rows.extend(self.details(ix));
                 }
                 effects.push(effect);
@@ -827,12 +830,12 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
         return Err(Forbid::AddressMismatch);
     }
 
-    let native = ctx.manifest.native(network.id()).ok_or(Forbid::UnknownNetwork)?;
+    let native = ctx.native(network);
     let mut scan = Scan {
         message: &message,
         network,
         manifest: ctx.manifest,
-        native,
+        native: &native,
         payer,
         nonce: nonce_account_address(&payer).map_err(|_| Forbid::AddressMismatch)?,
         hint: request.hint.as_deref().and_then(|hint| parse_solana_address(hint).ok()),
@@ -864,14 +867,14 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
     // 全部动作都在 `actions` 里.
     let named: Vec<&Effect> = effects.iter().filter(|e| e.counterparty.is_some()).collect();
     let named_count = named.len();
-    let top = named.iter().map(|e| e.risk).max();
+    let top = named.iter().map(|e| e.risk).max_by_key(|r| r.legacy_rank());
     let tied = named.iter().filter(|e| Some(e.risk) == top).count();
     let unnamed = effects
         .iter()
-        .filter(|e| e.counterparty.is_none() && e.risk >= Risk::Unknown)
-        .map(|e| e.risk)
+        .filter(|e| e.counterparty.is_none() && e.risk.legacy_rank() >= Risk::Unknown.legacy_rank())
+        .map(|e| e.risk.legacy_rank())
         .max();
-    let headline = tied == 1 && unnamed.is_none_or(|risk| Some(risk) < top);
+    let headline = tied == 1 && unnamed.is_none_or(|rank| Some(rank) < top.map(Risk::legacy_rank));
 
     for effect in effects {
         if headline && effect.counterparty.is_some() && Some(effect.risk) == top {

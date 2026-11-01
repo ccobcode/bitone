@@ -125,12 +125,16 @@ class AndroidQrScanner(private val context: Context, private val current: Curren
                         }
                 }
                 val feed = Preview.Builder().build().also { it.surfaceProvider = preview.surfaceProvider }
-                cameras.unbindAll()
-                cameras.bindToLifecycle(requireNotNull(owner), CameraSelector.DEFAULT_BACK_CAMERA, feed, analysis)
+                val lifecycle = requireNotNull(owner)
+                // 后置摄像头绑不上时退到前置,扫码是这台手机唯一的输入方式.
+                firstBound(listOf(CameraSelector.DEFAULT_BACK_CAMERA, CameraSelector.DEFAULT_FRONT_CAMERA)) { camera ->
+                    cameras.unbindAll()
+                    cameras.bindToLifecycle(lifecycle, camera, feed, analysis)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                // 没有后置摄像头,被别的应用占用,CameraX 初始化失败都走这里.
+                // 前后摄像头都绑不上,CameraX 初始化失败都走这里.
                 latestFailure()
             }
         }

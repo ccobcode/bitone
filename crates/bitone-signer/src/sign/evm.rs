@@ -63,6 +63,7 @@ mod tests {
             paths: vec![EVM_PATH.into()],
             payload,
             hint: None,
+            chain: None,
         }
     }
 
@@ -72,7 +73,9 @@ mod tests {
             manifest: Manifest::builtin(),
             highest_change: HighestChange::default(),
         };
-        tx::review(request, &ctx)
+        let review = tx::review(request, &ctx);
+        assert!(review.fields.is_empty(), "这条链还没迁移");
+        review
     }
 
     fn native(nonce: u64) -> UnsignedTx {
@@ -170,6 +173,22 @@ mod tests {
             hex(&verified.raw),
             "f8640384b2d05e008252089470997970c51812dc3a010c7d01b50e0d17dc79c801808193a09e863fe043cb922c59e09d6f0b490659f23e31dbf5300619323a88a7a969c969a01b1614c8a93b08d7508876dc88a591ee8ff861694580c52e0e26f1d193b7592c"
         );
+    }
+
+    /// 清单包可以整体覆盖内置清单.少了原生币这一行也要能签,不能卡住资金.
+    #[test]
+    fn a_manifest_without_the_native_row_still_signs_with_a_warning() {
+        let s = setup();
+        let mut manifest = Manifest::builtin().clone();
+        manifest.assets.retain(|a| a.network != "ethereum");
+        let req = request(&s, "ethereum", native(1).encode());
+        let (_, review) = s
+            .wallet
+            .sign(&req, &s.keys, &manifest, HighestChange::default())
+            .unwrap();
+        assert_eq!(review.confirm, Confirm::Hold);
+        assert_eq!(review.alerts, ["清单里没有这个网络的原生币,金额按链本身的数据显示"]);
+        assert_eq!(review.amount.unwrap().symbol.as_deref(), Some("ETH"));
     }
 
     #[test]

@@ -38,11 +38,15 @@ import com.ccobcode.bitone.flow.ReviewStyle
 import com.ccobcode.bitone.flow.WalletFlow
 import com.ccobcode.bitone.flow.actionRows
 import com.ccobcode.bitone.flow.controllerCard
+import com.ccobcode.bitone.flow.fieldBlocks
+import com.ccobcode.bitone.flow.isHighRisk
 import com.ccobcode.bitone.flow.isMainnet
 import com.ccobcode.bitone.flow.networkInfo
 import com.ccobcode.bitone.flow.reviewStyle
 import com.ccobcode.bitone.flow.shortAddress
 import com.ccobcode.bitone.platform.ConfirmMode
+import com.ccobcode.bitone.platform.FieldKind
+import com.ccobcode.bitone.platform.FieldRow
 import com.ccobcode.bitone.platform.RawLine
 import com.ccobcode.bitone.platform.ReviewAmount
 import com.ccobcode.bitone.platform.ReviewResult
@@ -77,6 +81,10 @@ import com.ccobcode.bitone.ui.theme.Space
 private const val FROM_WEB = "BitOne 网页端不会发起这类交易."
 private const val SCROLL_FIRST = "滚到底部后确认"
 
+/** 字段列表的缩进层数上限,再深的节点靠 `depth` 的顺序分辨,值的宽度不能被缩进吃掉. */
+private const val MAX_INDENT = 4
+private val MONO_KINDS = setOf(FieldKind.Address, FieldKind.Hash, FieldKind.Bytes, FieldKind.Script, FieldKind.Opaque)
+
 /** 每个输入固定这几行,A6e 要把它们从详情里分出来. */
 private val INPUT_LABELS = setOf("付款账户", "派生路径", "输入金额")
 
@@ -88,7 +96,7 @@ internal val FIRST_SCREEN_LABELS = setOf("网络", "手续费上限", "手续费
  *
  * 第一屏只放金额,对方地址,风险,网络和手续费,进入时不做错开,只随页面一起出现.其余字段放在"详情"里,一项都不省略,普通交易默认折叠,高风险样式默认展开.分组只看标签,风险判断全在核心库.
  *
- * 主网请求在最上面提示,网络名在金额上方.内容滚到底之后确认按钮才可用.
+ * 主网请求在最上面提示,网络名在金额上方.内容滚到底之后确认按钮才可用.`fields` 不为空时,金额和对方下面只有通用字段列表.
  */
 @Composable
 fun ReviewScreen(flow: WalletFlow) {
@@ -131,12 +139,67 @@ fun ReviewScreen(flow: WalletFlow) {
                 Counterparty(review)
             }
         }
-        val inline = Actions(review, style)
-        Rows(review.rows.filter { it.label in FIRST_SCREEN_LABELS })
-        flow.report?.warnings?.forEach { RiskBanner(it.label, listOf(it.value), warn = true) }
-        val rest = inline + review.rows.filterNot { it.label in FIRST_SCREEN_LABELS }
-        Details(rest, style, bitcoin = network?.icon == Network.Bitcoin)
-        RawData(review.raw, initiallyOpen = style == ReviewStyle.Unknown)
+        if (review.fields.isNotEmpty()) {
+            flow.report?.warnings?.forEach { RiskBanner(it.label, listOf(it.value), warn = true) }
+            FieldList(flow, review.fields, style)
+        } else {
+            val inline = Actions(review, style)
+            Rows(review.rows.filter { it.label in FIRST_SCREEN_LABELS })
+            flow.report?.warnings?.forEach { RiskBanner(it.label, listOf(it.value), warn = true) }
+            val rest = inline + review.rows.filterNot { it.label in FIRST_SCREEN_LABELS }
+            Details(rest, style, bitcoin = network?.icon == Network.Bitcoin)
+            RawData(review.raw, initiallyOpen = style == ReviewStyle.Unknown)
+        }
+    }
+}
+
+/** 通用字段列表,不按链,不按字段名分支.全部行都在滚动内容里,滚到底才能确认.画出的行数报给 [flow],签名时核心库要核对. */
+@Composable
+private fun FieldList(flow: WalletFlow, fields: List<FieldRow>, style: ReviewStyle) {
+    val blocks = remember(fields) { fieldBlocks(fields) }
+    LaunchedEffect(blocks) { flow.scan.fieldsRendered(blocks.sumOf { it.rows.size }) }
+    blocks.forEach { block ->
+        if (block.foldable) {
+            Disclosure("附加字段", initiallyOpen = style != ReviewStyle.Plain) { block.rows.forEach { FieldLine(it) } }
+        } else {
+            Card {
+                Column(
+                    Modifier.fillMaxWidth().padding(Space.s4),
+                    verticalArrangement = Arrangement.spacedBy(Space.s3),
+                ) {
+                    block.rows.forEach { FieldLine(it) }
+                }
+            }
+        }
+    }
+}
+
+/** 值是链上的内容,不翻译. */
+@Composable
+private fun FieldLine(row: FieldRow) {
+    val c = BitOneTheme.colors
+    Column(
+        Modifier.fillMaxWidth().padding(start = Space.s3 * minOf(row.depth.toInt(), MAX_INDENT)),
+        verticalArrangement = Arrangement.spacedBy(Space.s1),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+            Txt(row.label, Modifier.weight(1f), size = FontSize.t2, color = c.text3)
+            row.risk?.let { RiskChip(it) }
+            if (row.own) Chip("本账户", c.okSoft, c.ok)
+        }
+        if (row.value.isNotEmpty()) {
+            Txt(row.value, size = FontSize.t2, mono = row.kind in MONO_KINDS, translated = false)
+        }
+        row.note?.let { Txt(it, size = FontSize.t2, color = c.warn) }
+    }
+}
+
+@Composable
+private fun RiskChip(risk: Risk) {
+    val c = BitOneTheme.colors
+    when {
+        risk == Risk.Unknown -> Chip("无法识别", c.warnSoft, c.warn)
+        isHighRisk(risk) -> Chip("高风险", c.dangerSoft, c.danger)
     }
 }
 
@@ -369,8 +432,7 @@ private fun ActionBlock(title: String, risk: Risk, rows: List<ReviewRow>) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
             Txt(title, Modifier.weight(1f), weight = Medium)
             when {
-                risk >= Risk.Approval -> Chip("高风险", c.dangerSoft, c.danger)
-                risk == Risk.Unknown -> Chip("无法识别", c.warnSoft, c.warn)
+                risk == Risk.Unknown || isHighRisk(risk) -> RiskChip(risk)
                 title == "找零" -> Chip("本钱包", c.okSoft, c.ok)
             }
         }

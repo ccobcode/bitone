@@ -39,7 +39,9 @@ import com.ccobcode.bitone.ui.theme.Radius
 import com.ccobcode.bitone.ui.theme.Size
 import com.ccobcode.bitone.ui.theme.Space
 
+/** 新建只用这两种长度,导入接受 BIP39 的全部长度. */
 internal val WordCountOptions = listOf(12 to "12 词", 24 to "24 词")
+internal val ImportWordCountOptions = listOf(12 to "12 词", 15 to "15 词", 18 to "18 词", 21 to "21 词", 24 to "24 词")
 
 /** A2 备份助记词. */
 @Composable

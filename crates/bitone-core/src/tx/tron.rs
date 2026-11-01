@@ -586,7 +586,7 @@ pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> R
         return Err(Forbid::AddressMismatch);
     }
 
-    let native = ctx.manifest.native(network.id()).ok_or(Forbid::UnknownNetwork)?;
+    let native = ctx.native(network);
     let trx = |sun: u64| format!("{} {}", format_units(&sun.to_string(), native.decimals), native.symbol);
     let style = Style {
         network: network.id(),

@@ -1,7 +1,7 @@
 //! 内置清单.图标,符号,小数位都只按"网络加合约地址"查,没有按符号查找的入口.
 //! 见 docs/04-security.md 第 2.8,2.9 节.
 
-use crate::Error;
+use crate::{Error, Network};
 use p256::ecdsa::signature::Verifier;
 use p256::ecdsa::{DerSignature, VerifyingKey};
 use p256::pkcs8::DecodePublicKey;
@@ -29,6 +29,21 @@ impl Asset {
     /// 图标用的键,`网络:合约`.
     pub fn key(&self) -> String {
         format!("{}:{}", self.network, self.contract)
+    }
+
+    /// 清单没有这个网络的原生币时用的数据,只来自链本身,没有图标.
+    pub fn plain_native(network: Network) -> Self {
+        let (symbol, decimals) = network.native_coin();
+        Self {
+            network: network.id().to_string(),
+            contract: "native".to_string(),
+            symbol: symbol.to_string(),
+            name: symbol.to_string(),
+            decimals,
+            icon: String::new(),
+            standard: String::new(),
+            min_fraction: decimals,
+        }
     }
 }
 
@@ -98,16 +113,12 @@ impl Manifest {
     }
 
     /// 生效的清单:内置清单和已导入的清单包里版本高的一份.升级到内置版本更高的 APK 后,旧包不再生效.
-    /// 包每次都重新验签,本机文件也不信任.
-    pub fn active(package: Option<&[u8]>, key: &[u8]) -> Result<Cow<'static, Self>, Error> {
+    /// 包每次都重新验签,本机文件也不信任.包缺失或损坏时用内置清单,清单不影响能不能签名.
+    pub fn active(package: Option<&[u8]>, key: &[u8]) -> Cow<'static, Self> {
         let builtin = Self::builtin();
-        let Some(package) = package else {
-            return Ok(Cow::Borrowed(builtin));
-        };
-        match Self::from_package(package, key, builtin.version) {
-            Err(Error::StaleManifest) => Ok(Cow::Borrowed(builtin)),
-            imported => imported.map(Cow::Owned),
-        }
+        package
+            .and_then(|package| Self::from_package(package, key, builtin.version).ok())
+            .map_or(Cow::Borrowed(builtin), Cow::Owned)
     }
 }
 
@@ -151,5 +162,23 @@ mod tests {
         for network in crate::Network::ALL {
             assert!(Manifest::builtin().native(network.id()).is_some(), "{}", network.id());
         }
+    }
+
+    #[test]
+    fn plain_chain_data_matches_the_builtin_rows() {
+        for network in crate::Network::ALL {
+            let builtin = Manifest::builtin().native(network.id()).unwrap();
+            let plain = Asset::plain_native(network);
+            assert_eq!(plain.key(), builtin.key());
+            assert_eq!((&plain.symbol, plain.decimals), (&builtin.symbol, builtin.decimals));
+        }
+    }
+
+    #[test]
+    fn a_missing_or_corrupt_package_is_the_builtin_list() {
+        let builtin = Manifest::builtin();
+        assert_eq!(*Manifest::active(None, &VENDOR_KEY), *builtin);
+        assert_eq!(*Manifest::active(Some(&[]), &VENDOR_KEY), *builtin);
+        assert_eq!(*Manifest::active(Some(&[0x30, 0x02, 0x01]), &VENDOR_KEY), *builtin);
     }
 }

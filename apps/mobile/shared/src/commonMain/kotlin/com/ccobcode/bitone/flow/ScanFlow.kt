@@ -107,6 +107,13 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         if (!canScrollForward) reviewRead = true
     }
 
+    /** 通用列表实际画出的行数.签名时传回核心库,和节点数不同就拒绝. */
+    private var renderedFields = 0u
+
+    fun fieldsRendered(count: Int) {
+        renderedFields = count.toUInt()
+    }
+
     // AS
 
     var failure by mutableStateOf("")
@@ -124,13 +131,12 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
 
     // A5
 
-    /** 自检不通过时停在 AS. */
-    fun open() = host.guarded {
-        if (!host.recheck()) return@guarded
+    /** 自检不通过时停在 AS,确认后接着打开. */
+    fun open() = host.operation {
         if (!scanner.hasPermission() && !scanner.requestPermission()) {
             cameraBroken = false
             host.push(Screen.CameraDenied)
-            return@guarded
+            return@operation
         }
         beginScan()
         host.push(Screen.Scan)
@@ -164,6 +170,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         frames = 0
         progress = 0f
         mismatchFingerprint = null
+        renderedFields = 0u
         holdCancel()
     }
 
@@ -248,6 +255,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
             reviewed.refused -> refuse(reviewed.alerts.firstOrNull() ?: "这笔交易包含禁止的动作")
             else -> {
                 reviewRead = false
+                renderedFields = 0u
                 result = ScanResult.Request(reviewed)
                 host.stack = listOf(Screen.Home, Screen.Review)
             }
@@ -276,10 +284,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
     fun openCameraSettings() = scanner.openSettings()
 
     /** 重新输入 BIP39 密码后重新核对. */
-    fun retryPassphrase() = host.guarded {
-        if (!host.recheck()) return@guarded
-        host.loadKeys()
-    }
+    fun retryPassphrase() = host.guarded { host.loadKeys() }
 
     /** 拒绝和 AS 的"退出". */
     fun exitRequest() {
@@ -316,28 +321,33 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         holdProgress = 0f
     }
 
-    private fun proceedToPin() = host.guarded {
-        if (!host.recheck()) return@guarded
-        host.unlock(UnlockRequest(UnlockPurpose.Sign) { signTask() })
-    }
+    private fun proceedToPin() = host.operation { host.unlock(UnlockRequest(UnlockPurpose.Sign) { signTask() }) }
 
     private fun signTask(): UnlockTask<SignOutcome> {
         val message = scanned?.message
+        val shown = review
+        val rendered = renderedFields
         return UnlockTask(
-            use = { wallet, saved -> sign(wallet, saved, requireNotNull(message)) },
+            use = { wallet, saved -> sign(wallet, saved, requireNotNull(message), requireNotNull(shown), rendered) },
             finish = { outcome -> applySigned(outcome) },
         )
     }
 
     /** 用刚解开的钱包算出的公钥重新核对,不用缓存:BIP39 密码这次可能输错,核对页用的公钥不一定对应这个钱包.找零索引在返回之前落盘,屏幕上出现签名时本机已经记下. */
-    private fun sign(wallet: UnlockedWallet, saved: WalletMeta, message: ByteArray): SignOutcome {
+    private fun sign(
+        wallet: UnlockedWallet,
+        saved: WalletMeta,
+        message: ByteArray,
+        shown: ReviewResult,
+        rendered: UInt,
+    ): SignOutcome {
         val keys = session.keysOf(wallet, saved)
         val highest = store.readHighestChange()
         val manifest = session.manifestPackage()
         val check = core.reviewRequest(message, keys, highest, manifest)
         if (check.fingerprintMismatch) return SignOutcome.Mismatch(check.requestFingerprint)
         if (check.refused) return SignOutcome.Refused(check.alerts.firstOrNull() ?: "这笔交易包含禁止的动作")
-        val outcome = wallet.signRequest(message, keys, highest, manifest)
+        val outcome = wallet.signRequest(message, keys, highest, manifest, shown.reviewDigest, rendered)
         outcome.changeIndex?.let { index ->
             val slot = if (outcome.changeIsTestnet) highest.testnet else highest.mainnet
             if (index > slot) store.writeHighestChange(outcome.changeIsTestnet, index)
@@ -348,7 +358,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
     private suspend fun applySigned(outcome: SignOutcome) {
         when (outcome) {
             is SignOutcome.Signed -> {
-                // 解开钱包要几秒,这期间失败的自检不能被签名盖住.签名丢掉,回到 A7 可以重来.
+                // 解开钱包要几秒,这期间新出现的失败要先确认.签名丢掉,确认后回到 A7 重来.
                 if (!host.recheck() || host.screen != Screen.Unlock) {
                     outcome.stream.close()
                     return
@@ -387,8 +397,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
     /** 扫到的包已经验过签,这里要自检加 PIN,通过后才写入. */
     fun applyManifest() {
         if (result !is ScanResult.Manifest) return
-        host.guarded {
-            if (!host.recheck()) return@guarded
+        host.operation {
             host.unlock(
                 UnlockRequest(UnlockPurpose.ApplyManifest) {
                     UnlockTask(use = { _, _ -> }, finish = { writeManifest() })

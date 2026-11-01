@@ -58,7 +58,7 @@ BitOne 是一款多链冷钱包.私钥只在一台离线的 Android 手机上,�
 - **多链**:Bitcoin,Ethereum,BNB Smart Chain,Polygon,TRON,Solana 和它们的测试网.
 - **独立核对**:冷钱包自己解析交易并判定风险,不采信网页端的说明.
 - **两层加密**:种子先用 PIN 派生的密钥加密,再用 Keystore 硬件密钥加密.
-- **离线自检**:启动时和签名前都检查飞行模式,Root,调试模式和屏幕锁,不通过就锁定签名.
+- **离线自检**:启动时和签名前都检查飞行模式,Root,调试模式和屏幕锁,不通过时强提醒,确认后放行这一次操作,只有生成新钱包会被拦住.
 - **内置清单**:代币信息随应用内置,扫码离线更新,验签后才生效.
 
 不支持 iOS,鸿蒙 NEXT,DApp 连接,消息签名,兑换,多签和 NFT.
@@ -145,7 +145,7 @@ curl -fLO https://github.com/ccobcode/bitone/releases/download/v$VERSION/$APK
 apksigner verify --print-certs $APK | grep $CERT && adb install $APK
 ```
 
-在手机上设置屏幕锁,关闭 USB 调试,开启飞行模式,然后创建钱包.缺少任何一项,自检都会锁定签名.
+在手机上设置屏幕锁,关闭 USB 调试,开启飞行模式,然后创建钱包.缺少任何一项时不能生成新钱包,其他操作前都会强提醒.
 
 打开 [bitone.cloudtay.com](https://bitone.cloudtay.com),配对冷钱包.
 

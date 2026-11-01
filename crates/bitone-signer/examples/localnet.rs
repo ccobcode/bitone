@@ -89,6 +89,7 @@ fn submit(network: Network, signing_path: &str, payload: Vec<u8>, hint: Option<&
         paths: vec![signing_path.to_string()],
         payload,
         hint: hint.map(str::to_string),
+        chain: None,
     };
     let (response, review) = wallet
         .sign(&request, &keys, manifest, HighestChange::default())

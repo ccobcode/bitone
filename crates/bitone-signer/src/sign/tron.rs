@@ -72,6 +72,7 @@ mod tests {
             paths: vec![path.into()],
             payload,
             hint: None,
+            chain: None,
         }
     }
 
@@ -85,7 +86,9 @@ mod tests {
             manifest: Manifest::builtin(),
             highest_change: HighestChange::default(),
         };
-        tx::review(request, &ctx)
+        let review = tx::review(request, &ctx);
+        assert!(review.fields.is_empty(), "这条链还没迁移");
+        review
     }
 
     fn sign(s: &Setup, request: &SignRequest) -> (SignResponse, Review) {

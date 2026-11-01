@@ -356,7 +356,7 @@ fn review_tx(
         }
     }
 
-    let native = ctx.manifest.native(network.id()).ok_or(Forbid::UnknownNetwork)?;
+    let native = ctx.native(network);
     let value_text = format_units(&decimal_from_be(&tx.value), native.decimals);
     let has_value = !tx.value.is_empty();
     let style = Style {
@@ -501,45 +501,76 @@ pub fn be_from_decimal(text: &str) -> Result<Vec<u8>, Error> {
     Ok(bytes)
 }
 
-/// ERC-20 的 transfer 调用数据.估算 Gas 时也要用.
-pub fn transfer_data(recipient: &[u8; 20], amount: &[u8]) -> Vec<u8> {
-    let mut data = vec![0xa9, 0x05, 0x9c, 0xbb];
+fn address_amount_data(selector: [u8; 4], address: &[u8; 20], amount: &[u8]) -> Vec<u8> {
+    let mut data = selector.to_vec();
     data.extend_from_slice(&[0; 12]);
-    data.extend_from_slice(recipient);
+    data.extend_from_slice(address);
     data.resize(data.len() + 32 - amount.len(), 0);
     data.extend_from_slice(amount);
     data
 }
 
-/// 构建 EIP-1559 转账.
-pub fn build_transfer(params: &TransferParams) -> Result<UnsignedTx, Error> {
-    let chain_id = params.network.evm_chain_id().ok_or(Error::InvalidParams)?;
-    let recipient = parse_evm_address(params.to)?;
-    let amount = be_from_decimal(params.amount)?;
-    let (to, value, data) = match params.contract {
-        None => (recipient, amount, Vec::new()),
-        Some(contract) => (
-            parse_evm_address(contract)?,
-            Vec::new(),
-            transfer_data(&recipient, &amount),
-        ),
-    };
+/// ERC-20 的 transfer 调用数据.估算 Gas 时也要用.
+pub fn transfer_data(recipient: &[u8; 20], amount: &[u8]) -> Vec<u8> {
+    address_amount_data(abi::TRANSFER, recipient, amount)
+}
+
+/// ERC-20 的 approve 调用数据.额度为 0 就是撤销.
+pub fn approve_data(spender: &[u8; 20], amount: &[u8]) -> Vec<u8> {
+    address_amount_data(abi::APPROVE, spender, amount)
+}
+
+pub struct CallParams<'a> {
+    pub network: Network,
+    /// 留空是部署合约.
+    pub to: Option<&'a str>,
+    /// 最小单位的十进制字符串.
+    pub value: &'a str,
+    pub data: Vec<u8>,
+    pub nonce: u64,
+    pub gas_limit: u64,
+    pub max_fee: u128,
+    pub max_priority: u128,
+}
+
+/// 构建 EIP-1559 调用,收款方和数据都不限制.
+pub fn build_call(params: &CallParams) -> Result<UnsignedTx, Error> {
     Ok(UnsignedTx {
         tx_type: 2,
-        chain_id,
+        chain_id: params.network.evm_chain_id().ok_or(Error::InvalidParams)?,
         nonce: params.nonce,
         fees: Fees::Dynamic {
             max_priority: params.max_priority,
             max_fee: params.max_fee,
         },
         gas_limit: params.gas_limit,
-        to: Some(to),
-        value,
-        data,
+        to: params.to.map(parse_evm_address).transpose()?,
+        value: be_from_decimal(params.value)?,
+        data: params.data.clone(),
         access_list: vec![0xc0],
         access_list_len: 0,
         authorization_list: Vec::new(),
         authorizations: Vec::new(),
+    })
+}
+
+/// 构建 EIP-1559 转账.
+pub fn build_transfer(params: &TransferParams) -> Result<UnsignedTx, Error> {
+    let recipient = parse_evm_address(params.to)?;
+    let amount = be_from_decimal(params.amount)?;
+    let (to, value, data) = match params.contract {
+        None => (params.to, params.amount, Vec::new()),
+        Some(contract) => (contract, "0", transfer_data(&recipient, &amount)),
+    };
+    build_call(&CallParams {
+        network: params.network,
+        to: Some(to),
+        value,
+        data,
+        nonce: params.nonce,
+        gas_limit: params.gas_limit,
+        max_fee: params.max_fee,
+        max_priority: params.max_priority,
     })
 }
 
@@ -553,4 +584,80 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
     let raw = tx.assemble(signature);
     let hash = format!("0x{}", keccak(&raw).to_lower_hex_string());
     Ok(Verified { raw, hash })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PEER: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+
+    fn call(to: Option<&str>, data: Vec<u8>) -> UnsignedTx {
+        build_call(&CallParams {
+            network: Network::Ethereum,
+            to,
+            value: "7",
+            data,
+            nonce: 3,
+            gas_limit: 500_000,
+            max_fee: 2,
+            max_priority: 1,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn any_call_and_a_deployment_survive_the_strict_decoder() {
+        for tx in [call(Some(PEER), vec![0xde, 0xad]), call(None, vec![0x60, 0x80])] {
+            assert_eq!(UnsignedTx::decode(&tx.encode()), Ok(tx));
+        }
+        assert_eq!(call(None, Vec::new()).to, None);
+        assert_eq!(call(Some(PEER), Vec::new()).value, [7]);
+    }
+
+    #[test]
+    fn a_call_rejects_a_bad_address_and_a_network_without_chain_id() {
+        let params = |network, to| CallParams {
+            network,
+            to,
+            value: "0",
+            data: Vec::new(),
+            nonce: 0,
+            gas_limit: 1,
+            max_fee: 1,
+            max_priority: 1,
+        };
+        assert!(build_call(&params(Network::Ethereum, Some("0x12"))).is_err());
+        assert!(build_call(&params(Network::Tron, Some(PEER))).is_err());
+    }
+
+    #[test]
+    fn approve_data_is_the_selector_the_spender_and_the_amount() {
+        let spender = parse_evm_address(PEER).unwrap();
+        let data = approve_data(&spender, &[1, 0]);
+        assert_eq!(&data[..4], &abi::APPROVE);
+        assert_eq!(data.len(), 68);
+        assert_eq!(&data[16..36], &spender);
+        assert_eq!(&data[66..], &[1, 0]);
+        // 撤销就是额度为 0.
+        assert_eq!(approve_data(&spender, &[])[36..], [0; 32]);
+    }
+
+    #[test]
+    fn a_token_transfer_still_goes_to_the_contract_with_no_value() {
+        let tx = build_transfer(&TransferParams {
+            network: Network::Ethereum,
+            to: PEER,
+            amount: "9",
+            contract: Some("0xdAC17F958D2ee523a2206206994597C13D831ec7"),
+            nonce: 0,
+            gas_limit: 60_000,
+            max_fee: 2,
+            max_priority: 1,
+        })
+        .unwrap();
+        assert!(tx.value.is_empty());
+        assert_eq!(&tx.data[..4], &abi::TRANSFER);
+        assert_ne!(tx.to, Some(parse_evm_address(PEER).unwrap()));
+    }
 }

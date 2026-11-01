@@ -153,6 +153,7 @@ fn broadcast(h: &Harness, s: Scenario) -> Result<(), String> {
         paths: Vec::new(),
         payload,
         hint: None,
+        chain: None,
     };
 
     let ctx = ReviewContext {
