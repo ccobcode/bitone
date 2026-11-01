@@ -1,6 +1,6 @@
 // 账户在界面上的名称.
 import { chainOf } from "../chains";
-import { networkName, networksFor, type AccountKind, type Chain, type Mode } from "../core";
+import type { AccountKind, Chain, Mode } from "../core";
 import { t } from "../core/i18n";
 
 interface AccountLike {
@@ -25,13 +25,6 @@ export function accountName(account: AccountLike): string {
     return chainOf(account.chain).namedByKind
         ? `${accountTitle(account)} ${accountKind(account)}`
         : accountTitle(account);
-}
-
-/** 这个账户可用的全部网络名称. */
-export function accountNetworks(chain: Chain, mode: Mode): string {
-    return networksFor(chain, mode)
-        .map((network) => networkName(network.id))
-        .join(t(","));
 }
 
 export function modeLabel(mode: Mode): string {

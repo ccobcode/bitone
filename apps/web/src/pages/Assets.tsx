@@ -90,7 +90,7 @@ function Row({ group, pending, loading }: { group: AssetGroup; pending: bigint; 
                 <>
                     {isLegacyKind(top.account.kind) ? null : (
                         <LinkButton
-                            {...receiveLink(top.account.id, { asset: group.key })}
+                            {...receiveLink(top.account.id, { asset: group.key, network: top.network })}
                             variant="ghost"
                             size="sm"
                             aria-label={t("收款 {0}", entry.symbol)}

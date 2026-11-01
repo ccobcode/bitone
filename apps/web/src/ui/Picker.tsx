@@ -49,7 +49,7 @@ export function Picker({ id, value, items, onPick, look = "field", label, empty 
                     align={look === "field" ? "start" : "end"}
                     className="picker-position z-40"
                 >
-                    <Menu.Popup className="popup picker max-h-96 overflow-y-auto nav:min-w-[max(var(--anchor-width),16rem)]">
+                    <Menu.Popup className="popup picker overflow-y-auto nav:max-h-96 nav:min-w-[max(var(--anchor-width),16rem)]">
                         {label ? (
                             <div className="picker-title">
                                 <span className="min-w-0 flex-1 truncate">{label}</span>

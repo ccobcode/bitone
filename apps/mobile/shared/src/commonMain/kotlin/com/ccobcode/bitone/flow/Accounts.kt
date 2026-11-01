@@ -1,6 +1,7 @@
 package com.ccobcode.bitone.flow
 
 import com.ccobcode.bitone.platform.AccountAddress
+import com.ccobcode.bitone.platform.ManifestEntry
 
 enum class Network {
     Bitcoin,
@@ -62,6 +63,9 @@ fun networkInfo(id: String): NetworkInfo? = Networks.firstOrNull { it.id == id }
 
 /** 主网的名字. */
 fun networkName(network: Network): String = Networks.first { it.icon == network }.name
+
+/** 这个账户能不能收清单里的这一行.账户都在主网上,测试网的条目不算. */
+fun AccountRow.holds(entry: ManifestEntry): Boolean = entry.network == Networks.first { it.icon == network }.id
 
 /** 列表里的短地址,如 0x7a3F…9C21. */
 fun shortAddress(address: String): String {
