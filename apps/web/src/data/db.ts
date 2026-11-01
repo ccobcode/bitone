@@ -88,6 +88,8 @@ export interface TxRecord {
     /** 签名数据,可以直接广播的十六进制. */
     raw?: string;
     hash?: string;
+    /** 核验时发现手续费没有经过前序交易确认,显示的金额只是 PSBT 的声明. */
+    feeUnconfirmed?: boolean;
     plan: TxPlan;
     createdAt: number;
     updatedAt: number;

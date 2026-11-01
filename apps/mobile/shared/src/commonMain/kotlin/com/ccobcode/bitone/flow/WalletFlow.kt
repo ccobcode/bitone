@@ -372,6 +372,7 @@ class WalletFlow(
         unlock.resetEntry()
         pin.clearInput()
         scan.holdCancel()
+        scan.cancelSecondConfirm()
         // 系统屏幕锁确认也会走到这里,操作进行中不动页面.
         if (busy) {
             leftWhileBusy = true

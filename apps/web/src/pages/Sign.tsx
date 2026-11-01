@@ -1,7 +1,7 @@
 import { chainOf } from "../chains";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
-import { UrReceiver, accountKeyList, previewRequest, verifyResponse, type Review } from "../core";
+import { UrReceiver, accountKeyList, previewRequest, verifyResponse, type Review, type Verified } from "../core";
 import { useApp, useLive } from "../data/app";
 import { db, type TxRecord } from "../data/db";
 import { txHref } from "../gateway/history";
@@ -91,7 +91,7 @@ function ScanPanel({
     children,
 }: {
     tx: TxRecord;
-    onVerified(raw: string, hash: string): void;
+    onVerified(verified: Verified): void;
     children: ReactNode;
 }) {
     const { accounts } = useApp();
@@ -128,7 +128,7 @@ function ScanPanel({
                 const verified = verifyResponse(tx.request, message, chainOf(tx.chain).signerKey(account));
                 setScanning(false);
                 buzz();
-                onVerified(verified.raw, verified.hash);
+                onVerified(verified);
             } catch (error) {
                 setScanning(false);
                 setRejected(verifyFailure(error));
@@ -305,9 +305,9 @@ function SigningView({ tx }: { tx: TxRecord }) {
     const refused = review?.confirm === "refuse";
 
     const onVerified = useCallback(
-        (raw: string, hash: string) => {
+        (verified: Verified) => {
             // 页面跟着状态走,下一步是广播.扫描期间交易可能已经到期,这时切到已结束的状态.
-            void markSigned(tx.id, { raw, hash }).catch(() => undefined);
+            void markSigned(tx.id, verified).catch(() => undefined);
         },
         [tx.id],
     );
@@ -394,6 +394,9 @@ function SignedView({ tx }: { tx: TxRecord }) {
             <ChildTitle parent={ASSETS}>{t("广播")}</ChildTitle>
             <Section aria-labelledby="h-send" className="gap-s4">
                 <SectionTitle id="h-send">{t("核验通过")}</SectionTitle>
+                {tx.feeUnconfirmed ? (
+                    <Notice tone="warn">{t("手续费无法确认,输入金额只是声明,实际手续费可能和这里显示的不同.")}</Notice>
+                ) : null}
                 <dl aria-label={t("交易摘要")} className="flex flex-col text-t2">
                     <Fact label={t("发送")}>{amountText(tx)}</Fact>
                     <Fact label={t("收款")}>

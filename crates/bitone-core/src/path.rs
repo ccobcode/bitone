@@ -1,6 +1,6 @@
 //! 派生路径,见 docs/04-security.md 第 2.6 节.
 //!
-//! 路径决定链和私钥类型.Bitcoin 路径不设白名单,任意路径都可以花费,页面显示路径并告警.
+//! 路径决定链和私钥类型.Bitcoin,EVM 路径不设白名单,任意路径都可以花费,页面显示路径并告警.
 
 use crate::{Chain, Error, Mode, Network};
 use minicbor::{Decode, Encode};
@@ -114,16 +114,10 @@ fn bitcoin_mode(coin: u32) -> Option<Mode> {
 pub fn classify(path: &DerivationPath) -> Result<PathInfo, Error> {
     let info = |chain, mode, kind| Ok(PathInfo { chain, mode, kind });
     match path.0.as_slice() {
+        [purpose, coin, ..] if *purpose == h(44) && *coin == h(60) => info(Chain::Evm, None, AccountKind::Single),
         [purpose, coin, _, _, _]
             if *purpose == h(84) || *purpose == h(86) || *purpose == h(44) || *purpose == h(49) =>
         {
-            if *purpose == h(44) && *coin == h(60) {
-                return if path.0[2..] == [h(0), 0, 0] {
-                    info(Chain::Evm, None, AccountKind::Single)
-                } else {
-                    Err(Error::PathNotAllowed)
-                };
-            }
             if *purpose == h(44) && *coin == h(195) {
                 return if path.0[2..] == [h(0), 0, 0] {
                     info(Chain::Tron, Some(Mode::Mainnet), AccountKind::Single)
@@ -186,6 +180,28 @@ pub fn check_bitcoin_path(path: &DerivationPath, network: Option<Network>) -> Re
         (None, Ok(info)) if info.chain != Chain::Bitcoin => Err(Error::PathNetworkMismatch),
         _ => Ok(()),
     }
+}
+
+/// EVM 请求里的路径有没有矛盾.路径不设白名单,只有用途和 coin type 都属于本钱包其他链的主网账户才算.
+/// 这些私钥上有真实资产,裸哈希签名能签下它们的交易.coin type `1'` 不只属于一条链,说明不了什么.
+pub fn check_evm_path(path: &DerivationPath) -> Result<(), Error> {
+    let foreign = account_specs(Mode::Mainnet, true)
+        .iter()
+        .filter(|spec| spec.chain != Chain::Evm)
+        .filter_map(|spec| DerivationPath::parse(spec.path).ok())
+        .any(|account| path.0.get(..2) == account.0.get(..2));
+    if foreign {
+        return Err(Error::PathNetworkMismatch);
+    }
+    Ok(())
+}
+
+/// 路径是不是本机导出的 EVM 账户.其余路径可以签名,但要告警.
+pub fn is_usual_evm_path(path: &DerivationPath) -> bool {
+    let text = path.to_string();
+    all_account_specs(true)
+        .iter()
+        .any(|spec| spec.chain == Chain::Evm && spec.path == text)
 }
 
 /// 路径是否落在本机导出的 Bitcoin 账户下,地址类型也和账户一致.其余路径可以花费,但要告警.
@@ -322,8 +338,6 @@ mod tests {
     #[test]
     fn rejects_paths_outside_the_whitelist() {
         for path in [
-            "m/44'/60'/0'/0/1",
-            "m/44'/60'/1'/0/0",
             "m/44'/195'/0'/0/1",
             "m/44'/501'/1'/0'",
             "m/44'/1'/0'/1/0",
@@ -334,6 +348,51 @@ mod tests {
         ] {
             assert!(classify(&p(path)).is_err(), "{path}");
         }
+    }
+
+    #[test]
+    fn every_path_under_coin_type_60_is_evm_with_no_mode() {
+        for path in [
+            "m/44'/60'/0'/0/0",
+            "m/44'/60'/0'/0/1",
+            "m/44'/60'/7'/0/0",
+            "m/44'/60'/3'",
+            "m/44'/60'",
+        ] {
+            let info = classify(&p(path)).unwrap();
+            assert_eq!((info.chain, info.mode), (Chain::Evm, None), "{path}");
+            assert!(validate_for_network(&p(path), Network::Sepolia).is_ok(), "{path}");
+        }
+    }
+
+    #[test]
+    fn any_evm_path_is_free_except_the_mainnet_keys_of_other_chains() {
+        for free in [
+            "m/44'/60'/9'/0/1",
+            "m/44'/966'/0'/0/0",
+            "m/44'/1'/0'/0/0",
+            "m/84'/1'/0'/0/0",
+            "m/0",
+            "m",
+        ] {
+            assert_eq!(check_evm_path(&p(free)), Ok(()), "{free}");
+        }
+        for taken in [
+            "m/84'/0'/0'/0/0",
+            "m/86'/0'/5'/1/2",
+            "m/44'/195'/0'/0/0",
+            "m/44'/501'/0'/0'",
+            "m/44'/0'/0'/0/0",
+        ] {
+            assert_eq!(check_evm_path(&p(taken)), Err(Error::PathNetworkMismatch), "{taken}");
+        }
+    }
+
+    #[test]
+    fn only_the_exported_evm_account_is_usual() {
+        assert!(is_usual_evm_path(&p("m/44'/60'/0'/0/0")));
+        assert!(!is_usual_evm_path(&p("m/44'/60'/0'/0/1")));
+        assert!(!is_usual_evm_path(&p("m/44'/195'/0'/0/0")));
     }
 
     #[test]

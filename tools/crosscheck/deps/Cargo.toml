@@ -1,4 +1,4 @@
-# docs/10-tx-decoding.md 第 6.1 节的运行时依赖.它们还没进产物,这里只检查 wasm 和 Android 能否构建.
+# docs/10-tx-decoding.md 第 6.1 节的运行时依赖.其中 alloy-dyn-abi,prost 还没进产物,这里只检查 wasm 和 Android 能否构建.
 [package]
 name = "dependency-builds"
 version = "0.0.0"

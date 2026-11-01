@@ -40,7 +40,6 @@ import com.ccobcode.bitone.flow.actionRows
 import com.ccobcode.bitone.flow.controllerCard
 import com.ccobcode.bitone.flow.fieldBlocks
 import com.ccobcode.bitone.flow.isHighRisk
-import com.ccobcode.bitone.flow.isMainnet
 import com.ccobcode.bitone.flow.networkInfo
 import com.ccobcode.bitone.flow.reviewStyle
 import com.ccobcode.bitone.flow.shortAddress
@@ -57,6 +56,7 @@ import com.ccobcode.bitone.ui.components.AddressCard
 import com.ccobcode.bitone.ui.components.AssetIcon
 import com.ccobcode.bitone.ui.components.Card
 import com.ccobcode.bitone.ui.components.Chip
+import com.ccobcode.bitone.ui.components.DangerButton
 import com.ccobcode.bitone.ui.components.HoldButton
 import com.ccobcode.bitone.ui.components.Icons
 import com.ccobcode.bitone.ui.components.LineIcon
@@ -80,6 +80,7 @@ import com.ccobcode.bitone.ui.theme.Space
 
 private const val FROM_WEB = "BitOne 网页端不会发起这类交易."
 private const val SCROLL_FIRST = "滚到底部后确认"
+private const val TARGET_CONTRACT = "目标合约"
 
 /** 字段列表的缩进层数上限,再深的节点靠 `depth` 的顺序分辨,值的宽度不能被缩进吃掉. */
 private const val MAX_INDENT = 4
@@ -112,7 +113,7 @@ fun ReviewScreen(flow: WalletFlow) {
         bottom = { ReviewActions(flow, review) },
         scroll = scroll,
     ) {
-        if (isMainnet(review.network)) RiskBanner("主网,真实资产", emptyList(), warn = true)
+        if (review.mainnet) RiskBanner("主网,真实资产", emptyList(), warn = true)
         Banner(review, style)
         Txt(network?.name ?: review.network, weight = Medium, color = c.text2)
         when (style) {
@@ -126,7 +127,7 @@ fun ReviewScreen(flow: WalletFlow) {
             }
             ReviewStyle.Unknown -> {
                 if (review.amount != null) InlineAmount(review, network?.icon)
-                val contract = network?.icon != Network.Bitcoin
+                val contract = review.counterpartyLabel == TARGET_CONTRACT
                 Counterparty(review, leading = { UnlistedIcon(24.dp) }) {
                     if (contract) Chip("未知合约", c.warnSoft, c.warn)
                 }
@@ -519,22 +520,31 @@ private fun RawData(lines: List<RawLine>, initiallyOpen: Boolean) {
 private fun ReviewActions(flow: WalletFlow, review: ReviewResult) {
     val read = flow.scan.reviewRead
     ActionArea {
-        if (review.confirm == ConfirmMode.Tap) {
-            PrimaryButton(
-                if (read) "确认并签名" else SCROLL_FIRST,
-                enabled = read && !flow.busy,
-                onClick = flow.scan::confirmTap,
-            )
-            TextButton("拒绝", onClick = flow.scan::exitRequest)
-        } else {
-            PrimaryButton("拒绝", onClick = flow.scan::exitRequest)
-            HoldButton(
-                if (read) "长按签名" else SCROLL_FIRST,
-                flow.scan.holdProgress,
-                enabled = read && !flow.busy,
-                onPress = flow.scan::holdStart,
-                onRelease = flow.scan::holdCancel,
-            )
+        when {
+            review.confirm == ConfirmMode.Tap -> {
+                PrimaryButton(
+                    if (read) "确认并签名" else SCROLL_FIRST,
+                    enabled = read && !flow.busy,
+                    onClick = flow.scan::confirmTap,
+                )
+                TextButton("拒绝", onClick = flow.scan::exitRequest)
+            }
+            flow.scan.awaitingSecondConfirm -> {
+                Txt("本机看不到这段内容的含义,签名后无法撤回.", size = FontSize.t2, color = BitOneTheme.colors.danger)
+                PrimaryButton("拒绝", onClick = flow.scan::exitRequest)
+                DangerButton("再次确认并签名", enabled = !flow.busy, onClick = flow.scan::confirmSecond)
+                TextButton("返回核对", onClick = flow.scan::cancelSecondConfirm)
+            }
+            else -> {
+                PrimaryButton("拒绝", onClick = flow.scan::exitRequest)
+                HoldButton(
+                    if (read) "长按签名" else SCROLL_FIRST,
+                    flow.scan.holdProgress,
+                    enabled = read && !flow.busy,
+                    onPress = flow.scan::holdStart,
+                    onRelease = flow.scan::holdCancel,
+                )
+            }
         }
     }
 }

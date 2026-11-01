@@ -3,6 +3,7 @@
 //! `corpus/corpus.lock`,`vectors/vectors.lock` 每行是 `SHA-256 文件名`.语料是空的时候只输出空报告.
 
 mod bitcoin_vectors;
+mod evm_vectors;
 
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -71,6 +72,11 @@ fn run() -> Result<(), String> {
         "Bitcoin 向量:{} 个合法 PSBT,{} 个不合法 PSBT,{} 个 sighash",
         report.valid, report.invalid, report.sighashes
     );
+    let report = evm_vectors::check(Path::new(VECTORS))?;
+    println!(
+        "EVM 向量:{} 笔交易,{} 个不合法载荷,{} 条消息",
+        report.transactions, report.invalid, report.messages
+    );
     Ok(())
 }
 
@@ -115,6 +121,12 @@ mod tests {
     fn the_official_bitcoin_vectors_hold() {
         let report = bitcoin_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
         assert!(report.valid > 0 && report.invalid > 0 && report.sighashes > 0);
+    }
+
+    #[test]
+    fn the_evm_vectors_hold() {
+        let report = evm_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
+        assert!(report.transactions > 0 && report.invalid > 0 && report.messages > 0);
     }
 
     #[test]

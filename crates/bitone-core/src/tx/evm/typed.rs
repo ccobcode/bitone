@@ -257,7 +257,7 @@ pub fn review(
     network: Network,
     request: &SignRequest,
     ctx: &ReviewContext,
-    payer: &str,
+    payer: Option<&str>,
     path: &DerivationPath,
 ) -> Result<Review, Forbid> {
     let data: Value = serde_json::from_slice(&request.payload).map_err(|_| Forbid::ParseFailed)?;

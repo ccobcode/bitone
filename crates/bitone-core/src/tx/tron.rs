@@ -764,6 +764,8 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
     Ok(Verified {
         raw,
         hash: hash.to_lower_hex_string(),
+        fee_unconfirmed: false,
+        signature_only: false,
     })
 }
 

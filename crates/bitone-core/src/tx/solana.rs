@@ -1221,6 +1221,8 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
     Ok(Verified {
         raw,
         hash: bitcoin::base58::encode(signature),
+        fee_unconfirmed: false,
+        signature_only: false,
     })
 }
 

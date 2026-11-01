@@ -185,7 +185,12 @@ async function apply(id: string, change: (tx: TxRecord) => TxRecord, now: number
 export function markSigned(id: string, verified: Verified, now = Date.now()): Promise<TxRecord> {
     return apply(
         id,
-        (tx) => ({ ...transition(tx, "signed", now, t("签名与构建记录一致")), raw: verified.raw, hash: verified.hash }),
+        (tx) => ({
+            ...transition(tx, "signed", now, t("签名与构建记录一致")),
+            raw: verified.raw,
+            hash: verified.hash,
+            feeUnconfirmed: verified.feeUnconfirmed === true,
+        }),
         now,
     );
 }

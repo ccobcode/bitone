@@ -104,9 +104,11 @@ private fun uniffi.bitone_ffi.ReviewResult.shared() =
             when (confirm) {
                 uniffi.bitone_ffi.ConfirmMode.TAP -> ConfirmMode.Tap
                 uniffi.bitone_ffi.ConfirmMode.HOLD -> ConfirmMode.Hold
+                uniffi.bitone_ffi.ConfirmMode.HOLD_CONFIRM -> ConfirmMode.HoldConfirm
                 uniffi.bitone_ffi.ConfirmMode.REFUSE -> ConfirmMode.Refuse
             },
         network = network,
+        mainnet = mainnet,
         title = title,
         amount = amount?.let { ReviewAmount(it.text, it.symbol, it.asset, it.icon, it.unlimited) },
         counterpartyLabel = counterpartyLabel,
@@ -215,8 +217,18 @@ private class Unlocked(private val inner: uniffi.bitone_ffi.UnlockedWallet) : Un
         manifest: ByteArray?,
         reviewDigest: ByteArray,
         renderedFields: UInt,
+        confirmedTwice: Boolean,
     ): SignOutcome = mapped {
-        val outcome = inner.signRequest(message, keys, highestChange.ffi(), manifest, reviewDigest, renderedFields)
+        val outcome =
+            inner.signRequest(
+                message,
+                keys,
+                highestChange.ffi(),
+                manifest,
+                reviewDigest,
+                renderedFields,
+                confirmedTwice,
+            )
         SignOutcome(Stream(outcome.frames), outcome.changeIndex, outcome.changeIsTestnet)
     }
 

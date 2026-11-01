@@ -16,12 +16,6 @@ internal val PARTY_LABELS = setOf("收款地址", "目标合约", "被授权方"
 /** Solana 的付款方在 rows 里叫手续费支付者. */
 private val PAYER_LABELS = setOf("付款账户", "手续费支付者")
 
-/** 和核心库的 `Network::mode()` 一致,[networkName] 给的就是这条链的主网.不认识的网络也算主网,宁可多提示一次. */
-fun isMainnet(network: String): Boolean {
-    val info = networkInfo(network) ?: return true
-    return info.name == networkName(info.icon)
-}
-
 /** A6d 顶部卡片.[own] 表示当前控制方就是付款账户. */
 class ControllerCard(val current: String?, val next: String?, val own: Boolean)
 

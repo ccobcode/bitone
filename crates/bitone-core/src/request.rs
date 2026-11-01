@@ -7,6 +7,10 @@ use minicbor::{Decode, Encode};
 
 pub const KIND_TRANSACTION: u8 = 0;
 pub const KIND_TYPED_DATA: u8 = 1;
+/// 载荷是要签的 32 字节哈希.
+pub const KIND_RAW_HASH: u8 = 2;
+/// 载荷是 `personal_sign` 的消息,前缀由签名方加上.
+pub const KIND_PERSONAL_SIGN: u8 = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
 #[cbor(map)]

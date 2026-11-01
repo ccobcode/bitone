@@ -786,6 +786,7 @@ pub fn review(network: Option<Network>, request: &SignRequest, ctx: &ReviewConte
         kind: request.kind,
         paths: &request.paths,
         payload: &request.payload,
+        signer: None,
     };
     let decoded = match decode::decode(&PsbtWalker, &input) {
         Ok(decoded) => decoded,
@@ -1185,10 +1186,6 @@ pub fn verify(network: Network, request: &SignRequest, response: &SignResponse) 
     }
     let prepared = prepare(network, &request.payload, request.fingerprint).map_err(|_| Error::InvalidParams)?;
     prepared.fee().map_err(|_| Error::InvalidParams)?;
-    // 网页端构建时都带前序交易,这里只会是被改过的构建记录.
-    if prepared.fee_unconfirmed {
-        return Err(Error::InvalidParams);
-    }
     if response.signatures.len() != prepared.inputs.len() {
         return Err(Error::BadSignature);
     }
@@ -1212,6 +1209,8 @@ pub fn verify(network: Network, request: &SignRequest, response: &SignResponse) 
     Ok(Verified {
         raw: serialize(&tx),
         hash: tx.compute_txid().to_string(),
+        fee_unconfirmed: prepared.fee_unconfirmed,
+        signature_only: false,
     })
 }
 

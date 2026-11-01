@@ -2,10 +2,10 @@
 //!
 //! `assess` 只读树,不修改树,拿不到原始载荷.新内容默认是无法识别,可以签名,不会默认变成普通转账.
 //! 依赖方向由 `tests/architecture.rs` 检查.阈值是初始值,技术方案里校准.
-//! Bitcoin 的类别和告警都在规则表里,`assess_bitcoin` 只算出命中了哪些种类.
+//! Bitcoin,EVM 的类别和告警都在规则表里,`assess_bitcoin`,`assess_evm` 只算出命中了哪些种类.
 
 use crate::decode::{Decoded, NodeId, SourceKind, Value};
-use crate::{Mode, Network};
+use crate::{Chain, Mode, Network};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -47,13 +47,16 @@ impl Risk {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+/// 从低到高排序.告警和规则只升级,不降低.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Confirm {
     /// 点按,再输 PIN.
     Tap,
     /// 长按 3 秒,再输 PIN.
     Hold,
+    /// 长按 3 秒,再明确确认一次,再输 PIN.裸哈希和整段未知载荷走这里.
+    HoldConfirm,
     /// 不可签名.
     Refuse,
 }
@@ -100,6 +103,9 @@ struct Rule {
     class: RuleClass,
     alert: Option<String>,
     note: Option<String>,
+    /// 长按之后还要二次确认.
+    #[serde(default)]
+    second: bool,
 }
 
 /// 链的 ID 到动作种类名到规则.
@@ -180,6 +186,8 @@ fn assess_with(decoded: &Decoded, rules: &Rules, signals: &[Signal]) -> Assessme
     let mut alerts: Vec<String> = Vec::new();
     let mut risks = Vec::new();
     let mut unknown = actions.is_empty();
+    // 第 1.1 节:整段未知的载荷在长按之后还要二次确认.
+    let mut second = matches!(decoded.root().value, Value::Opaque(_));
     let actions = actions
         .into_iter()
         .map(|(id, node, kind)| (id, kind, node.source.kind().is_evidence(), Vec::new()));
@@ -194,6 +202,7 @@ fn assess_with(decoded: &Decoded, rules: &Rules, signals: &[Signal]) -> Assessme
         };
         let risk = Risk::from(rule.class);
         risks.push(risk);
+        second |= rule.second;
         let alert = rule.alert.as_deref().map(|text| filled(text, &args));
         let note = rule.note.as_deref().map(|text| filled(text, &args)).or(alert.clone());
         let finding = findings.entry(id).or_default();
@@ -222,9 +231,14 @@ fn assess_with(decoded: &Decoded, rules: &Rules, signals: &[Signal]) -> Assessme
         risks.push(Risk::Unknown);
     }
     let risk = risks.into_iter().max().unwrap_or(Risk::Unknown);
+    let confirm = Confirm::of(risk, !alerts.is_empty());
     Assessment {
         risk,
-        confirm: Confirm::of(risk, !alerts.is_empty()),
+        confirm: if second {
+            confirm.max(Confirm::HoldConfirm)
+        } else {
+            confirm
+        },
         alerts,
         findings,
     }
@@ -390,6 +404,109 @@ pub fn assess_bitcoin(decoded: &Decoded, facts: &BitcoinFacts) -> Assessment {
     assessment
 }
 
+const CALL_ACTION: &str = "call";
+const FEE_CAP_ROW: &str = "fee_cap";
+const NETWORK_ROW: &str = "network";
+const PATH_ROW: &str = "derivation_path";
+const PATH_KIND: &str = "path-unusual";
+
+/// EVM 的事实.路径,合约调用和网络都由 `tx` 层算出,这里不碰密钥和载荷.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EvmFacts {
+    pub signer: Option<String>,
+    /// 这条派生路径不是本机导出的账户.
+    pub unusual_path: Option<String>,
+    /// 合约调用的每个动作的类别.清单描述文件接入之前来自 `abi.rs`.
+    pub calls: Vec<Risk>,
+    pub call_alerts: Vec<String>,
+    /// 调用的方法和合约,显示在 `data` 这一行.
+    pub call_note: Option<String>,
+    pub fee_high: bool,
+    /// 请求里的网络名和 Chain ID 认出的网络.
+    pub renamed: Option<(String, String)>,
+    /// 谁也不认识的 Chain ID 和请求里的网络名.
+    pub unknown_chain: Option<(String, String)>,
+}
+
+fn call_kind(risk: Risk) -> &'static str {
+    match risk {
+        Risk::Transfer => "call-transfer",
+        Risk::Recognized => "call-recognized",
+        Risk::Approval => "call-approval",
+        Risk::PermissionChange => "call-permission-change",
+        Risk::Unknown | Risk::Forbidden => "call-unknown",
+    }
+}
+
+fn call_signals(node: NodeId, facts: &EvmFacts, signals: &mut Vec<Signal>) {
+    // 没有事实的调用不能因为规则表里 `call` 是最低类别就过关.
+    if facts.calls.is_empty() {
+        signals.push(Signal::new(node, call_kind(Risk::Unknown), Vec::new()));
+    }
+    signals.extend(
+        facts
+            .calls
+            .iter()
+            .map(|risk| Signal::new(node, call_kind(*risk), Vec::new())),
+    );
+    signals.extend(
+        facts
+            .call_alerts
+            .iter()
+            .map(|alert| Signal::new(node, "call-alert", vec![alert.clone()])),
+    );
+}
+
+/// 还没迁移的 EIP-712 页面也要说明路径,文案在规则表里.
+pub fn unusual_path_alert(path: &str) -> String {
+    let alert = rules()[Chain::Evm.id()][PATH_KIND].alert.as_deref().unwrap_or_default();
+    filled(alert, &[path.to_string()])
+}
+
+/// EVM 的策略.类别和告警都在规则表里.
+pub fn assess_evm(decoded: &Decoded, facts: &EvmFacts) -> Assessment {
+    let visits = decoded.visits();
+    let row = |name: &str| {
+        visits
+            .iter()
+            .find(|visit| visit.node.name == name)
+            .map_or(ROOT, |visit| visit.id)
+    };
+    let call = decoded
+        .actions()
+        .into_iter()
+        .find_map(|(id, _, kind)| (kind == CALL_ACTION).then_some(id));
+    let mut signals = Vec::new();
+    if let Some(node) = call {
+        call_signals(node, facts, &mut signals);
+    }
+    if facts.fee_high {
+        signals.push(Signal::new(row(FEE_CAP_ROW), "fee-high", Vec::new()));
+    }
+    if let Some(path) = &facts.unusual_path {
+        signals.push(Signal::new(row(PATH_ROW), PATH_KIND, vec![path.clone()]));
+    }
+    if let Some((supplied, shown)) = &facts.renamed {
+        let args = vec![supplied.clone(), shown.clone()];
+        signals.push(Signal::new(row(NETWORK_ROW), "network-renamed", args));
+    }
+    if let Some((chain_id, supplied)) = &facts.unknown_chain {
+        let args = vec![chain_id.clone(), supplied.clone()];
+        signals.push(Signal::new(row(NETWORK_ROW), "chain-unknown", args));
+    }
+    let mut assessment = assess_with(decoded, rules(), &signals);
+    if let (Some(node), Some(note)) = (call, &facts.call_note) {
+        assessment.findings.entry(node).or_default().note = Some(note.clone());
+    }
+    for visit in &visits {
+        let own = matches!(&visit.node.value, Value::Address(address) if Some(address) == facts.signer.as_ref());
+        if own {
+            assessment.findings.entry(visit.id).or_default().own = true;
+        }
+    }
+    assessment
+}
+
 /// 找零索引超过已签过的最高索引加这个数时按高风险处理.
 pub const CHANGE_GAP: u32 = 20;
 
@@ -468,6 +585,11 @@ mod tests {
     }
 
     #[test]
+    fn the_second_confirmation_sits_between_hold_and_refuse() {
+        assert!(Confirm::Hold < Confirm::HoldConfirm && Confirm::HoldConfirm < Confirm::Refuse);
+    }
+
+    #[test]
     fn a_rule_gives_the_class() {
         let assessment = assessed(&PAYLOAD, TRANSFER_RULE);
         assert_eq!((assessment.risk, assessment.confirm), (Risk::Transfer, Confirm::Tap));
@@ -508,11 +630,25 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_payload_is_signable_with_the_strongest_alert() {
+    fn an_unknown_payload_is_signable_after_a_second_confirmation() {
         let assessment = assessed(&[UNKNOWN_FORMAT, 1], TRANSFER_RULE);
-        assert_eq!((assessment.risk, assessment.confirm), (Risk::Unknown, Confirm::Hold));
+        assert_eq!(
+            (assessment.risk, assessment.confirm),
+            (Risk::Unknown, Confirm::HoldConfirm)
+        );
         assert_eq!(assessment.findings[&0].risk, Some(Risk::Unknown));
         assert_eq!(assessment.alerts, [UNKNOWN_ALERT]);
+    }
+
+    #[test]
+    fn a_rule_can_ask_for_the_second_confirmation() {
+        let rule = "\"transfer\":{\"class\":\"unknown\",\"alert\":\"后果\",\"second\":true}";
+        assert_eq!(assessed(&PAYLOAD, rule).confirm, Confirm::HoldConfirm);
+    }
+
+    #[test]
+    fn an_opaque_rest_is_a_long_press_not_a_second_confirmation() {
+        assert_eq!(assessed(&PARTIAL, TRANSFER_RULE).confirm, Confirm::Hold);
     }
 
     #[test]
@@ -569,10 +705,90 @@ mod tests {
     }
 
     #[test]
-    fn only_bitcoin_is_migrated_so_the_other_tables_are_empty() {
+    fn only_the_migrated_chains_have_tables() {
         for (chain, table) in rules() {
-            assert_eq!(table.is_empty(), chain != "bitcoin", "{chain}");
+            assert_eq!(table.is_empty(), chain != "bitcoin" && chain != "evm", "{chain}");
         }
+    }
+
+    const EVM_KINDS: [&str; 25] = [
+        "no-chain-id",
+        "native-transfer",
+        "contract-creation",
+        "call",
+        "call-transfer",
+        "call-recognized",
+        "call-approval",
+        "call-permission-change",
+        "call-unknown",
+        "call-alert",
+        "authorization",
+        "authorization-clear",
+        "authorization-every-chain",
+        "authorization-other-chain",
+        "authorization-unrecovered",
+        "eip7702-authorization",
+        "eip712-digest",
+        "personal-sign",
+        "eip191-validator",
+        "eip191-unknown",
+        "raw-hash",
+        "path-unusual",
+        "fee-high",
+        "network-renamed",
+        "chain-unknown",
+    ];
+
+    #[test]
+    fn every_evm_kind_has_a_rule() {
+        let table = &rules()["evm"];
+        for kind in EVM_KINDS.into_iter().chain(crate::decode::transaction_actions()) {
+            assert!(table.contains_key(kind), "{kind}");
+        }
+        assert_eq!(table.len(), EVM_KINDS.len() + 5, "规则表里有用不到的种类");
+    }
+
+    /// 第 1.1 节:这些内容都是无法识别,告警要说清后果.
+    #[test]
+    fn dangerous_evm_content_is_unknown_with_an_alert() {
+        let table = &rules()["evm"];
+        for kind in [
+            "tx-eip4844",
+            "no-chain-id",
+            "authorization-every-chain",
+            "authorization-other-chain",
+            "authorization-unrecovered",
+            "eip7702-authorization",
+            "eip712-digest",
+            "personal-sign",
+            "raw-hash",
+            "chain-unknown",
+        ] {
+            assert_eq!(table[kind].class, RuleClass::Unknown, "{kind}");
+            assert!(table[kind].alert.is_some(), "{kind}");
+        }
+    }
+
+    #[test]
+    fn only_blind_payloads_ask_for_the_second_confirmation() {
+        let second: Vec<&str> = rules()["evm"]
+            .iter()
+            .filter(|(_, rule)| rule.second)
+            .map(|(kind, _)| kind.as_str())
+            .collect();
+        assert_eq!(second, ["eip191-unknown", "eip712-digest", "raw-hash"]);
+    }
+
+    #[test]
+    fn a_call_without_facts_is_unknown() {
+        let decoded = decode(
+            &Tampered(|walked: &mut Walked| {
+                walked.root.children[0] = walked.root.children[0].clone().action("call");
+            }),
+            &input(&PAYLOAD),
+        )
+        .unwrap();
+        assert_eq!(assess_evm(&decoded, &EvmFacts::default()).risk, Risk::Unknown);
     }
 
     #[test]

@@ -174,12 +174,12 @@ fun ParseFailedScreen(flow: WalletFlow) {
 
 private val ForbiddenRules =
     listOf(
-        "没有 Chain ID 的旧式交易",
-        "chain_id 为 0 的 EIP-7702 授权",
-        "裸哈希,消息签名和未支持的 EIP-712",
+        "Chain ID 和网络不符",
+        "本机还不支持的 EIP-712 和其他链的消息签名",
         "路径不在白名单,或与网络冲突",
         "地址与路径不符",
         "缺少必需的前序交易",
+        "编码不合规的数据",
     )
 
 /** AS 禁止签名.[com.ccobcode.bitone.flow.ScanFlow.refusal] 是核心库给的实际原因,下面是全部规则. */

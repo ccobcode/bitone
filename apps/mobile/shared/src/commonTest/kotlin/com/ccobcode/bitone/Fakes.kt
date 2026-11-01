@@ -113,6 +113,7 @@ fun reviewOf(
         risk = risk,
         confirm = confirm,
         network = "ethereum",
+        mainnet = true,
         title = "普通转账",
         amount = ReviewAmount("1", "ETH", "ethereum:native", "eth", false),
         counterpartyLabel = "收款地址",
@@ -212,6 +213,7 @@ class SignCall(
     val manifest: String?,
     val reviewDigest: ByteArray,
     val renderedFields: UInt,
+    val confirmedTwice: Boolean,
 )
 
 class FakeWallet(private val passphrase: String, private val core: FakeCore) : UnlockedWallet {
@@ -240,6 +242,7 @@ class FakeWallet(private val passphrase: String, private val core: FakeCore) : U
         manifest: ByteArray?,
         reviewDigest: ByteArray,
         renderedFields: UInt,
+        confirmedTwice: Boolean,
     ): SignOutcome {
         check(!closed) { "钱包已关闭" }
         if (core.signFails) throw WalletCoreException.Other("策略不允许")
@@ -251,6 +254,7 @@ class FakeWallet(private val passphrase: String, private val core: FakeCore) : U
                 manifest?.decodeToString(),
                 reviewDigest,
                 renderedFields,
+                confirmedTwice,
             )
         return SignOutcome(FakeStream(2).also { core.lastStream = it }, core.nextChangeIndex, core.nextChangeIsTestnet)
     }

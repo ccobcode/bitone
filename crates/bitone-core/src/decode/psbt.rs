@@ -174,6 +174,10 @@ impl<'a> Cursor<'a> {
         self.rest.is_empty()
     }
 
+    pub(super) fn remaining(&self) -> &'a [u8] {
+        self.rest
+    }
+
     pub(super) fn take(&mut self, len: u64) -> Result<Field<'a>, Reject> {
         let count = usize::try_from(len).map_err(|_| Reject::Malformed)?;
         let (bytes, rest) = self.rest.split_at_checked(count).ok_or(Reject::Malformed)?;
@@ -717,6 +721,7 @@ mod tests {
                 kind: 0,
                 paths: &[],
                 payload,
+                signer: None,
             },
         )
     }

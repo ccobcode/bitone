@@ -6,6 +6,7 @@
 #![deny(clippy::wildcard_enum_match_arm, clippy::wildcard_in_or_patterns)]
 
 mod check;
+mod evm;
 #[cfg(test)]
 pub(crate) mod fixture;
 mod format;
@@ -13,9 +14,13 @@ mod model;
 mod psbt;
 mod psbt_official;
 mod psbt_values;
+mod rlp;
 mod script;
 
 pub use check::{Failure, MAX_DEPTH, Reject, RoundTrip};
+pub use evm::{
+    Coin, EvmPayload, EvmWalker, PersonalWalker, RawHashWalker, Tx, authority, fee_cap, parse_evm, transaction_actions,
+};
 pub use format::{display, escape_text};
 pub use model::{Amount, Extent, Kind, Node, Source, SourceKind, Span, Value};
 pub use psbt::{Parsed, PsbtWalker, is_psbt, parse};
@@ -37,6 +42,8 @@ pub struct Input<'a> {
     pub kind: u8,
     pub paths: &'a [String],
     pub payload: &'a [u8],
+    /// 付款账户的地址.派生路径算不出来时是空的,这一行不进树.
+    pub signer: Option<&'a str>,
 }
 
 /// 解码器的结果,通过 C1,C2 之后才是 `Decoded`.外层认识,里面不认识时,不认识的部分是 `opaque` 节点.
@@ -121,7 +128,10 @@ fn envelope(input: &Input<'_>) -> Vec<Node> {
         .paths
         .iter()
         .map(|path| Node::new("derivation_path", Value::Text(path.clone()), Source::Derived));
-    std::iter::once(network).chain(paths).collect()
+    let signer = input
+        .signer
+        .map(|address| Node::new("signer", Value::Address(address.to_string()), Source::Derived));
+    std::iter::once(network).chain(paths).chain(signer).collect()
 }
 
 impl Decoded {

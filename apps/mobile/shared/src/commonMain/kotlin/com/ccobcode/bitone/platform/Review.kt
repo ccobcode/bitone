@@ -13,6 +13,8 @@ enum class Risk {
 enum class ConfirmMode {
     Tap,
     Hold,
+    /** 长按之后还要明确确认一次.裸哈希和整段未知载荷走这里. */
+    HoldConfirm,
     Refuse,
 }
 
@@ -80,6 +82,8 @@ class ReviewResult(
     val risk: Risk,
     val confirm: ConfirmMode,
     val network: String,
+    /** 页面顶部显示主网提示.不能确认是测试网时都是 true. */
+    val mainnet: Boolean,
     val title: String,
     val amount: ReviewAmount?,
     val counterpartyLabel: String?,

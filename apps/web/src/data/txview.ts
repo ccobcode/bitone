@@ -37,7 +37,13 @@ export function detailFacts(tx: TxRecord): TxFact[] {
     ];
     if (tx.asset !== "native") rows.push({ label: t("代币合约"), value: tx.asset, mono: true });
     rows.push(...chainOf(tx.chain).view.details(tx));
+    if (tx.feeUnconfirmed) rows.push(feeUnconfirmedFact());
     return rows;
+}
+
+/** 冷钱包可以签手续费无法确认的 PSBT,这里要说明显示的手续费只是声明. */
+export function feeUnconfirmedFact(): TxFact {
+    return { label: t("手续费确认"), value: t("无法确认,输入金额只是声明") };
 }
 
 /** 最终性进度,标准见 docs/03-system.md 第 9 节. */

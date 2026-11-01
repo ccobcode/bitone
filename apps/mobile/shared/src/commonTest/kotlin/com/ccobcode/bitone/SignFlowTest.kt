@@ -208,6 +208,73 @@ class SignFlowTest {
         assertEquals(Screen.Unlock, rig.flow.screen)
     }
 
+    private fun TestScope.holdToTheEnd(rig: Rig) {
+        rig.flow.scan.holdStart()
+        advanceTimeBy(3_100)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun aRawHashNeedsASecondConfirmationAfterTheHold() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.HoldConfirm) }
+        toReview(rig)
+        holdToTheEnd(rig)
+        assertEquals(Screen.Review, rig.flow.screen)
+        assertTrue(rig.flow.scan.awaitingSecondConfirm)
+        rig.flow.scan.confirmSecond()
+        advanceUntilIdle()
+        assertEquals(Screen.Unlock, rig.flow.screen)
+        assertFalse(rig.flow.scan.awaitingSecondConfirm)
+    }
+
+    @Test
+    fun theSecondConfirmationNeedsTheHoldFirst() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.HoldConfirm) }
+        toReview(rig)
+        rig.flow.scan.confirmSecond()
+        advanceUntilIdle()
+        assertEquals(Screen.Review, rig.flow.screen)
+        assertFalse(rig.flow.scan.awaitingSecondConfirm)
+    }
+
+    @Test
+    fun aPlainHoldHasNoSecondStep() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.Hold) }
+        toReview(rig)
+        holdToTheEnd(rig)
+        assertEquals(Screen.Unlock, rig.flow.screen)
+        assertFalse(rig.flow.scan.awaitingSecondConfirm)
+    }
+
+    @Test
+    fun backingOutOfTheSecondConfirmationNeedsAnotherHold() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.HoldConfirm) }
+        toReview(rig)
+        holdToTheEnd(rig)
+        rig.flow.scan.cancelSecondConfirm()
+        rig.flow.scan.confirmSecond()
+        advanceUntilIdle()
+        assertEquals(Screen.Review, rig.flow.screen)
+    }
+
+    @Test
+    fun goingToBackgroundDropsTheSecondConfirmation() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.HoldConfirm) }
+        toReview(rig)
+        holdToTheEnd(rig)
+        rig.flow.onBackground()
+        assertFalse(rig.flow.scan.awaitingSecondConfirm)
+    }
+
+    @Test
+    fun theSecondConfirmationDoesNotCarryToTheNextRequest() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.HoldConfirm) }
+        toReview(rig)
+        holdToTheEnd(rig)
+        rig.flow.scan.exitRequest()
+        assertFalse(rig.flow.scan.awaitingSecondConfirm)
+    }
+
     @Test
     fun aNewRequestHasToBeReadAgain() = runTest {
         val rig = ready()
@@ -233,11 +300,11 @@ class SignFlowTest {
 
     @Test
     fun refuseGoesToForbiddenAndCannotReachPin() = runTest {
-        val rig = ready { it.core.review = reviewOf(Risk.Forbidden, ConfirmMode.Refuse, listOf("没有 Chain ID")) }
+        val rig = ready { it.core.review = reviewOf(Risk.Forbidden, ConfirmMode.Refuse, listOf("Chain ID 与网络不符")) }
         scanRequest(rig)
         val flow = rig.flow
         assertEquals(Screen.Forbidden, flow.screen)
-        assertEquals("没有 Chain ID", flow.scan.refusal)
+        assertEquals("Chain ID 与网络不符", flow.scan.refusal)
         assertNull(flow.scan.review)
 
         // 绕过页面直接调用后面的步骤.
@@ -482,6 +549,18 @@ class SignFlowTest {
         val call = rig.core.signCalls.single()
         assertEquals(2u, call.renderedFields)
         assertTrue(call.reviewDigest.contentEquals(REVIEW_DIGEST))
+        assertFalse(call.confirmedTwice)
+    }
+
+    @Test
+    fun theSecondConfirmationGoesBackToTheCore() = runTest {
+        val rig = ready { it.core.review = reviewOf(Risk.Unknown, ConfirmMode.HoldConfirm) }
+        toReview(rig)
+        holdToTheEnd(rig)
+        rig.flow.scan.confirmSecond()
+        advanceUntilIdle()
+        submit(rig.flow, PIN)
+        assertTrue(rig.core.signCalls.single().confirmedTwice)
     }
 
     @Test

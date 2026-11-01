@@ -99,6 +99,12 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
 
     private var holdJob: Job? = null
 
+    /** 长按满了,等用户再确认一次.只有 [ConfirmMode.HoldConfirm] 才走到这里. */
+    var awaitingSecondConfirm by mutableStateOf(false)
+        private set
+
+    private var confirmedTwice = false
+
     /** A6 的内容看到底才能确认.一屏放得下时一进页面就是 true,看过之后不再收回. */
     var reviewRead by mutableStateOf(false)
         private set
@@ -171,6 +177,8 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         progress = 0f
         mismatchFingerprint = null
         renderedFields = 0u
+        awaitingSecondConfirm = false
+        confirmedTwice = false
         holdCancel()
     }
 
@@ -256,6 +264,8 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
             else -> {
                 reviewRead = false
                 renderedFields = 0u
+                awaitingSecondConfirm = false
+                confirmedTwice = false
                 result = ScanResult.Request(reviewed)
                 host.stack = listOf(Screen.Home, Screen.Review)
             }
@@ -301,8 +311,10 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
 
     /** 按下时开始计时,满 3 秒才继续,中途松手作废.Tap 和 Refuse 都走不到这里. */
     fun holdStart() {
-        if (review?.confirm != ConfirmMode.Hold || host.screen != Screen.Review || host.busy) return
-        if (!reviewRead || holdJob != null) return
+        val confirm = review?.confirm
+        if (confirm != ConfirmMode.Hold && confirm != ConfirmMode.HoldConfirm) return
+        if (host.screen != Screen.Review || host.busy || !reviewRead || holdJob != null) return
+        confirmedTwice = false
         holdJob =
             host.scope.launch {
                 repeat(HOLD_TICKS) { tick ->
@@ -311,8 +323,22 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
                 }
                 holdJob = null
                 holdProgress = 0f
-                proceedToPin()
+                if (confirm == ConfirmMode.HoldConfirm) awaitingSecondConfirm = true else proceedToPin()
             }
+    }
+
+    /** 二次确认.只有长按满了才会出现这一步. */
+    fun confirmSecond() {
+        if (!awaitingSecondConfirm || review?.confirm != ConfirmMode.HoldConfirm) return
+        if (host.screen != Screen.Review || host.busy) return
+        awaitingSecondConfirm = false
+        confirmedTwice = true
+        proceedToPin()
+    }
+
+    /** 不继续,回到长按. */
+    fun cancelSecondConfirm() {
+        awaitingSecondConfirm = false
     }
 
     fun holdCancel() {
@@ -327,8 +353,11 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         val message = scanned?.message
         val shown = review
         val rendered = renderedFields
+        val twice = confirmedTwice
         return UnlockTask(
-            use = { wallet, saved -> sign(wallet, saved, requireNotNull(message), requireNotNull(shown), rendered) },
+            use = { wallet, saved ->
+                sign(wallet, saved, requireNotNull(message), requireNotNull(shown), rendered, twice)
+            },
             finish = { outcome -> applySigned(outcome) },
         )
     }
@@ -340,6 +369,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         message: ByteArray,
         shown: ReviewResult,
         rendered: UInt,
+        twice: Boolean,
     ): SignOutcome {
         val keys = session.keysOf(wallet, saved)
         val highest = store.readHighestChange()
@@ -347,7 +377,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         val check = core.reviewRequest(message, keys, highest, manifest)
         if (check.fingerprintMismatch) return SignOutcome.Mismatch(check.requestFingerprint)
         if (check.refused) return SignOutcome.Refused(check.alerts.firstOrNull() ?: "这笔交易包含禁止的动作")
-        val outcome = wallet.signRequest(message, keys, highest, manifest, shown.reviewDigest, rendered)
+        val outcome = wallet.signRequest(message, keys, highest, manifest, shown.reviewDigest, rendered, twice)
         outcome.changeIndex?.let { index ->
             val slot = if (outcome.changeIsTestnet) highest.testnet else highest.mainnet
             if (index > slot) store.writeHighestChange(outcome.changeIsTestnet, index)

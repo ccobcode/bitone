@@ -2,6 +2,7 @@
 
 use crate::decode::{self, Decoded, Failure, Kind, NodeId, SourceKind};
 use crate::policy::{Assessment, Finding};
+use crate::{Chain, Mode, Network};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -28,10 +29,6 @@ pub enum Forbid {
     ParseFailed,
     #[error("Chain ID 与网络不符")]
     ChainIdMismatch,
-    #[error("这笔交易没有 Chain ID,签名可以在多条链上重放")]
-    LegacyWithoutChainId,
-    #[error("这个授权的 chain_id 为 0,对所有链生效")]
-    UniversalAuthorization,
     #[error("不支持裸哈希签名")]
     RawHashSigning,
     #[error("不支持消息签名")]
@@ -119,11 +116,17 @@ pub struct FieldRow {
 
 static LABELS: OnceLock<BTreeMap<String, String>> = OnceLock::new();
 
-/// 字段名的显示文字.数据文件里没有时显示字段名,EIP-712 的字段名来自载荷,所以要转义.
-fn field_label(name: &str) -> String {
-    LABELS
-        .get_or_init(|| serde_json::from_str(include_str!("../assets/field-labels.json")).expect("内置字段名有效"))
-        .get(name)
+fn labels() -> &'static BTreeMap<String, String> {
+    LABELS.get_or_init(|| serde_json::from_str(include_str!("../assets/field-labels.json")).expect("内置字段名有效"))
+}
+
+/// 字段名的显示文字.同一个名字在不同链上意思不同时,数据文件的键带链名.
+/// 数据文件里没有时显示字段名,EIP-712 的字段名来自载荷,所以要转义.
+fn field_label(chain: Chain, name: &str) -> String {
+    let labels = labels();
+    labels
+        .get(&[chain.id(), name].join("."))
+        .or_else(|| labels.get(name))
         .cloned()
         .unwrap_or_else(|| decode::escape_text(name))
 }
@@ -141,7 +144,7 @@ fn field_rows(decoded: &Decoded, findings: &BTreeMap<NodeId, Finding>) -> Vec<Fi
                 parent: visit.parent,
                 depth: visit.depth,
                 name: node.name.clone(),
-                label: field_label(&node.name),
+                label: field_label(decoded.chain(), &node.name),
                 kind: node.value.kind(),
                 value: finding.display.clone().unwrap_or_else(|| decode::display(&node.value)),
                 source: node.source.kind(),
@@ -161,12 +164,19 @@ fn review_digest(fields: &[FieldRow], risk: Risk, confirm: Confirm) -> [u8; 32] 
     Sha256::digest(encoded).into()
 }
 
+/// 不能确认是测试网时都显示主网提示.
+fn is_mainnet(network: &str) -> bool {
+    Network::from_id(network).is_none_or(|network| network.mode() == Mode::Mainnet)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Review {
     pub risk: Risk,
     pub confirm: Confirm,
     pub network: String,
+    /// 页面顶部显示"主网,真实资产".
+    pub mainnet: bool,
     pub title: String,
     pub amount: Option<AmountView>,
     /// 收款地址,被授权方,新控制方等.
@@ -194,6 +204,7 @@ impl Review {
             risk: Risk::Forbidden,
             confirm: Confirm::Refuse,
             network: network.to_string(),
+            mainnet: is_mainnet(network),
             title: Risk::Forbidden.label().to_string(),
             amount: None,
             counterparty_label: None,
@@ -238,6 +249,7 @@ impl Review {
             confirm,
             // 本机不认识的网络名来自请求,显示时不能带控制字符.
             network: decode::escape_text(decoded.network()),
+            mainnet: is_mainnet(decoded.network()),
             title: risk.label().to_string(),
             amount: None,
             counterparty_label: None,
@@ -258,7 +270,7 @@ impl Review {
     /// 加一条告警.告警只升级确认方式,类别不变,摘要要跟着确认方式重算.
     pub fn alerted(mut self, alert: &str) -> Self {
         self.alerts.push(alert.to_string());
-        self.confirm = Confirm::of(self.risk, true);
+        self.confirm = self.confirm.max(Confirm::of(self.risk, true));
         self.review_digest = review_digest(&self.fields, self.risk, self.confirm);
         self
     }
@@ -267,9 +279,11 @@ impl Review {
         self.confirm != Confirm::Refuse
     }
 
-    /// 手机带回的结果和这次核对相同才能签名:确认的就是这份内容,而且每一行都画出来了.
-    pub fn matches_shown(&self, digest: &[u8], rendered: u32) -> bool {
-        self.review_digest.as_slice() == digest && self.field_count == rendered
+    /// 手机带回的结果和这次核对相同才能签名:确认的就是这份内容,每一行都画出来了,要二次确认的也确认过了.
+    pub fn matches_shown(&self, digest: &[u8], rendered: u32, confirmed_twice: bool) -> bool {
+        self.review_digest.as_slice() == digest
+            && self.field_count == rendered
+            && (confirmed_twice || self.confirm != Confirm::HoldConfirm)
     }
 }
 
@@ -299,6 +313,7 @@ impl ReviewBuilder {
             risk,
             confirm,
             network: network.to_string(),
+            mainnet: is_mainnet(network),
             title: risk.label().to_string(),
             amount: self.amount,
             counterparty_label: self.counterparty_label,
@@ -386,6 +401,14 @@ mod tests {
     }
 
     #[test]
+    fn an_added_alert_cannot_lower_the_second_confirmation() {
+        let mut review = reviewed(&PAYLOAD);
+        review.risk = Risk::Unknown;
+        review.confirm = Confirm::HoldConfirm;
+        assert_eq!(review.alerted("提示").confirm, Confirm::HoldConfirm);
+    }
+
+    #[test]
     fn no_actions_is_never_treated_as_safe() {
         assert_eq!(ReviewBuilder::default().finish("ethereum").risk, Risk::Unknown);
     }
@@ -431,8 +454,14 @@ mod tests {
 
     #[test]
     fn a_missing_label_shows_the_escaped_name() {
-        assert_eq!(field_label("max_fee_per_gas"), "max_fee_per_gas");
-        assert_eq!(field_label("evil\u{202E}name"), "evil\\u{202e}name");
+        assert_eq!(field_label(Chain::Evm, "not_in_the_file"), "not_in_the_file");
+        assert_eq!(field_label(Chain::Evm, "evil\u{202E}name"), "evil\\u{202e}name");
+    }
+
+    #[test]
+    fn a_chain_can_have_its_own_label_for_a_shared_name() {
+        assert_eq!(field_label(Chain::Evm, "value"), "金额");
+        assert_eq!(field_label(Chain::Bitcoin, "value"), "值");
     }
 
     #[test]
@@ -524,16 +553,30 @@ mod tests {
     #[test]
     fn signing_needs_the_shown_digest_and_every_row() {
         let review = reviewed(&PAYLOAD);
-        assert!(review.matches_shown(&review.review_digest, 4));
-        assert!(!review.matches_shown(&review.review_digest, 3));
-        assert!(!review.matches_shown(&review.review_digest, 5));
-        assert!(!review.matches_shown(&[0; 32], 4));
-        assert!(!review.matches_shown(&[], 4));
+        assert!(review.matches_shown(&review.review_digest, 4, false));
+        assert!(!review.matches_shown(&review.review_digest, 3, false));
+        assert!(!review.matches_shown(&review.review_digest, 5, false));
+        assert!(!review.matches_shown(&[0; 32], 4, false));
+        assert!(!review.matches_shown(&[], 4, false));
+    }
+
+    #[test]
+    fn the_second_confirmation_cannot_be_skipped() {
+        let mut review = reviewed(&PAYLOAD);
+        review.confirm = Confirm::HoldConfirm;
+        assert!(!review.matches_shown(&review.review_digest, 4, false));
+        assert!(review.matches_shown(&review.review_digest, 4, true));
+    }
+
+    #[test]
+    fn a_network_counts_as_mainnet_unless_it_is_a_known_testnet() {
+        assert!(is_mainnet("ethereum"));
+        assert!(is_mainnet("made-up"));
+        assert!(!is_mainnet("sepolia"));
     }
 
     #[test]
     fn the_builtin_labels_are_not_blank() {
-        field_label("anything");
-        assert!(LABELS.get().unwrap().values().all(|label| !label.trim().is_empty()));
+        assert!(labels().values().all(|label| !label.trim().is_empty()));
     }
 }

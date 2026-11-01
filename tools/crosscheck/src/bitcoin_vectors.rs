@@ -108,6 +108,7 @@ fn decoded(payload: &[u8]) -> Result<Decoded, String> {
         kind: 0,
         paths: &[],
         payload,
+        signer: None,
     };
     decode(&PsbtWalker, &input).map_err(|failure| failure.to_string())
 }

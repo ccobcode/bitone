@@ -77,6 +77,8 @@ pub enum RiskLevel {
 pub enum ConfirmMode {
     Tap,
     Hold,
+    /// 长按之后还要明确确认一次.
+    HoldConfirm,
     Refuse,
 }
 
@@ -162,6 +164,8 @@ pub struct ReviewResult {
     pub risk: RiskLevel,
     pub confirm: ConfirmMode,
     pub network: String,
+    /// 页面顶部显示主网提示.
+    pub mainnet: bool,
     pub title: String,
     pub amount: Option<ReviewAmount>,
     pub counterparty_label: Option<String>,
@@ -260,9 +264,11 @@ fn review_result(review: Review, manifest: &Manifest, request_fingerprint: Optio
         confirm: match review.confirm {
             Confirm::Tap => ConfirmMode::Tap,
             Confirm::Hold => ConfirmMode::Hold,
+            Confirm::HoldConfirm => ConfirmMode::HoldConfirm,
             Confirm::Refuse => ConfirmMode::Refuse,
         },
         network: review.network,
+        mainnet: review.mainnet,
         title: review.title,
         amount: review.amount.map(|a| ReviewAmount {
             icon: icon(&a.asset),
@@ -478,6 +484,8 @@ impl UnlockedWallet {
 
     /// 重新核对后签名.核对不通过时返回错误,不接触私钥.
     /// `review_digest` 和 `rendered_fields` 是用户确认的那一页,和重新核对的结果不同时拒绝.
+    /// `confirmed_twice` 表示用户在长按之后又确认了一次,要二次确认的请求没有它时拒绝.
+    #[allow(clippy::too_many_arguments)]
     pub fn sign_request(
         &self,
         message: Vec<u8>,
@@ -486,6 +494,7 @@ impl UnlockedWallet {
         manifest: Option<Vec<u8>>,
         review_digest: Vec<u8>,
         rendered_fields: u32,
+        confirmed_twice: bool,
     ) -> Result<SignOutcome, WalletError> {
         let request = SignRequest::decode(&message)?;
         let keys = PublicKeys::decode(&public_keys)?;
@@ -495,7 +504,7 @@ impl UnlockedWallet {
             manifest: &manifest,
             highest_change: highest_change.into(),
         };
-        if !tx::review(&request, &ctx).matches_shown(&review_digest, rendered_fields) {
+        if !tx::review(&request, &ctx).matches_shown(&review_digest, rendered_fields, confirmed_twice) {
             return Err(bitone_signer::Error::Refused.into());
         }
         let (response, review) = self.wallet.sign(&request, &keys, &manifest, highest_change.into())?;
@@ -801,8 +810,9 @@ mod tests {
         };
         let review = review_request(request.encode(), keys.clone(), NO_CHANGE, None).unwrap();
         assert_eq!((review.risk, review.confirm), (RiskLevel::Transfer, ConfirmMode::Tap));
-        assert!(review.fields.is_empty());
-        assert_eq!(review.field_count, 0);
+        assert!(review.mainnet);
+        let rows = review.field_count;
+        assert_eq!(review.fields.len() as u32, rows);
         let digest = review.review_digest;
         let sign = |digest: &[u8], rendered| {
             wallet.sign_request(
@@ -812,11 +822,12 @@ mod tests {
                 None,
                 digest.to_vec(),
                 rendered,
+                false,
             )
         };
-        assert!(sign(&[0; 32], 0).is_err());
-        assert!(sign(&digest, 1).is_err());
-        let outcome = sign(&digest, 0).unwrap();
+        assert!(sign(&[0; 32], rows).is_err());
+        assert!(sign(&digest, rows - 1).is_err());
+        let outcome = sign(&digest, rows).unwrap();
         assert!(outcome.frames.next_part().unwrap().starts_with("ur:bitone-response/"));
 
         request.fingerprint = [0; 4];
@@ -825,9 +836,48 @@ mod tests {
         assert_eq!(refused.confirm, ConfirmMode::Refuse);
         assert!(
             wallet
-                .sign_request(request.encode(), keys, NO_CHANGE, None, refused.review_digest, 0)
+                .sign_request(request.encode(), keys, NO_CHANGE, None, refused.review_digest, 0, true)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn a_raw_hash_cannot_skip_the_second_confirmation() {
+        use bitone_core::request::KIND_RAW_HASH;
+
+        let sealed = WalletDraft::generate(12)
+            .unwrap()
+            .seal(PIN.into(), TAG.to_vec())
+            .unwrap();
+        let wallet = UnlockedWallet::open(sealed, PIN.into(), TAG.to_vec(), String::new()).unwrap();
+        let keys = wallet.public_keys(false).unwrap();
+        let fingerprint = PublicKeys::decode(&keys).unwrap().fingerprint;
+        let request = SignRequest {
+            version: 1,
+            id: [1; 16],
+            fingerprint,
+            network: "ethereum".into(),
+            kind: KIND_RAW_HASH,
+            paths: vec!["m/44'/60'/0'/0/0".into()],
+            payload: vec![7; 32],
+            hint: None,
+            chain: None,
+        };
+        let review = review_request(request.encode(), keys.clone(), NO_CHANGE, None).unwrap();
+        assert_eq!(review.confirm, ConfirmMode::HoldConfirm);
+        let sign = |twice| {
+            wallet.sign_request(
+                request.encode(),
+                keys.clone(),
+                NO_CHANGE,
+                None,
+                review.review_digest.clone(),
+                review.field_count,
+                twice,
+            )
+        };
+        assert!(sign(false).is_err());
+        assert!(sign(true).is_ok());
     }
 
     #[test]

@@ -158,7 +158,132 @@
             "note": "可替换(BIP-125)"
         }
     },
-    "evm": {},
+    "evm": {
+        "tx-legacy": {
+            "class": "transfer",
+            "alert": null
+        },
+        "tx-eip2930": {
+            "class": "transfer",
+            "alert": null
+        },
+        "tx-eip1559": {
+            "class": "transfer",
+            "alert": null
+        },
+        "tx-eip4844": {
+            "class": "unknown",
+            "alert": "这是 blob 交易,blob 内容不在交易里,本机只看得到版本化哈希,无法核对内容"
+        },
+        "tx-eip7702": {
+            "class": "permission-change",
+            "alert": null
+        },
+        "no-chain-id": {
+            "class": "unknown",
+            "alert": "这笔旧式交易没有 Chain ID,签名后在每条 EVM 链上都能重放,任何人都可以把它广播到别的链"
+        },
+        "native-transfer": {
+            "class": "transfer",
+            "alert": null
+        },
+        "contract-creation": {
+            "class": "unknown",
+            "alert": "这笔交易创建合约,本机看不懂合约代码,无法判断签名后果"
+        },
+        "call": {
+            "class": "transfer",
+            "alert": null
+        },
+        "call-transfer": {
+            "class": "transfer",
+            "alert": null
+        },
+        "call-recognized": {
+            "class": "recognized",
+            "alert": null
+        },
+        "call-approval": {
+            "class": "approval",
+            "alert": null
+        },
+        "call-permission-change": {
+            "class": "permission-change",
+            "alert": null
+        },
+        "call-unknown": {
+            "class": "unknown",
+            "alert": "本机不认识这个合约调用,无法判断签名后果,签名前请确认来源和调用数据"
+        },
+        "call-alert": {
+            "class": "transfer",
+            "alert": "{0}"
+        },
+        "authorization": {
+            "class": "permission-change",
+            "alert": null
+        },
+        "authorization-clear": {
+            "class": "permission-change",
+            "alert": null,
+            "note": "地址为零,这是清除委托"
+        },
+        "authorization-every-chain": {
+            "class": "unknown",
+            "alert": "有授权的 chain_id 为 0,它在每条 EVM 链上都生效"
+        },
+        "authorization-other-chain": {
+            "class": "unknown",
+            "alert": "有授权属于另一条链,这里只显示,不拒绝.它在这笔交易的网络上不生效,在它自己的链上仍然有效"
+        },
+        "authorization-unrecovered": {
+            "class": "unknown",
+            "alert": "有授权恢复不出授权人,链上会跳过它"
+        },
+        "eip7702-authorization": {
+            "class": "unknown",
+            "alert": "这是 EIP-7702 授权,不是交易.任何人都能拿它把这个账户委托给页面上的地址,委托的代码可以动用账户的全部资产"
+        },
+        "eip712-digest": {
+            "class": "unknown",
+            "alert": "这是 EIP-712 消息的摘要,本机只看得到两个哈希,看不到消息内容.它可能是授权或转走资产的签名",
+            "second": true
+        },
+        "personal-sign": {
+            "class": "unknown",
+            "alert": "这是消息签名,不是交易.请确认内容和来源,这段内容可能被合约当作授权"
+        },
+        "eip191-validator": {
+            "class": "unknown",
+            "alert": "这是 EIP-191 版本 0 的签名,含义由验证者合约决定,本机无法判断签名后果"
+        },
+        "eip191-unknown": {
+            "class": "unknown",
+            "alert": "这个 EIP-191 版本本机不认识,无法判断签名后果",
+            "second": true
+        },
+        "raw-hash": {
+            "class": "unknown",
+            "alert": "这是裸哈希签名,本机看不到它对应的内容.它可以是一笔转账,一次授权或任何其他操作",
+            "second": true
+        },
+        "path-unusual": {
+            "class": "transfer",
+            "alert": "派生路径 {0} 不是本机导出的账户,付款地址要解锁才算得出来,请确认这是你用过的路径"
+        },
+        "fee-high": {
+            "class": "transfer",
+            "alert": "手续费明显偏高"
+        },
+        "network-renamed": {
+            "class": "transfer",
+            "alert": "请求里的网络名 {0} 本机不认识,这里按 Chain ID 显示 {1}"
+        },
+        "chain-unknown": {
+            "class": "unknown",
+            "alert": "本机不认识 Chain ID {0},网络名 {1} 只是请求里的声明,金额显示原始整数"
+        }
+    },
     "solana": {},
     "tron": {}
 }

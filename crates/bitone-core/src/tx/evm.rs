@@ -1,17 +1,23 @@
-//! EVM 交易:严格解析,分类,构建和核验.
+//! EVM:核对,签名原文,构建和核验.解码在 `decode`,这里算出策略要的事实.
 //!
-//! 解析后必须能重新编码回完全相同的字节,这样冷钱包展示的内容和实际签名的内容不可能不一致.
+//! 第 1.1 节:本机认识的网络和 Chain ID 矛盾时拒绝,其余内容都可以签,解码和规则只负责让用户看清楚.
 
 use crate::address::{eth_address_bytes, evm_text, parse_evm_address};
-use crate::path::DerivationPath;
-use crate::policy;
-use crate::request::{KIND_TRANSACTION, KIND_TYPED_DATA, SignRequest, SignResponse};
-use crate::review::{ActionView, AmountView, Forbid, Review, ReviewBuilder, Risk, Row};
+use crate::decode::{
+    self, Coin, Decoded, Decoder, EvmPayload, EvmWalker, PersonalWalker, RawHashWalker, Tx, parse_evm,
+};
+use crate::path::{DerivationPath, check_evm_path, is_usual_evm_path};
+use crate::policy::{self, EvmFacts};
+use crate::request::{KIND_PERSONAL_SIGN, KIND_RAW_HASH, KIND_TRANSACTION, KIND_TYPED_DATA, SignRequest, SignResponse};
+use crate::review::{ActionView, AmountView, Forbid, RawLine, Review, Risk, Row};
 use crate::tx::abi::{self, Style};
-use crate::tx::{ReviewContext, Verified, check_signature, raw_lines, signer_path};
-use crate::units::{decimal_from_be, format_units};
-use crate::{Error, Network};
-use alloy_rlp::{Encodable, Header};
+use crate::tx::{ReviewContext, Verified, check_signature, native_alert, raw_lines};
+use crate::units::format_units;
+use crate::{Chain, Error, Mode, Network};
+use alloy_consensus::{SignableTransaction, Transaction};
+use alloy_eips::Encodable2718;
+use alloy_eips::eip7702::SignedAuthorization;
+use alloy_primitives::{Address, Bytes, Signature, TxKind, U256, eip191_hash_message};
 use bitcoin::hex::DisplayHex;
 use serde_json::Value;
 use sha3::{Digest, Keccak256};
@@ -20,447 +26,427 @@ mod typed;
 
 pub use typed::typed_data_hash;
 
+/// 官方类型.构建和测试用.
+pub mod types {
+    pub use alloy_consensus::{TxEip1559, TxEip2930, TxEip4844, TxEip7702, TxLegacy};
+    pub use alloy_eips::eip2930::{AccessList, AccessListItem};
+    pub use alloy_eips::eip7702::{Authorization, SignedAuthorization};
+    pub use alloy_primitives::{Address, B256, Bytes, Signature, TxKind, U256};
+    pub use alloy_rlp::encode as rlp_encode;
+}
+
+/// 派生路径的层数上限,BIP-32 的深度只有一个字节.
+const MAX_PATH_DEPTH: usize = 255;
+
+/// 未签名的交易.只能由官方类型得到,所以解码,展示和签名看到的是同一份内容.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Authorization {
-    pub chain_id: u64,
-    pub address: [u8; 20],
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Fees {
-    /// 类型 0 和 1.
-    GasPrice(u128),
-    /// 类型 2 和 4.
-    Dynamic { max_priority: u128, max_fee: u128 },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UnsignedTx {
-    pub tx_type: u8,
-    pub chain_id: u64,
-    pub nonce: u64,
-    pub fees: Fees,
-    pub gas_limit: u64,
-    pub to: Option<[u8; 20]>,
-    pub value: Vec<u8>,
-    pub data: Vec<u8>,
-    /// 访问列表的原始编码,含列表头.
-    pub access_list: Vec<u8>,
-    pub access_list_len: usize,
-    /// 授权列表的原始编码,含列表头.只有类型 4 有.
-    pub authorization_list: Vec<u8>,
-    pub authorizations: Vec<Authorization>,
-}
-
-fn item<'a>(buf: &mut &'a [u8]) -> Result<&'a [u8], Forbid> {
-    let header = Header::decode(buf).map_err(|_| Forbid::ParseFailed)?;
-    if header.list || header.payload_length > buf.len() {
-        return Err(Forbid::ParseFailed);
-    }
-    let (value, rest) = buf.split_at(header.payload_length);
-    *buf = rest;
-    Ok(value)
-}
-
-fn raw_list<'a>(buf: &mut &'a [u8]) -> Result<(&'a [u8], &'a [u8]), Forbid> {
-    let start = *buf;
-    let header = Header::decode(buf).map_err(|_| Forbid::ParseFailed)?;
-    if !header.list || header.payload_length > buf.len() {
-        return Err(Forbid::ParseFailed);
-    }
-    let (body, rest) = buf.split_at(header.payload_length);
-    *buf = rest;
-    Ok((&start[..start.len() - rest.len()], body))
-}
-
-fn uint(buf: &mut &[u8]) -> Result<u128, Forbid> {
-    let value = item(buf)?;
-    if value.len() > 16 || value.first() == Some(&0) {
-        return Err(Forbid::ParseFailed);
-    }
-    Ok(value.iter().fold(0u128, |acc, b| acc << 8 | *b as u128))
-}
-
-fn uint64(buf: &mut &[u8]) -> Result<u64, Forbid> {
-    u64::try_from(uint(buf)?).map_err(|_| Forbid::ParseFailed)
-}
-
-fn big(buf: &mut &[u8]) -> Result<Vec<u8>, Forbid> {
-    let value = item(buf)?;
-    if value.len() > 32 || value.first() == Some(&0) {
-        return Err(Forbid::ParseFailed);
-    }
-    Ok(value.to_vec())
-}
-
-fn destination(buf: &mut &[u8]) -> Result<Option<[u8; 20]>, Forbid> {
-    let value = item(buf)?;
-    match value.len() {
-        0 => Ok(None),
-        20 => Ok(Some(value.try_into().expect("20 字节"))),
-        _ => Err(Forbid::ParseFailed),
-    }
-}
-
-fn count_items(mut body: &[u8]) -> Result<usize, Forbid> {
-    let mut count = 0;
-    while !body.is_empty() {
-        raw_list(&mut body)?;
-        count += 1;
-    }
-    Ok(count)
-}
-
-fn authorizations(mut body: &[u8]) -> Result<Vec<Authorization>, Forbid> {
-    let mut list = Vec::new();
-    while !body.is_empty() {
-        let (_, mut tuple) = raw_list(&mut body)?;
-        let chain_id = uint64(&mut tuple)?;
-        let address = destination(&mut tuple)?.ok_or(Forbid::ParseFailed)?;
-        list.push(Authorization { chain_id, address });
-    }
-    Ok(list)
-}
+pub struct UnsignedTx(Tx);
 
 impl UnsignedTx {
+    pub fn new(tx: impl Into<Tx>) -> Self {
+        Self(tx.into())
+    }
+
+    /// 只认交易.解码器保证重新编码回完全相同的字节.
     pub fn decode(payload: &[u8]) -> Result<Self, Forbid> {
-        let first = *payload.first().ok_or(Forbid::ParseFailed)?;
-        let tx = match first {
-            0x01 | 0x02 | 0x04 => Self::decode_typed(first, &payload[1..])?,
-            0xc0..=0xff => Self::decode_legacy(payload)?,
-            _ => return Err(Forbid::Unsupported),
-        };
-        if tx.encode() != payload {
-            return Err(Forbid::ParseFailed);
+        match parse_evm(payload).map_err(|_| Forbid::ParseFailed)? {
+            EvmPayload::Transaction(tx) => Ok(Self(*tx)),
+            EvmPayload::Authorization(_) | EvmPayload::Message | EvmPayload::Unknown => Err(Forbid::ParseFailed),
         }
-        Ok(tx)
-    }
-
-    fn decode_typed(tx_type: u8, mut bytes: &[u8]) -> Result<Self, Forbid> {
-        let (_, mut body) = raw_list(&mut bytes)?;
-        if !bytes.is_empty() {
-            return Err(Forbid::ParseFailed);
-        }
-        let chain_id = uint64(&mut body)?;
-        let nonce = uint64(&mut body)?;
-        let fees = if tx_type == 0x01 {
-            Fees::GasPrice(uint(&mut body)?)
-        } else {
-            let max_priority = uint(&mut body)?;
-            Fees::Dynamic {
-                max_priority,
-                max_fee: uint(&mut body)?,
-            }
-        };
-        let gas_limit = uint64(&mut body)?;
-        let to = destination(&mut body)?;
-        let value = big(&mut body)?;
-        let data = item(&mut body)?.to_vec();
-        let (access_list, access_body) = raw_list(&mut body)?;
-        let (authorization_list, authorizations) = if tx_type == 0x04 {
-            let (raw, inner) = raw_list(&mut body)?;
-            (raw.to_vec(), authorizations(inner)?)
-        } else {
-            (Vec::new(), Vec::new())
-        };
-        if !body.is_empty() {
-            return Err(Forbid::ParseFailed);
-        }
-        Ok(Self {
-            tx_type,
-            chain_id,
-            nonce,
-            fees,
-            gas_limit,
-            to,
-            value,
-            data,
-            access_list: access_list.to_vec(),
-            access_list_len: count_items(access_body)?,
-            authorization_list,
-            authorizations,
-        })
-    }
-
-    fn decode_legacy(mut bytes: &[u8]) -> Result<Self, Forbid> {
-        let (_, mut body) = raw_list(&mut bytes)?;
-        if !bytes.is_empty() {
-            return Err(Forbid::ParseFailed);
-        }
-        let nonce = uint64(&mut body)?;
-        let gas_price = uint(&mut body)?;
-        let gas_limit = uint64(&mut body)?;
-        let to = destination(&mut body)?;
-        let value = big(&mut body)?;
-        let data = item(&mut body)?.to_vec();
-        if body.is_empty() {
-            return Err(Forbid::LegacyWithoutChainId);
-        }
-        let chain_id = uint64(&mut body)?;
-        if uint(&mut body)? != 0 || uint(&mut body)? != 0 || !body.is_empty() {
-            return Err(Forbid::ParseFailed);
-        }
-        Ok(Self {
-            tx_type: 0,
-            chain_id,
-            nonce,
-            fees: Fees::GasPrice(gas_price),
-            gas_limit,
-            to,
-            value,
-            data,
-            access_list: Vec::new(),
-            access_list_len: 0,
-            authorization_list: Vec::new(),
-            authorizations: Vec::new(),
-        })
-    }
-
-    fn fields(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-        if self.tx_type != 0 {
-            self.chain_id.encode(&mut out);
-        }
-        self.nonce.encode(&mut out);
-        match self.fees {
-            Fees::GasPrice(price) => price.encode(&mut out),
-            Fees::Dynamic { max_priority, max_fee } => {
-                max_priority.encode(&mut out);
-                max_fee.encode(&mut out);
-            }
-        }
-        self.gas_limit.encode(&mut out);
-        match &self.to {
-            Some(address) => address.as_slice().encode(&mut out),
-            None => (&[][..] as &[u8]).encode(&mut out),
-        }
-        self.value.as_slice().encode(&mut out);
-        self.data.as_slice().encode(&mut out);
-        if self.tx_type != 0 {
-            out.extend_from_slice(&self.access_list);
-            out.extend_from_slice(&self.authorization_list);
-        }
-        out
-    }
-
-    fn wrap(&self, fields: Vec<u8>) -> Vec<u8> {
-        let mut out = Vec::new();
-        if self.tx_type != 0 {
-            out.push(self.tx_type);
-        }
-        Header {
-            list: true,
-            payload_length: fields.len(),
-        }
-        .encode(&mut out);
-        out.extend_from_slice(&fields);
-        out
     }
 
     /// 未签名编码,也就是签名哈希的原文.
     pub fn encode(&self) -> Vec<u8> {
-        let mut fields = self.fields();
-        if self.tx_type == 0 {
-            self.chain_id.encode(&mut fields);
-            0u8.encode(&mut fields);
-            0u8.encode(&mut fields);
-        }
-        self.wrap(fields)
+        self.0.encoded_for_signing()
     }
 
-    /// 装上签名,得到可以广播的原始交易.
-    pub fn assemble(&self, signature: &[u8; 65]) -> Vec<u8> {
-        let mut fields = self.fields();
-        let parity = signature[64] as u64;
-        let v = if self.tx_type == 0 {
-            self.chain_id * 2 + 35 + parity
-        } else {
-            parity
-        };
-        v.encode(&mut fields);
-        trimmed(&signature[..32]).encode(&mut fields);
-        trimmed(&signature[32..64]).encode(&mut fields);
-        self.wrap(fields)
+    /// 装上签名,得到可以广播的原始交易.类型 0x03 是共识形式,边车由广播方附上.
+    pub fn assemble(&self, signature: &[u8; 65]) -> Result<Vec<u8>, Error> {
+        let signature = Signature::from_raw_array(signature).map_err(|_| Error::BadSignature)?;
+        Ok(self.0.clone().into_envelope(signature).encoded_2718())
     }
 
-    /// 最高手续费,单位是最小单位.
-    pub fn fee_cap(&self) -> u128 {
-        let price = match self.fees {
-            Fees::GasPrice(price) => price,
-            Fees::Dynamic { max_fee, .. } => max_fee,
-        };
-        price.saturating_mul(self.gas_limit as u128)
+    /// 最高手续费,单位是最小单位.类型 0x03 含 blob 费.
+    pub fn fee_cap(&self) -> U256 {
+        decode::fee_cap(&self.0)
     }
-}
 
-fn trimmed(bytes: &[u8]) -> &[u8] {
-    let start = bytes.iter().position(|b| *b != 0).unwrap_or(bytes.len());
-    &bytes[start..]
+    pub fn chain_id(&self) -> Option<u64> {
+        self.0.chain_id()
+    }
 }
 
 pub fn keccak(bytes: &[u8]) -> [u8; 32] {
     Keccak256::digest(bytes).into()
 }
 
-fn signer_path_row(network: Network, chain_id: u64, payer: &str, path: &DerivationPath) -> [Row; 4] {
-    [
+pub(super) fn signer_path_row(network: Network, chain_id: u64, payer: Option<&str>, path: &DerivationPath) -> Vec<Row> {
+    let mut rows = vec![
         Row::text("网络", network.label()),
         Row::text("Chain ID", chain_id.to_string()),
-        Row::mono("付款账户", payer),
-        Row::mono("派生路径", path.to_string()),
-    ]
+    ];
+    rows.extend(payer.map(|payer| Row::mono("付款账户", payer)));
+    rows.push(Row::mono("派生路径", path.to_string()));
+    rows
 }
 
-fn tx_type_label(tx_type: u8) -> String {
-    match tx_type {
-        0 => "0x00 旧式".to_string(),
-        1 => "0x01 访问列表".to_string(),
-        2 => "0x02 EIP-1559".to_string(),
-        other => format!("0x{other:02x} EIP-7702"),
+/// 路径不设白名单.只有一条路径才知道用哪把私钥.
+fn request_path(request: &SignRequest) -> Result<DerivationPath, Forbid> {
+    let [path] = request.paths.as_slice() else {
+        return Err(Forbid::PathNotAllowed);
+    };
+    let path = DerivationPath::parse(path).map_err(|_| Forbid::PathNotAllowed)?;
+    if path.0.len() > MAX_PATH_DEPTH {
+        return Err(Forbid::PathNotAllowed);
+    }
+    check_evm_path(&path).map_err(|_| Forbid::PathNetworkMismatch)?;
+    Ok(path)
+}
+
+/// 付款地址.没有导出的路径保存的公钥算不出来,页面显示路径并告警.
+fn signer_address(ctx: &ReviewContext, path: &DerivationPath) -> Result<Option<String>, Forbid> {
+    match ctx.keys.secp256k1(path) {
+        Ok(key) => Ok(Some(evm_text(
+            &eth_address_bytes(&key).map_err(|_| Forbid::AddressMismatch)?,
+        ))),
+        Err(Forbid::PathNotAllowed) => Ok(None),
+        Err(reason) => Err(reason),
     }
 }
 
-fn gwei(value: u128) -> String {
-    format!("{} Gwei", format_units(&value.to_string(), 9))
+/// 这笔签名属于哪个网络.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Target<'a> {
+    Known(Network),
+    /// 谁也不认识的网络,这是请求里的名字.
+    Foreign(&'a str),
 }
 
-pub fn review(network: Network, request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forbid> {
-    let path = signer_path(request, network)?;
-    let key = ctx.keys.secp256k1(&path)?;
-    let payer = evm_text(&eth_address_bytes(&key).map_err(|_| Forbid::AddressMismatch)?);
-    match request.kind {
-        KIND_TRANSACTION => review_tx(network, request, ctx, &payer, &path),
-        KIND_TYPED_DATA => typed::review(network, request, ctx, &payer, &path),
-        _ => Err(Forbid::RawHashSigning),
-    }
-}
-
-fn review_tx(
-    network: Network,
-    request: &SignRequest,
-    ctx: &ReviewContext,
-    payer: &str,
-    path: &DerivationPath,
-) -> Result<Review, Forbid> {
-    let tx = UnsignedTx::decode(&request.payload)?;
-    let chain_id = network.evm_chain_id().ok_or(Forbid::UnknownNetwork)?;
-    if tx.chain_id != chain_id {
-        return Err(Forbid::ChainIdMismatch);
-    }
-    for auth in &tx.authorizations {
-        if auth.chain_id == 0 {
-            return Err(Forbid::UniversalAuthorization);
-        }
-        if auth.chain_id != chain_id {
-            return Err(Forbid::ChainIdMismatch);
+impl Target<'_> {
+    fn id(&self) -> &str {
+        match self {
+            Self::Known(network) => network.id(),
+            Self::Foreign(name) => name,
         }
     }
 
-    let native = ctx.native(network);
-    let value_text = format_units(&decimal_from_be(&tx.value), native.decimals);
-    let has_value = !tx.value.is_empty();
+    fn network(&self) -> Option<Network> {
+        match self {
+            Self::Known(network) => Some(*network),
+            Self::Foreign(_) => None,
+        }
+    }
+}
+
+/// 载荷对网络的约束.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Binding {
+    /// 交易的 Chain ID,和本机认识的网络不符是矛盾.
+    required: Option<u64>,
+    /// 签名绑定的链.没有时这个签名不限于一条链.
+    bound: Option<u64>,
+}
+
+fn binding_of(payload: &EvmPayload) -> Binding {
+    match payload {
+        EvmPayload::Transaction(tx) => Binding {
+            required: tx.chain_id(),
+            bound: tx.chain_id(),
+        },
+        // 第 1.1 节:授权属于别的链只显示不拒绝.0 表示每条链.
+        EvmPayload::Authorization(authorization) => Binding {
+            required: None,
+            bound: u64::try_from(authorization.chain_id).ok().filter(|id| *id != 0),
+        },
+        EvmPayload::Message | EvmPayload::Unknown => Binding::default(),
+    }
+}
+
+/// 本机认识的网络和 Chain ID 不符时拒绝.请求的名字本机不认识时以 Chain ID 为准,编出来的名字不能改变显示.
+fn resolve<'a>(declared: Option<Network>, name: &'a str, binding: Binding) -> Result<Target<'a>, Forbid> {
+    match declared {
+        Some(network) if binding.required.is_some_and(|id| network.evm_chain_id() != Some(id)) => {
+            Err(Forbid::ChainIdMismatch)
+        }
+        Some(network) => Ok(Target::Known(network)),
+        None => Ok(binding
+            .bound
+            .and_then(Network::from_evm_chain_id)
+            .map_or(Target::Foreign(name), Target::Known)),
+    }
+}
+
+/// EVM 的路径不分主网和测试网,这里看 Chain ID.没有 Chain ID 的签名不能确认是测试网.
+fn mode_of(binding: Binding) -> Mode {
+    match binding.bound.and_then(Network::from_evm_chain_id) {
+        Some(network) => network.mode(),
+        None => Mode::Mainnet,
+    }
+}
+
+/// 页面顶部的摘要和旧字段,第 9 节删除.类别和告警都来自策略.
+#[derive(Default)]
+struct Summary {
+    amount: Option<AmountView>,
+    counterparty_label: Option<String>,
+    counterparty: Option<String>,
+    actions: Vec<ActionView>,
+    raw: Vec<RawLine>,
+    facts: EvmFacts,
+}
+
+fn call_note(actions: &[ActionView]) -> Option<String> {
+    let lines: Vec<String> = actions
+        .iter()
+        .map(|action| {
+            let rows: Vec<String> = action
+                .rows
+                .iter()
+                .map(|row| [row.label.as_str(), row.value.as_str()].join(" "))
+                .collect();
+            [action.title.as_str(), rows.join(",").as_str()].join(":")
+        })
+        .collect();
+    (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
+fn native_amount(target: &Target<'_>, ctx: &ReviewContext, value: U256) -> AmountView {
+    let raw = value.to_string();
+    match target.network() {
+        Some(network) => {
+            let native = ctx.native(network);
+            AmountView {
+                text: format_units(&raw, native.decimals),
+                symbol: Some(native.symbol.clone()),
+                asset: Some(native.key()),
+                unlimited: false,
+            }
+        }
+        None => AmountView {
+            text: raw,
+            symbol: None,
+            asset: None,
+            unlimited: false,
+        },
+    }
+}
+
+fn delegation(authorization: &SignedAuthorization, signer: Option<&str>) -> ActionView {
+    let current = decode::authority(authorization)
+        .map(|address| address.to_string())
+        .or(signer.map(str::to_string));
+    let mut rows: Vec<Row> = current.iter().map(|text| Row::mono("当前控制方", text)).collect();
+    rows.push(Row::mono("新控制方", authorization.address.to_string()));
+    ActionView {
+        risk: Risk::PermissionChange,
+        title: "EIP-7702 账户委托".to_string(),
+        rows,
+    }
+}
+
+fn summarize(tx: &Tx, target: &Target<'_>, ctx: &ReviewContext, signer: Option<&str>) -> Summary {
+    let value = tx.value();
+    let data: &Bytes = tx.input();
     let style = Style {
-        network: network.id(),
+        network: target.id(),
         manifest: ctx.manifest,
         format: &evm_text,
     };
-    let mut builder = ReviewBuilder::default();
-
-    let native_amount = || AmountView {
-        text: value_text.clone(),
-        symbol: Some(native.symbol.clone()),
-        asset: Some(native.key()),
-        unlimited: false,
-    };
-
-    let classified = match (&tx.to, tx.data.is_empty()) {
-        (Some(to), true) => abi::Classified {
+    let mut facts = EvmFacts::default();
+    let classified = match (tx.kind(), data.is_empty()) {
+        (TxKind::Call(to), true) => abi::Classified {
             risk: Risk::Transfer,
             title: Risk::Transfer.label().to_string(),
-            amount: Some(native_amount()),
+            amount: Some(native_amount(target, ctx, value)),
             counterparty_label: Some("收款地址".into()),
-            counterparty: Some(evm_text(to)),
+            counterparty: Some(to.to_string()),
             alerts: Vec::new(),
             inner: Vec::new(),
             rows: Vec::new(),
         },
-        (Some(to), false) => abi::classify(&style, to, &tx.data, has_value),
-        (None, _) => abi::Classified {
+        (TxKind::Call(to), false) => {
+            let classified = abi::classify(&style, &to.into_array(), data, !value.is_zero());
+            let actions = classified.actions();
+            facts.calls = actions.iter().map(|action| action.risk).collect();
+            // 第 3 节的顺序里无法识别高于授权,一组调用的最低类别是无法识别.
+            if !classified.inner.is_empty() {
+                facts.calls.push(Risk::Unknown);
+            }
+            facts.call_alerts.clone_from(&classified.alerts);
+            facts.call_note = call_note(&actions);
+            classified
+        }
+        (TxKind::Create, _) => abi::Classified {
             risk: Risk::Unknown,
             title: "创建合约".to_string(),
-            amount: has_value.then(native_amount),
+            amount: (!value.is_zero()).then(|| native_amount(target, ctx, value)),
             counterparty_label: None,
             counterparty: None,
             alerts: Vec::new(),
             inner: Vec::new(),
-            rows: vec![Row::text("数据长度", format!("{} 字节", tx.data.len()))],
+            rows: Vec::new(),
         },
     };
-
-    builder.amount = classified.amount.clone();
-    builder.counterparty_label = classified.counterparty_label.clone();
-    builder.counterparty = classified.counterparty.clone();
-    builder.alerts.extend(classified.alerts.iter().cloned());
+    let authorizations = tx.authorization_list().unwrap_or_default();
     let mut actions = classified.actions();
-    // 有账户委托时页面顶部是新控制方,所以这笔交易本身的金额和收款方要放进列表,否则用户看不到.
-    if !tx.authorizations.is_empty() {
+    // 有账户委托时页面顶部是新控制方,这笔交易本身的金额和收款方要放进列表.
+    if !authorizations.is_empty() {
         actions[0] = classified.detailed();
     }
-    builder.actions.extend(actions);
-
-    for auth in &tx.authorizations {
-        builder.actions.push(ActionView {
-            risk: Risk::PermissionChange,
-            title: "EIP-7702 账户委托".to_string(),
-            rows: vec![
-                Row::mono("当前控制方", payer),
-                Row::mono("新控制方", evm_text(&auth.address)),
-            ],
-        });
-        builder.counterparty_label = Some("新控制方".into());
-        builder.counterparty = Some(evm_text(&auth.address));
+    actions.extend(
+        authorizations
+            .iter()
+            .map(|authorization| delegation(authorization, signer)),
+    );
+    let new_controller = authorizations.last().map(|authorization| authorization.address);
+    facts.fee_high = target
+        .network()
+        .is_some_and(|network| decode::fee_cap(tx) > U256::from(policy::fee_ceiling(network)));
+    Summary {
+        amount: classified.amount,
+        counterparty_label: new_controller.map_or(classified.counterparty_label, |_| Some("新控制方".to_string())),
+        counterparty: new_controller.map_or(classified.counterparty, |address: Address| Some(address.to_string())),
+        actions,
+        raw: raw_lines(data),
+        facts,
     }
-
-    let cap = tx.fee_cap();
-    if cap > policy::fee_ceiling(network) {
-        builder.alerts.push("手续费上限明显偏高".to_string());
-    }
-    let cap_text = format!("{} {}", format_units(&cap.to_string(), native.decimals), native.symbol);
-
-    builder.rows.extend(signer_path_row(network, chain_id, payer, path));
-    builder.rows.push(Row::text("Nonce", tx.nonce.to_string()));
-    builder.rows.push(Row::text("交易类型", tx_type_label(tx.tx_type)));
-    if has_value && (tx.to.is_none() || !tx.data.is_empty()) {
-        builder
-            .rows
-            .push(Row::text("附带金额", format!("{value_text} {}", native.symbol)));
-    }
-    builder.rows.push(Row::text("Gas Limit", tx.gas_limit.to_string()));
-    match tx.fees {
-        Fees::GasPrice(price) => builder.rows.push(Row::text("Gas 单价", gwei(price))),
-        Fees::Dynamic { max_priority, max_fee } => {
-            builder.rows.push(Row::text("最高单价", gwei(max_fee)));
-            builder.rows.push(Row::text("优先费", gwei(max_priority)));
-        }
-    }
-    builder.rows.push(Row::text("手续费上限", cap_text));
-    if tx.access_list_len > 0 {
-        builder
-            .rows
-            .push(Row::text("访问列表", format!("{} 项", tx.access_list_len)));
-    }
-    builder.raw = raw_lines(&tx.data);
-    Ok(builder.finish(network.id()))
 }
 
+fn coin_of(target: &Target<'_>) -> Option<Coin> {
+    target
+        .network()
+        .map(Network::native_coin)
+        .map(|(unit, decimals)| Coin { unit, decimals })
+}
+
+/// 这笔请求的公共部分.
+struct Reviewing<'a> {
+    request: &'a SignRequest,
+    ctx: &'a ReviewContext<'a>,
+    path: DerivationPath,
+    signer: Option<String>,
+}
+
+impl Reviewing<'_> {
+    fn decoded(&self, decoder: &impl Decoder, target: &Target<'_>, mode: Mode) -> Result<Decoded, decode::Failure> {
+        decode::decode(
+            decoder,
+            &decode::Input {
+                chain: Chain::Evm,
+                mode: Some(mode),
+                network: target.id(),
+                kind: self.request.kind,
+                paths: &self.request.paths,
+                payload: &self.request.payload,
+                signer: self.signer.as_deref(),
+            },
+        )
+    }
+
+    fn finish(
+        &self,
+        decoded: Result<Decoded, decode::Failure>,
+        target: &Target<'_>,
+        binding: Binding,
+        declared: Option<Network>,
+        mut summary: Summary,
+    ) -> Review {
+        let decoded = match decoded {
+            Ok(decoded) => decoded,
+            Err(failure) => return Review::undecodable(&self.request.network, &failure),
+        };
+        let name = decode::escape_text(&self.request.network);
+        summary.facts.signer.clone_from(&self.signer);
+        summary.facts.unusual_path = (!is_usual_evm_path(&self.path)).then(|| self.path.to_string());
+        summary.facts.renamed = match (declared, target.network()) {
+            (None, Some(network)) => Some((name.clone(), network.label().to_string())),
+            (Some(_) | None, Some(_) | None) => None,
+        };
+        summary.facts.unknown_chain = match (target, binding.required) {
+            (Target::Foreign(_), Some(chain_id)) => Some((chain_id.to_string(), name)),
+            (Target::Foreign(_) | Target::Known(_), Some(_) | None) => None,
+        };
+        let assessment = policy::assess_evm(&decoded, &summary.facts);
+        let review = Review {
+            amount: summary.amount,
+            counterparty_label: summary.counterparty_label,
+            counterparty: summary.counterparty,
+            actions: summary.actions,
+            rows: self.signer.iter().map(|signer| Row::mono("付款账户", signer)).collect(),
+            raw: summary.raw,
+            mainnet: mode_of(binding) == Mode::Mainnet,
+            ..Review::assessed(&decoded, assessment)
+        };
+        // 请求没有说明网络时清单还没查过.
+        match (declared, target.network()) {
+            (None, Some(network)) => native_alert(review, network, self.ctx),
+            (Some(_) | None, Some(_) | None) => review,
+        }
+    }
+
+    fn payload(&self, declared: Option<Network>) -> Result<Review, Forbid> {
+        let parsed = parse_evm(&self.request.payload);
+        let binding = parsed.as_ref().map_or_else(|_| Binding::default(), binding_of);
+        let target = resolve(declared, &self.request.network, binding)?;
+        let walker = EvmWalker {
+            coin: coin_of(&target),
+            chain_id: target.network().and_then(Network::evm_chain_id),
+        };
+        let summary = match &parsed {
+            Ok(EvmPayload::Transaction(tx)) => summarize(tx, &target, self.ctx, self.signer.as_deref()),
+            Ok(EvmPayload::Authorization(_) | EvmPayload::Message | EvmPayload::Unknown) | Err(_) => Summary::default(),
+        };
+        let decoded = self.decoded(&walker, &target, mode_of(binding));
+        Ok(self.finish(decoded, &target, binding, declared, summary))
+    }
+
+    /// 裸哈希和消息不绑定链,网络名只是声明.
+    fn unbound(&self, decoder: &impl Decoder, declared: Option<Network>) -> Review {
+        let target = declared.map_or(Target::Foreign(&self.request.network), Target::Known);
+        let binding = Binding::default();
+        let decoded = self.decoded(decoder, &target, mode_of(binding));
+        self.finish(decoded, &target, binding, declared, Summary::default())
+    }
+}
+
+pub fn review(declared: Option<Network>, request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forbid> {
+    let path = request_path(request)?;
+    let signer = signer_address(ctx, &path)?;
+    let reviewing = Reviewing {
+        request,
+        ctx,
+        path,
+        signer,
+    };
+    match request.kind {
+        KIND_TRANSACTION => reviewing.payload(declared),
+        KIND_RAW_HASH => Ok(reviewing.unbound(&RawHashWalker, declared)),
+        KIND_PERSONAL_SIGN => Ok(reviewing.unbound(&PersonalWalker, declared)),
+        KIND_TYPED_DATA => {
+            let network = declared.ok_or(Forbid::UnknownNetwork)?;
+            let path = &reviewing.path;
+            let review = typed::review(network, request, ctx, reviewing.signer.as_deref(), path)?;
+            Ok(if is_usual_evm_path(path) {
+                review
+            } else {
+                review.alerted(&policy::unusual_path_alert(&path.to_string()))
+            })
+        }
+        _ => Err(Forbid::Unsupported),
+    }
+}
+
+/// 签名原文的哈希.`request` 已经过核对.未知的交易类型按 `keccak256(payload)` 计算.
 pub fn signing_hash(request: &SignRequest) -> Result<[u8; 32], Forbid> {
     match request.kind {
-        KIND_TRANSACTION => Ok(keccak(&UnsignedTx::decode(&request.payload)?.encode())),
+        KIND_TRANSACTION => Ok(keccak(&request.payload)),
         KIND_TYPED_DATA => {
             let data: Value = serde_json::from_slice(&request.payload).map_err(|_| Forbid::ParseFailed)?;
             typed_data_hash(&data)
         }
-        _ => Err(Forbid::RawHashSigning),
+        KIND_RAW_HASH => request.payload.as_slice().try_into().map_err(|_| Forbid::ParseFailed),
+        KIND_PERSONAL_SIGN => Ok(eip191_hash_message(&request.payload).0),
+        _ => Err(Forbid::Unsupported),
     }
 }
 
@@ -535,23 +521,18 @@ pub struct CallParams<'a> {
 
 /// 构建 EIP-1559 调用,收款方和数据都不限制.
 pub fn build_call(params: &CallParams) -> Result<UnsignedTx, Error> {
-    Ok(UnsignedTx {
-        tx_type: 2,
+    let to = params.to.map(parse_evm_address).transpose()?;
+    Ok(UnsignedTx::new(types::TxEip1559 {
         chain_id: params.network.evm_chain_id().ok_or(Error::InvalidParams)?,
         nonce: params.nonce,
-        fees: Fees::Dynamic {
-            max_priority: params.max_priority,
-            max_fee: params.max_fee,
-        },
         gas_limit: params.gas_limit,
-        to: params.to.map(parse_evm_address).transpose()?,
-        value: be_from_decimal(params.value)?,
-        data: params.data.clone(),
-        access_list: vec![0xc0],
-        access_list_len: 0,
-        authorization_list: Vec::new(),
-        authorizations: Vec::new(),
-    })
+        max_fee_per_gas: params.max_fee,
+        max_priority_fee_per_gas: params.max_priority,
+        to: to.map_or(TxKind::Create, |address| TxKind::Call(Address::from(address))),
+        value: U256::from_be_slice(&be_from_decimal(params.value)?),
+        access_list: types::AccessList::default(),
+        input: params.data.clone().into(),
+    }))
 }
 
 /// 构建 EIP-1559 转账.
@@ -574,16 +555,37 @@ pub fn build_transfer(params: &TransferParams) -> Result<UnsignedTx, Error> {
     })
 }
 
+/// 用公钥验证签名.交易装回构建记录,消息和未知的交易类型没有可以广播的形式,结果只有签名.
 pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> Result<Verified, Error> {
     let [signature] = response.signatures.as_slice() else {
         return Err(Error::BadSignature);
     };
     let signature: &[u8; 65] = signature.as_slice().try_into().map_err(|_| Error::BadSignature)?;
-    let tx = UnsignedTx::decode(&request.payload).map_err(|_| Error::InvalidParams)?;
-    check_signature(&keccak(&tx.encode()), signature, signer)?;
-    let raw = tx.assemble(signature);
-    let hash = format!("0x{}", keccak(&raw).to_lower_hex_string());
-    Ok(Verified { raw, hash })
+    let digest = signing_hash(request).map_err(|_| Error::InvalidParams)?;
+    check_signature(&digest, signature, signer)?;
+    let hex = |bytes: &[u8]| ["0x", bytes.to_lower_hex_string().as_str()].concat();
+    let payload = (request.kind == KIND_TRANSACTION)
+        .then(|| parse_evm(&request.payload))
+        .transpose()
+        .map_err(|_| Error::InvalidParams)?;
+    match payload {
+        Some(EvmPayload::Transaction(tx)) => {
+            let raw = UnsignedTx(*tx).assemble(signature)?;
+            let hash = hex(&keccak(&raw));
+            Ok(Verified {
+                raw,
+                hash,
+                fee_unconfirmed: false,
+                signature_only: false,
+            })
+        }
+        Some(EvmPayload::Authorization(_) | EvmPayload::Message | EvmPayload::Unknown) | None => Ok(Verified {
+            raw: signature.to_vec(),
+            hash: hex(&digest),
+            fee_unconfirmed: false,
+            signature_only: true,
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -611,8 +613,8 @@ mod tests {
         for tx in [call(Some(PEER), vec![0xde, 0xad]), call(None, vec![0x60, 0x80])] {
             assert_eq!(UnsignedTx::decode(&tx.encode()), Ok(tx));
         }
-        assert_eq!(call(None, Vec::new()).to, None);
-        assert_eq!(call(Some(PEER), Vec::new()).value, [7]);
+        assert_eq!(call(None, Vec::new()).0.kind(), TxKind::Create);
+        assert_eq!(call(Some(PEER), Vec::new()).0.value(), U256::from(7));
     }
 
     #[test]
@@ -656,8 +658,11 @@ mod tests {
             max_priority: 1,
         })
         .unwrap();
-        assert!(tx.value.is_empty());
-        assert_eq!(&tx.data[..4], &abi::TRANSFER);
-        assert_ne!(tx.to, Some(parse_evm_address(PEER).unwrap()));
+        assert!(tx.0.value().is_zero());
+        assert_eq!(&tx.0.input()[..4], &abi::TRANSFER);
+        assert_ne!(
+            tx.0.kind(),
+            TxKind::Call(Address::from(parse_evm_address(PEER).unwrap()))
+        );
     }
 }

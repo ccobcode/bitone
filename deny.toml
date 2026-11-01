@@ -1,6 +1,8 @@
 # cargo deny check.依赖的许可证,来源和重复版本都在这里把关,新增依赖要写明理由.
 # tools/crosscheck/deps 走同一份配置:alloy 解码 EVM,prost 解码 TRON,psbt-v2 解码 PSBT v2.见 docs/10-tx-decoding.md 第 6 节.
 # psbt-v2 =0.3.0 已进入 bitone-core:rust-bitcoin 组织,CC0-1.0,只依赖 bitcoin.miniscript 只出现在锁文件里,不编译.
+# alloy-consensus,alloy-eips =2.5.0,alloy-primitives =1.7.3,alloy-rlp =0.3.17 已进入 bitone-core:EVM 的官方类型,MIT OR Apache-2.0,
+# 关掉默认特性,不启用 k256,kzg,serde.授权人恢复用现有的 secp256k1.
 
 [graph]
 targets = [
@@ -17,6 +19,8 @@ yanked = "deny"
 ignore = [
     # UniFFI 生成绑定时读配置用,不进运行时.UniFFI 换掉它之后删除这条.
     { id = "RUSTSEC-2026-0374", reason = "UniFFI 的构建期依赖" },
+    # paste 只是作者停止维护,没有漏洞.它是 alloy-primitives 的过程宏,只在编译期运行,不进产物.alloy 换掉它之后删除这条.
+    { id = "RUSTSEC-2024-0436", reason = "alloy-primitives 的编译期过程宏" },
 ]
 
 [bans]

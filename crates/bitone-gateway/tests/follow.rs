@@ -847,8 +847,13 @@ async fn a_failed_balance_batch_keeps_the_socket() {
     node.push(new_head(11));
     let first = timeout(Duration::from_secs(5), next_json(&mut ws)).await.unwrap();
     assert_eq!(first["params"]["height"], 11);
-    sleep(Duration::from_millis(100)).await;
-    assert!(node.calls.count("eth_getBalance") >= 300, "基线和余额批量查询都要跑过");
+    timeout(Duration::from_secs(5), async {
+        while node.calls.count("eth_getBalance") < 300 {
+            sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("基线和余额批量查询都要跑过");
     node.push(new_head(12));
     let second = timeout(Duration::from_secs(5), next_json(&mut ws))
         .await

@@ -1,0 +1,15 @@
+{
+    "fields": {
+        "chainId": "chain_id",
+        "nonce": "nonce",
+        "gasPrice": "gas_price",
+        "maxPriorityFeePerGas": "max_priority_fee_per_gas",
+        "maxFeePerGas": "max_fee_per_gas",
+        "gas": "gas_limit",
+        "to": "to",
+        "value": "value",
+        "data": "data",
+        "maxFeePerBlobGas": "max_fee_per_blob_gas"
+    },
+    "contract_creation": "创建合约"
+}

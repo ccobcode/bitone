@@ -115,6 +115,7 @@ pub fn input(payload: &[u8]) -> Input<'_> {
         kind: 0,
         paths: &[],
         payload,
+        signer: None,
     }
 }
 

@@ -2,16 +2,17 @@ use crate::Error;
 use crate::keys::Wallet;
 use bitone_core::request::SignRequest;
 use bitone_core::tx::evm;
-use bitone_core::{DerivationPath, Network};
+use bitone_core::{DerivationPath, Mode};
 
 impl Wallet {
-    pub(crate) fn sign_evm(&self, request: &SignRequest, network: Network) -> Result<Vec<u8>, Error> {
+    /// EVM 的路径不分主网和测试网.私钥类型只决定扩展私钥的版本前缀,派生结果和它无关.
+    pub(crate) fn sign_evm(&self, request: &SignRequest) -> Result<Vec<u8>, Error> {
         let [path] = request.paths.as_slice() else {
             return Err(Error::Refused);
         };
         DerivationPath::parse(path)?;
         let digest = evm::signing_hash(request).map_err(|_| Error::Refused)?;
-        self.sign_recoverable(path, digest, network.mode())
+        self.sign_recoverable(path, digest, Mode::Mainnet)
     }
 }
 
@@ -20,11 +21,17 @@ mod tests {
     use super::*;
     use bitone_core::keys::PublicKeys;
     use bitone_core::manifest::Manifest;
+    use bitone_core::path::all_account_specs;
     use bitone_core::protocol::VERSION;
-    use bitone_core::request::{KIND_TRANSACTION, KIND_TYPED_DATA};
-    use bitone_core::review::{Confirm, Forbid, Review, Risk};
-    use bitone_core::tx::evm::{TransferParams, UnsignedTx, build_transfer};
+    use bitone_core::request::{KIND_PERSONAL_SIGN, KIND_RAW_HASH, KIND_TRANSACTION, KIND_TYPED_DATA};
+    use bitone_core::review::{Confirm, FieldRow, Forbid, Review, Risk};
+    use bitone_core::tx::evm::types::{
+        AccessList, AccessListItem, Address, Authorization, B256, Bytes, Signature, SignedAuthorization, TxEip1559,
+        TxEip2930, TxEip4844, TxEip7702, TxKind, U256, rlp_encode,
+    };
+    use bitone_core::tx::evm::{TransferParams, UnsignedTx, build_transfer, keccak};
     use bitone_core::tx::{self, HighestChange, ReviewContext};
+    use bitone_core::{Chain, Network};
 
     const EVM_PATH: &str = "m/44'/60'/0'/0/0";
     const PEER: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
@@ -73,9 +80,48 @@ mod tests {
             manifest: Manifest::builtin(),
             highest_change: HighestChange::default(),
         };
-        let review = tx::review(request, &ctx);
-        assert!(review.fields.is_empty(), "这条链还没迁移");
-        review
+        tx::review(request, &ctx)
+    }
+
+    fn peer() -> Address {
+        PEER.parse().unwrap()
+    }
+
+    fn eip1559(nonce: u64) -> TxEip1559 {
+        TxEip1559 {
+            chain_id: 1,
+            nonce,
+            gas_limit: 21000,
+            max_fee_per_gas: 30_000_000_000,
+            max_priority_fee_per_gas: 2_000_000_000,
+            to: TxKind::Call(peer()),
+            value: U256::from(1_500_000_000_000_000_000u64),
+            access_list: AccessList::default(),
+            input: Bytes::new(),
+        }
+    }
+
+    fn changed(change: impl FnOnce(&mut TxEip1559)) -> Vec<u8> {
+        let mut tx = eip1559(1);
+        change(&mut tx);
+        UnsignedTx::new(tx).encode()
+    }
+
+    fn field<'a>(review: &'a Review, name: &str) -> &'a FieldRow {
+        review.fields.iter().find(|row| row.name == name).unwrap()
+    }
+
+    fn alerted(review: &Review, text: &str) -> bool {
+        review.alerts.iter().any(|alert| alert.contains(text))
+    }
+
+    fn sign(s: &Setup, req: &SignRequest) -> Result<(bitone_core::request::SignResponse, Review), Error> {
+        s.wallet
+            .sign(req, &s.keys, Manifest::builtin(), HighestChange::default())
+    }
+
+    fn account_key(s: &Setup) -> [u8; 33] {
+        s.keys.secp256k1(&DerivationPath::parse(EVM_PATH).unwrap()).unwrap()
     }
 
     fn native(nonce: u64) -> UnsignedTx {
@@ -168,11 +214,454 @@ mod tests {
             .sign(&req, &s.keys, Manifest::builtin(), HighestChange::default())
             .unwrap();
         assert_eq!(review.risk, Risk::Transfer);
+        assert_eq!(field(&review, "chain_id").value, "56");
         let verified = tx::verify(&req, &response, &key).unwrap();
         assert_eq!(
             hex(&verified.raw),
             "f8640384b2d05e008252089470997970c51812dc3a010c7d01b50e0d17dc79c801808193a09e863fe043cb922c59e09d6f0b490659f23e31dbf5300619323a88a7a969c969a01b1614c8a93b08d7508876dc88a591ee8ff861694580c52e0e26f1d193b7592c"
         );
+    }
+
+    #[test]
+    fn evm_review_fills_every_field_of_the_payload() {
+        let s = setup();
+        let result = review(&s, &request(&s, "ethereum", native(7).encode()));
+        assert_eq!(result.field_count as usize, result.fields.len());
+        assert_eq!(field(&result, "network").value, "ethereum");
+        assert_eq!(field(&result, "derivation_path").value, EVM_PATH);
+        assert_eq!(
+            field(&result, "signer").value,
+            "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+        );
+        assert!(field(&result, "signer").own);
+        assert_eq!(field(&result, "nonce").value, "7");
+        assert_eq!(field(&result, "value").value, "1.5 ETH");
+        assert_eq!(field(&result, "value").label, "金额");
+        assert_eq!(field(&result, "fee_cap").value, "0.00063 ETH");
+    }
+
+    #[test]
+    fn a_token_call_keeps_the_old_classification_and_names_the_method() {
+        let s = setup();
+        let result = review(&s, &request(&s, "ethereum", token().encode()));
+        assert_eq!(result.risk, Risk::Transfer);
+        let note = field(&result, "data").note.clone().unwrap();
+        assert!(note.contains("transfer"), "{note}");
+        assert_eq!(field(&result, "data").label, "调用数据");
+    }
+
+    /// 普通类型的每一种都要能装回可以广播的字节.
+    #[test]
+    fn every_type_assembles_to_valid_signed_bytes() {
+        let s = setup();
+        let key = account_key(&s);
+        let entry = AccessListItem {
+            address: peer(),
+            storage_keys: vec![B256::repeat_byte(1)],
+        };
+        let eip2930 = TxEip2930 {
+            chain_id: 1,
+            nonce: 1,
+            gas_price: 2,
+            gas_limit: 21000,
+            to: TxKind::Call(peer()),
+            value: U256::from(1),
+            access_list: AccessList(vec![entry]),
+            input: Bytes::new(),
+        };
+        let eip4844 = TxEip4844 {
+            chain_id: 1,
+            nonce: 1,
+            gas_limit: 21000,
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 1,
+            to: peer(),
+            value: U256::ZERO,
+            access_list: AccessList::default(),
+            blob_versioned_hashes: vec![B256::repeat_byte(1)],
+            max_fee_per_blob_gas: 1,
+            input: Bytes::new(),
+        };
+        let payloads = [
+            UnsignedTx::new(eip2930).encode(),
+            native(1).encode(),
+            UnsignedTx::new(eip4844).encode(),
+            UnsignedTx::new(delegation(&s, 1, peer())).encode(),
+        ];
+        for payload in payloads {
+            let req = request(&s, "ethereum", payload.clone());
+            let (response, _) = sign(&s, &req).unwrap();
+            let verified = tx::verify(&req, &response, &key).unwrap();
+            assert!(!verified.signature_only);
+            assert_eq!(verified.raw[0], payload[0], "类型字节");
+            assert_ne!(verified.raw, payload);
+        }
+    }
+
+    fn pre_155() -> Vec<u8> {
+        // viem 的 serializeTransaction({ type: 'legacy' }) 不带 chainId 时的结果.
+        unhex("e780843b9aca008252089470997970c51812dc3a010c7d01b50e0d17dc79c88701c6bf5263400080")
+    }
+
+    #[test]
+    fn a_transaction_without_a_chain_id_warns_about_replay_and_signs() {
+        let s = setup();
+        let req = request(&s, "ethereum", pre_155());
+        let result = review(&s, &req);
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(alerted(&result, "每条 EVM 链上都能重放"));
+        assert_eq!(field(&result, "chain_id").value, "无");
+        assert!(sign(&s, &req).is_ok());
+    }
+
+    #[test]
+    fn pre_155_signatures_use_27_or_28() {
+        let s = setup();
+        let req = request(&s, "ethereum", pre_155());
+        let (response, _) = sign(&s, &req).unwrap();
+        let verified = tx::verify(&req, &response, &account_key(&s)).unwrap();
+        let signature = response.signatures[0].as_slice();
+        let parity = signature[64];
+        // 签名后的尾部是 v,r,s,r 和 s 都是 32 字节时 v 在倒数第 67 个字节.
+        let v = verified.raw[verified.raw.len() - 67];
+        assert_eq!(v, 27 + parity);
+        let restored = UnsignedTx::decode(&pre_155()).unwrap();
+        assert_eq!(restored.chain_id(), None);
+    }
+
+    #[test]
+    fn a_replayable_transaction_gets_the_mainnet_prompt_even_on_a_testnet_name() {
+        let s = setup();
+        let result = review(&s, &request(&s, "sepolia", pre_155()));
+        assert!(result.mainnet);
+        let bound = changed(|tx| tx.chain_id = 11155111);
+        assert!(!review(&s, &request(&s, "sepolia", bound)).mainnet);
+    }
+
+    #[test]
+    fn blob_transactions_are_unknown_with_a_warning_and_sign() {
+        let s = setup();
+        let tx = TxEip4844 {
+            chain_id: 1,
+            nonce: 1,
+            gas_limit: 21000,
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 1,
+            to: peer(),
+            value: U256::from(1),
+            access_list: AccessList::default(),
+            blob_versioned_hashes: vec![B256::repeat_byte(1)],
+            max_fee_per_blob_gas: 3,
+            input: Bytes::new(),
+        };
+        let req = request(&s, "ethereum", UnsignedTx::new(tx).encode());
+        let result = review(&s, &req);
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(alerted(&result, "blob 内容不在交易里"));
+        assert_eq!(field(&result, "fee_cap").value, "0.000000000000435216 ETH");
+        assert!(sign(&s, &req).is_ok());
+    }
+
+    /// 第 1.1 节:未知类型可以签,签的是 keccak256(载荷),长按之后还要二次确认.
+    #[test]
+    fn a_future_type_is_opaque_and_needs_the_second_confirmation() {
+        let s = setup();
+        let payload = vec![0x07, 0xc1, 0x01];
+        let req = request(&s, "ethereum", payload.clone());
+        let result = review(&s, &req);
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::HoldConfirm));
+        assert_eq!(result.fields[0].kind, bitone_core::decode::Kind::Opaque);
+        let (response, _) = sign(&s, &req).unwrap();
+        let verified = tx::verify(&req, &response, &account_key(&s)).unwrap();
+        assert!(verified.signature_only);
+        assert_eq!(verified.hash, format!("0x{}", hex(&keccak(&payload))));
+    }
+
+    fn permit_digest() -> Vec<u8> {
+        [&[0x19, 0x01][..], &[0xaa; 32], &[0xbb; 32]].concat()
+    }
+
+    /// 这段字节的 keccak 就是一个 Permit 的签名原文,走 opaque 路径等于盲签授权.
+    #[test]
+    fn a_permit_digest_cannot_be_signed_as_opaque() {
+        let s = setup();
+        let result = review(&s, &request(&s, "ethereum", permit_digest()));
+        assert_eq!(result.fields[0].name, "eip712_digest");
+        assert!(
+            result
+                .fields
+                .iter()
+                .all(|row| row.kind != bitone_core::decode::Kind::Opaque)
+        );
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::HoldConfirm));
+        assert!(alerted(&result, "EIP-712"));
+        assert!(!alerted(&result, "本机不认识这笔交易"));
+
+        let mut short = permit_digest();
+        short.pop();
+        let req = request(&s, "ethereum", short);
+        assert_eq!(forbidden(review(&s, &req)), Some(Forbid::ParseFailed));
+        assert_eq!(sign(&s, &req).unwrap_err(), Error::Refused);
+    }
+
+    /// `0x05 rlp(...)` 的 keccak 是账户委托的签名原文.
+    #[test]
+    fn an_eip7702_authorization_cannot_be_signed_as_opaque() {
+        let s = setup();
+        let inner = Authorization {
+            chain_id: U256::from(1),
+            address: peer(),
+            nonce: 0,
+        };
+        let payload = [vec![0x05], rlp_encode(&inner)].concat();
+        let req = request(&s, "ethereum", payload);
+        let result = review(&s, &req);
+        assert_eq!(result.fields[0].name, "eip7702_authorization");
+        assert!(
+            result
+                .fields
+                .iter()
+                .all(|row| row.kind != bitone_core::decode::Kind::Opaque)
+        );
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(alerted(&result, "EIP-7702 授权"));
+        assert_eq!(evm::signing_hash(&req).unwrap(), inner.signature_hash().0);
+
+        let garbage = request(&s, "ethereum", vec![0x05, 0x01, 0x02]);
+        assert_eq!(forbidden(review(&s, &garbage)), Some(Forbid::ParseFailed));
+        assert_eq!(sign(&s, &garbage).unwrap_err(), Error::Refused);
+    }
+
+    #[test]
+    fn a_universal_authorization_message_warns_about_every_chain() {
+        let s = setup();
+        let inner = Authorization {
+            chain_id: U256::ZERO,
+            address: peer(),
+            nonce: 0,
+        };
+        let payload = [vec![0x05], rlp_encode(&inner)].concat();
+        let result = review(&s, &request(&s, "sepolia", payload));
+        assert!(alerted(&result, "每条 EVM 链上都生效"));
+        assert!(result.mainnet, "这个签名不限于测试网");
+    }
+
+    #[test]
+    fn a_full_personal_message_under_the_transaction_kind_is_a_message() {
+        let s = setup();
+        let payload = [b"\x19Ethereum Signed Message:\n5".as_slice(), b"hello"].concat();
+        let result = review(&s, &request(&s, "ethereum", payload));
+        assert_eq!(field(&result, "message").value, "hello");
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
+    }
+
+    #[test]
+    fn personal_sign_hashes_the_prefixed_message() {
+        let s = setup();
+        let mut req = request(&s, "ethereum", b"hello".to_vec());
+        req.kind = KIND_PERSONAL_SIGN;
+        let result = review(&s, &req);
+        assert_eq!(field(&result, "message").value, "hello");
+        assert_eq!(result.confirm, Confirm::Hold);
+        let (response, _) = sign(&s, &req).unwrap();
+        let verified = tx::verify(&req, &response, &account_key(&s)).unwrap();
+        assert!(verified.signature_only);
+        // viem 的 hashMessage("hello").
+        assert_eq!(
+            verified.hash,
+            "0x50b2c43fd39106bafbba0da34fc430e1f91e3c96ea2acee2bc34119f92b37750"
+        );
+    }
+
+    #[test]
+    fn a_raw_hash_is_signed_as_it_is_after_the_second_confirmation() {
+        let s = setup();
+        let mut req = request(&s, "ethereum", vec![7; 32]);
+        req.kind = KIND_RAW_HASH;
+        let result = review(&s, &req);
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::HoldConfirm));
+        assert!(alerted(&result, "裸哈希"));
+        let (response, _) = sign(&s, &req).unwrap();
+        let verified = tx::verify(&req, &response, &account_key(&s)).unwrap();
+        assert_eq!(verified.hash, format!("0x{}", hex(&[7; 32])));
+
+        req.payload.pop();
+        assert_eq!(forbidden(review(&s, &req)), Some(Forbid::ParseFailed));
+    }
+
+    #[test]
+    fn an_added_alert_keeps_the_second_confirmation() {
+        let s = setup();
+        let mut req = request(&s, "ethereum", vec![7; 32]);
+        req.kind = KIND_RAW_HASH;
+        req.version += 1;
+        let result = review(&s, &req);
+        assert_eq!(result.confirm, Confirm::HoldConfirm);
+    }
+
+    #[test]
+    fn a_made_up_name_cannot_relabel_a_known_chain() {
+        let s = setup();
+        let req = request(&s, "made-up-mainnet", native(1).encode());
+        let result = review(&s, &req);
+        assert_eq!(result.network, "ethereum");
+        assert_eq!(field(&result, "network").value, "ethereum");
+        assert!(result.mainnet);
+        assert_eq!(result.amount.as_ref().unwrap().symbol.as_deref(), Some("ETH"));
+        assert_eq!((result.risk, result.confirm), (Risk::Transfer, Confirm::Hold));
+        assert!(alerted(&result, "made-up-mainnet"));
+        assert!(sign(&s, &req).is_ok());
+    }
+
+    #[test]
+    fn a_made_up_name_on_a_testnet_chain_id_has_no_mainnet_prompt() {
+        let s = setup();
+        let payload = changed(|tx| tx.chain_id = 11155111);
+        let result = review(&s, &request(&s, "made-up", payload));
+        assert_eq!(result.network, "sepolia");
+        assert!(!result.mainnet);
+    }
+
+    #[test]
+    fn a_manifest_without_the_native_row_does_not_stop_a_renamed_network() {
+        let s = setup();
+        let mut manifest = Manifest::builtin().clone();
+        manifest.assets.retain(|a| a.network != "ethereum");
+        let req = request(&s, "made-up", native(1).encode());
+        let (_, result) = s
+            .wallet
+            .sign(&req, &s.keys, &manifest, HighestChange::default())
+            .unwrap();
+        assert!(alerted(&result, "清单里没有这个网络的原生币"));
+    }
+
+    #[test]
+    fn a_control_character_in_the_supplied_name_is_escaped() {
+        let s = setup();
+        let result = review(&s, &request(&s, "evil\u{202E}net", native(1).encode()));
+        assert!(alerted(&result, "evil\\u{202e}net"));
+    }
+
+    #[test]
+    fn a_chain_id_nobody_knows_shows_the_supplied_name_and_the_number() {
+        let s = setup();
+        let payload = changed(|tx| tx.chain_id = 31337);
+        let req = request(&s, "local-debug", payload);
+        let result = review(&s, &req);
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
+        assert_eq!(result.network, "local-debug");
+        assert!(result.mainnet);
+        assert_eq!(field(&result, "chain_id").value, "31337");
+        assert!(alerted(&result, "Chain ID 31337"));
+        assert!(alerted(&result, "local-debug"));
+        assert_eq!(field(&result, "value").value, "1500000000000000000");
+        assert_eq!(result.amount.as_ref().unwrap().symbol, None);
+        let (response, _) = sign(&s, &req).unwrap();
+        assert!(tx::verify(&req, &response, &account_key(&s)).is_ok());
+    }
+
+    #[test]
+    fn a_known_network_with_an_unknown_chain_id_is_a_contradiction() {
+        let s = setup();
+        let payload = changed(|tx| tx.chain_id = 31337);
+        let req = request(&s, "ethereum", payload);
+        assert_eq!(forbidden(review(&s, &req)), Some(Forbid::ChainIdMismatch));
+    }
+
+    #[test]
+    fn an_unknown_name_needs_the_chain_field_when_nothing_else_says_evm() {
+        let s = setup();
+        let mut req = request(&s, "local-debug", vec![7; 32]);
+        req.paths = vec!["m/0".into()];
+        assert_eq!(forbidden(review(&s, &req)), Some(Forbid::UnknownNetwork));
+        req.chain = Some(1);
+        assert_eq!(review(&s, &req).confirm, Confirm::HoldConfirm);
+    }
+
+    #[test]
+    fn a_whole_transaction_routes_to_evm_on_any_path() {
+        let s = setup();
+        let mut req = request(&s, "local-debug", native(1).encode());
+        req.paths = vec!["m/0".into()];
+        assert_eq!(review(&s, &req).network, "ethereum");
+    }
+
+    #[test]
+    fn a_path_outside_the_export_signs_with_a_warning_and_no_address() {
+        let s = setup();
+        for path in ["m/44'/60'/0'/0/1", "m/44'/60'/7'/0/0", "m/44'/966'/0'/0/0", "m/0"] {
+            let mut req = request(&s, "ethereum", native(1).encode());
+            req.paths = vec![path.into()];
+            let result = review(&s, &req);
+            assert_eq!(result.confirm, Confirm::Hold, "{path}");
+            assert_eq!(field(&result, "derivation_path").value, path);
+            assert!(alerted(&result, path), "{path}");
+            assert!(result.fields.iter().all(|row| row.name != "signer"), "{path}");
+            assert!(sign(&s, &req).is_ok(), "{path}");
+        }
+    }
+
+    #[test]
+    fn a_different_path_signs_with_a_different_key() {
+        let s = setup();
+        let mut other = request(&s, "ethereum", native(1).encode());
+        other.paths = vec!["m/44'/60'/0'/0/1".into()];
+        let req = request(&s, "ethereum", native(1).encode());
+        let (one, _) = sign(&s, &req).unwrap();
+        let (two, _) = sign(&s, &other).unwrap();
+        assert_ne!(one.signatures, two.signatures);
+    }
+
+    #[test]
+    fn the_exported_path_has_no_path_warning() {
+        let s = setup();
+        assert!(
+            all_account_specs(false)
+                .iter()
+                .any(|spec| spec.chain == Chain::Evm && spec.path == EVM_PATH)
+        );
+        let result = review(&s, &request(&s, "ethereum", native(1).encode()));
+        assert_eq!((result.risk, result.confirm), (Risk::Transfer, Confirm::Tap));
+        assert!(result.alerts.is_empty());
+    }
+
+    /// 这些私钥上有真实资产,裸哈希能签下它们的交易,所以这是矛盾,不是不认识.
+    #[test]
+    fn the_mainnet_keys_of_other_chains_stay_refused_for_a_raw_hash() {
+        let s = setup();
+        for path in ["m/84'/0'/0'/0/0", "m/44'/195'/0'/0/0", "m/44'/501'/0'/0'"] {
+            let mut req = request(&s, "ethereum", vec![7; 32]);
+            req.kind = KIND_RAW_HASH;
+            req.paths = vec![path.into()];
+            assert_eq!(forbidden(review(&s, &req)), Some(Forbid::PathNetworkMismatch), "{path}");
+        }
+    }
+
+    /// 网络名是请求写的,改个名字不能绕过这项检查.
+    #[test]
+    fn an_unknown_network_name_cannot_reach_another_chains_key() {
+        let s = setup();
+        let mut req = request(&s, "made-up", vec![7; 32]);
+        req.kind = KIND_RAW_HASH;
+        req.chain = Some(1);
+        req.paths = vec!["m/84'/0'/0'/0/0".into()];
+        assert_eq!(forbidden(review(&s, &req)), Some(Forbid::PathNetworkMismatch));
+    }
+
+    #[test]
+    fn two_paths_are_refused() {
+        let s = setup();
+        let mut req = request(&s, "ethereum", native(1).encode());
+        req.paths = vec![EVM_PATH.into(), EVM_PATH.into()];
+        assert_eq!(forbidden(review(&s, &req)), Some(Forbid::PathNotAllowed));
+    }
+
+    #[test]
+    fn a_path_deeper_than_bip32_allows_is_refused() {
+        let s = setup();
+        let mut req = request(&s, "ethereum", native(1).encode());
+        req.paths = vec![format!("m{}", "/0".repeat(256))];
+        assert_eq!(forbidden(review(&s, &req)), Some(Forbid::PathNotAllowed));
     }
 
     /// 清单包可以整体覆盖内置清单.少了原生币这一行也要能签,不能卡住资金.
@@ -232,17 +721,6 @@ mod tests {
     }
 
     #[test]
-    fn legacy_without_chain_id_is_refused() {
-        // viem 的 serializeTransaction({ type: 'legacy' }) 不带 chainId 时的结果.
-        let payload = unhex("e780843b9aca008252089470997970c51812dc3a010c7d01b50e0d17dc79c88701c6bf5263400080");
-        let s = setup();
-        assert_eq!(
-            forbidden(review(&s, &request(&s, "ethereum", payload))),
-            Some(Forbid::LegacyWithoutChainId)
-        );
-    }
-
-    #[test]
     fn non_canonical_encoding_is_refused() {
         let s = setup();
         let mut trailing = native(1).encode();
@@ -257,25 +735,18 @@ mod tests {
         );
         assert_eq!(
             forbidden(review(&s, &request(&s, "ethereum", vec![0x03, 0xc0]))),
-            Some(Forbid::Unsupported)
+            Some(Forbid::ParseFailed)
         );
     }
 
     #[test]
-    fn fingerprint_network_and_path_checks_come_first() {
+    fn fingerprint_and_path_checks_come_first() {
         let s = setup();
         let mut req = request(&s, "ethereum", native(1).encode());
         req.fingerprint = [0; 4];
         assert_eq!(forbidden(review(&s, &req)), Some(Forbid::FingerprintMismatch));
 
-        let mut req = request(&s, "dogecoin", native(1).encode());
-        req.network = "dogecoin".into();
-        assert_eq!(forbidden(review(&s, &req)), Some(Forbid::UnknownNetwork));
-
         let mut req = request(&s, "ethereum", native(1).encode());
-        req.paths = vec!["m/44'/60'/0'/0/1".into()];
-        assert_eq!(forbidden(review(&s, &req)), Some(Forbid::PathNotAllowed));
-
         req.paths = vec!["m/84'/0'/0'/0/0".into()];
         assert_eq!(forbidden(review(&s, &req)), Some(Forbid::PathNetworkMismatch));
 
@@ -286,13 +757,12 @@ mod tests {
     #[test]
     fn high_fee_needs_a_long_press() {
         let s = setup();
-        let mut tx = native(1);
-        tx.gas_limit = 10_000_000;
-        tx.fees = bitone_core::tx::evm::Fees::Dynamic {
-            max_priority: 1,
-            max_fee: 100_000_000_000,
-        };
-        let review = review(&s, &request(&s, "ethereum", tx.encode()));
+        let payload = changed(|tx| {
+            tx.gas_limit = 10_000_000;
+            tx.max_priority_fee_per_gas = 1;
+            tx.max_fee_per_gas = 100_000_000_000;
+        });
+        let review = review(&s, &request(&s, "ethereum", payload));
         assert_eq!((review.risk, review.confirm), (Risk::Transfer, Confirm::Hold));
         assert_eq!(review.alerts.len(), 1);
     }
@@ -300,82 +770,130 @@ mod tests {
     #[test]
     fn unknown_contract_shows_raw_data() {
         let s = setup();
-        let mut tx = native(1);
-        tx.data = unhex("deadbeef000000000000000000000000000000000000000000000000000000000000002a");
-        let review = review(&s, &request(&s, "ethereum", tx.encode()));
+        let data = unhex("deadbeef000000000000000000000000000000000000000000000000000000000000002a");
+        let payload = changed(|tx| tx.input = data.clone().into());
+        let review = review(&s, &request(&s, "ethereum", payload));
         assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
         assert_eq!(review.raw.len(), 2);
-        assert!(review.rows.iter().any(|r| r.label == "附带金额"));
+        assert_eq!(field(&review, "data").value, hex(&data));
+        assert_eq!(field(&review, "value").value, "1.5 ETH");
+        assert_eq!(field(&review, "data").risk, Some(Risk::Unknown));
     }
 
     #[test]
     fn contract_creation_is_unknown() {
         let s = setup();
-        let mut tx = native(1);
-        tx.to = None;
-        tx.data = vec![0x60];
-        assert_eq!(review(&s, &request(&s, "ethereum", tx.encode())).risk, Risk::Unknown);
+        let payload = changed(|tx| {
+            tx.to = TxKind::Create;
+            tx.input = vec![0x60].into();
+        });
+        assert_eq!(review(&s, &request(&s, "ethereum", payload)).risk, Risk::Unknown);
     }
 
     #[test]
     fn contract_creation_shows_its_value() {
         let s = setup();
         for data in [Vec::new(), vec![0x60]] {
-            let mut tx = native(1);
-            tx.to = None;
-            tx.data = data;
-            let result = review(&s, &request(&s, "ethereum", tx.encode()));
+            let payload = changed(|tx| {
+                tx.to = TxKind::Create;
+                tx.input = data.clone().into();
+            });
+            let result = review(&s, &request(&s, "ethereum", payload));
             assert_eq!(result.risk, Risk::Unknown);
             assert_eq!(result.amount.as_ref().unwrap().text, "1.5");
-            assert_eq!(row(&result, "附带金额"), "1.5 ETH");
+            assert_eq!(field(&result, "value").value, "1.5 ETH");
         }
-        let mut free = native(1);
-        free.to = None;
-        free.value = Vec::new();
-        assert_eq!(review(&s, &request(&s, "ethereum", free.encode())).amount, None);
+        let free = changed(|tx| {
+            tx.to = TxKind::Create;
+            tx.value = U256::ZERO;
+        });
+        assert_eq!(review(&s, &request(&s, "ethereum", free)).amount, None);
     }
 
-    fn with_authorization(chain_id: u8) -> Vec<u8> {
-        let mut tx = native(1);
-        tx.tx_type = 4;
-        tx.authorizations = vec![];
-        // 授权元组:chain_id,地址,nonce,y,r,s.
-        let mut tuple = vec![if chain_id == 0 { 0x80 } else { chain_id }, 0x94];
-        tuple.extend_from_slice(&[0x33; 20]);
-        tuple.extend_from_slice(&[0x80, 0x80, 0x01, 0x01]);
-        let mut list = vec![0xc0 + tuple.len() as u8];
-        list.extend_from_slice(&tuple);
-        let mut outer = vec![0xc0 + list.len() as u8];
-        outer.extend_from_slice(&list);
-        tx.authorization_list = outer;
-        tx.encode()
+    /// 本钱包给 `delegate` 的授权,放在一笔发给 `PEER` 的交易里.
+    fn delegation(s: &Setup, chain_id: u64, delegate: Address) -> TxEip7702 {
+        let inner = Authorization {
+            chain_id: U256::from(chain_id),
+            address: delegate,
+            nonce: 0,
+        };
+        let raw = s
+            .wallet
+            .sign_recoverable(EVM_PATH, inner.signature_hash().0, bitone_core::Mode::Mainnet)
+            .unwrap();
+        let signature = Signature::from_raw(&raw).unwrap();
+        let authorization: SignedAuthorization = inner.into_signed(signature);
+        TxEip7702 {
+            chain_id: 1,
+            nonce: 1,
+            gas_limit: 50_000,
+            max_fee_per_gas: 30_000_000_000,
+            max_priority_fee_per_gas: 2_000_000_000,
+            to: peer(),
+            value: U256::from(1_500_000_000_000_000_000u64),
+            access_list: AccessList::default(),
+            authorization_list: vec![authorization],
+            input: Bytes::new(),
+        }
+    }
+
+    fn with_authorization(s: &Setup, chain_id: u64) -> Vec<u8> {
+        UnsignedTx::new(delegation(s, chain_id, peer())).encode()
     }
 
     #[test]
     fn eip7702_delegation_is_a_permission_change() {
         let s = setup();
-        let review = review(&s, &request(&s, "ethereum", with_authorization(1)));
+        let review = review(&s, &request(&s, "ethereum", with_authorization(&s, 1)));
         assert_eq!((review.risk, review.confirm), (Risk::PermissionChange, Confirm::Hold));
         assert_eq!(review.counterparty_label.as_deref(), Some("新控制方"));
+        assert_eq!(field(&review, "authority").value, field(&review, "signer").value);
+        assert!(field(&review, "authority").own);
+    }
+
+    #[test]
+    fn clearing_a_delegation_is_still_a_permission_change() {
+        let s = setup();
+        let payload = UnsignedTx::new(delegation(&s, 1, Address::ZERO)).encode();
+        let review = review(&s, &request(&s, "ethereum", payload));
+        assert_eq!(review.risk, Risk::PermissionChange);
+        assert!(
+            review
+                .fields
+                .iter()
+                .any(|row| row.note.as_deref() == Some("地址为零,这是清除委托"))
+        );
     }
 
     /// 委托的同时转账时,页面顶部是新控制方,收款方不能因此消失.
     #[test]
     fn eip7702_keeps_the_outer_transfer_visible() {
         let s = setup();
-        let review = review(&s, &request(&s, "ethereum", with_authorization(1)));
+        let review = review(&s, &request(&s, "ethereum", with_authorization(&s, 1)));
         let shown = |value: &str| review.actions.iter().any(|a| a.rows.iter().any(|r| r.value == value));
         assert!(shown(PEER));
         assert!(shown("1.5 ETH"));
     }
 
     #[test]
-    fn universal_eip7702_delegation_is_refused() {
+    fn a_universal_delegation_is_unknown_and_says_every_chain() {
         let s = setup();
-        assert_eq!(
-            forbidden(review(&s, &request(&s, "ethereum", with_authorization(0)))),
-            Some(Forbid::UniversalAuthorization)
-        );
+        let req = request(&s, "ethereum", with_authorization(&s, 0));
+        let result = review(&s, &req);
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(alerted(&result, "每条 EVM 链上都生效"));
+        assert!(sign(&s, &req).is_ok());
+    }
+
+    #[test]
+    fn a_delegation_for_another_chain_is_shown_not_refused() {
+        let s = setup();
+        let req = request(&s, "ethereum", with_authorization(&s, 137));
+        let result = review(&s, &req);
+        assert_eq!((result.risk, result.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(alerted(&result, "这里只显示,不拒绝"));
+        assert!(result.fields.iter().any(|row| row.value == "137"));
+        assert!(sign(&s, &req).is_ok());
     }
 
     fn typed_data(primary: &str, chain_id: serde_json::Value) -> serde_json::Value {
@@ -606,7 +1124,18 @@ mod tests {
         let s = setup();
         let mut req = request(&s, "ethereum", vec![0; 32]);
         req.kind = 9;
-        assert_eq!(forbidden(review(&s, &req)), Some(Forbid::RawHashSigning));
+        assert_eq!(forbidden(review(&s, &req)), Some(Forbid::Unsupported));
+    }
+
+    #[test]
+    fn a_path_outside_the_export_can_sign_a_permit() {
+        let s = setup();
+        let mut req = typed(&s, "Permit", 1.into());
+        req.paths = vec!["m/44'/60'/0'/0/1".into()];
+        let result = review(&s, &req);
+        assert_eq!(result.risk, Risk::Approval);
+        assert!(result.rows.iter().all(|row| row.label != "付款账户"));
+        assert!(alerted(&result, "m/44'/60'/0'/0/1"));
     }
 
     #[test]

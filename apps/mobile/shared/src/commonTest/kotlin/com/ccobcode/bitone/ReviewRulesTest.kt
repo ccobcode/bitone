@@ -8,7 +8,6 @@ import com.ccobcode.bitone.flow.controllerCard
 import com.ccobcode.bitone.flow.evaluate
 import com.ccobcode.bitone.flow.fieldBlocks
 import com.ccobcode.bitone.flow.isHighRisk
-import com.ccobcode.bitone.flow.isMainnet
 import com.ccobcode.bitone.platform.ConfirmMode
 import com.ccobcode.bitone.platform.FieldSource
 import com.ccobcode.bitone.platform.HardwareLevel
@@ -157,31 +156,6 @@ class ReviewRulesTest {
     fun otherPagesKeepEveryRow() {
         val action = change(PAYER, ATTACKER)
         assertEquals(listOf(action.rows), actionRows(permission(action), ReviewStyle.Plain))
-    }
-
-    /** 和核心库的 `Network::ALL` 逐个对应. */
-    @Test
-    fun modeMatchesTheCore() {
-        listOf("bitcoin", "ethereum", "bsc", "polygon", "tron", "solana").forEach { assertTrue(isMainnet(it), it) }
-        listOf(
-                "btc-testnet4",
-                "btc-signet",
-                "btc-testnet3",
-                "sepolia",
-                "hoodi",
-                "bsc-testnet",
-                "amoy",
-                "tron-nile",
-                "tron-shasta",
-                "solana-devnet",
-                "solana-testnet",
-            )
-            .forEach { assertFalse(isMainnet(it), it) }
-    }
-
-    @Test
-    fun anUnknownNetworkStillGetsThePrompt() {
-        assertTrue(isMainnet("dogecoin"))
     }
 
     @Test

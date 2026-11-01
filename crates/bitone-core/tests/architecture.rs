@@ -73,7 +73,7 @@ fn decode_uses_only_the_foundation() {
 #[test]
 fn policy_depends_only_on_the_model() {
     let text = code(&source().join("policy.rs"));
-    let stray = outside(&text, &["decode", "Mode", "Network"]);
+    let stray = outside(&text, &["decode", "Chain", "Mode", "Network"]);
     assert!(stray.is_empty(), "policy.rs 不能依赖 {stray:?}");
 }
 

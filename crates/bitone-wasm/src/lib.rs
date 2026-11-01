@@ -703,9 +703,12 @@ pub fn preview_request(request: &[u8], keys: JsValue) -> Result<JsValue, JsError
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Checked {
     raw: String,
     hash: String,
+    fee_unconfirmed: bool,
+    signature_only: bool,
 }
 
 /// 广播前核验.用公钥验证签名,并装回构建记录,见 docs/03-system.md 第 8 节.
@@ -717,5 +720,7 @@ pub fn verify_response(request: &[u8], response: &[u8], signer: &[u8]) -> Result
     to_js(&Checked {
         raw: verified.raw.to_lower_hex_string(),
         hash: verified.hash,
+        fee_unconfirmed: verified.fee_unconfirmed,
+        signature_only: verified.signature_only,
     })
 }

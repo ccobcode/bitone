@@ -9,11 +9,11 @@ pub mod evm;
 pub mod solana;
 pub mod tron;
 
-use crate::decode::{Decoded, Failure, is_psbt};
+use crate::decode::{Decoded, EvmPayload, Failure, is_psbt, parse_evm};
 use crate::hex::DisplayHex;
 use crate::keys::PublicKeys;
 use crate::manifest::{Asset, Manifest};
-use crate::path::{DerivationPath, validate_for_network};
+use crate::path::{DerivationPath, classify, validate_for_network};
 use crate::policy::{self, AssetFact, Facts};
 use crate::protocol::{AddressCheck, VERSION};
 use crate::request::{SignRequest, SignResponse};
@@ -84,13 +84,26 @@ pub fn review_decoded(decoded: Result<Decoded, Failure>, network: &str, ctx: &Re
     }
 }
 
+/// 路径的 coin type 是 `60'`,或者载荷就是一笔 EVM 交易.路径不设白名单,所以两个都要看.
+fn looks_like_evm(path: &str, payload: &[u8]) -> bool {
+    let by_path = DerivationPath::parse(path)
+        .ok()
+        .and_then(|path| classify(&path).ok())
+        .is_some_and(|info| info.chain == Chain::Evm);
+    by_path || matches!(parse_evm(payload), Ok(EvmPayload::Transaction(_)))
+}
+
 /// 请求属于哪条链.网络是本机认识的就看网络,否则看请求的链字段,没有时按路径和载荷判断.
 /// Bitcoin 的路径在 PSBT 里,所以 `paths` 是空的.
 pub fn request_chain(request: &SignRequest) -> Option<Chain> {
     match (Network::from_id(&request.network), request.chain) {
         (Some(network), _) => Some(network.chain()),
         (None, Some(number)) => Chain::from_number(number),
-        (None, None) => (request.paths.is_empty() && is_psbt(&request.payload)).then_some(Chain::Bitcoin),
+        (None, None) => match request.paths.as_slice() {
+            [] => is_psbt(&request.payload).then_some(Chain::Bitcoin),
+            [path] => looks_like_evm(path, &request.payload).then_some(Chain::Evm),
+            [_, _, ..] => None,
+        },
     }
 }
 
@@ -102,20 +115,26 @@ fn try_review(request: &SignRequest, ctx: &ReviewContext) -> Result<Review, Forb
         // 其他链在各自的迁移步骤里接入.
         return match request_chain(request) {
             Some(Chain::Bitcoin) => bitcoin::review(None, request, ctx),
-            Some(Chain::Evm | Chain::Tron | Chain::Solana) | None => Err(Forbid::UnknownNetwork),
+            Some(Chain::Evm) => evm::review(None, request, ctx),
+            Some(Chain::Tron | Chain::Solana) | None => Err(Forbid::UnknownNetwork),
         };
     };
     let review = match network.chain() {
         Chain::Bitcoin => bitcoin::review(Some(network), request, ctx),
-        Chain::Evm => evm::review(network, request, ctx),
+        Chain::Evm => evm::review(Some(network), request, ctx),
         Chain::Tron => tron::review(network, request, ctx),
         Chain::Solana => solana::review(network, request, ctx),
     }?;
-    Ok(if ctx.manifest.native(network.id()).is_some() {
+    Ok(native_alert(review, network, ctx))
+}
+
+/// 清单缺失不影响签名,只影响名称和图标.
+pub(crate) fn native_alert(review: Review, network: Network, ctx: &ReviewContext) -> Review {
+    if ctx.manifest.native(network.id()).is_some() {
         review
     } else {
         review.alerted("清单里没有这个网络的原生币,金额按链本身的数据显示")
-    })
+    }
 }
 
 /// 冷钱包核对收款地址的结果.见 docs/04-security.md 第 4 节.
@@ -159,10 +178,14 @@ pub fn check_address(check: &AddressCheck, keys: &PublicKeys) -> Result<AddressR
 /// 网页端广播前的结果.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Verified {
-    /// 可以直接广播的原始交易.
+    /// 可以直接广播的原始交易.`signature_only` 时是 65 字节的签名.
     pub raw: Vec<u8>,
-    /// 交易哈希,用于跟踪.
+    /// 交易哈希,用于跟踪.`signature_only` 时是签名原文的哈希.
     pub hash: String,
+    /// Bitcoin 的手续费没有经过前序交易确认,签名也不能替它担保.
+    pub fee_unconfirmed: bool,
+    /// 消息和未知的交易类型没有可以广播的形式,结果只有核验过的签名.
+    pub signature_only: bool,
 }
 
 /// 用公钥验证签名,并把签名装回构建记录.见 docs/03-system.md 第 8 节.
@@ -171,7 +194,12 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
     if request.id != response.id {
         return Err(Error::ResponseMismatch);
     }
-    let network = Network::from_id(&request.network).ok_or(Error::InvalidParams)?;
+    let Some(network) = Network::from_id(&request.network) else {
+        return match request_chain(request) {
+            Some(Chain::Evm) => evm::verify(request, response, signer),
+            Some(Chain::Bitcoin | Chain::Tron | Chain::Solana) | None => Err(Error::InvalidParams),
+        };
+    };
     match network.chain() {
         Chain::Bitcoin => bitcoin::verify(network, request, response),
         Chain::Evm => evm::verify(request, response, signer),
@@ -180,7 +208,7 @@ pub fn verify(request: &SignRequest, response: &SignResponse, signer: &[u8]) -> 
     }
 }
 
-/// 单路径的请求(EVM,TRON,Solana)取出并校验路径.
+/// 单路径的请求(TRON,Solana)取出并校验路径.
 pub(crate) fn signer_path(request: &SignRequest, network: Network) -> Result<DerivationPath, Forbid> {
     let [path] = request.paths.as_slice() else {
         return Err(Forbid::PathNotAllowed);
@@ -299,13 +327,72 @@ mod tests {
     fn unknown_content_reaches_the_user_as_signable() {
         let keys = keys();
         let ctx = context(&keys);
-        for payload in [vec![UNKNOWN_FORMAT, 1], PARTIAL.to_vec()] {
+        let cases = [
+            (vec![UNKNOWN_FORMAT, 1], Confirm::HoldConfirm),
+            (PARTIAL.to_vec(), Confirm::Hold),
+        ];
+        for (payload, confirm) in cases {
             let review = review_decoded(decode(&Records, &input(&payload)), "ethereum", &ctx);
-            assert_eq!((review.risk, review.confirm), (Risk::Unknown, Confirm::Hold));
+            assert_eq!((review.risk, review.confirm), (Risk::Unknown, confirm));
             assert!(review.is_signable());
             assert!(!review.fields.is_empty());
             assert!(!review.alerts.is_empty());
         }
+    }
+
+    fn evm_request(network: &str, chain: Option<u8>, paths: &[&str]) -> SignRequest {
+        SignRequest {
+            version: VERSION,
+            id: [1; 16],
+            fingerprint: [0; 4],
+            network: network.into(),
+            kind: 0,
+            paths: paths.iter().map(ToString::to_string).collect(),
+            payload: vec![2, 0xc0],
+            hint: None,
+            chain,
+        }
+    }
+
+    #[test]
+    fn the_chain_field_wins_then_the_path_and_the_payload_say_evm() {
+        assert_eq!(
+            request_chain(&evm_request("local", Some(1), &["m/0"])),
+            Some(Chain::Evm)
+        );
+        assert_eq!(
+            request_chain(&evm_request("local", None, &["m/44'/60'/4'/0/0"])),
+            Some(Chain::Evm)
+        );
+        assert_eq!(
+            request_chain(&evm_request("tron", Some(1), &["m/0"])),
+            Some(Chain::Tron)
+        );
+        let unclear = SignRequest {
+            payload: vec![9],
+            ..evm_request("local", None, &["m/44'/1'/0'/0/0"])
+        };
+        assert_eq!(request_chain(&unclear), None);
+    }
+
+    #[test]
+    fn a_whole_evm_transaction_says_evm_for_any_path() {
+        let tx = evm::build_call(&evm::CallParams {
+            network: Network::Ethereum,
+            to: None,
+            value: "0",
+            data: vec![1],
+            nonce: 0,
+            gas_limit: 1,
+            max_fee: 1,
+            max_priority: 1,
+        })
+        .unwrap();
+        let request = SignRequest {
+            payload: tx.encode(),
+            ..evm_request("local", None, &["m/0"])
+        };
+        assert_eq!(request_chain(&request), Some(Chain::Evm));
     }
 
     #[test]

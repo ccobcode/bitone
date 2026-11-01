@@ -1786,9 +1786,10 @@ mod unknown_networks {
         let s = setup();
         let bitcoin = local(&s, segwit_send(&s), Some(0));
         assert_eq!(reviewed(&s, &bitcoin).risk, Risk::Unknown);
-        for chain in [1, 200] {
+        // 编号 1 是 EVM,PSBT 没有路径可以签.200 这个版本不认识.
+        for (chain, reason) in [(1, Forbid::PathNotAllowed), (200, Forbid::UnknownNetwork)] {
             let other = local(&s, segwit_send(&s), Some(chain));
-            assert_eq!(forbidden(reviewed(&s, &other)), Some(Forbid::UnknownNetwork), "{chain}");
+            assert_eq!(forbidden(reviewed(&s, &other)), Some(reason), "{chain}");
             assert_eq!(signed(&s, &other).unwrap_err(), Error::Refused);
         }
     }
@@ -2222,14 +2223,33 @@ mod signing {
         );
     }
 
+    /// 手机能签手续费无法确认的 PSBT,所以核验也要放行,否则用户签完了广播不出去.
     #[test]
-    fn verify_refuses_a_forged_psbt() {
+    fn a_signed_psbt_with_an_unconfirmed_fee_verifies_and_says_so() {
         let s = setup();
-        let (mut req, response, _) = sign(&s, Network::Bitcoin, segwit_send(&s)).unwrap();
-        req.payload = forged(&req.payload, |psbt| psbt.inputs[0].non_witness_utxo = None);
+        let payload = forged(&segwit_send(&s), |psbt| psbt.inputs[0].non_witness_utxo = None);
+        let (req, response, _) = sign(&s, Network::Bitcoin, payload).unwrap();
+        let verified = btc::verify(Network::Bitcoin, &req, &response).unwrap();
+        assert!(verified.fee_unconfirmed);
+        assert!(!verified.signature_only);
+    }
+
+    #[test]
+    fn a_confirmed_fee_verifies_without_the_mark() {
+        let s = setup();
+        let (req, response, _) = sign(&s, Network::Bitcoin, segwit_send(&s)).unwrap();
+        assert!(!btc::verify(Network::Bitcoin, &req, &response).unwrap().fee_unconfirmed);
+    }
+
+    #[test]
+    fn an_unconfirmed_fee_still_needs_a_good_signature() {
+        let s = setup();
+        let payload = forged(&segwit_send(&s), |psbt| psbt.inputs[0].non_witness_utxo = None);
+        let (req, mut response, _) = sign(&s, Network::Bitcoin, payload).unwrap();
+        response.signatures[0] = vec![0; 71].into();
         assert_eq!(
             btc::verify(Network::Bitcoin, &req, &response),
-            Err(CoreError::InvalidParams)
+            Err(CoreError::BadSignature)
         );
     }
 

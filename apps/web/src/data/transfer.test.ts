@@ -148,6 +148,13 @@ describe("EVM 构建", () => {
         expect(await db.txs.count()).toBe(1);
     });
 
+    it("手续费无法确认时,核验结果记在交易上", async () => {
+        evmGateway();
+        const tx = await createTransfer(evmDraft());
+        const signed = await markSigned(tx.id, { raw: "aa", hash: "0x1", feeUnconfirmed: true });
+        expect(signed.feeUnconfirmed).toBe(true);
+    });
+
     it("发了替换交易之后,新交易接在它后面", async () => {
         evmGateway();
         const first = await createTransfer(evmDraft());

@@ -185,6 +185,10 @@ impl Network {
             _ => None,
         }
     }
+
+    pub fn from_evm_chain_id(chain_id: u64) -> Option<Network> {
+        Network::ALL.into_iter().find(|n| n.evm_chain_id() == Some(chain_id))
+    }
 }
 
 #[cfg(test)]
@@ -215,5 +219,13 @@ mod tests {
         for n in Network::ALL {
             assert_eq!(n.evm_chain_id().is_some(), n.chain() == Chain::Evm);
         }
+    }
+
+    #[test]
+    fn chain_ids_round_trip() {
+        for n in Network::ALL.into_iter().filter(|n| n.chain() == Chain::Evm) {
+            assert_eq!(n.evm_chain_id().and_then(Network::from_evm_chain_id), Some(n));
+        }
+        assert_eq!(Network::from_evm_chain_id(31337), None);
     }
 }

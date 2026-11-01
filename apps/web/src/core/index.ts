@@ -214,7 +214,7 @@ export type Risk = "transfer" | "recognized" | "unknown" | "approval" | "permiss
 
 export interface Review {
     risk: Risk;
-    confirm: "tap" | "hold" | "refuse";
+    confirm: "tap" | "hold" | "hold-confirm" | "refuse";
     title: string;
     amount?: { text: string; symbol?: string; asset?: string; unlimited: boolean } | null;
     counterparty?: string | null;
@@ -232,6 +232,10 @@ export function previewRequest(request: Uint8Array, keys: KeyEntry[]): Review {
 export interface Verified {
     raw: string;
     hash: string;
+    /** Bitcoin 的手续费没有经过前序交易确认. */
+    feeUnconfirmed?: boolean;
+    /** 消息和未知的交易类型没有可以广播的形式,`raw` 是签名本身. */
+    signatureOnly?: boolean;
 }
 
 /** 广播前核验.`signer` 是付款账户公钥,Bitcoin 的公钥在 PSBT 里,传空数组. */
