@@ -5,11 +5,11 @@ import type { Claim } from "./claims";
 import { db, txKey, type NewTx, type Reservation, type ReservationType, type TxRecord } from "./db";
 import { entry } from "./feed";
 import {
-    CONFLICT_ROUNDS,
     CONFLICT_SPACING,
     EXPIRY_GRACE,
     holdsReservation,
     isWatched,
+    mayStillLand,
     observe,
     transition,
     type ChainObservation,
@@ -114,9 +114,11 @@ async function retireSiblings(tx: TxRecord, rows: Reservation[], now: number): P
         if (other.state === "signing" || other.state === "signed") {
             await db.txs.put(transition(other, "cancel", now, t("同一序号的另一笔交易已上链")));
         } else if (other.state === "broadcast" || other.state === "uncertain") {
+            // 重组后又被替换时,之前的确认不算数.
             await db.txs.put({
                 ...transition(other, "replaced", now, t("同一序号的另一笔交易已上链")),
                 replacedBy: tx.id,
+                replacedConfirmedAt: undefined,
             });
         }
     }
@@ -145,6 +147,16 @@ async function saveRecord(tx: TxRecord, now: number): Promise<void> {
     await db.chainTxs.put(entry(tx.walletId, `local:${tx.walletId}`, tx.network, item));
 }
 
+/** 这笔不再占用.替换交易可能还在途,已放弃的交易签名仍然有效,只去掉自己,别人还占着的不能释放. */
+async function dropHolder(id: string, rows: Reservation[]): Promise<void> {
+    for (const row of rows) {
+        const others = await db.txs.bulkGet(row.txIds.filter((txId) => txId !== id));
+        const holders = others.flatMap((tx) => (tx && holdsReservation(tx) ? [tx.id] : []));
+        if (holders.length > 0) await db.reservations.put({ ...row, txIds: holders });
+        else await db.reservations.delete(row.id);
+    }
+}
+
 /** 状态变化后处理占用.上链要等到最终状态才释放,确认中的交易可能被重组退回来. */
 async function settle(before: TxRecord, after: TxRecord, now: number): Promise<void> {
     if (before.state === after.state) return;
@@ -152,18 +164,14 @@ async function settle(before: TxRecord, after: TxRecord, now: number): Promise<v
     const landed = after.state === "confirming" || after.state === "confirmed" || after.state === "failed";
     if (landed) await retireSiblings(after, rows, now);
     if (after.state === "confirmed" || after.state === "failed") {
-        await db.reservations.bulkDelete(rows.map((row) => row.id));
+        // 上链的说法只来自网关.共用占用的已放弃交易签名仍然有效,它的占用留给用户确认.
+        await dropHolder(after.id, rows);
         await markChangeUsed(after);
         await saveRecord(after, now);
         return;
     }
     if (landed || holdsReservation(after)) return;
-    for (const row of rows) {
-        const others = await db.txs.bulkGet(row.txIds.filter((id) => id !== after.id));
-        const holders = others.flatMap((tx) => (tx && holdsReservation(tx) ? [tx.id] : []));
-        if (holders.length > 0) await db.reservations.put({ ...row, txIds: holders });
-        else await db.reservations.delete(row.id);
-    }
+    await dropHolder(after.id, rows);
 }
 
 async function apply(id: string, change: (tx: TxRecord) => TxRecord, now: number): Promise<TxRecord> {
@@ -257,7 +265,7 @@ export async function sweepExpired(now = Date.now()): Promise<void> {
     }
 }
 
-/** 已放弃但签名仍然有效的交易,等它的序号确定作废后释放. */
+/** 已放弃但签名仍然有效,还占着序号的交易. */
 export async function heldByAbandoned(): Promise<TxRecord[]> {
     const rows = await db.txs.where("state").equals("abandoned").toArray();
     const signed = rows.filter((tx) => tx.raw !== undefined);
@@ -265,42 +273,54 @@ export async function heldByAbandoned(): Promise<TxRecord[]> {
     return signed.filter((_, i) => (held[i] ?? 0) > 0);
 }
 
-/** 这笔不再占用.替换交易可能还在途,只去掉自己,别人还占着的不能释放. */
 async function releaseHolder(id: string): Promise<void> {
     await db.transaction("rw", scope(), async () => {
-        for (const row of await db.reservations.where("txIds").equals(id).toArray()) {
-            const others = await db.txs.bulkGet(row.txIds.filter((txId) => txId !== id));
-            const holders = others.flatMap((tx) => (tx && holdsReservation(tx) ? [tx.id] : []));
-            if (holders.length > 0) await db.reservations.put({ ...row, txIds: holders });
-            else await db.reservations.delete(row.id);
-        }
+        await dropHolder(id, await db.reservations.where("txIds").equals(id).toArray());
     });
     announce();
 }
 
-/** 已放弃的交易这一轮的序号是否已被用掉.要连续看到才释放. */
+/**
+ * 记下已放弃的交易这一轮的序号是否已被用掉,给用户看.这只是证据,不释放占用:
+ * 数据来自网关,可能是假的,签名却一直有效.释放要用户确认,见 `releaseAbandoned`.
+ */
 export async function noteSpent(id: string, spent: boolean, now = Date.now()): Promise<void> {
     const tx = await db.txs.get(id);
     if (!tx) return;
-    const spaced = now - (tx.conflictAt ?? 0) >= CONFLICT_SPACING;
     if (!spent) {
         if (tx.conflicts !== 0) await db.txs.update(id, { conflicts: 0 });
         return;
     }
-    if (!spaced) return;
-    const conflicts = tx.conflicts + 1;
-    await db.txs.update(id, { conflicts, conflictAt: now });
-    if (conflicts >= CONFLICT_ROUNDS) await releaseHolder(id);
+    if (now - (tx.conflictAt ?? 0) < CONFLICT_SPACING) return;
+    await db.txs.update(id, { conflicts: tx.conflicts + 1, conflictAt: now });
+}
+
+/** 用户看过证据后,确认这笔已放弃的交易的序号已被用掉.只有详情页的确认能走到这里. */
+export async function releaseAbandoned(id: string): Promise<void> {
+    const tx = await db.txs.get(id);
+    if (tx?.state === "abandoned") await releaseHolder(id);
+}
+
+/**
+ * 用户看过证据后,确认这笔已被同一序号的交易替换.只有详情页的确认能走到这里.
+ * 之后同样的转账才能再发,这笔要是其实还能上链,两笔都会生效.
+ */
+export async function confirmReplaced(id: string, now = Date.now()): Promise<void> {
+    const tx = await db.txs.get(id);
+    if (tx?.state !== "replaced" || tx.replacedConfirmedAt !== undefined) return;
+    await db.txs.update(id, { replacedConfirmedAt: now });
+    announce();
 }
 
 const CLOSED: ReadonlySet<TxRecord["state"]> = new Set<TxRecord["state"]>(["abandoned", "expired", "replaced"]);
 
 /**
  * 没上链就结束,也不再占序号的请求可以删.签名仍然有效的还占着序号,删了就看不到它,
- * 序号也可能被复用.刚被替换的还在观察期,链上可能反转.held 是它占着的序号数.
+ * 序号也可能被复用.刚被替换的还在观察期,链上可能反转.替换没确认的还挡着同样的转账,删了就没有拦截.
+ * held 是它占着的序号数.
  */
 export function isDeletable(tx: TxRecord, held: number, now: number): boolean {
-    return CLOSED.has(tx.state) && held === 0 && !isWatched(tx, now);
+    return CLOSED.has(tx.state) && held === 0 && !isWatched(tx, now) && !mayStillLand(tx);
 }
 
 /** 按网络和哈希找本地交易.十六进制哈希不分大小写,Solana 的区分,所以最后按交易标识比较. */

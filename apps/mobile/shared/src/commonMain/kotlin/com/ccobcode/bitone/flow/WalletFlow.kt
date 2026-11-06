@@ -13,8 +13,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private class LoadedKeys(val keys: ByteArray, val fingerprint: String)
-
 /**
  * 根协调者,管导航栈,busy,提示,生命周期,自检和会话.具体流程在各个子流程里,页面直接用子流程.
  *
@@ -65,11 +63,12 @@ class WalletFlow(
 
     val session = Session(platform, work)
     val pin = PinEntry(platform.core)
+    val passphrase = PassphraseEntry()
 
     private val host: FlowHost = Host()
     val player = FramePlayer(host)
-    val setup = SetupFlow(host, pin)
-    val unlock = UnlockFlow(host, guard)
+    val setup = SetupFlow(host, pin, passphrase)
+    val unlock = UnlockFlow(host, guard, passphrase)
     val scan = ScanFlow(host, player)
     val receive = ReceiveFlow(host)
     val export = ExportFlow(host, player)
@@ -154,9 +153,8 @@ class WalletFlow(
             },
         ) {
             UnlockTask(
-                use = { wallet, saved -> LoadedKeys(session.keysOf(wallet, saved), wallet.fingerprint()) },
-                finish = { loaded ->
-                    session.remember(loaded.keys, loaded.fingerprint)
+                use = { wallet, saved -> session.keysOf(wallet, saved) },
+                finish = {
                     stack = stack.dropLast(1)
                     if (screen == Screen.Receive) {
                         session.loadAddresses()
@@ -175,8 +173,6 @@ class WalletFlow(
             recheck()
             // 从系统设置授权回来,直接进扫码.
             if (screen == Screen.CameraDenied && !scan.cameraBroken && scan.scanner.hasPermission()) scan.rescan()
-            // BIP39 密码钱包的公钥在后台时清掉了,收款页要重新读.
-            if (screen == Screen.Receive && receive.address == null) guarded { receive.load() }
         }
     }
 
@@ -186,14 +182,16 @@ class WalletFlow(
      * 有未确认的失败时停在 AS.确认后执行 [retry],没有 [retry] 就回到原来的页面.生成新钱包不能确认,见 [canAcknowledge].
      */
     private suspend fun recheck(retry: (suspend () -> Unit)? = null): Boolean {
-        class Probe(val result: SelfCheckReport, val saved: WalletMeta?, val lost: Boolean)
+        class Probe(val result: SelfCheckReport, val saved: WalletMeta?, val outdated: Boolean, val lost: Boolean)
         val probe =
             withContext(work) {
                 val saved = store.walletMeta()
-                Probe(evaluate(platform.selfCheck.collect()), saved, saved != null && hardwareKey.isLost())
+                val outdated = store.readVault()?.let { !platform.core.isCurrentVault(it) } == true
+                Probe(evaluate(platform.selfCheck.collect()), saved, outdated, saved != null && hardwareKey.isLost())
             }
         report = probe.result
         session.meta = probe.saved
+        session.outdated = probe.outdated
         val root = if (probe.saved != null) Screen.Home else Screen.Welcome
         val pending = probe.result.failures - acknowledged
         when {
@@ -252,8 +250,11 @@ class WalletFlow(
                 block()
             } finally {
                 busy = false
-                // 操作结束时人还不在,助记词不留在页面上.
-                if (leftWhileBusy && Screen.ViewWords in stack) settings.leaveViewWords()
+                // 操作结束时人还不在,助记词和 BIP39 密码都不留.
+                if (leftWhileBusy) {
+                    if (Screen.ViewWords in stack) settings.leaveViewWords()
+                    unlock.forgetPassphrase()
+                }
                 leftWhileBusy = false
             }
         }
@@ -284,6 +285,7 @@ class WalletFlow(
         when (screen) {
             Screen.Backup -> setup.leaveCreate()
             Screen.Verify -> setup.backToBackup()
+            Screen.Passphrase -> setup.leavePassphrase()
             Screen.SetPin -> {
                 pin.reset()
                 settings.cancelChangePin()
@@ -336,6 +338,7 @@ class WalletFlow(
     fun forgotPin() {
         if (busy) return
         unlock.resetEntry()
+        unlock.forgetPassphrase()
         pin.reset()
         settings.cancelChangePin()
         scan.dropRequest()
@@ -371,6 +374,7 @@ class WalletFlow(
     fun onBackground() {
         unlock.resetEntry()
         pin.clearInput()
+        passphrase.reset()
         scan.holdCancel()
         scan.cancelSecondConfirm()
         // 系统屏幕锁确认也会走到这里,操作进行中不动页面.
@@ -380,14 +384,10 @@ class WalletFlow(
         }
         if (settings.changingPin) settings.leaveChangePin()
         if (Screen.ViewWords in stack) settings.leaveViewWords()
-        if (session.passphraseRequired) forgetSessionKeys()
+        // 两遍一致的迁移密码也不留,回来后从输密码重来.
+        unlock.forgetPassphrase()
         // 离开前台,这次确认作废.
         acknowledged = emptySet()
         resume = null
-    }
-
-    private fun forgetSessionKeys() {
-        session.forgetKeys()
-        receive.forgetAddress()
     }
 }

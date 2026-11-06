@@ -178,7 +178,6 @@ fun SmallButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     }
 }
 
-/** 只有图标的小按钮,边长 44. */
 @Composable
 fun SmallIconButton(label: String, icon: String, onClick: () -> Unit) {
     val c = BitOneTheme.colors
@@ -313,7 +312,6 @@ fun Notice(text: String, tone: NoticeTone = NoticeTone.Info) {
     }
 }
 
-/** 高 24 的徽章. */
 @Composable
 fun Chip(text: String, background: Color, foreground: Color, icon: String? = null) {
     Row(
@@ -381,7 +379,6 @@ fun ListRow(
 
 private val SwitchPad = 2.dp
 
-/** 开关,圆点滑动,轨道变色. */
 @Composable
 fun SwitchTrack(on: Boolean) {
     val c = BitOneTheme.colors
@@ -402,7 +399,6 @@ fun SwitchTrack(on: Boolean) {
     }
 }
 
-/** 整行可点的开关. */
 @Composable
 fun SwitchRow(
     on: Boolean,

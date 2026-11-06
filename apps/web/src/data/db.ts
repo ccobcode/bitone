@@ -44,7 +44,7 @@ export interface Setting {
     value: unknown;
 }
 
-/** 交易生命周期. */
+/** 交易生命周期,状态转换在 machine.ts. */
 export type TxState =
     | "signing"
     | "signed"
@@ -99,6 +99,8 @@ export interface TxRecord {
     timeline: TimelineEntry[];
     replaces?: string;
     replacedBy?: string;
+    /** 用户看过替换证据,确认这笔已被替换的时间.替换的说法只来自网关,确认之前同样的转账发不出去. */
+    replacedConfirmedAt?: number;
     attempts: number;
     broadcastAt?: number;
     /** 最近一次广播失败时网关的原文,只当纯文本显示. */
@@ -187,14 +189,14 @@ export interface ChainEntry {
     seenAt?: number;
 }
 
-/** 一批地址的同步进度.新地址另成一批,已有的批次和水位不受影响. */
+/** 一批地址的同步进度.新地址另成一批,已有的批次和 checkpoint 不受影响. */
 export interface FeedCursor {
     /** `钱包:网络:这批的第一个地址`. */
     id: string;
     network: string;
     /** 翻页游标绑定这批地址,不能改动. */
     addresses: string[];
-    /** 水位.这之前的记录不会再变,下次只查这之后的. */
+    /** 已经不可回滚的位置.这之前的记录不会再变,下次只查这之后的. */
     checkpoint: string;
     /** 往前翻页的游标. */
     older: string | null;
@@ -260,7 +262,7 @@ export class BitOneDb extends Dexie {
                     await notes.put({ ...note, id });
                 }
             });
-        // 旧游标没有记下地址,只能从头同步.链上记录随时能重新拉取.
+        // 版本 3 的游标没有记下地址,只能从头同步.链上记录随时能重新拉取.
         this.version(4)
             .stores({ balances: "id, network" })
             .upgrade(async (tx) => {

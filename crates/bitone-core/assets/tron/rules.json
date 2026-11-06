@@ -1,0 +1,453 @@
+{
+    "AccountCreateContract": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "party": "account_address",
+            "label": "新账户"
+        }
+    },
+    "AccountPermissionUpdateContract": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "owner.keys.keys.address",
+            "current": "owner_address",
+            "holders": ["owner.keys.keys.address", "actives.actives.keys.keys.address"]
+        }
+    },
+    "AccountUpdateContract": {
+        "class": "recognized",
+        "alert": null
+    },
+    "AssetIssueContract": {
+        "class": "recognized",
+        "alert": "发行 TRC-10 要扣发行费",
+        "summary": {
+            "amount": "total_supply"
+        }
+    },
+    "CancelAllUnfreezeV2Contract": {
+        "class": "recognized",
+        "alert": null
+    },
+    "ClearABIContract": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "party": "contract_address",
+            "label": "目标合约"
+        }
+    },
+    "CreateSmartContract": {
+        "class": "unknown",
+        "alert": "部署合约,字节码的含义本机无法判断",
+        "summary": {
+            "amount": "new_contract.call_value"
+        }
+    },
+    "CustomContract": {
+        "class": "unknown",
+        "alert": "这种合约只有枚举值,没有消息和执行器"
+    },
+    "DelegateResourceContract": {
+        "class": "approval",
+        "alert": null,
+        "summary": {
+            "amount": "balance",
+            "party": "receiver_address",
+            "label": "接收方"
+        }
+    },
+    "ExchangeCreateContract": {
+        "class": "recognized",
+        "alert": "资产会转入交易对",
+        "summary": {
+            "amount": "first_token_balance"
+        }
+    },
+    "ExchangeInjectContract": {
+        "class": "recognized",
+        "alert": "资产会转入交易对",
+        "summary": {
+            "amount": "quant"
+        }
+    },
+    "ExchangeTransactionContract": {
+        "class": "recognized",
+        "alert": "这笔兑换的成交金额取决于交易对的状态,请核对 quant 和 expected",
+        "summary": {
+            "amount": "quant"
+        }
+    },
+    "ExchangeWithdrawContract": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "amount": "quant"
+        }
+    },
+    "FreezeBalanceContract": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "amount": "frozen_balance",
+            "party": "receiver_address",
+            "label": "接收方"
+        }
+    },
+    "FreezeBalanceV2Contract": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "amount": "frozen_balance"
+        }
+    },
+    "GetContract": {
+        "class": "unknown",
+        "alert": "这种合约只有枚举值,没有消息和执行器"
+    },
+    "MarketCancelOrderContract": {
+        "class": "recognized",
+        "alert": null
+    },
+    "MarketSellAssetContract": {
+        "class": "recognized",
+        "alert": "这笔挂单会卖出资产",
+        "summary": {
+            "amount": "sell_token_quantity"
+        }
+    },
+    "ParticipateAssetIssueContract": {
+        "class": "recognized",
+        "alert": "这笔交易用 TRX 换 TRC-10",
+        "summary": {
+            "amount": "amount",
+            "party": "to_address",
+            "label": "收款地址"
+        }
+    },
+    "ProposalApproveContract": {
+        "class": "recognized",
+        "alert": null
+    },
+    "ProposalCreateContract": {
+        "class": "recognized",
+        "alert": null
+    },
+    "ProposalDeleteContract": {
+        "class": "recognized",
+        "alert": null
+    },
+    "SetAccountIdContract": {
+        "class": "recognized",
+        "alert": null
+    },
+    "ShieldedTransferContract": {
+        "class": "unknown",
+        "alert": "屏蔽转账的内容本机无法核实,冷钱包没有屏蔽密钥",
+        "summary": {
+            "amount": "from_amount",
+            "party": "transparent_to_address",
+            "label": "收款地址"
+        }
+    },
+    "TransferAssetContract": {
+        "class": "transfer",
+        "alert": null,
+        "summary": {
+            "amount": "amount",
+            "party": "to_address",
+            "label": "收款地址",
+            "asset": "asset_name"
+        }
+    },
+    "TransferContract": {
+        "class": "transfer",
+        "alert": null,
+        "summary": {
+            "amount": "amount",
+            "party": "to_address",
+            "label": "收款地址"
+        }
+    },
+    "TriggerSmartContract": {
+        "class": "transfer",
+        "alert": null
+    },
+    "UnDelegateResourceContract": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "amount": "balance",
+            "party": "receiver_address",
+            "label": "接收方"
+        }
+    },
+    "UnfreezeAssetContract": {
+        "class": "recognized",
+        "alert": null
+    },
+    "UnfreezeBalanceContract": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "party": "receiver_address",
+            "label": "接收方"
+        }
+    },
+    "UnfreezeBalanceV2Contract": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "amount": "unfreeze_balance"
+        }
+    },
+    "UpdateAssetContract": {
+        "class": "recognized",
+        "alert": null
+    },
+    "UpdateBrokerageContract": {
+        "class": "recognized",
+        "alert": null
+    },
+    "UpdateEnergyLimitContract": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "party": "contract_address",
+            "label": "目标合约"
+        }
+    },
+    "UpdateSettingContract": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "party": "contract_address",
+            "label": "目标合约"
+        }
+    },
+    "VoteAssetContract": {
+        "class": "unknown",
+        "alert": "这种合约没有执行器,链上不会执行",
+        "summary": {
+            "party": "vote_address.vote_address",
+            "label": "投票对象"
+        }
+    },
+    "VoteWitnessContract": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "party": "votes.votes.vote_address",
+            "label": "投票对象"
+        }
+    },
+    "WithdrawBalanceContract": {
+        "class": "recognized",
+        "alert": null
+    },
+    "WithdrawExpireUnfreezeContract": {
+        "class": "recognized",
+        "alert": null
+    },
+    "WitnessCreateContract": {
+        "class": "recognized",
+        "alert": "申请成为超级代表要扣账户升级费"
+    },
+    "WitnessUpdateContract": {
+        "class": "recognized",
+        "alert": null
+    },
+    "asset-unlisted": {
+        "class": "recognized",
+        "alert": "这个 TRC-10 不在内置清单,金额是原始整数,小数位在链上"
+    },
+    "call-irregular": {
+        "class": "unknown",
+        "alert": "调用数据不规范,方法是 {0}.这里显示的是合约按常见读法读到的内容:地址取低 20 字节,多余字节被忽略,缺的字节按 0"
+    },
+    "call-recognized": {
+        "class": "recognized",
+        "alert": null
+    },
+    "call-token-value": {
+        "class": "transfer",
+        "alert": "这笔调用附带 {0} 个 TRC-10,数量是原始整数"
+    },
+    "call-unknown": {
+        "class": "unknown",
+        "alert": "本机不认识这个合约调用,无法判断签名后果,签名前请确认来源和调用数据"
+    },
+    "call-unlimited": {
+        "class": "approval",
+        "alert": "额度是无限,对方可随时转走全部这种资产"
+    },
+    "call-unlisted": {
+        "class": "unknown",
+        "alert": "合约 {0} 不在内置清单,它不一定遵守标准,这里的方法和金额只是按标准读出来的"
+    },
+    "call-value": {
+        "class": "transfer",
+        "alert": "这笔调用附带 {0}"
+    },
+    "call-with-value": {
+        "class": "unknown",
+        "alert": "这笔调用同时附带原生币,不是普通转账"
+    },
+    "contract-unknown": {
+        "class": "unknown",
+        "alert": "这是本机不认识的合约类型,参数显示原始数据,签名前请确认来源",
+        "second": true
+    },
+    "eip712-described": {
+        "class": "recognized",
+        "alert": null
+    },
+    "eip712-message": {
+        "class": "unknown",
+        "alert": "这是 TIP-712 消息,不是交易,本机没有它的描述文件,无法判断签名后果.这段内容可能被合约当作授权,请逐项核对 domain,types,message"
+    },
+    "eip712-no-chain-id": {
+        "class": "unknown",
+        "alert": "域里没有 chainId,这个签名不绑定链,在任何一条链上都可能有效"
+    },
+    "eip712-no-contract": {
+        "class": "unknown",
+        "alert": "域里没有 verifyingContract,这个签名不绑定合约,任何合约都可能接受它"
+    },
+    "eip712-other-chain": {
+        "class": "unknown",
+        "alert": "域里的 chainId {0} 和这个网络不符,这个签名在这里不生效,在 chainId {0} 的链上仍然有效"
+    },
+    "eip712-permit": {
+        "class": "approval",
+        "alert": null
+    },
+    "enum-unknown": {
+        "class": "unknown",
+        "alert": "有枚举值本机不认识,这里显示数字"
+    },
+    "expiration-window": {
+        "class": "transfer",
+        "alert": "过期时间不在 timestamp 之后的 24 小时内,这笔交易可能无法上链"
+    },
+    "fee-high": {
+        "class": "transfer",
+        "alert": "手续费上限明显偏高"
+    },
+    "field-unused": {
+        "class": "unknown",
+        "alert": "这笔交易写了链上不使用的字段,含义无法判断"
+    },
+    "fn:approve(address,address,uint160,uint48)": {
+        "class": "approval",
+        "alert": null
+    },
+    "fn:approve(address,uint256)": {
+        "class": "approval",
+        "alert": null
+    },
+    "fn:decreaseAllowance(address,uint256)": {
+        "class": "recognized",
+        "alert": null
+    },
+    "fn:decreaseApproval(address,uint256)": {
+        "class": "recognized",
+        "alert": null
+    },
+    "fn:increaseAllowance(address,uint256)": {
+        "class": "approval",
+        "alert": null
+    },
+    "fn:increaseApproval(address,uint256)": {
+        "class": "approval",
+        "alert": null
+    },
+    "fn:multicall(bytes[])": {
+        "class": "unknown",
+        "alert": "这是一组内部调用,请逐个核对"
+    },
+    "fn:multicall(uint256,bytes[])": {
+        "class": "unknown",
+        "alert": "这是一组内部调用,请逐个核对"
+    },
+    "fn:permit(address,address,uint256,uint256,uint8,bytes32,bytes32)": {
+        "class": "approval",
+        "alert": null
+    },
+    "fn:setApprovalForAll(address,bool)": {
+        "class": "approval",
+        "alert": null
+    },
+    "fn:transfer(address,uint256)": {
+        "class": "transfer",
+        "alert": null
+    },
+    "fn:transferFrom(address,address,uint256)": {
+        "class": "recognized",
+        "alert": null
+    },
+    "memo": {
+        "class": "transfer",
+        "alert": "这笔交易带备注,节点会额外扣费",
+        "note": "备注"
+    },
+    "negative-integer": {
+        "class": "unknown",
+        "alert": "有字段是负数,协议里没有这种用法"
+    },
+    "owner-foreign": {
+        "class": "unknown",
+        "alert": "花费的账户是 {0},不是本账户.这是 TRON 的多签,本机看不到这个账户的权限设置"
+    },
+    "owner-multisig-unverified": {
+        "class": "unknown",
+        "alert": "这是 TRON 的多签,花费的账户 {0} 可能不是本账户,这条路径的地址解锁后才算得出来"
+    },
+    "owner-unverified": {
+        "class": "transfer",
+        "alert": "这条路径不在已导出的账户下,解锁后才能核对 {0} 是不是本账户,不是时拒绝签名"
+    },
+    "path-unusual": {
+        "class": "transfer",
+        "alert": "派生路径 {0} 不是本机导出的账户,付款地址要解锁才算得出来,请确认这是你用过的路径"
+    },
+    "permission-id": {
+        "class": "transfer",
+        "alert": "这笔交易用权限 {0} 签名,不是账户的 owner 权限"
+    },
+    "permission-shared": {
+        "class": "transfer",
+        "alert": "新权限里还有其他地址,请逐个核对"
+    },
+    "permit-many": {
+        "class": "approval",
+        "alert": "这笔签名包含 {0} 个授权,请逐个核对"
+    },
+    "permit-unlimited": {
+        "class": "approval",
+        "alert": "其中 {0} 个是无限额度,对方可随时转走全部这种资产"
+    },
+    "personal-sign": {
+        "class": "unknown",
+        "alert": "这是消息签名,不是交易.请确认内容和来源,这段内容可能被合约当作授权"
+    },
+    "raw-hash": {
+        "class": "unknown",
+        "alert": "这是裸哈希签名,本机看不到它对应的内容.它可以是一笔转账,一次授权或任何其他操作",
+        "second": true
+    },
+    "receiver-other": {
+        "class": "transfer",
+        "alert": "资源的接收方不是本账户"
+    },
+    "unknown-field": {
+        "class": "unknown",
+        "alert": "这笔交易有本机不认识的字段,可能来自更新的协议,请确认来源"
+    },
+    "value-noncanonical": {
+        "class": "unknown",
+        "alert": "合约参数不是规范编码,不同的解析器可能读出不同的值,页面只显示原始数据"
+    }
+}

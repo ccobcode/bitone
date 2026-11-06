@@ -1,5 +1,4 @@
 //! 内置清单.图标,符号,小数位都只按"网络加合约地址"查,没有按符号查找的入口.
-//! 清单包用厂商公钥验签,版本只增不减.
 
 use crate::{Error, Network};
 use p256::ecdsa::signature::Verifier;

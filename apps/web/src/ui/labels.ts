@@ -1,4 +1,4 @@
-// 账户在界面上的名称.
+// 界面上的账户名称和时间文字.
 import { chainOf } from "../chains";
 import type { AccountKind, Chain, Mode } from "../core";
 import { t } from "../core/i18n";

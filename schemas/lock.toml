@@ -65,13 +65,28 @@ commit = "355478c8ae00655fe8500c10ee61bff81a4ec9be"
 path = "idl.json"
 sha256 = "f23e8397def424afc9b38648ca3d7b7ed7fbcfa1c690af2c910b9e556bfd4a8a"
 
-# 官方没有 Vote 的 IDL.这份按 solana-vote-interface 7.3.0 写成,8 条共识投票指令不在里面.
 [[schema]]
-file = "solana/vote.json"
-repository = "anza-xyz/solana-sdk"
-commit = "7.3.0"
-path = "vote-interface/src/instruction.rs"
-sha256 = "e67130b609957b31a6e84fab123aeb6f1d77d5a958d8b96c388954b2026793cb"
+file = "solana/config.json"
+repository = "solana-program/config"
+commit = "6ce2763fca6cb75d57299ad2c36d874a7c44fe59"
+path = "idl.json"
+sha256 = "31b8793dc71a28511078e2e50d7d354bcbe9c30161a90ee06e55de50d28cdb87"
+
+# 官方仓库的 IDL 是 shank 格式.Codama 官方的转换器读它,再套用同一仓库 codama.mjs 里的改动:
+# 程序名和程序 ID,以及 `write` 的 `bytes` 用 u64 长度前缀.生成器核对这些改动都写在固定的 codama.mjs 里.
+[[schema]]
+file = "solana/loader-v3.json"
+repository = "solana-program/loader-v3"
+commit = "d427850d2a5183ff55b616e1bd68e9af20cd215c"
+path = "idl.json"
+sha256 = "039d84bbf2e785260caf2d543705c8465867d509fe7511ef11baa6dcd921e375"
+
+[[schema]]
+file = "solana/loader-v3-codama.mjs"
+repository = "solana-program/loader-v3"
+commit = "5185fe3534065725c1014e369a03b415ad3a1954"
+path = "codama.mjs"
+sha256 = "ad980d925dbc28c7080fe98ad5de1b775a7ddad74353a1eb32e6ae7a9ecd2d48"
 
 # 下载的 schema 是数据,生成器先校验这里的哈希.
 [tron]

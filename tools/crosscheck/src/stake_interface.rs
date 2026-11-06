@@ -5,7 +5,7 @@
 use crate::sha256;
 use crate::stake_vectors::{Case, FILE, Vectors, load};
 use bitcoin::hex::DisplayHex;
-use bitone_core::decode::solana::{Instruction, Message, Version};
+use bitone_core::chains::solana::decode::{Instruction, Message, Version};
 use solana_pubkey::Pubkey;
 use std::fs;
 use std::path::Path;

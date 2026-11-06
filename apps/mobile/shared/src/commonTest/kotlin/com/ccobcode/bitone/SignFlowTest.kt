@@ -41,7 +41,7 @@ class SignFlowTest {
 
     private fun TestScope.rig(setup: (Rig) -> Unit = {}) = newRig().also(setup)
 
-    private fun TestScope.ready(passphrase: Boolean = false, cached: Boolean = true, setup: (Rig) -> Unit = {}) =
+    private fun TestScope.ready(passphrase: String = "", cached: Boolean = true, setup: (Rig) -> Unit = {}) =
         readyRig(PIN, passphrase, cached, setup)
 
     private fun TestScope.openViewWords(flow: WalletFlow) {
@@ -429,7 +429,6 @@ class SignFlowTest {
         val rig = ready { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
         scanRequest(rig)
         assertEquals(Screen.FingerprintMismatch, rig.flow.screen)
-        assertFalse(rig.flow.session.passphraseRequired)
         assertEquals(PASSPHRASE_FINGERPRINT, rig.flow.scan.mismatchFingerprint)
         assertEquals(0, rig.core.opens)
 
@@ -438,69 +437,43 @@ class SignFlowTest {
     }
 
     @Test
-    fun passphraseCanBeRetriedAndReviewAgain() = runTest {
-        val rig = ready(passphrase = true) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
-        val flow = rig.flow
-        // 内存里没有公钥,先输密码读公钥.
+    fun aPassphraseWalletSignsWithThePinAlone() = runTest {
+        val rig = ready(PASSPHRASE) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
         scanRequest(rig)
-        assertEquals(Screen.Unlock, flow.screen)
-        assertEquals(UnlockPurpose.LoadKeys, flow.unlock.purpose)
-        assertTrue(flow.unlock.needsPassphrase)
-
-        // 第一次输错,算出的指纹和请求对不上.
-        rig.core.requestFingerprint = "00000000"
-        submit(flow, PIN, "wrong")
-        assertEquals(Screen.FingerprintMismatch, flow.screen)
-
-        rig.core.requestFingerprint = PASSPHRASE_FINGERPRINT
-        flow.scan.retryPassphrase()
-        advanceUntilIdle()
-        assertEquals(Screen.Unlock, flow.screen)
-        submit(flow, PIN, "right")
-        assertEquals(Screen.Review, flow.screen)
-        assertIs<ScanResult.Request>(flow.scan.result)
-        assertEquals(PASSPHRASE_FINGERPRINT, flow.session.fingerprint)
-    }
-
-    @Test
-    fun passphraseKeysStayInMemory() = runTest {
-        val rig = ready(passphrase = true) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
-        scanRequest(rig)
-        submit(rig.flow, PIN, "pass")
         assertEquals(Screen.Review, rig.flow.screen)
-        assertNull(rig.store.publicKeys)
-        assertNull(rig.store.meta?.fingerprint)
-
         readToTheEnd(rig)
         rig.flow.scan.confirmTap()
         advanceUntilIdle()
-        assertTrue(rig.flow.unlock.needsPassphrase)
-        submit(rig.flow, PIN, "pass")
+        assertEquals(Screen.Unlock, rig.flow.screen)
+        assertFalse(rig.flow.unlock.asksPassphrase)
+        submit(rig.flow, PIN)
         assertEquals(Screen.Signed, rig.flow.screen)
-        assertNull(rig.store.publicKeys)
+        assertEquals(keysFor(PASSPHRASE_FINGERPRINT).decodeToString(), rig.core.signCalls.single().keys)
+        assertEquals(0, rig.core.passphraseRead)
     }
 
+    /** 核对页用的是本机文件里的公钥.和解开的钱包对不上时,签名前重新核对能发现. */
     @Test
-    fun wrongPassphraseAtSigningIsCaughtBeforeSigning() = runTest {
-        val rig = ready(passphrase = true) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
+    fun keysFromAnotherWalletAreCaughtBeforeSigning() = runTest {
+        val rig = ready {
+            it.core.requestFingerprint = PASSPHRASE_FINGERPRINT
+            it.store.publicKeys = keysFor(PASSPHRASE_FINGERPRINT)
+        }
         scanRequest(rig)
-        submit(rig.flow, PIN, "pass")
+        assertEquals(Screen.Review, rig.flow.screen)
         readToTheEnd(rig)
         rig.flow.scan.confirmTap()
         advanceUntilIdle()
-
-        // 这次解开的钱包和核对时不是同一个.
-        rig.core.requestFingerprint = "00000000"
-        submit(rig.flow, PIN, "typo")
+        submit(rig.flow, PIN)
         assertEquals(Screen.FingerprintMismatch, rig.flow.screen)
-        assertEquals("00000000", rig.flow.scan.mismatchFingerprint)
+        assertEquals(PASSPHRASE_FINGERPRINT, rig.flow.scan.mismatchFingerprint)
         assertTrue(rig.core.signCalls.isEmpty())
         assertTrue(rig.core.lastWallet!!.closed)
     }
 
     @Test
     fun cancelLoadingKeysAbandonsTheScan() = runTest {
-        val rig = ready(passphrase = true)
+        val rig = ready(cached = false)
         scanRequest(rig)
         assertEquals(Screen.Unlock, rig.flow.screen)
         rig.flow.back()
@@ -542,7 +515,9 @@ class SignFlowTest {
         val fields = listOf(fieldOf("nonce"), fieldOf("to"))
         val rig = ready { it.core.review = reviewOf(fields = fields) }
         toReview(rig)
-        rig.flow.scan.fieldsRendered(fields.size)
+        // 同一行画两次只算一次.
+        val shown = rig.core.review.fields + rig.core.review.fields
+        shown.forEach { rig.flow.scan.rowShown(it.id) }
         rig.flow.scan.confirmTap()
         advanceUntilIdle()
         submit(rig.flow, PIN)
@@ -575,7 +550,7 @@ class SignFlowTest {
     fun renderedRowsDoNotCarryOverToTheNextRequest() = runTest {
         val rig = ready()
         toReview(rig)
-        rig.flow.scan.fieldsRendered(5)
+        (0u..4u).forEach { rig.flow.scan.rowShown(it) }
         rig.flow.scan.exitRequest()
         toPin(rig)
         submit(rig.flow, PIN)
@@ -843,9 +818,9 @@ class SignFlowTest {
     @Test
     fun newWalletResetsIndexAndKeys() = runTest {
         val rig = ready { it.store.highestChange = 40u }
-        rig.store.saveWallet("v".encodeToByteArray(), WalletMeta(true, false, "11111111"), null)
+        rig.store.saveWallet("v".encodeToByteArray(), WalletMeta(true, false, "11111111"), keysFor("11111111"))
         assertEquals(0u, rig.store.highestChange)
-        assertNull(rig.store.publicKeys)
+        assertContentEquals(keysFor("11111111"), rig.store.publicKeys)
     }
 
     // A9
@@ -908,7 +883,7 @@ class SignFlowTest {
 
     @Test
     fun walletWithoutKeysShowsNoAddresses() = runTest {
-        val rig = ready(passphrase = true)
+        val rig = ready(cached = false)
         rig.flow.session.loadAddresses()
         advanceUntilIdle()
         assertTrue(rig.flow.session.addresses.isEmpty())
@@ -1055,14 +1030,16 @@ class SignFlowTest {
         submit(rig.flow, PIN)
     }
 
+    /** BIP39 密码跟着进新密文,不经过 JVM. */
     @Test
-    fun changingPinNeedsNoPassphrase() = runTest {
-        val rig = ready(passphrase = true)
+    fun changingPinKeepsThePassphrase() = runTest {
+        val rig = ready(PASSPHRASE)
         rig.flow.openSettings()
         enterNewPin(rig.flow)
-        assertFalse(rig.flow.unlock.needsPassphrase)
+        assertFalse(rig.flow.unlock.asksPassphrase)
         submit(rig.flow, PIN)
-        assertContentEquals(boundVault(NEW_PIN), rig.store.vault)
+        assertContentEquals(boundVault(NEW_PIN, PASSPHRASE), rig.store.vault)
+        assertEquals(0, rig.core.passphraseRead)
     }
 
     @Test
@@ -1212,18 +1189,45 @@ class SignFlowTest {
     }
 
     @Test
-    fun viewingWordsNeedsNoPassphrase() = runTest {
-        val rig = ready(passphrase = true)
+    fun viewingWordsShowsTheStoredPassphrase() = runTest {
+        val rig = ready(PASSPHRASE)
         openViewWords(rig.flow)
-        assertFalse(rig.flow.unlock.needsPassphrase)
+        assertFalse(rig.flow.unlock.asksPassphrase)
         submit(rig.flow, PIN)
         assertEquals(Screen.ViewWords, rig.flow.screen)
+        assertEquals(Words12, rig.flow.settings.viewWords)
+        assertEquals(PASSPHRASE, rig.flow.settings.viewPassphrase)
+
+        rig.flow.settings.leaveViewWords()
+        assertEquals("", rig.flow.settings.viewPassphrase)
+    }
+
+    @Test
+    fun viewingWordsWithoutAPassphraseShowsNone() = runTest {
+        val rig = ready()
+        openViewWords(rig.flow)
+        submit(rig.flow, PIN)
+        assertEquals(Screen.ViewWords, rig.flow.screen)
+        assertEquals("", rig.flow.settings.viewPassphrase)
+    }
+
+    /** 旧格式的密文里没有密码,先输两遍,迁移之后这一页才有密码可以显示. */
+    @Test
+    fun viewingWordsMigratesAnOutdatedPassphraseWalletFirst() = runTest {
+        val rig = ready { it.hasOutdatedPassphraseWallet(entropyOnlyVault(PIN)) }
+        openViewWords(rig.flow)
+        assertTrue(rig.flow.unlock.asksPassphrase)
+        repeat(2) { typePassphrase(rig.flow, PASSPHRASE, rig.flow.unlock::passphraseDone) }
+        submit(rig.flow, PIN)
+        assertEquals(Screen.ViewWords, rig.flow.screen)
+        assertEquals(PASSPHRASE, rig.flow.settings.viewPassphrase)
+        assertContentEquals(boundVault(PIN, PASSPHRASE), rig.store.vault)
     }
 
     // 新钱包和抹除
 
     @Test
-    fun setupCachesPublicKeysExceptForPassphrase() = runTest {
+    fun setupCachesPublicKeys() = runTest {
         val rig = rig()
         rig.flow.onResume()
         advanceUntilIdle()
@@ -1243,7 +1247,7 @@ class SignFlowTest {
     }
 
     @Test
-    fun passphraseWalletNeverWritesKeysAtSetup() = runTest {
+    fun importWithAPassphraseCachesItsOwnKeys() = runTest {
         val rig = rig()
         rig.flow.onResume()
         advanceUntilIdle()
@@ -1255,29 +1259,18 @@ class SignFlowTest {
         }
         rig.flow.setup.togglePassphrase()
         rig.flow.setup.continueAfterImport()
+        assertEquals(Screen.Passphrase, rig.flow.screen)
+        repeat(2) { typePassphrase(rig.flow, PASSPHRASE, rig.flow.setup::passphraseDone) }
+        assertEquals(Screen.SetPin, rig.flow.screen)
         PIN.forEach(rig.flow.pin::digit)
         PIN.forEach(rig.flow.pin::digit)
         rig.flow.setup.finishSetup()
         advanceUntilIdle()
         assertEquals(Screen.Home, rig.flow.screen)
-        assertNull(rig.store.publicKeys)
-    }
-
-    @Test
-    fun wipeForgetsSessionKeys() = runTest {
-        val rig = ready(passphrase = true) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
-        scanRequest(rig)
-        submit(rig.flow, PIN, "pass")
-        rig.flow.scan.exitRequest()
-        rig.flow.openSettings()
-        rig.flow.settings.startWipe()
-        advanceUntilIdle()
-        submit(rig.flow, PIN)
-        assertEquals(Screen.Welcome, rig.flow.screen)
-        assertNull(rig.flow.session.fingerprint)
-        rig.flow.session.loadAddresses()
-        advanceUntilIdle()
-        assertTrue(rig.flow.session.addresses.isEmpty())
+        assertContentEquals(boundVault(PIN, PASSPHRASE), rig.store.vault)
+        assertEquals(true, rig.store.meta?.imported)
+        assertEquals(PASSPHRASE_FINGERPRINT, rig.store.meta?.fingerprint)
+        assertContentEquals(keysFor(PASSPHRASE_FINGERPRINT), rig.store.publicKeys)
     }
 
     // 导出

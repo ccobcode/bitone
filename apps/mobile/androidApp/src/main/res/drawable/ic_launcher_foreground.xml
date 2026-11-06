@@ -1,23 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 品牌标志深色主版,160 网格缩放 0.6 后居中,外框 57.6 乘 48,落在 66dp 安全区内. -->
+<!-- 品牌标志深色主版,160 网格对应 72dp 可见区,比例和网页图标相同,落在 66dp 安全区内. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:scaleX="0.6"
-        android:scaleY="0.6"
-        android:translateX="6"
-        android:translateY="6">
+        android:scaleX="0.45"
+        android:scaleY="0.45"
+        android:translateX="18"
+        android:translateY="18">
         <path
-            android:pathData="M56,46H48A10,10 0,0 0,38 56V104A10,10 0,0 0,48 114H56M104,46H112A10,10 0,0 1,122 56V104A10,10 0,0 1,112 114H104"
-            android:strokeWidth="12"
+            android:pathData="M44,52V108M116,52V108"
+            android:strokeWidth="16"
             android:strokeColor="#EEF1F5"
-            android:strokeLineCap="round"
-            android:strokeLineJoin="round" />
+            android:strokeLineCap="round" />
         <path
             android:fillColor="#1F5EFF"
-            android:pathData="M73,66h14a7,7 0,0 1,7 7v14a7,7 0,0 1,-7 7h-14a7,7 0,0 1,-7 -7v-14a7,7 0,0 1,7 -7z" />
+            android:pathData="M71,62h18a9,9 0,0 1,9 9v18a9,9 0,0 1,-9 9h-18a9,9 0,0 1,-9 -9v-18a9,9 0,0 1,9 -9z" />
     </group>
 </vector>

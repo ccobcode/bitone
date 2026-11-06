@@ -331,7 +331,7 @@ fn unknown(style: &Style, contract: &str, data: &[u8], shape: CallShape) -> Clas
         ..CallFact::default()
     };
     Classified {
-        risk: policy::call_risk(style.chain, &fact),
+        risk: policy::call_risk(crate::chains::rules(style.chain), &fact),
         title: Risk::Unknown.label().to_string(),
         amount: None,
         counterparty_label: Some("目标合约".into()),
@@ -391,7 +391,6 @@ struct Call<'a> {
     depth: usize,
 }
 
-/// 这次调用的一个参数.
 struct Argument<'a> {
     param: &'a str,
     value: &'a DynSolValue,
@@ -497,7 +496,7 @@ fn lead_risk(style: &Style, call: &Classified) -> Risk {
                 listed: true,
                 ..call.fact.clone()
             };
-            policy::call_risk(style.chain, &regular)
+            policy::call_risk(crate::chains::rules(style.chain), &regular)
         }
         CallShape::Undecoded | CallShape::Standard(_) | CallShape::Described => call.risk,
     }
@@ -523,7 +522,7 @@ fn described(style: &Style, call: &Call, entry: &Described, reading: Reading, fa
         .inner
         .iter()
         .map(|inner| inner.risk)
-        .chain([policy::call_risk(style.chain, &fact)])
+        .chain([policy::call_risk(crate::chains::rules(style.chain), &fact)])
         .max()
         .unwrap_or(Risk::Unknown);
     let title = if risk == Risk::Transfer {

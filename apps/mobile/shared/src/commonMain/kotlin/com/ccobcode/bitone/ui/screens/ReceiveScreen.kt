@@ -94,8 +94,6 @@ fun ReceiveScreen(
         }
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
             flow.receive.account?.let { DetailRow("网络", networkName(it.network)) }
-            // 启用 BIP39 密码时只有这里能核对是否输错,输错不会报错.
-            if (flow.session.passphraseRequired) DetailRow("主密钥指纹", flow.session.fingerprint.orEmpty(), mono = true)
         }
     }
 }

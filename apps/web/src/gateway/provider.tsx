@@ -29,7 +29,7 @@ import { t } from "../core/i18n";
 export const POLL_INTERVAL = 15_000;
 /** 一批订阅回复通常同时到,等这么久合成一次快照. */
 const SYNC_GATHER = 50;
-/** 有未定论的记录时,新块最多这么久触发一次增量. */
+/** 有记录还没有最终结果时,新块最多这么久触发一次增量. */
 const SETTLE_INTERVAL = 30_000;
 /** 查询失败的网络的最长重试间隔. */
 const MAX_RETRY_INTERVAL = 5 * 60_000;
@@ -205,7 +205,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
     }, [prices.data]);
     /** 每批地址收到的最后一个高度,用来发现漏掉的推送. */
     const heights = useRef(new Map<string, number>());
-    /** 每批地址上次因为未定论记录触发增量的时间. */
+    /** 每批地址上次因为记录还没有最终结果而触发增量的时间. */
     const settled = useRef(new Map<string, number>());
     const socketRef = useRef<BalanceSocket | null>(null);
     const supportedRef = useRef(supported);
@@ -246,7 +246,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
                 const missed = (last !== undefined && update.previous !== last) || update.items === null;
                 void applyChainUpdate(wallet, stream, update).then(async (fresh) => {
                     for (const notice of incomingNotices(fresh, ownRef.current, pricesRef.current)) publish(notice);
-                    // 新块是唯一的触发.没有未定论的记录时不请求,所以空闲时没有 HTTP.
+                    // 新块是唯一的触发.记录都有了最终结果时不请求,所以空闲时没有 HTTP.
                     // 第一次只记时间,推送刚带来的记录不用马上再查一遍.
                     if (!settled.current.has(key)) settled.current.set(key, Date.now());
                     const due = Date.now() - (settled.current.get(key) ?? 0) >= SETTLE_INTERVAL;

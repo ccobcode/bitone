@@ -2,7 +2,7 @@
 
 use super::Failed;
 use bitcoin::hex::{DisplayHex, FromHex};
-use bitone_core::tx::evm::be_from_decimal;
+use bitone_core::units::be_from_decimal;
 use bitone_core::units::decimal_from_be;
 use serde_json::Value;
 

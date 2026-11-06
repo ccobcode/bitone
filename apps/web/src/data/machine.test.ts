@@ -62,7 +62,6 @@ const seen = (status: ChainObservation["status"], extra: Partial<ChainObservatio
     ...extra,
 });
 
-// 逐条对应 TRANSITIONS 里的每条转移.
 const EDGES: [TxState, TxEvent, TxState][] = [
     ["signing", "signed", "signed"],
     ["signing", "cancel", "abandoned"],
@@ -304,10 +303,11 @@ describe("占用和超时", () => {
         }
     });
 
-    it("已替换要有本地的替换交易才算定论", () => {
+    it("已替换要用户确认才算定论,有本地的替换交易也一样", () => {
         expect(mayStillLand(tx("uncertain"))).toBe(true);
         expect(mayStillLand(tx("replaced"))).toBe(true);
-        expect(mayStillLand(tx("replaced", { replacedBy: "TX-2" }))).toBe(false);
+        expect(mayStillLand(tx("replaced", { replacedBy: "TX-2" }))).toBe(true);
+        expect(mayStillLand(tx("replaced", { replacedBy: "TX-2", replacedConfirmedAt: NOW }))).toBe(false);
         expect(mayStillLand(tx("broadcast"))).toBe(false);
     });
 

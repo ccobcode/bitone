@@ -5,7 +5,7 @@ use bitone_core::Mode;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashSet};
 
-/// 达到这个确认数算最终确定.
+/// 达到这么多确认算最终确定.
 pub const FINAL_CONFIRMATIONS: u64 = 6;
 /// 手续费档位对应的目标确认块数.
 pub const FAST_TARGET: u64 = 1;

@@ -1,9 +1,9 @@
 //! 快照:一次取回多个网络的余额,高度和历史.
 
+use super::AppState;
 use super::query::history_reply;
-use super::{AppState, ClientIp};
 use crate::chains::is_valid;
-use crate::chains::request::{Body, MAX_ADDRESSES, checked, parse, present};
+use crate::chains::request::{Body, Budget, MAX_ADDRESSES, checked, parse, present};
 use crate::error::ApiError;
 use crate::upstream::{NATIVE, Networks};
 use axum::Extension;
@@ -38,12 +38,12 @@ struct SnapshotItem {
     /// 这个地址上次的 `checkpoint`.
     #[serde(default)]
     since: Option<String>,
-    /// 客户端的分批编号.翻页游标绑定一批地址,水位相同也不能合并.
+    /// 客户端的分批编号.翻页游标绑定一批地址,`since` 相同也不能合并.
     #[serde(default)]
     group: u32,
 }
 
-/// 同一网络,同一水位,同一批的条目一起查询.
+/// 同一网络,同一 `since`,同一批的条目一起查询.
 #[derive(Default)]
 struct SnapshotGroup {
     addresses: Vec<String>,
@@ -89,10 +89,10 @@ async fn snapshot_group(
 }
 
 /// 一次取回多个网络的最新状态.响应是一行一个 JSON,哪批先查完就先发,慢的网络不拖累其他网络.
-/// 一个网络失败不影响其他网络,那一行的 `error` 带错误码.每组消耗一个限流令牌,上游成本跟着组数走.
+/// 一个网络失败不影响其他网络,那一行的 `error` 带错误码.每个地址消耗一个限流令牌,上游成本跟着地址数走.
 pub async fn snapshot(
     State(state): State<Arc<AppState>>,
-    Extension(ClientIp(ip)): Extension<ClientIp>,
+    Extension(budget): Extension<Budget>,
     body: Body,
 ) -> Result<Response, ApiError> {
     let networks = &state.networks;
@@ -118,13 +118,14 @@ pub async fn snapshot(
             .assets
             .insert(asset_key(&item.address, contract.unwrap_or(NATIVE)));
     }
-    if !state.limiter.charge(ip, groups.len().saturating_sub(1)) {
-        return Err(ApiError::RateLimited);
-    }
-    let mut queries = Vec::with_capacity(groups.len());
-    for ((id, since, _), mut group) in groups {
+    for ((id, _, _), group) in &mut groups {
         let (network, _) = networks.get(id)?;
-        group.addresses = checked(network, group.addresses, MAX_ADDRESSES)?;
+        group.addresses = checked(network, std::mem::take(&mut group.addresses), MAX_ADDRESSES)?;
+    }
+    budget.spend(groups.values().map(|group| group.addresses.len()).sum())?;
+    let mut queries = Vec::with_capacity(groups.len());
+    for ((id, since, _), group) in groups {
+        let (network, _) = networks.get(id)?;
         let networks = networks.clone();
         queries.push(async move {
             let addresses = group.addresses.clone();

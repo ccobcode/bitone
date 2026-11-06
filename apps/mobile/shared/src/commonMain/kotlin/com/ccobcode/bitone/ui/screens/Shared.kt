@@ -201,12 +201,11 @@ internal fun PassphraseSwitch(on: Boolean, onToggle: () -> Unit) {
             enter = fadeIn(stateSpec()) + expandVertically(stateSpec()),
             exit = fadeOut(exitSpec()) + shrinkVertically(exitSpec()),
         ) {
-            Txt("密码不写入设备,导出和签名时都要输入.", Modifier.padding(top = Space.s2), size = FontSize.t2, color = c.text3)
+            Txt("密码和助记词一起加密存在本机,也要抄在纸上.", Modifier.padding(top = Space.s2), size = FontSize.t2, color = c.text3)
         }
     }
 }
 
-/** 三列排布. */
 @Composable
 internal fun <T> ThreeColumns(items: List<T>, cell: @Composable (Int, T, Modifier) -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
@@ -218,7 +217,7 @@ internal fun <T> ThreeColumns(items: List<T>, cell: @Composable (Int, T, Modifie
     }
 }
 
-/** 详情的一行.标签 text-3,值 text,都比主内容小一号,存在感低但一项不少.长的地址和哈希换到下一行,4 个字符一组. */
+/** 详情的一行.标签 text-3,值 text,都比主内容小一号.长的地址和哈希换到下一行,4 个字符一组. */
 @Composable
 internal fun DetailRow(label: String, value: String, mono: Boolean = false) {
     val c = BitOneTheme.colors

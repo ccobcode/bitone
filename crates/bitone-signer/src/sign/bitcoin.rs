@@ -7,8 +7,8 @@ use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{All, Keypair, Message, Secp256k1, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, TapSighashType};
 use bitcoin::{ScriptBuf, ecdsa, taproot};
+use bitone_core::chains::bitcoin::{OwnInput, Prepared, Sighash, prepare, script_for};
 use bitone_core::request::SignRequest;
-use bitone_core::tx::bitcoin::{OwnInput, Prepared, Sighash, prepare, script_for};
 use bitone_core::{Mode, Network};
 
 /// RFC 6979 的确定性签名,低 s,末尾带 sighash 字节.

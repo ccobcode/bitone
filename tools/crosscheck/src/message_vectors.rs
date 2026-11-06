@@ -6,9 +6,9 @@
 use crate::{locked, sha256};
 use bitcoin::hex::FromHex;
 use bitone_core::address::{evm_text, parse_tron_address, tron_text};
+use bitone_core::chains::tron::decode::TronPersonalWalker;
 use bitone_core::decode::{
-    AddressText, Decoder, Input, Node, TronPersonalWalker, TypedFlavor, TypedWalker, Value, decode, display,
-    parse_typed,
+    AddressText, Decoder, Input, Node, TypedFlavor, TypedWalker, Value, decode, display, parse_typed,
 };
 use bitone_core::hex::DisplayHex;
 use bitone_core::manifest::Manifest;

@@ -122,10 +122,12 @@ internal fun BoxScope.LanguageSheet(visible: Boolean, flow: WalletFlow, onClose:
     }
 }
 
-/** A10 查看助记词.解锁后才有内容,离开页面或退到后台立刻清掉. */
+/** A10 查看助记词,启用了 BIP39 密码时密码在词下面.解锁后才有内容,离开页面或退到后台立刻清掉. */
 @Composable
 fun ViewWordsScreen(flow: WalletFlow) {
+    val c = BitOneTheme.colors
     val rowHeight = if (flow.settings.viewWords.size <= 12) 40.dp else 32.dp
+    val passphrase = flow.settings.viewPassphrase
     Page(
         header = { TitleBar("查看助记词", onBack = { flow.back() }) },
         contentGap = Space.s4,
@@ -133,6 +135,18 @@ fun ViewWordsScreen(flow: WalletFlow) {
     ) {
         Notice("只抄在纸上", NoticeTone.Warn)
         WordGrid(flow.settings.viewWords, rowHeight)
+        if (passphrase.isNotEmpty()) {
+            Card {
+                Column(
+                    Modifier.fillMaxWidth().padding(Space.s4),
+                    verticalArrangement = Arrangement.spacedBy(Space.s2),
+                ) {
+                    Txt("BIP39 密码", size = FontSize.t2, color = c.text3)
+                    // 密码不是文案,不翻译.
+                    Txt(passphrase, mono = true, translated = false)
+                }
+            }
+        }
     }
 }
 

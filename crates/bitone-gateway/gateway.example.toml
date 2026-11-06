@@ -9,8 +9,8 @@ listen = "127.0.0.1:8787"
 # web_dir = "/srv/bitone/web"
 
 upstream_timeout_ms = 10000
-# 上游没有长连接时轮询区块高度的间隔.有订阅才跟块,闲时不访问上游.
 ws_poll_interval_ms = 15000
+# 上游没有长连接时轮询区块高度的间隔.有订阅才跟踪新区块,没有订阅时不访问上游.
 follow_poll_interval_ms = 6000
 ws_heartbeat_ms = 30000
 rate_limit_burst = 1200
@@ -51,7 +51,7 @@ url = "https://api.coingecko.com/api/v3/simple/price"
 "solana:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" = "usd-coin"
 
 # 每个网络配一个或多个上游,失败时切换下一个.没有配置的网络不对外提供.
-# 网络标识见 docs/03-system.md 第 5 节.
+# 下面列出了全部网络标识.
 # tokens 是查询余额的代币,没有列出的代币网页端看不到.
 
 # Bitcoin 优先用 Electrum 协议:一个连接批量查询,不用自己存区块.Esplora 只做备用.
@@ -98,7 +98,7 @@ upstreams = [
 # 有 HyperSync token 时这样配,这个网络的 indexer 就按 HyperSync 的接口访问:
 # indexer = "https://56.hypersync.xyz"
 # indexer_token = "你的 token"
-# 免费 token 每分钟 15 次,所有网络共用,只用来补历史,跟块不用它.
+# 免费 token 每分钟 15 次,所有网络共用,只用来补历史,跟踪新区块时不用它.
 [networks.ethereum]
 upstreams = ["https://ethereum-rpc.publicnode.com", "https://eth.drpc.org"]
 indexer = "https://api.routescan.io/v2/network/mainnet/evm/1/etherscan/api"

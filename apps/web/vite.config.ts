@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 import { tokensCss } from "./tokens-css";
 
-// 内容安全策略.生产托管要下发同样的响应头.
+// 网页端的 CSP.生产托管要下发同样的响应头.
 const csp = [
     "default-src 'none'",
     "script-src 'self' 'wasm-unsafe-eval'",

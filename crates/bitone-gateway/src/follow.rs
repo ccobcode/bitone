@@ -1,6 +1,6 @@
-//! 跟块.每个网络一个任务,所有订阅共用,第一个订阅到来时启动,最后一个离开时停止.
+//! 跟踪新区块.每个网络一个任务,所有订阅共用,第一个订阅到来时启动,最后一个离开时停止.
 //!
-//! 这里只处理 `watch` 发来的信号:只有高度时不访问上游,地址有动静才查这些地址的余额和交易.
+//! 这里只处理 `watch` 发来的信号:只有高度时不访问上游,地址有变化才查这些地址的余额和交易.
 //! 上游没有长连接时退回轮询:每个新高度查一次全部地址,靠余额变化发现交易.
 //! 每条推送带上一轮的高度,客户端发现接不上就重新取快照.
 
@@ -22,10 +22,9 @@ const SIGNAL_QUEUE: usize = 64;
 const MAX_FAILED_CHUNKS: usize = 3;
 
 /// 只有高度变化时两轮之间的最短间隔.BSC 和 Solana 不到一秒一个块,没有必要每块都通知.
-/// 地址有动静时不等它.
+/// 地址有变化时不等它.
 const ROUND_INTERVAL: Duration = Duration::from_secs(3);
 
-/// 丢弃时中止任务.
 pub struct AbortOnDrop(pub JoinHandle<()>);
 
 impl Drop for AbortOnDrop {
@@ -173,7 +172,7 @@ pub struct Follower {
     watched: watch::Sender<Vec<String>>,
 }
 
-/// 一个订阅的成员资格,丢弃时退出,最后一个退出时跟块停止.
+/// 一个订阅的成员资格,丢弃时退出,最后一个退出时停止跟踪.
 pub struct Member {
     follower: Arc<Follower>,
     key: u64,
@@ -279,7 +278,7 @@ impl Pending {
         }
     }
 
-    /// 这一轮要查余额的地址.长连接正常时只查有动静的,查不到推送时查全部.
+    /// 这一轮要查余额的地址.长连接正常时只查有变化的,查不到推送时查全部.
     fn query(&self, watched: &[String]) -> Vec<String> {
         let all = !self.live || self.reconcile;
         let wanted = |address: &&String| all || self.touched.contains(*address);
@@ -310,7 +309,7 @@ async fn follow(networks: Arc<Networks>, follower: Arc<Follower>) {
         match timeout(poll_interval, incoming.recv()).await {
             Ok(Some(signal)) => pending.take(signal),
             Ok(None) => return,
-            // 长连接还在时安静就是没有动静,不用查.
+            // 长连接还在时没有信号就是没有变化,不用查.
             Err(_) if pending.live => {}
             Err(_) => pending.head = pool.head().await.ok().or(pending.head),
         }
@@ -331,7 +330,7 @@ async fn follow(networks: Arc<Networks>, follower: Arc<Follower>) {
         next = Instant::now() + pause;
         let query = pending.query(&follower.watched.borrow());
         let held = follower.round(pool, head, &query, &pending.touched).await;
-        // 已推进的订阅不用再查.只留下没推进的,它们下一轮要看到这些动静.
+        // 已推进的订阅不用再查.只留下没推进的,它们下一轮要看到这些变化.
         pending.touched.retain(|address| held.contains(address));
         if held.is_empty() {
             pending.reconcile = false;

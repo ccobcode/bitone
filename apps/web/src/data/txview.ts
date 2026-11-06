@@ -46,7 +46,7 @@ export function feeUnconfirmedFact(): TxFact {
     return { label: t("手续费确认"), value: t("无法确认,输入金额只是声明") };
 }
 
-/** 最终性进度. */
+/** 最终性进度,完成标准由各链决定. */
 export function finality(tx: TxRecord): Finality {
     return chainOf(tx.chain).view.finality(tx);
 }
@@ -64,7 +64,7 @@ export interface TimelineStep {
     phase: "done" | "current" | "todo";
 }
 
-/** W5 的进度,走过的步骤来自时间线,后面还要走的按原型列出来. */
+/** W5 的进度,走过的步骤来自时间线,后面还要走的按当前状态列出来. */
 export function timelineSteps(tx: TxRecord): TimelineStep[] {
     const done = tx.timeline.map((entry, i): TimelineStep => ({
         title: STEP_LABELS[entry.state] ?? STATE_LABELS[entry.state],

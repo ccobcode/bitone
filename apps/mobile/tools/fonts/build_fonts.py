@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """生成 androidApp/src/main/res/font 下的字体文件.
 
-字体打包进应用.Compose 的 FontFamily 不能按字符回退到第二个字体,
+字体打包进应用,不依赖系统字体.Compose 的 FontFamily 不能按字符回退到第二个字体,
 所以把 Inter 的拉丁字符和 Noto Sans SC 的中文合并成一个文件.
 
 中文收录 GB2312 一级字和源码里用到的全部非 ASCII 字符,改文案一般不用重新生成.

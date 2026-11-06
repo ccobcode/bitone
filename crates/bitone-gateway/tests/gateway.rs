@@ -548,6 +548,74 @@ async fn rate_limit_returns_the_error_format() {
     assert!(connect_async(gateway.ws.as_str()).await.is_err());
 }
 
+/// 查询多个地址或哈希的接口按个数扣令牌.桶里有 3 个,3 个条目的请求用完全部令牌,上游不通也一样.
+#[tokio::test]
+async fn list_queries_are_charged_per_item() {
+    let dead = dead_url().await;
+    let evm = [
+        EVM.to_string(),
+        format!("0x{}", "11".repeat(20)),
+        format!("0x{}", "22".repeat(20)),
+    ];
+    let btc = [
+        BTC,
+        "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+        "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+    ];
+    let tron: Vec<String> = (1..=3).map(tron_address).collect();
+    let txids = ["ab".repeat(32), "cd".repeat(32), "ef".repeat(32)];
+    let snapshot: Vec<Value> = evm
+        .iter()
+        .map(|address| json!({"network": "ethereum", "address": address}))
+        .collect();
+    let requests = [
+        ("/v1/ethereum/balances", json!({"addresses": evm})),
+        ("/v1/ethereum/history", json!({"addresses": evm})),
+        ("/v1/ethereum/nonce", json!({"addresses": evm})),
+        ("/v1/bitcoin/tx", json!({"hashes": txids})),
+        ("/v1/bitcoin/used", json!({"addresses": btc})),
+        ("/v1/bitcoin/utxos", json!({"addresses": btc})),
+        ("/v1/bitcoin/raw-txs", json!({"txids": txids})),
+        ("/v1/tron/resources", json!({"addresses": tron})),
+        ("/v1/snapshot", json!({"items": snapshot})),
+    ];
+    let config = format!(
+        "rate_limit_burst = 3\nrate_limit_per_second = 0.001\n\
+         [networks.ethereum]\nupstreams = ['{dead}']\n\
+         [networks.bitcoin]\nupstreams = ['{dead}']\n\
+         [networks.tron]\nupstreams = ['{dead}']\n"
+    );
+    for (path, body) in requests {
+        let gateway = Gateway::start(&config).await;
+        let response = reqwest::Client::new()
+            .post(format!("{}{path}", gateway.base))
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_ne!(response.status(), StatusCode::TOO_MANY_REQUESTS, "{path}");
+        assert_eq!(
+            gateway.get("/v1/version").await.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "{path} 没有按条目扣令牌"
+        );
+    }
+}
+
+/// 订阅先查一遍全部地址,按地址数扣令牌.握手和这条消息各一个,3 个地址再扣 2 个.
+#[tokio::test]
+async fn ws_address_subscription_is_charged_per_address() {
+    let (_, url) = EvmNode::start("0x1").await;
+    let config = evm_config(&[&url], "rate_limit_burst = 4\nrate_limit_per_second = 0.001");
+    let gateway = Gateway::start(&config).await;
+    let mut ws = gateway.ws().await;
+    let second = format!("0x{}", "11".repeat(20));
+    let third = format!("0x{}", "22".repeat(20));
+    subscribe(&mut ws, &[EVM, &second, &third]).await;
+    let reply = call(&mut ws, json!({"jsonrpc": "2.0", "id": 2, "method": "ping"})).await;
+    assert_eq!(reply["error"]["data"]["code"], "rate_limited");
+}
+
 // ---- WebSocket ----
 
 fn subscribe_message(id: u64, addresses: &[String]) -> Value {
@@ -635,7 +703,7 @@ async fn ws_subscribers_share_one_round() {
     assert_eq!(node.balance_calls() - before, 1);
 }
 
-/// 有订阅才跟块,闲时不访问上游.
+/// 有订阅才跟踪新区块,没有订阅时不访问上游.
 #[tokio::test]
 async fn ws_follows_only_while_someone_is_subscribed() {
     let (node, url) = EvmNode::start("0x1").await;
@@ -797,7 +865,8 @@ async fn ws_rate_limit_applies_per_message() {
 #[tokio::test]
 async fn ws_address_cap_is_per_connection() {
     let (_, url) = EvmNode::start("0x1").await;
-    let gateway = Gateway::start(&evm_config(&[&url], "")).await;
+    // 订阅按地址数扣令牌,这里只测名额,桶要装得下 5000 个地址.
+    let gateway = Gateway::start(&evm_config(&[&url], "rate_limit_burst = 10000")).await;
     let addresses: Vec<String> = (0..100).map(|i| format!("0x{i:040x}")).collect();
     let mut ws = gateway.ws().await;
 

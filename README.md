@@ -53,26 +53,26 @@ Only the cold wallet holds private keys. The web app and gateway are designed as
 
 ## Features
 
-- **Air gap**: BC-UR animated QR codes are the only channel. Large transactions loop across frames.
+- **QR only**: The cold wallet never goes online. BC-UR animated QR codes are the only channel, and large transactions loop across frames.
 - **Multi-chain**: Bitcoin, Ethereum, BNB Smart Chain, Polygon, TRON, Solana and their testnets.
 - **Independent review**: The cold wallet parses each transaction and rates its risk itself. It ignores what the web app claims.
 - **Two-layer encryption**: The seed is encrypted with a PIN-derived key, then with a hardware Keystore key.
 - **Offline self-check**: Airplane mode, root, debugging and screen lock are checked at launch and before signing. A failed check shows a strong warning, and the owner can continue one operation at a time. Only generating a new wallet stays blocked.
 - **Built-in list**: Token data ships with the app and updates offline by QR, taking effect only after its signature checks out.
 
-Not supported: iOS, HarmonyOS NEXT, DApp connections, message signing, swaps, multisig and NFTs.
+Not supported: iOS, HarmonyOS NEXT, DApp connections, swaps, multisig and NFTs. The web app does not request message signatures.
 
 ## Security
 
 Before signing, the cold wallet parses every field from the raw transaction and re-derives addresses from their paths. If the web app or gateway is compromised, the tampering shows on the cold wallet screen, so read that screen every time.
 
+The cold wallet is responsible for every transaction you sign: the recipient, amount and fee come from its own screen. Balances and deposits are what the web app reads from the gateway, the same as in any wallet that does not run a full node. Confirm large deposits on a block explorer.
+
 ### What It Does Not Protect Against
 
-- **Everyday phones**: The air gap depends on a dedicated phone: factory reset, no accounts signed in, BitOne only.
-- **Fake balances**: A malicious gateway can fake balances, deposits and confirmations, and the cold wallet cannot check them. Confirm large deposits from another source.
+- **Everyday phones**: Keeping keys offline depends on a dedicated phone: factory reset, no accounts signed in, BitOne only.
 - **Address linking**: The gateway and node providers see the addresses you query and can link them. If that matters, self-host with your own nodes.
 - **Lost recovery phrase**: There is no account and nobody can recover it for you. If you lose the phone or forget the PIN, the recovery phrase is the only way back.
-- **Signing without reading**: Long-press and banners only lower the odds.
 
 ### Verify It Yourself
 
@@ -85,7 +85,7 @@ make dist-android
 apkanalyzer manifest permissions dist/bitone-v0.2.0-android-unsigned.apk
 ```
 
-The build also fails if the merged manifest gains a network permission. Two clean builds on one machine produce the same unsigned APK hash. Builds across machines and in containers have not been verified.
+The build also fails if the merged manifest gains a network permission. Two clean builds on one machine produce the same unsigned APK hash.
 
 ## Data Sources
 

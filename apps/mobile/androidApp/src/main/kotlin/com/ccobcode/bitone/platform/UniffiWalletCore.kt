@@ -3,6 +3,7 @@ package com.ccobcode.bitone.platform
 import uniffi.bitone_ffi.WalletException
 import uniffi.bitone_ffi.accountRows as ffiAccountRows
 import uniffi.bitone_ffi.isBoundVault as ffiIsBoundVault
+import uniffi.bitone_ffi.isCurrentVault as ffiIsCurrentVault
 import uniffi.bitone_ffi.isValidWord as ffiIsValidWord
 import uniffi.bitone_ffi.isWeakPin as ffiIsWeakPin
 import uniffi.bitone_ffi.manifestEntries as ffiManifestEntries
@@ -25,15 +26,22 @@ class UniffiWalletCore : WalletCore {
         Draft(uniffi.bitone_ffi.WalletDraft.importWords(words))
     }
 
-    override fun open(sealed: ByteArray, pin: String, tag: ByteArray, passphrase: String): UnlockedWallet = mapped {
-        Unlocked(uniffi.bitone_ffi.UnlockedWallet.open(sealed, pin, tag, passphrase))
+    override fun open(sealed: ByteArray, pin: String, tag: ByteArray): UnlockedWallet = mapped {
+        Unlocked(uniffi.bitone_ffi.UnlockedWallet.open(sealed, pin, tag))
     }
+
+    override fun openEntropyOnly(sealed: ByteArray, pin: String, tag: ByteArray, passphrase: String): UnlockedWallet =
+        mapped {
+            Unlocked(uniffi.bitone_ffi.UnlockedWallet.openEntropyOnly(sealed, pin, tag, passphrase))
+        }
 
     override fun openLegacy(sealed: ByteArray, pin: String, passphrase: String): UnlockedWallet = mapped {
         Unlocked(uniffi.bitone_ffi.UnlockedWallet.openLegacy(sealed, pin, passphrase))
     }
 
     override fun isBoundVault(vault: ByteArray): Boolean = ffiIsBoundVault(vault)
+
+    override fun isCurrentVault(vault: ByteArray): Boolean = ffiIsCurrentVault(vault)
 
     override fun qrMatrix(part: String): QrMatrix = mapped {
         val matrix = ffiQrMatrix(part)
@@ -195,6 +203,8 @@ private class Draft(private val inner: uniffi.bitone_ffi.WalletDraft) : WalletDr
 
     override fun checkWord(index: Int, word: String): Boolean = mapped { inner.checkWord(index.toUInt(), word) }
 
+    override fun setPassphrase(passphrase: String) = inner.setPassphrase(passphrase)
+
     override fun seal(pin: String, tag: ByteArray): ByteArray = mapped { inner.seal(pin, tag) }
 
     override fun close() = inner.close()
@@ -208,6 +218,10 @@ private class Unlocked(private val inner: uniffi.bitone_ffi.UnlockedWallet) : Un
     }
 
     override fun words(): List<String> = mapped { inner.words() }
+
+    override fun passphrase(): String = inner.passphrase()
+
+    override fun hasPassphrase(): Boolean = inner.hasPassphrase()
 
     override fun seal(pin: String, tag: ByteArray): ByteArray = mapped { inner.seal(pin, tag) }
 

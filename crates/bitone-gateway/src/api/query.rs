@@ -4,13 +4,13 @@
 
 use super::AppState;
 use crate::chains::request::{
-    Body, MAX_ADDRESSES, MAX_HASHES, Reply, Shared, addresses_from, checked, checked_hashes, parse, present,
+    Body, Budget, MAX_ADDRESSES, MAX_HASHES, Reply, Shared, addresses_from, checked, checked_hashes, parse, present,
 };
 use crate::chains::{raw_tx, spec};
 use crate::prices::PriceMap;
 use crate::upstream::{HistoryPage, parse_cursor};
-use axum::Json;
 use axum::extract::{Path, State};
+use axum::{Extension, Json};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -35,9 +35,15 @@ struct HistoryRequest {
     since: Option<String>,
 }
 
-pub async fn balances(State(networks): Shared, Path(network): Path<String>, body: Body) -> Reply {
+pub async fn balances(
+    State(networks): Shared,
+    Path(network): Path<String>,
+    Extension(budget): Extension<Budget>,
+    body: Body,
+) -> Reply {
     let (network, pool) = networks.get(&network)?;
     let addresses = addresses_from(network, body)?;
+    budget.spend(addresses.len())?;
     Ok(Json(json!({"balances": pool.balances(&addresses).await?})))
 }
 
@@ -59,10 +65,16 @@ pub async fn broadcast(State(networks): Shared, Path(network): Path<String>, bod
     Ok(Json(json!({"hash": raw.hash, "status": "accepted"})))
 }
 
-pub async fn tx(State(networks): Shared, Path(network): Path<String>, body: Body) -> Reply {
+pub async fn tx(
+    State(networks): Shared,
+    Path(network): Path<String>,
+    Extension(budget): Extension<Budget>,
+    body: Body,
+) -> Reply {
     let (network, pool) = networks.get(&network)?;
     let request: HashesRequest = parse(body)?;
     let hashes = checked_hashes(network, request.hashes, MAX_HASHES)?;
+    budget.spend(hashes.len())?;
     Ok(Json(json!({"txs": pool.txs(&hashes).await?})))
 }
 
@@ -76,7 +88,12 @@ pub fn history_reply(page: &HistoryPage) -> Value {
     })
 }
 
-pub async fn history(State(networks): Shared, Path(network): Path<String>, body: Body) -> Reply {
+pub async fn history(
+    State(networks): Shared,
+    Path(network): Path<String>,
+    Extension(budget): Extension<Budget>,
+    body: Body,
+) -> Reply {
     let (network, pool) = networks.get(&network)?;
     let request: HistoryRequest = parse(body)?;
     let addresses = checked(network, request.addresses, MAX_ADDRESSES)?;
@@ -87,6 +104,7 @@ pub async fn history(State(networks): Shared, Path(network): Path<String>, body:
     let since = present(request.since)
         .map(|since| since.parse().map_err(|_| crate::error::ApiError::InvalidRequest))
         .transpose()?;
+    budget.spend(addresses.len())?;
     Ok(Json(history_reply(&pool.history(&addresses, &cursor, since).await?)))
 }
 

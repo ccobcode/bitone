@@ -33,7 +33,7 @@ import kotlinx.coroutines.withContext
 private const val ANDROID_KEYSTORE = "AndroidKeyStore"
 private const val PIN_ALIAS = "bitone.pin"
 private const val HMAC = "HmacSHA256"
-/** 旧格式外层加密的密钥,迁移后删除. */
+/** 旧格式外层加密用的密钥,钱包换成当前格式后删除. */
 private const val LEGACY_ALIAS = "bitone.seal"
 private const val PROBE_ALIAS = "bitone.enrollment"
 private const val TRANSFORMATION = "AES/GCM/NoPadding"

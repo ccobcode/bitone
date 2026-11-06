@@ -1,10 +1,9 @@
 //! Stake 的两种账户布局.向量里的指令由官方 `solana-stake-interface` 的构建函数生成,
-//! `stake_interface.rs` 检查这份文件和构建函数一致.
-//! 这里检查遍历器读出的账户名和地址.
+//! `stake_interface.rs` 检查这份文件和构建函数一致,这里检查遍历器读出的账户名和地址.
 
 use crate::{locked, sha256};
 use bitcoin::hex::FromHex;
-use bitone_core::decode::solana::SolanaWalker;
+use bitone_core::chains::solana::decode::SolanaWalker;
 use bitone_core::decode::{Coin, Decoded, Input, Node, Value, decode, display};
 use bitone_core::{Chain, Mode};
 use serde::{Deserialize, Serialize};

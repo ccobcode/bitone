@@ -4,15 +4,15 @@ package com.ccobcode.bitone.platform
 class WalletMeta(
     /** 导出时要额外带上旧路径账户,所以必须保存. */
     val imported: Boolean,
-    /** 只记是否启用,密码本身不落盘. */
+    /** 是否启用了 BIP39 密码.密码本身只在密文里.旧格式的密文里没有密码,迁移时靠这一项决定要不要先问. */
     val passphrase: Boolean,
-    /** 启用 BIP39 密码时为 null,真正的指纹要解锁后才知道. */
+    /** 旧格式的 BIP39 密码钱包迁移之前,以及元数据丢失时为 null. */
     val fingerprint: String?,
-    /** 元数据丢了,不知道有没有 BIP39 密码,A7 可以留空. */
+    /** 元数据丢了,不知道旧格式的密文有没有 BIP39 密码,迁移时可以留空. */
     val passphraseOptional: Boolean = false,
 ) {
     companion object {
-        /** 密文还在,元数据丢了.带上旧路径账户,公钥不落盘,BIP39 密码可填可不填,这样哪种钱包都打得开. */
+        /** 密文还在,元数据丢了.带上旧路径账户.旧格式的密文迁移时先问 BIP39 密码,可以留空,这样哪种钱包都打得开.解锁之后写回真正的指纹. */
         val Unknown = WalletMeta(imported = true, passphrase = true, fingerprint = null, passphraseOptional = true)
     }
 }
@@ -44,11 +44,14 @@ interface SecureStore {
     /** 只读保存的元数据,读不到时是 null.判断钱包在不在用 [walletMeta]. */
     fun readMeta(): WalletMeta?
 
-    /** 写入新钱包:密文,元数据和公钥.PIN 计数,最高找零索引和收款索引都归零,旧钱包的公钥不留下.BIP39 密码钱包的 [publicKeys] 传 null,公钥不落盘. */
-    fun saveWallet(vault: ByteArray, meta: WalletMeta, publicKeys: ByteArray?)
+    /** 写入新钱包:密文,元数据和公钥.PIN 计数,最高找零索引和收款索引都归零,旧钱包的公钥不留下. */
+    fun saveWallet(vault: ByteArray, meta: WalletMeta, publicKeys: ByteArray)
 
-    /** 修改 PIN:只换密文,其余都不动.写入是原子的,中途断电时旧密文仍然完整. */
+    /** 修改 PIN 和迁移:只换密文,其余都不动.写入是原子的,中途断电时旧密文仍然完整. */
     fun replaceVault(vault: ByteArray)
+
+    /** 迁移和元数据丢失之后写回真正的指纹,其余都不动. */
+    fun writeMeta(meta: WalletMeta)
 
     /** 公钥缓存.核对交易不用解锁. */
     fun readPublicKeys(): ByteArray?

@@ -1,17 +1,19 @@
 //! 语料检查和官方向量对照.只读入库的快照,不访问网络.
 //!
 //! `corpus/corpus.lock`,`vectors/vectors.lock` 每行是 `SHA-256 文件名`.语料是空的时候只输出空报告.
+//! `crosscheck seeds <目录>` 把向量写成模糊测试的种子.
 
 mod bitcoin_vectors;
 mod evm_vectors;
+mod message_vectors;
+mod seeds;
 mod solana_vectors;
 #[cfg(test)]
 mod stake_interface;
 mod stake_vectors;
+mod tron_vectors;
 #[cfg(test)]
 mod vote_interface;
-mod message_vectors;
-mod tron_vectors;
 
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -94,8 +96,8 @@ fn run() -> Result<(), String> {
     println!("Stake 向量:{} 种布局,{} 笔指令", report.layouts, report.cases);
     let report = tron_vectors::check(Path::new(VECTORS))?;
     println!(
-        "TRON 向量:{} 笔交易,覆盖 {} 个合约类型,{} 个不合法载荷",
-        report.transactions, report.contracts, report.refused
+        "TRON 向量:{} 笔交易,覆盖 {} 个合约类型,{} 个按原始数据显示,{} 个不合法载荷",
+        report.transactions, report.contracts, report.raw, report.refused
     );
     let report = message_vectors::check(Path::new(VECTORS))?;
     println!(
@@ -106,7 +108,13 @@ fn run() -> Result<(), String> {
 }
 
 fn main() -> ExitCode {
-    match run() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let result = match args.as_slice() {
+        [] => run(),
+        [command, dir] if command == "seeds" => seeds::run(Path::new(VECTORS), Path::new(dir)),
+        _ => Err("只接受 seeds <目录>".to_string()),
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(reason) => {
             eprintln!("{reason}");
@@ -157,7 +165,7 @@ mod tests {
     #[test]
     fn the_solana_vectors_hold() {
         let report = solana_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
-        assert_eq!(report.programs, 9);
+        assert_eq!(report.programs, 10);
         assert!(report.instructions > 0 && report.fields > 0 && report.refused > 0);
     }
 
@@ -172,13 +180,20 @@ mod tests {
     fn the_tron_vectors_hold() {
         let report = tron_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
         assert_eq!(report.contracts, 41);
-        assert!(report.transactions > report.contracts && report.refused > 0);
+        assert!(report.transactions > report.contracts && report.raw > 0 && report.refused > 0);
     }
 
     #[test]
     fn the_message_vectors_hold() {
         let report = message_vectors::check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS)).unwrap();
         assert!(report.calls > 0 && report.irregular > 0 && report.typed > 0 && report.personal > 0);
+    }
+
+    #[test]
+    fn the_vectors_seed_every_fuzz_target() {
+        let dir = corpus("seeds", &[]);
+        seeds::run(&Path::new(env!("CARGO_MANIFEST_DIR")).join(VECTORS), &dir).unwrap();
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 7);
     }
 
     #[test]

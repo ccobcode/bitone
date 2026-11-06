@@ -15,8 +15,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "=0.11.1"
 
-# 官方没有 Vote 的 IDL,schemas/solana/vote.json 是手写的,要和 interface crate 比较.
-# Stake 的两种账户布局由两个版本的构建函数生成.都不进产物.
+# Vote 的指令由官方构建函数生成,走完整的消息遍历.Stake 的两种账户布局由两个版本的构建函数生成.都不进产物.
 [dev-dependencies]
 solana-hash = "=4.7.0"
 solana-instruction = "=4.0.0"

@@ -8,7 +8,7 @@ import { lookupAsset } from "../core/manifest";
 import { cleanText, shortAddress } from "../core/text";
 import { useApp, useLive } from "../data/app";
 import { db, txKey, type ChainEntry, type TxRecord } from "../data/db";
-import { STATE_LABELS, isOverdue } from "../data/machine";
+import { STATE_LABELS, isOverdue, mayStillLand } from "../data/machine";
 import { broadcastTx, createReplacement, resendTx } from "../data/transfer";
 import {
     amountText,
@@ -20,7 +20,7 @@ import {
     sequenceFact,
     timelineSteps,
 } from "../data/txview";
-import { deleteRequest, findTx, isDeletable } from "../data/txs";
+import { confirmReplaced, deleteRequest, findTx, isDeletable, releaseAbandoned } from "../data/txs";
 import { addressKey, fetchTxs } from "../gateway/client";
 import { markSeen } from "../gateway/feed";
 import { TONES, ledgerRows, localTitle, recordHref, remoteItem, txHref } from "../gateway/history";
@@ -400,32 +400,143 @@ function FailedCard({ tx }: { tx: TxRecord }) {
     );
 }
 
-/** 已取消但签名仍然有效,提示发替换交易才算作废. */
+/** 轮询记下的序号证据.数据来自网关,可能是假的,所以只显示,释放由用户决定. */
+function spentFacts({ conflicts, conflictAt }: Pick<TxRecord, "conflicts" | "conflictAt">) {
+    if (conflicts === 0 || conflictAt === undefined) {
+        return [{ label: t("序号状态"), value: t("网关没有报告已用掉") }];
+    }
+    return [
+        { label: t("序号状态"), value: t("网关报告已用掉") },
+        { label: t("连续报告轮数"), value: String(conflicts) },
+        { label: t("最近报告"), value: timeLabel(conflictAt) },
+    ];
+}
+
+/** 确认前再看一遍证据. */
+function ReleaseSequence({ tx }: { tx: TxRecord }) {
+    return (
+        <Confirm
+            trigger={t("释放序号")}
+            title={t("确认序号已经用掉")}
+            cancel={t("取消")}
+            actions={
+                <Button variant="danger" onClick={() => void releaseAbandoned(tx.id)}>
+                    {t("释放序号")}
+                </Button>
+            }
+        >
+            <dl className="flex flex-col text-t2">
+                {spentFacts(tx).map((fact) => (
+                    <Fact key={fact.label} label={fact.label}>
+                        {fact.value}
+                    </Fact>
+                ))}
+            </dl>
+            {tx.conflicts === 0 ? <Notice tone="warn">{t("网关没有报告已用掉,这笔仍可能上链.")}</Notice> : null}
+            <Helper>
+                {t("这些数据来自网关,不一定可靠,请先在区块浏览器核对.释放后这笔签名如果还有效,可能抢在新交易之前上链.")}
+            </Helper>
+        </Confirm>
+    );
+}
+
+/** 已取消但签名仍然有效,提示发替换交易才算作废.序号被用掉时由用户确认释放. */
 function AbandonedCard({ tx }: { tx: TxRecord }) {
     const { busy, failure, replace } = useReplace(tx);
+    const held = useLive(() => db.reservations.where("txIds").equals(tx.id).count(), [tx.id]);
     const label = replaceLabel(tx);
+    if (held === 0) {
+        return (
+            <StateCard
+                tone="warn"
+                icon="alert"
+                title={t("取消只影响本地记录")}
+                body={t("这笔交易已经签名,签名可能仍然有效,序号不再占用.")}
+                facts={[]}
+            />
+        );
+    }
     return (
         <StateCard
             tone="warn"
             icon="alert"
             title={t("取消只影响本地记录")}
             body={t("这笔交易已经签名,签名仍然有效,序号会一直占用.")}
-            facts={[]}
+            facts={spentFacts(tx)}
             actions={
-                label || failure ? (
-                    <>
-                        {failure ? (
-                            <Notice tone="danger" className="mr-auto">
-                                {failure}
-                            </Notice>
-                        ) : null}
-                        {label ? (
-                            <Button disabled={busy} onClick={() => void replace("cancel")}>
-                                {label}
-                            </Button>
-                        ) : null}
-                    </>
-                ) : undefined
+                <>
+                    {failure ? (
+                        <Notice tone="danger" className="mr-auto">
+                            {failure}
+                        </Notice>
+                    ) : null}
+                    {label ? (
+                        <Button disabled={busy} onClick={() => void replace("cancel")}>
+                            {label}
+                        </Button>
+                    ) : null}
+                    <ReleaseSequence tx={tx} />
+                </>
+            }
+        />
+    );
+}
+
+/** 替换交易的证据.状态和确认数都来自网关. */
+function replacementFacts(replacement: TxRecord | undefined) {
+    if (!replacement) return [{ label: t("替换交易"), value: t("没有本地记录") }];
+    return [
+        {
+            label: t("替换交易"),
+            value: (
+                <Link to={txHref(replacement)} className="link">
+                    {replacement.id}
+                </Link>
+            ),
+        },
+        { label: t("替换交易状态"), value: STATE_LABELS[replacement.state] },
+        { label: t("确认数"), value: String(replacement.confirmations) },
+    ];
+}
+
+/** 网关说替换交易已上链,这笔的签名却一直有效.用户看过证据确认后,同样的转账才能再发. */
+function ReplacedCard({ tx }: { tx: TxRecord }) {
+    const replacement = useLive(
+        () => (tx.replacedBy ? db.txs.get(tx.replacedBy) : Promise.resolve(undefined)),
+        [tx.replacedBy],
+    );
+    const facts = replacementFacts(replacement);
+    return (
+        <StateCard
+            tone="warn"
+            icon="alert"
+            title={t("替换只有网关的说法")}
+            body={t("网关报告同一序号的另一笔交易已经上链.这笔的签名仍然有效,确认之前同样的转账发不出去.")}
+            facts={facts}
+            actions={
+                <Confirm
+                    trigger={t("确认已被替换")}
+                    title={t("确认这笔已被替换")}
+                    cancel={t("取消")}
+                    actions={
+                        <Button variant="danger" onClick={() => void confirmReplaced(tx.id)}>
+                            {t("确认已被替换")}
+                        </Button>
+                    }
+                >
+                    <dl className="flex flex-col text-t2">
+                        {facts.map((fact) => (
+                            <Fact key={fact.label} label={fact.label}>
+                                {fact.value}
+                            </Fact>
+                        ))}
+                    </dl>
+                    <Helper>
+                        {t(
+                            "这些数据来自网关,不一定可靠,请先在区块浏览器核对替换交易已经上链.确认后这笔如果还能上链,再发同样的转账会付两次.",
+                        )}
+                    </Helper>
+                </Confirm>
             }
         />
     );
@@ -511,6 +622,7 @@ const UNSENT = { to: "/history/unsent", label: t("未上链的请求") };
 function View({ tx }: { tx: TxRecord }) {
     const { down } = useGateway();
     const closed = CLOSED[tx.state];
+    const unsettled = tx.state === "replaced" && mayStillLand(tx);
     const tracking = tx.state === "broadcast" || tx.state === "confirming" || tx.state === "confirmed";
 
     // 看过这笔失败,顶栏和首页不再提示.
@@ -533,7 +645,8 @@ function View({ tx }: { tx: TxRecord }) {
             {tx.state === "confirming" && tx.reverted ? <RevertingCard tx={tx} /> : null}
             {tx.state === "broadcast" ? <BroadcastActions tx={tx} /> : null}
             {tx.state === "abandoned" && tx.raw ? <AbandonedCard tx={tx} /> : null}
-            {closed && !(tx.state === "abandoned" && tx.raw) ? (
+            {unsettled ? <ReplacedCard tx={tx} /> : null}
+            {closed && !(tx.state === "abandoned" && tx.raw) && !unsettled ? (
                 <ActionBlock id="h-closed" title={closed.title} helper={<Helper>{closed.body}</Helper>} />
             ) : null}
             <div className="grid grid-cols-12 items-start gap-s4 @split:gap-s5">
@@ -691,7 +804,7 @@ export default function TxDetail() {
             </>
         );
     }
-    // 旧链接用的是本地编号或者整条记录的标识,都跳到统一的地址.
+    // 用本地编号或者整条记录标识的链接都跳到统一的地址.
     if (id) {
         const [entry] = record.entries ?? [];
         const href = entry ? recordHref(entry.network, entry.hash) : record.tx ? txHref(record.tx) : null;

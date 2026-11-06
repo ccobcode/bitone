@@ -11,7 +11,7 @@ import com.ccobcode.bitone.platform.walletMeta
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 
-/** 已保存的钱包和这次解锁留下的公钥信息.这里只有公开数据,解开的钱包不进任何字段. */
+/** 已保存的钱包和从公钥缓存算出的地址.这里只有公开数据,解开的钱包不进任何字段. */
 class Session internal constructor(platform: Platform, private val work: CoroutineDispatcher) {
     private val core = platform.core
     private val store = platform.store
@@ -19,20 +19,15 @@ class Session internal constructor(platform: Platform, private val work: Corouti
     var meta by mutableStateOf(store.walletMeta())
         internal set
 
-    /** 本次解锁算出的指纹,只留在内存.启用 BIP39 密码时只有它是真指纹. */
-    private var sessionFingerprint by mutableStateOf<String?>(null)
+    /** 本机密文是旧格式,里面没有 BIP39 密码.和 [meta] 一起在每次自检时重读,下一次解开时换成当前格式. */
+    internal var outdated = store.readVault()?.let { !core.isCurrentVault(it) } == true
 
     val fingerprint: String?
-        get() = sessionFingerprint ?: meta?.fingerprint
+        get() = meta?.fingerprint
 
-    val passphraseRequired: Boolean
-        get() = meta?.passphrase == true
-
-    val passphraseOptional: Boolean
-        get() = meta?.passphraseOptional == true
-
-    /** BIP39 密码钱包的公钥只放这里,不落盘. */
-    private var sessionKeys: ByteArray? = null
+    /** 旧格式的 BIP39 密码钱包,解开之前要先输两遍密码.元数据丢了时也问,可以留空. */
+    internal val upgradeNeedsPassphrase: Boolean
+        get() = outdated && meta?.passphrase == true
 
     /** 派生路径到地址.公钥缓存里没有的账户不显示地址. */
     var addresses by mutableStateOf(emptyMap<String, String>())
@@ -56,10 +51,8 @@ class Session internal constructor(platform: Platform, private val work: Corouti
         if (rows.isNotEmpty()) accounts = accountsFor(rows)
     }
 
-    internal fun reviewKeys(): ByteArray? = if (meta?.passphrase == true) sessionKeys else cachedKeys()
-
     /** 解不开的公钥缓存当作没有,下次解锁时重新生成. */
-    private fun cachedKeys(): ByteArray? =
+    internal fun reviewKeys(): ByteArray? =
         store.readPublicKeys()?.takeIf { keys ->
             try {
                 core.accountRows(keys)
@@ -80,35 +73,22 @@ class Session internal constructor(platform: Platform, private val work: Corouti
             }
         }
 
-    /** 公钥缓存缺失时顺手补上.BIP39 密码钱包的公钥不落盘,由 [remember] 放进内存. */
+    /** 公钥缓存缺失时顺手补上. */
     internal fun keysOf(wallet: UnlockedWallet, saved: WalletMeta): ByteArray {
         val keys = wallet.publicKeys(saved.imported)
-        if (!saved.passphrase && cachedKeys() == null) store.writePublicKeys(keys)
+        if (reviewKeys() == null) store.writePublicKeys(keys)
         return keys
     }
 
-    internal fun remember(keys: ByteArray, fingerprint: String) {
-        sessionFingerprint = fingerprint
-        if (meta?.passphrase == true) sessionKeys = keys
-    }
-
-    /** 新钱包落盘,上一个钱包这次解锁留下的东西作废. */
+    /** 新钱包落盘,密文是当前格式. */
     internal fun saved(next: WalletMeta) {
         meta = next
-        sessionFingerprint = null
-        sessionKeys = null
-    }
-
-    /** BIP39 密码钱包的公钥只在内存里,离开前台就清掉,从它们算出的地址也不留.再用到时走 LoadKeys. */
-    internal fun forgetKeys() {
-        sessionKeys = null
-        addresses = emptyMap()
+        outdated = false
     }
 
     internal fun clear() {
         meta = null
-        sessionFingerprint = null
-        sessionKeys = null
+        outdated = false
         addresses = emptyMap()
         accounts = Accounts
     }

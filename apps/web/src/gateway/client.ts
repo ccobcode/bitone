@@ -218,7 +218,7 @@ export interface HistoryPage {
     items: HistoryItem[];
     /** 空表示没有更多.空页也可能带游标,不能遇到空页就停. */
     cursor: string | null;
-    /** 下次增量查询的水位,原样传回,不解析. */
+    /** 下次增量查询从这里开始,原样传回,不解析. */
     checkpoint: string;
     /** 上次之后没有变化,这一页是空的. */
     unchanged: boolean;
@@ -296,7 +296,7 @@ export interface SnapshotItem {
     /** 没有时是原生币. */
     contract?: string;
     since?: string;
-    /** 分批编号.翻页游标绑定一批地址,水位相同的批次也不能合并. */
+    /** 分批编号.翻页游标绑定一批地址,checkpoint 相同的批次也不能合并. */
     group: number;
 }
 
@@ -364,7 +364,7 @@ function parseLine(line: string): unknown {
     }
 }
 
-/** 跟块推送.`items` 为空表示网关这次没取到交易,要自己补取. */
+/** 新区块推送.`items` 为空表示网关这次没取到交易,要自己补取. */
 export interface ChainUpdate {
     height: number;
     /** 上一条推送的高度,接不上说明中间漏了. */

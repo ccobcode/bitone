@@ -39,7 +39,7 @@ class SelfCheckReport(val items: List<CheckItem>) {
             }
 }
 
-/** 判定规则,按顺序给出每一项的结果. */
+/** 自检 7 项的判定规则. */
 fun evaluate(f: DeviceFacts): SelfCheckReport =
     SelfCheckReport(
         listOf(

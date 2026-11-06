@@ -38,7 +38,7 @@ import com.ccobcode.bitone.ui.theme.BitOneTheme
 import com.ccobcode.bitone.ui.theme.Motion
 import com.ccobcode.bitone.ui.theme.Radius
 
-// 动效只用令牌.系统关闭动画时 Compose 直接跳到终点,这里的一切都不等动画结束,流程不受影响.
+// 时长和曲线只用 Motion 令牌.系统关闭动画时 Compose 直接跳到终点,这里的一切都不等动画结束,流程不受影响.
 // 金额和地址不走这里的任何数值动画,用户看到的始终是真实值.
 
 private const val SHIMMER_FROM = 0.3f

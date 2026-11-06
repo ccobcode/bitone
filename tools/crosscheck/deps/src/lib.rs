@@ -1,4 +1,4 @@
-//! 引用计划使用的官方类型,这些名字和特性不存在时构建失败.依赖全部进入 `bitone-core` 后删除这个 crate.
+//! 引用解码用到的官方类型,这些名字和特性不存在时构建失败.
 
 pub use alloy_consensus::{TxEip1559, TxEip2930, TxEip4844, TxEip7702, TxEnvelope, TxLegacy};
 pub use alloy_dyn_abi::TypedData;

@@ -4,13 +4,13 @@ mod electrum;
 mod esplora;
 mod shape;
 
-use super::request::{Body, MAX_HASHES, Reply, Shared, addresses_from, checked_hashes, parse};
+use super::request::{Body, Budget, MAX_HASHES, Reply, Shared, addresses_from, checked_hashes, parse};
 use super::{ChainSpec, NetworkConfig, check_url, is_hex64};
 use crate::upstream::{Http, Networks, Query, Upstream, adapter};
 use axum::extract::Path;
 use axum::http::HeaderMap;
 use axum::routing::post;
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use bitcoin::address::NetworkUnchecked;
 use bitone_core::{Chain, Mode, Network};
 use electrum::{Electrum, Transport, transport};
@@ -54,24 +54,42 @@ struct TxidsRequest {
     txids: Vec<String>,
 }
 
-async fn used(networks: Shared, Path(network): Path<String>, body: Body) -> Reply {
+async fn used(
+    networks: Shared,
+    Path(network): Path<String>,
+    Extension(budget): Extension<Budget>,
+    body: Body,
+) -> Reply {
     let (network, pool) = networks.on_chain(&network, Chain::Bitcoin)?;
     let addresses = addresses_from(network, body)?;
+    budget.spend(addresses.len())?;
     let used = pool.special(queries, |bitcoin| bitcoin.used(&addresses)).await?;
     Ok(Json(json!({"used": used})))
 }
 
-async fn utxos(networks: Shared, Path(network): Path<String>, body: Body) -> Reply {
+async fn utxos(
+    networks: Shared,
+    Path(network): Path<String>,
+    Extension(budget): Extension<Budget>,
+    body: Body,
+) -> Reply {
     let (network, pool) = networks.on_chain(&network, Chain::Bitcoin)?;
     let addresses = addresses_from(network, body)?;
+    budget.spend(addresses.len())?;
     let utxos = pool.special(queries, |bitcoin| bitcoin.utxos(&addresses)).await?;
     Ok(Json(json!({"utxos": utxos})))
 }
 
-async fn raw_txs(networks: Shared, Path(network): Path<String>, body: Body) -> Reply {
+async fn raw_txs(
+    networks: Shared,
+    Path(network): Path<String>,
+    Extension(budget): Extension<Budget>,
+    body: Body,
+) -> Reply {
     let (network, pool) = networks.on_chain(&network, Chain::Bitcoin)?;
     let request: TxidsRequest = parse(body)?;
     let txids = checked_hashes(network, request.txids, MAX_HASHES)?;
+    budget.spend(txids.len())?;
     let txs = pool.special(queries, |bitcoin| bitcoin.raw_txs(&txids)).await?;
     Ok(Json(json!({"txs": txs})))
 }

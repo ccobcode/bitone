@@ -1,6 +1,4 @@
-//! 二维码协议.
-//!
-//! 传输层是 BC-UR 喷泉码,载荷是 BitOne 自定义的 CBOR 结构.
+//! 二维码协议.传输层是 BC-UR 喷泉码,载荷是 BitOne 自定义的 CBOR 结构.
 
 use crate::path::{DerivationPath, all_account_specs, classify, validate_for_network};
 use crate::{AccountKind, Chain, Error, Network};
@@ -8,7 +6,7 @@ use minicbor::data::Type;
 use minicbor::{Decode, Decoder, Encode};
 use std::collections::BTreeSet;
 
-/// 永远是 1.
+/// 永远是 1.手机可能多年不更新,协议只增加可选字段,已有字段的编号,类型和含义都不改.
 pub const VERSION: u8 = 1;
 
 pub const UR_ACCOUNTS: &str = "bitone-accounts";
@@ -24,7 +22,7 @@ pub const MAX_FRAMES: usize = 2000;
 pub const MAX_PART_CHARS: usize = 3000;
 pub const MAX_CBOR_DEPTH: usize = 8;
 
-/// 单帧的分片大小.真机测试后再调.
+/// 单帧的分片大小.
 pub const DEFAULT_FRAGMENT_BYTES: usize = 180;
 
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
@@ -83,7 +81,7 @@ impl AccountsExport {
             if account.key.len() != key_len {
                 return Err(Error::InvalidKey);
             }
-            // Bitcoin 账户不设白名单,路径和类型不能自相矛盾.其他链的路径在各自的迁移步骤里放开.
+            // Bitcoin 账户不设白名单,路径和类型不能自相矛盾.其他链只接受本机导出的账户路径.
             let listed = match account.chain {
                 Chain::Bitcoin => bitcoin_account_is_consistent(account),
                 Chain::Evm | Chain::Tron | Chain::Solana => specs

@@ -6,14 +6,20 @@ interface WalletCore {
 
     fun importDraft(words: List<String>): WalletDraft
 
-    /** [tag] 是 [HardwareKey.bind] 的结果. */
-    fun open(sealed: ByteArray, pin: String, tag: ByteArray, passphrase: String): UnlockedWallet
+    /** 解开当前格式,BIP39 密码在密文里.[tag] 是 [HardwareKey.bind] 的结果. */
+    fun open(sealed: ByteArray, pin: String, tag: ByteArray): UnlockedWallet
 
-    /** 解开旧格式,只用于迁移.[sealed] 是去掉硬件那层之后的内容. */
+    /** 解开只存熵的格式,只用于迁移.[passphrase] 是这次输两遍确认的 BIP39 密码,没有启用时是空串. */
+    fun openEntropyOnly(sealed: ByteArray, pin: String, tag: ByteArray, passphrase: String): UnlockedWallet
+
+    /** 解开最早的格式,只用于迁移.[sealed] 是去掉硬件那层之后的内容. */
     fun openLegacy(sealed: ByteArray, pin: String, passphrase: String): UnlockedWallet
 
-    /** 本机密文是不是当前格式.不是时要先走迁移. */
+    /** 本机密文绑定了硬件.不是时是最早的格式,外面还有一层硬件加密. */
     fun isBoundVault(vault: ByteArray): Boolean
+
+    /** 本机密文是当前格式.不是时解开之后换成当前格式. */
+    fun isCurrentVault(vault: ByteArray): Boolean
 
     fun qrMatrix(part: String): QrMatrix
 
@@ -55,7 +61,7 @@ interface WalletCore {
     fun manifestEntries(bytes: ByteArray?): List<ManifestEntry>
 }
 
-/** 建钱包过程中的助记词.设置 PIN 之后就关闭. */
+/** 建钱包过程中的助记词和 BIP39 密码.设置 PIN 之后就关闭. */
 interface WalletDraft {
     val imported: Boolean
 
@@ -65,6 +71,9 @@ interface WalletDraft {
     fun quiz(rounds: Int): List<QuizItem>
 
     fun checkWord(index: Int, word: String): Boolean
+
+    /** 两遍输入一致之后调用,没有启用时传空串.密码交给 Rust,和助记词一起封进密文. */
+    fun setPassphrase(passphrase: String)
 
     /** [tag] 是 [HardwareKey.enroll] 的结果. */
     fun seal(pin: String, tag: ByteArray): ByteArray
@@ -81,7 +90,12 @@ interface UnlockedWallet {
     /** 字符串经过 JVM 后无法清除,只在查看助记词时调用. */
     fun words(): List<String>
 
-    /** 用新 PIN 重新封一层,种子不离开 Rust.返回的密文平台层再用硬件密钥包一层. */
+    /** 没有启用时是空串.字符串经过 JVM 后无法清除,只在查看助记词时调用. */
+    fun passphrase(): String
+
+    fun hasPassphrase(): Boolean
+
+    /** 用新 PIN 重新封成当前格式,助记词和 BIP39 密码都不离开 Rust. */
     fun seal(pin: String, tag: ByteArray): ByteArray
 
     /** 全部账户的公钥,核对交易用. */

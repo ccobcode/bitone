@@ -1,9 +1,5 @@
 package com.ccobcode.bitone.flow
 
-import com.ccobcode.bitone.platform.FrameStream
-
-private class Exported(val stream: FrameStream, val fingerprint: String, val keys: ByteArray)
-
 /** A4 导出观察钱包. */
 class ExportFlow internal constructor(private val host: FlowHost, private val player: FramePlayer) {
     private val session = host.session
@@ -14,11 +10,11 @@ class ExportFlow internal constructor(private val host: FlowHost, private val pl
     private fun exportTask() =
         UnlockTask(
             use = { wallet, saved ->
-                Exported(wallet.exportAccounts(saved.imported), wallet.fingerprint(), session.keysOf(wallet, saved))
+                session.keysOf(wallet, saved)
+                wallet.exportAccounts(saved.imported)
             },
-            finish = { exported ->
-                session.remember(exported.keys, exported.fingerprint)
-                player.show(exported.stream)
+            finish = { stream ->
+                player.show(stream)
                 host.showOnly(Screen.Export)
             },
         )

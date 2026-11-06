@@ -99,7 +99,7 @@ fun VerifyScreen(flow: WalletFlow) {
     }
 }
 
-/** Rust 的 quiz 每题给 4 个选项,原型画的是 3 个,这里排成两行两列. */
+/** Rust 的 quiz 每题给 4 个选项,排成两行两列. */
 @Composable
 private fun QuizCard(item: QuizItem, picked: String?, enabled: Boolean, onPick: (String) -> Unit) {
     Card {

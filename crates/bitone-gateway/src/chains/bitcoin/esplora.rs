@@ -122,7 +122,7 @@ impl Esplora {
         };
         let reply = self.http.get(&path).await?;
         let txs = reply.as_array().ok_or(Failed)?;
-        // 新的在前,碰到水位之前的交易就不用再往后翻了.
+        // 新的在前,碰到 `since` 之前的交易就不用再往后翻了.
         let fresh: Vec<&Value> = txs.iter().filter(|tx| newer_than(tx, since)).collect();
         let items = fresh
             .iter()

@@ -1,4 +1,4 @@
-// 内置清单.符号,小数位,图标只按"网络加合约地址"取.
+// 内置清单.符号,小数位,图标只按"网络加合约地址"取,骗子代币常常冒用知名代币的符号和图标.
 // 这里没有按符号查找的入口.清单只有核心库这一个来源,网页端和冷钱包用同一份.
 import { formatUnits } from "./amount";
 import { assets, networks } from "./pkg/bitone_wasm";

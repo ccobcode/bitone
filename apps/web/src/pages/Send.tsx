@@ -536,7 +536,7 @@ function SendForm({ wallet, rows, first }: FormProps) {
                 {quote.held ? (
                     <Notice tone="warn">
                         <Link to={txHref(quote.held)} className="text-warn">
-                            {t("交易")} {quote.held.id} {t("已取消但签名仍然有效,先发替换交易.")}
+                            {t("交易")} {quote.held.id} {t("已取消但签名仍然有效,先发替换交易或确认序号已用掉.")}
                         </Link>
                     </Notice>
                 ) : null}

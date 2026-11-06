@@ -1,4 +1,4 @@
-//! TRON 的跟块.
+//! 跟踪 TRON 的新区块和地址变化.
 
 use super::adapter::Tron;
 use crate::upstream::{Failed, Signal};
@@ -46,7 +46,7 @@ fn parties_in(blocks: &Value, owners: &HashMap<String, String>) -> Vec<String> {
 }
 
 impl Tron {
-    /// 跟块.TRON 节点没有订阅接口,只能轮询,但一轮的请求数和地址数无关:
+    /// 跟踪新区块.TRON 节点没有订阅接口,只能轮询,但一轮的请求数和地址数无关:
     /// 区块里有原生币转账和全部发起方,代币转入靠 `eth_getLogs` 按收款地址过滤.
     /// 合约内部转入的 TRX 这两处都看不到,靠定期对账.
     pub(super) async fn follow(

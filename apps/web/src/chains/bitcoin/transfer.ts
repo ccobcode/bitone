@@ -96,7 +96,7 @@ function isTaprootPath(path: string): boolean {
     return path.startsWith("m/86'");
 }
 
-/** 除全 Taproot 外都要带前序交易,混合输入里的 Taproot 也一样. */
+/** 除全 Taproot 外都要带前序交易,混合输入里的 Taproot 也一样.只有全部输入都是 Taproot 时签名才承诺全部输入金额,否则冷钱包要靠前序交易确认手续费. */
 export function needsPrevTx(inputs: readonly { path: string }[]): boolean {
     return inputs.some((input) => !isTaprootPath(input.path));
 }

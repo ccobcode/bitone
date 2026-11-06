@@ -58,7 +58,7 @@ export function quote(input: QuoteInput): QuotePlan {
                         problem === null
                             ? null
                             : t("估算失败:{0},会用默认值生成请求,可以在高级设置里修改.", cleanText(problem, 160)),
-                    held: floor === null ? null : abandonedHolder(input.reservations, input.txs, floor),
+                    held: abandonedHolder(input.reservations, input.txs),
                     advancedLabel: nonce === null ? "" : `Nonce ${nonce}`,
                     advanced: [
                         {

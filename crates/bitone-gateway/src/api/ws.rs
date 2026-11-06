@@ -1,7 +1,7 @@
-//! WebSocket,JSON-RPC 2.0.
+//! WebSocket,消息格式是 JSON-RPC 2.0.
 //!
 //! 每个订阅是一个任务,句柄只存在于连接的内存里,连接结束时任务随之中止.
-//! 地址频道由 follow.rs 共用的跟块任务推送,其余频道各自轮询.
+//! 地址频道由 follow.rs 里共用的跟踪任务推送,其余频道各自轮询.
 //! 单 IP 的连接数和地址总数,单连接的订阅数都有上限.
 
 use super::limit::IpSlot;
@@ -95,7 +95,7 @@ fn push(subscription: &str, mut params: Value) -> String {
     json!({"jsonrpc": "2.0", "method": "update", "params": params}).to_string()
 }
 
-/// 加入这个网络的跟块,一直占着成员资格,直到连接结束或退订.
+/// 加入这个网络的跟踪任务,一直占着成员资格,直到连接结束或退订.
 async fn follow_addresses(
     state: Arc<AppState>,
     network: Network,
@@ -262,6 +262,8 @@ impl Connection {
             SubscribeParams::Addresses { network, addresses } => {
                 let (network, _) = state.networks.get(&network)?;
                 let addresses = checked(network, addresses, MAX_ADDRESSES - self.used(Quota::Addresses))?;
+                // 订阅先查一遍全部地址作为基线,和 HTTP 查询一样按地址数扣令牌.
+                self.state.budget(self.ip).spend(addresses.len())?;
                 let units = addresses.len();
                 Ok((
                     Quota::Addresses,
@@ -386,7 +388,7 @@ async fn run(mut socket: WebSocket, state: Arc<AppState>, ip: IpAddr, _slot: IpS
             }
             Some(text) = outbound.recv() => Message::text(text),
             _ = heartbeat.tick() => {
-                // 连续两个周期没有任何数据,对端已经失联,这里断开才能退出跟块.
+                // 连续两个周期没有任何数据,对端已经失联,这里断开才能退出跟踪任务.
                 if last_seen.elapsed() > period * 2 {
                     break;
                 }

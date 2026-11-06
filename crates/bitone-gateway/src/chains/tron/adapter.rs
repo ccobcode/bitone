@@ -401,7 +401,7 @@ impl Tron {
     }
 }
 
-/// 跟块时也取还没确认的记录,确认之前状态是 `included`.
+/// 跟踪时也取还没确认的记录,确认之前状态是 `included`.
 fn unconfirmed(mut item: HistoryItem, confirmed: u64) -> HistoryItem {
     let newer = item.time.is_some_and(|time| time * 1000 > confirmed);
     if newer && item.status == TxStatus::Finalized {
@@ -462,7 +462,7 @@ impl Upstream for Tron {
         since: Option<u64>,
     ) -> Query<'a, HistoryPage> {
         Box::pin(async move {
-            // 这里只有已确认的记录,所以水位是最新已确认区块的时间.
+            // 这里只有已确认的记录,所以 `checkpoint` 是最新已确认区块的时间.
             let checkpoint = self.confirmed_time().await?;
             let page = self.page(addresses, cursor, since, true).await?;
             Ok(HistoryPage { checkpoint, ..page })

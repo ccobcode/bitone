@@ -1,4 +1,3 @@
-// Solana 的网关接口.
 import { isRecord } from "../../core/text";
 import { get, malformed, post, requireAmount, requireText, requireTiers, type FeeTier } from "../../gateway/client";
 

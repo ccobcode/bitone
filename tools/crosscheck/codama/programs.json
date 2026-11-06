@@ -1,6 +1,10 @@
 [
-    { "file": "system.json" },
-    { "file": "compute-budget.json" },
+    {
+        "file": "system.json"
+    },
+    {
+        "file": "compute-budget.json"
+    },
     {
         "file": "token.json",
         "batch": {
@@ -21,7 +25,10 @@
             "samples": ["transferChecked", "revoke"]
         }
     },
-    { "file": "associated-token-account.json", "emptyData": "create" },
+    {
+        "file": "associated-token-account.json",
+        "emptyData": "create"
+    },
     {
         "file": "memo.json",
         "ids": [
@@ -30,7 +37,27 @@
             "Memo4c2pN8afCj432Lb7RMVKi9PbQnnW7ewFFaV3oAH"
         ]
     },
-    { "file": "stake.json", "older": "stake-older.json" },
-    { "file": "vote.json" },
-    { "file": "address-lookup-table.json" }
+    {
+        "file": "stake.json",
+        "older": "stake-older.json"
+    },
+    {
+        "file": "address-lookup-table.json"
+    },
+    {
+        "file": "config.json"
+    },
+    {
+        "file": "loader-v3.json",
+        "anchor": {
+            "config": "loader-v3-codama.mjs",
+            "program": {
+                "name": "loaderV3",
+                "publicKey": "BPFLoaderUpgradeab1e11111111111111111111111"
+            },
+            "prefixes": {
+                "[instructionNode]write.[instructionArgumentNode]bytes": "u64"
+            }
+        }
+    }
 ]

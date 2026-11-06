@@ -1,4 +1,4 @@
-//! 按 IP 的令牌桶和 WebSocket 的名额.只用来控制成本.
+//! 按 IP 的令牌桶和 WebSocket 的名额.只用来控制成本,不用来防攻击.
 
 use axum::http::HeaderMap;
 use std::collections::{HashMap, HashSet};

@@ -103,7 +103,7 @@ class ReceiveFlow internal constructor(private val host: FlowHost) {
         if (host.screen == Screen.ReceiveAddresses) host.pop()
     }
 
-    /** 只用公钥,不需要 PIN.BIP39 密码钱包的公钥不在内存时先读公钥,回来再走这里. */
+    /** 只用公钥,不需要 PIN.公钥缓存没有时先读公钥,回来再走这里. */
     internal suspend fun load() {
         val current = account ?: return
         address = null
@@ -135,11 +135,5 @@ class ReceiveFlow internal constructor(private val host: FlowHost) {
         address = null
         qr = null
         history = emptyList()
-    }
-
-    /** 公钥离开内存后,从它们算出的地址也不留. */
-    internal fun forgetAddress() {
-        address = null
-        qr = null
     }
 }

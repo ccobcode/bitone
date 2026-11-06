@@ -1,4 +1,4 @@
-//! 由 `schemas/` 生成 TRON 的 prost 类型和 `tron-schema.json`.默认写入 `bitone-core`,`--check` 只比较.
+//! 由 `schemas/` 生成 TRON 的 prost 类型和 `assets/tron/schema.json`.默认写入 `bitone-core`,`--check` 只比较.
 //! 先校验 `schemas/lock.toml` 的哈希.
 
 use heck::ToUpperCamelCase;
@@ -14,8 +14,8 @@ use std::fmt::Write;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const GENERATED: &str = "crates/bitone-core/src/decode/generated";
-const SCHEMA: &str = "crates/bitone-core/assets/tron-schema.json";
+const GENERATED: &str = "crates/bitone-core/src/chains/tron/generated";
+const SCHEMA: &str = "crates/bitone-core/assets/tron/schema.json";
 const OVERLAY: &str = "schemas/tron-fields.json";
 const LOCK: &str = "schemas/lock.toml";
 const ANY_PROTO: &str = "google/protobuf/any.proto";

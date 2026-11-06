@@ -1,4 +1,3 @@
-// Bitcoin 的网关接口.
 import { isRecord } from "../../core/text";
 import {
     MAX_ADDRESSES,

@@ -63,7 +63,7 @@ dependencies {
     testImplementation(libs.kotlin.test.junit)
 }
 
-// 关闭 baseline profile.profileinstaller 由 Compose 传递进来,运行时不需要.
+// 关闭 baseline profile,dex 和 profile 不一致是可复现构建常见的失败点.profileinstaller 由 Compose 传递进来,运行时不需要.
 // camera-view 带进来录像栈(camera-video,media3,Guava)和 ACCESS_NETWORK_STATE.这里只用 PreviewView,都不需要.
 configurations.configureEach {
     exclude(group = "androidx.profileinstaller", module = "profileinstaller")

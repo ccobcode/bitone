@@ -1,4 +1,4 @@
-//! BIP39 助记词.保存的是熵,不是种子:BIP39 密码不写入设备,种子只在需要时算出.
+//! BIP39 助记词.保存的是熵和 BIP39 密码,不是种子,种子只在需要时算出.
 
 use crate::Error;
 use bip39::{Language, Mnemonic};

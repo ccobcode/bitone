@@ -31,7 +31,7 @@ private const val REQUEST = "bitone-request"
 /** 抹除,更新清单,弱 PIN,收款页和 BIP39 密码钱包的公钥. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class GuardedActionsTest {
-    private fun TestScope.ready(passphrase: Boolean = false, setup: (Rig) -> Unit = {}) =
+    private fun TestScope.ready(passphrase: String = "", setup: (Rig) -> Unit = {}) =
         readyRig(PIN, passphrase, setup = setup)
 
     private fun TestScope.toWipePin(rig: Rig) {
@@ -130,13 +130,15 @@ class GuardedActionsTest {
         assertEquals(41, rig.store.pin.failures)
     }
 
+    /** 抹除只核对 PIN,旧格式的 BIP39 密码钱包不用先输密码. */
     @Test
-    fun passphraseWalletWipesWithPinAlone() = runTest {
-        val rig = ready(passphrase = true)
+    fun anOutdatedPassphraseWalletWipesWithThePinAlone() = runTest {
+        val rig = ready { it.hasOutdatedPassphraseWallet(entropyOnlyVault(PIN)) }
         toWipePin(rig)
-        assertFalse(rig.flow.unlock.needsPassphrase)
+        assertFalse(rig.flow.unlock.asksPassphrase)
         submit(rig.flow, PIN)
         assertEquals(Screen.Welcome, rig.flow.screen)
+        assertNull(rig.store.vault)
     }
 
     // 更新清单
@@ -191,13 +193,17 @@ class GuardedActionsTest {
         assertNull(rig.store.manifest)
     }
 
+    /** 只核对 PIN 时不知道密码,解开的不是真正的钱包,所以不迁移也不写元数据,留到下一次要用钱包的解锁. */
     @Test
-    fun passphraseWalletUpdatesManifestWithPinAlone() = runTest {
-        val rig = ready(passphrase = true)
+    fun anOutdatedPassphraseWalletUpdatesTheManifestWithThePinAlone() = runTest {
+        val rig = ready { it.hasOutdatedPassphraseWallet(entropyOnlyVault(PIN)) }
         toManifestPin(rig)
-        assertFalse(rig.flow.unlock.needsPassphrase)
+        assertFalse(rig.flow.unlock.asksPassphrase)
         submit(rig.flow, PIN)
         assertContentEquals("pack".encodeToByteArray(), rig.store.manifest)
+        assertContentEquals(entropyOnlyVault(PIN), rig.store.vault)
+        assertNull(rig.store.meta?.fingerprint)
+        assertNull(rig.store.publicKeys)
     }
 
     @Test
@@ -263,40 +269,20 @@ class GuardedActionsTest {
     // BIP39 密码钱包的公钥
 
     @Test
-    fun backgroundForgetsSessionKeys() = runTest {
-        val rig = ready(passphrase = true) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
+    fun aPassphraseWalletReviewsFromTheCacheLikeAnyOther() = runTest {
+        val rig = ready(PASSPHRASE) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
         val flow = rig.flow
         openScan(flow)
         feed(flow, frames(REQUEST))
-        submit(flow, PIN, "pass")
         assertEquals(Screen.Review, flow.screen)
+        assertEquals(0, rig.core.opens)
         flow.scan.exitRequest()
 
         flow.onBackground()
         openScan(flow)
         feed(flow, frames(REQUEST))
-        assertEquals(Screen.Unlock, flow.screen)
-        assertEquals(UnlockPurpose.LoadKeys, flow.unlock.purpose)
-    }
-
-    @Test
-    fun backgroundKeepsKeysWhileBusy() = runTest {
-        val rig = ready(passphrase = true) { it.core.requestFingerprint = PASSPHRASE_FINGERPRINT }
-        val flow = rig.flow
-        openScan(flow)
-        feed(flow, frames(REQUEST))
-        PIN.forEach(flow.unlock::digit)
-        "pass".forEach(flow.unlock::passphraseInput)
-        flow.unlock.submit()
-        assertTrue(flow.busy)
-        flow.onBackground()
-        advanceUntilIdle()
         assertEquals(Screen.Review, flow.screen)
-        flow.scan.exitRequest()
-
-        openScan(flow)
-        feed(flow, frames(REQUEST))
-        assertEquals(Screen.Review, flow.screen)
+        assertEquals(0, rig.core.opens)
     }
 
     @Test
@@ -444,68 +430,48 @@ class GuardedActionsTest {
     @Test
     fun newWalletStartsReceivingFromTheFirstAddress() = runTest {
         val rig = ready { it.store.receiveIndexes[bitcoin.path] = 5u }
-        rig.store.saveWallet("v".encodeToByteArray(), WalletMeta(false, false, MAIN_FINGERPRINT), null)
+        rig.store.saveWallet(
+            "v".encodeToByteArray(),
+            WalletMeta(false, false, MAIN_FINGERPRINT),
+            keysFor(MAIN_FINGERPRINT),
+        )
         assertEquals(0u, rig.store.readReceiveIndex(bitcoin.path))
     }
 
     @Test
-    fun passphraseWalletLoadsKeysBeforeReceiving() = runTest {
-        val rig = ready(passphrase = true)
+    fun anOutdatedPassphraseWalletMigratesBeforeReceiving() = runTest {
+        val rig = ready { it.hasOutdatedPassphraseWallet(entropyOnlyVault(PIN)) }
         val flow = rig.flow
         flow.receive.open(ethereum)
         advanceUntilIdle()
         assertEquals(Screen.Unlock, flow.screen)
         assertEquals(UnlockPurpose.LoadKeys, flow.unlock.purpose)
-        assertTrue(flow.unlock.needsPassphrase)
-        submit(flow, PIN, "pass")
+        assertTrue(flow.unlock.asksPassphrase)
+        repeat(2) { typePassphrase(flow, PASSPHRASE, flow.unlock::passphraseDone) }
+        submit(flow, PIN)
         assertEquals(Screen.Receive, flow.screen)
         assertEquals("${ethereum.path}#0:keys:$PASSPHRASE_FINGERPRINT", flow.receive.address)
-        assertNull(rig.store.publicKeys)
+        assertContentEquals(keysFor(PASSPHRASE_FINGERPRINT), rig.store.publicKeys)
+        assertContentEquals(boundVault(PIN, PASSPHRASE), rig.store.vault)
     }
 
     @Test
     fun cancelLoadingKeysLeavesReceive() = runTest {
-        val rig = ready(passphrase = true)
+        val rig = readyRig(PIN, cached = false)
         rig.flow.receive.open(ethereum)
         advanceUntilIdle()
         rig.flow.back()
         assertEquals(listOf(Screen.Home), rig.flow.stack)
     }
 
-    @Test
-    fun receiveAsksAgainAfterBackgroundForPassphraseWallets() = runTest {
-        val rig = ready(passphrase = true)
-        val flow = rig.flow
-        flow.receive.open(ethereum)
-        advanceUntilIdle()
-        submit(flow, PIN, "pass")
-        flow.onBackground()
-        assertNull(flow.receive.address)
-        assertNull(flow.receive.qr)
-        flow.onResume()
-        advanceUntilIdle()
-        assertEquals(Screen.Unlock, flow.screen)
-        assertEquals(UnlockPurpose.LoadKeys, flow.unlock.purpose)
-    }
-
     // 清空状态:每个子流程保存的内容都要清到,这是系统不变量,不是某一页的行为.
 
     @Test
     fun backgroundClearsSensitiveStateInEverySubflow() = runTest {
-        val rig = ready(passphrase = true)
+        val rig = ready(PASSPHRASE)
         val flow = rig.flow
 
-        // 公钥和从它算出的地址在内存里.
-        flow.receive.open(ethereum)
-        advanceUntilIdle()
-        submit(flow, PIN, "pass")
-        flow.session.loadAddresses()
-        advanceUntilIdle()
-        assertNotNull(flow.receive.address)
-        assertNotNull(flow.receive.qr)
-        assertTrue(flow.session.addresses.isNotEmpty())
-
-        // 新 PIN 已输完,当前 PIN 和 BIP39 密码输到一半.
+        // 新 PIN 已输完,当前 PIN 输到一半.
         flow.openSettings()
         flow.settings.startChangePin()
         advanceUntilIdle()
@@ -514,45 +480,35 @@ class GuardedActionsTest {
         flow.settings.continueChangePin()
         assertEquals(Screen.Unlock, flow.screen)
         "123".forEach(flow.unlock::digit)
-        "pa".forEach(flow.unlock::passphraseInput)
 
         flow.onBackground()
 
         assertEquals("", flow.unlock.pin)
-        assertEquals("", flow.unlock.passphrase)
         assertNull(flow.unlock.error)
         assertEquals("", flow.pin.first)
         assertEquals("", flow.pin.input)
         assertFalse(flow.pin.done)
         assertFalse(flow.settings.changingPin)
         assertEquals(listOf(Screen.Settings), flow.stack)
-        assertNull(flow.receive.address)
-        assertNull(flow.receive.qr)
-        assertTrue(flow.session.addresses.isEmpty())
 
-        // 公钥也不在了,再用时要重新解锁.
-        flow.receive.open(ethereum)
-        advanceUntilIdle()
-        assertEquals(Screen.Unlock, flow.screen)
-        assertEquals(UnlockPurpose.LoadKeys, flow.unlock.purpose)
-        flow.back()
-
-        // 助记词单独一页,离开前台同样不留.
+        // 助记词和 BIP39 密码单独一页,离开前台同样不留.
         flow.settings.startViewWords()
         advanceUntilIdle()
         submit(flow, PIN)
         assertEquals(Screen.ViewWords, flow.screen)
         assertTrue(flow.settings.viewWords.isNotEmpty())
+        assertEquals(PASSPHRASE, flow.settings.viewPassphrase)
 
         flow.onBackground()
 
         assertTrue(flow.settings.viewWords.isEmpty())
+        assertEquals("", flow.settings.viewPassphrase)
         assertFalse(Screen.ViewWords in flow.stack)
     }
 
     @Test
     fun wipeClearsEverySubflow() = runTest {
-        val rig = ready()
+        val rig = ready(PASSPHRASE)
         val flow = rig.flow
 
         flow.session.loadAddresses()
@@ -577,6 +533,7 @@ class GuardedActionsTest {
         flow.settings.startChangePin()
         advanceUntilIdle()
         assertTrue(flow.settings.viewWords.isNotEmpty())
+        assertEquals(PASSPHRASE, flow.settings.viewPassphrase)
         assertTrue(flow.settings.changingPin)
         assertNotNull(flow.session.fingerprint)
 
@@ -606,6 +563,7 @@ class GuardedActionsTest {
         assertTrue(flow.receive.history.isEmpty())
         assertTrue(flow.manifest.entries.isEmpty())
         assertTrue(flow.settings.viewWords.isEmpty())
+        assertEquals("", flow.settings.viewPassphrase)
         assertFalse(flow.settings.changingPin)
         assertEquals(0, flow.unlock.failures)
         assertEquals(0L, flow.unlock.waitMs)

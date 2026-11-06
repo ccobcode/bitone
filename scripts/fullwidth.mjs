@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-// 全角标点扫描与修复. 覆盖仓库内全部受版本控制的文本文件 (含 .md), 不设业务例外.
-// 规则: FF01-FF5E 整体减 0xFEE0,
-// 其余中文/弯引号逐一映射. 码点按数值构造, 源码不出现全角字面.
+// 全角标点扫描与修复,覆盖仓库内全部受版本控制的文本文件,含 .md.
+// FF01-FF5E 整体减 0xFEE0,其余中文标点和弯引号逐一映射.码点按数值构造,源码不出现全角字面.
 import { execFileSync } from "node:child_process";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -38,19 +37,19 @@ const BINARY =
 const hex = (cp) => "\\u" + cp.toString(16).padStart(4, "0");
 const PATTERN = "[" + RANGES.map(([a, b]) => (a === b ? hex(a) : `${hex(a)}-${hex(b)}`)).join("") + "]";
 
-/** 新建带 g 标志的正则, 避免共享 lastIndex. */
+/** 每次新建带 g 标志的正则,避免共享 lastIndex. */
 export function fullwidthRegex() {
     return new RegExp(PATTERN, "gu");
 }
 
-/** 单个全角字符转半角; 不在规则内时原样返回. */
+/** 单个全角字符转半角,不在规则内时原样返回. */
 export function toAscii(ch) {
     const cp = ch.codePointAt(0);
     if (cp >= 0xff01 && cp <= 0xff5e) return String.fromCharCode(cp - 0xfee0);
     return EXTRA[cp] ?? ch;
 }
 
-/** 行内扫描: 返回每处命中的行号 (1 起) / 列号 (1 起) / 原字符 / 替换值. */
+/** 返回每处命中的行号和列号 (都从 1 起),原字符和替换值. */
 export function scanText(text) {
     const hits = [];
     text.split("\n").forEach((line, lineIndex) => {
@@ -68,7 +67,6 @@ export function scanText(text) {
     return hits;
 }
 
-/** 整段文本转半角. */
 export function fixText(text) {
     return text.replace(fullwidthRegex(), toAscii);
 }

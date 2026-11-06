@@ -8,7 +8,7 @@ import { nativeText } from "../view";
 import { selectCoins } from "./core";
 import { spendableCoins } from "./transfer";
 
-/** 三档的目标区块数. */
+/** 三档的目标区块数,和网关估算费率用的目标相同. */
 const TARGETS: Record<FeeTier, string> = { slow: t("约 144 块"), medium: t("约 6 块"), fast: t("约 1 块") };
 
 function maxAmount(coins: Parameters<typeof selectCoins>[0], rate: bigint, kind: Account["kind"]): bigint {

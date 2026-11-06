@@ -29,6 +29,8 @@ kotlin {
     }
     iosArm64()
     iosSimulatorArm64()
+    // 只给 jvmTest 用:界面测试在宿主机上渲染真实的 Compose 页面,不用模拟器.
+    jvm()
 
     sourceSets {
         commonMain { kotlin.srcDir(generateDesign) }
@@ -41,6 +43,10 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
+        }
+        jvmTest.dependencies {
+            implementation(libs.compose.ui.test)
+            implementation(compose.desktop.currentOs)
         }
     }
 }

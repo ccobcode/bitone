@@ -1,0 +1,1504 @@
+{
+    "actions-many": {
+        "class": "transfer",
+        "alert": "这笔交易包含 {0} 个转账,授权或权限变更,请逐个核对"
+    },
+    "addressLookupTable.closeLookupTable": {
+        "class": "recognized",
+        "alert": "关闭查找表,账户里的 SOL 转给收款账户,请核对收款账户",
+        "summary": {
+            "party": "accounts.recipient",
+            "label": "收款账户"
+        }
+    },
+    "addressLookupTable.createLookupTable": {
+        "class": "recognized",
+        "alert": null
+    },
+    "addressLookupTable.deactivateLookupTable": {
+        "class": "recognized",
+        "alert": null
+    },
+    "addressLookupTable.extendLookupTable": {
+        "class": "recognized",
+        "alert": null
+    },
+    "addressLookupTable.freezeLookupTable": {
+        "class": "recognized",
+        "alert": "冻结后查找表不能再修改,不可逆"
+    },
+    "associatedTokenAccount.create": {
+        "class": "recognized",
+        "alert": null
+    },
+    "associatedTokenAccount.createIdempotent": {
+        "class": "recognized",
+        "alert": null
+    },
+    "associatedTokenAccount.createWithArgs": {
+        "class": "recognized",
+        "alert": null
+    },
+    "associatedTokenAccount.recoverNested": {
+        "class": "recognized",
+        "alert": "这条指令取回嵌套代币账户里的代币,请核对目标账户",
+        "summary": {
+            "party": "accounts.destinationAssociatedTokenAccount",
+            "label": "目标关联代币账户"
+        }
+    },
+    "ata-underived": {
+        "class": "unknown",
+        "alert": "代币账户的地址不是由所有者,mint,程序推导得出"
+    },
+    "compute-budget-repeated": {
+        "class": "unknown",
+        "alert": "同一种 ComputeBudget 指令重复,节点会拒绝这笔交易"
+    },
+    "computeBudget.requestHeapFrame": {
+        "class": "recognized",
+        "alert": null,
+        "passive": true
+    },
+    "computeBudget.requestUnits": {
+        "class": "unknown",
+        "alert": "requestUnits 已废弃,节点的处理方式无法确认"
+    },
+    "computeBudget.setComputeUnitLimit": {
+        "class": "recognized",
+        "alert": null,
+        "passive": true
+    },
+    "computeBudget.setComputeUnitPrice": {
+        "class": "recognized",
+        "alert": null,
+        "passive": true
+    },
+    "computeBudget.setLoadedAccountsDataSizeLimit": {
+        "class": "recognized",
+        "alert": null,
+        "passive": true
+    },
+    "config.store": {
+        "class": "recognized",
+        "alert": "这条指令改写配置账户的内容和签名者,请核对"
+    },
+    "ed25519_program": {
+        "class": "recognized",
+        "alert": null
+    },
+    "fee-high": {
+        "class": "transfer",
+        "alert": "手续费明显偏高"
+    },
+    "fee-payer-foreign": {
+        "class": "unknown",
+        "alert": "手续费支付者不是本账户,这笔交易由对方发起"
+    },
+    "instruction-unknown": {
+        "class": "unknown",
+        "alert": "有指令本机不认识,无法判断它的后果"
+    },
+    "loaderV3.close": {
+        "class": "recognized",
+        "alert": "这条指令关闭账户,余额转给目标账户,请核对目标账户",
+        "summary": {
+            "party": "accounts.destinationAccount",
+            "label": "目标账户"
+        }
+    },
+    "loaderV3.deployWithMaxDataLen": {
+        "class": "recognized",
+        "alert": "这条指令部署程序,请确认程序的来源"
+    },
+    "loaderV3.extendProgram": {
+        "class": "recognized",
+        "alert": null
+    },
+    "loaderV3.initializeBuffer": {
+        "class": "recognized",
+        "alert": null
+    },
+    "loaderV3.setAuthority": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "accounts.newAuthority",
+            "current": "accounts.currentAuthority",
+            "none": "无,权限被永久移除"
+        }
+    },
+    "loaderV3.setAuthorityChecked": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "accounts.newAuthority",
+            "current": "accounts.currentAuthority"
+        }
+    },
+    "loaderV3.upgrade": {
+        "class": "recognized",
+        "alert": "这条指令升级程序,请确认程序的来源"
+    },
+    "loaderV3.write": {
+        "class": "recognized",
+        "alert": null
+    },
+    "loader_v4.Copy": {
+        "class": "recognized",
+        "alert": null
+    },
+    "loader_v4.Deploy": {
+        "class": "recognized",
+        "alert": "这条指令部署程序,请确认程序的来源"
+    },
+    "loader_v4.Finalize": {
+        "class": "recognized",
+        "alert": "这条指令让程序以后不能再修改"
+    },
+    "loader_v4.Retract": {
+        "class": "recognized",
+        "alert": "这条指令撤回程序,撤回后程序不能运行"
+    },
+    "loader_v4.SetProgramLength": {
+        "class": "recognized",
+        "alert": "这条指令改变程序账户的大小,缩小时多出的 SOL 转给接收账户,请核对接收账户",
+        "summary": {
+            "party": "accounts.2",
+            "label": "接收账户"
+        }
+    },
+    "loader_v4.TransferAuthority": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "accounts.2",
+            "current": "accounts.1"
+        }
+    },
+    "loader_v4.Write": {
+        "class": "recognized",
+        "alert": null
+    },
+    "lookup-account": {
+        "class": "unknown",
+        "alert": null
+    },
+    "lookup-table": {
+        "class": "unknown",
+        "alert": "这笔交易使用地址查找表,表里的地址在链上,本机看不到"
+    },
+    "memo.addMemo": {
+        "class": "recognized",
+        "alert": null
+    },
+    "nonce-advance-foreign": {
+        "class": "unknown",
+        "alert": "AdvanceNonceAccount 不在第一条,或者 nonce 账户不属于本钱包"
+    },
+    "nonce-cancel": {
+        "class": "recognized",
+        "alert": "用当前 nonce 值签过名的交易都会作废"
+    },
+    "nonce-deposit-high": {
+        "class": "transfer",
+        "alert": "存入 nonce 账户的金额明显偏高"
+    },
+    "nonce-step-foreign": {
+        "class": "unknown",
+        "alert": "nonce 账户的创建步骤不完整,或者不属于本钱包"
+    },
+    "offchain-message": {
+        "class": "unknown",
+        "alert": "这是链下消息,签名不上链,但对方可以用它证明你同意了消息内容,请确认来源"
+    },
+    "offchain-unknown": {
+        "class": "unknown",
+        "alert": "这是本机不认识的链下消息版本,看不到内容,签名可能被用于任何用途",
+        "second": true
+    },
+    "other-signers": {
+        "class": "transfer",
+        "alert": "这笔交易还需要其他账户签名"
+    },
+    "owner-unconfirmed": {
+        "class": "transfer",
+        "alert": "无法确认代币收款方的所有者"
+    },
+    "path-unusual": {
+        "class": "transfer",
+        "alert": "派生路径 {0} 不是本机导出的账户,请确认这是你用过的路径"
+    },
+    "program-unknown": {
+        "class": "unknown",
+        "alert": "有指令属于本机不认识的程序,无法判断它的后果"
+    },
+    "signer-unverified": {
+        "class": "unknown",
+        "alert": "这条路径的地址要解锁后才能核对,不是签名者时拒绝签名"
+    },
+    "stake.authorize": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.arg0",
+            "current": "accounts.authority"
+        }
+    },
+    "stake.authorizeChecked": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "accounts.newAuthority",
+            "current": "accounts.authority"
+        }
+    },
+    "stake.authorizeCheckedWithSeed": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "accounts.newAuthority",
+            "current": "accounts.base"
+        }
+    },
+    "stake.authorizeWithSeed": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.newAuthorizedPubkey",
+            "current": "accounts.base"
+        }
+    },
+    "stake.deactivate": {
+        "class": "recognized",
+        "alert": null
+    },
+    "stake.deactivateDelinquent": {
+        "class": "recognized",
+        "alert": null
+    },
+    "stake.delegateStake": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "party": "accounts.vote",
+            "label": "投票账户"
+        }
+    },
+    "stake.getMinimumDelegation": {
+        "class": "recognized",
+        "alert": null
+    },
+    "stake.initialize": {
+        "class": "recognized",
+        "alert": "这条指令指定质押账户的提款权限,请核对新控制方",
+        "summary": {
+            "next": "data.arg0.withdrawer",
+            "current": "accounts.stake"
+        }
+    },
+    "stake.initializeChecked": {
+        "class": "recognized",
+        "alert": "这条指令指定质押账户的提款权限,请核对新控制方",
+        "summary": {
+            "next": "accounts.withdrawAuthority",
+            "current": "accounts.stake"
+        }
+    },
+    "stake.merge": {
+        "class": "recognized",
+        "alert": "合并后来源账户的全部 SOL 转入目标账户,请核对目标账户",
+        "summary": {
+            "party": "accounts.destinationStake",
+            "label": "目标质押账户"
+        }
+    },
+    "stake.moveLamports": {
+        "class": "recognized",
+        "alert": "这条指令把未质押的 SOL 转到另一个账户,请核对目标账户",
+        "summary": {
+            "amount": "data.args",
+            "party": "accounts.destinationStake",
+            "label": "目标质押账户"
+        }
+    },
+    "stake.moveStake": {
+        "class": "recognized",
+        "alert": "这条指令把质押转到另一个账户,请核对目标账户",
+        "summary": {
+            "amount": "data.args",
+            "party": "accounts.destinationStake",
+            "label": "目标质押账户"
+        }
+    },
+    "stake.setLockup": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.custodian",
+            "current": "accounts.authority"
+        }
+    },
+    "stake.setLockupChecked": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "accounts.newAuthority",
+            "current": "accounts.authority"
+        }
+    },
+    "stake.split": {
+        "class": "recognized",
+        "alert": "这条指令把质押拆分到另一个账户,请核对目标账户",
+        "summary": {
+            "amount": "data.args",
+            "party": "accounts.splitStake",
+            "label": "拆分质押账户"
+        }
+    },
+    "stake.withdraw": {
+        "class": "recognized",
+        "alert": "从账户提取 SOL,请核对收款方",
+        "summary": {
+            "amount": "data.args",
+            "party": "accounts.recipient",
+            "label": "收款账户"
+        }
+    },
+    "system.advanceNonceAccount": {
+        "class": "recognized",
+        "alert": null,
+        "passive": true
+    },
+    "system.allocate": {
+        "class": "recognized",
+        "alert": null
+    },
+    "system.allocateWithSeed": {
+        "class": "recognized",
+        "alert": "这条指令把派生账户交给其他程序,请核对所属程序",
+        "summary": {
+            "party": "data.programAddress",
+            "label": "程序地址"
+        }
+    },
+    "system.assign": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.programAddress",
+            "current": "accounts.account"
+        }
+    },
+    "system.assignWithSeed": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.programAddress",
+            "current": "accounts.account"
+        }
+    },
+    "system.authorizeNonceAccount": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.newNonceAuthority",
+            "current": "accounts.nonceAuthority"
+        }
+    },
+    "system.createAccount": {
+        "class": "recognized",
+        "alert": "这条指令把 SOL 转入新账户,请核对新账户和它的所属程序",
+        "summary": {
+            "amount": "data.lamports",
+            "party": "accounts.newAccount",
+            "label": "新账户"
+        }
+    },
+    "system.createAccountAllowPrefund": {
+        "class": "recognized",
+        "alert": "这条指令把 SOL 转入新账户,请核对新账户和它的所属程序",
+        "summary": {
+            "amount": "data.lamports",
+            "party": "accounts.newAccount",
+            "label": "新账户"
+        }
+    },
+    "system.createAccountWithSeed": {
+        "class": "recognized",
+        "alert": "这条指令把 SOL 转入新账户,请核对新账户和它的所属程序",
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.newAccount",
+            "label": "新账户"
+        }
+    },
+    "system.initializeNonceAccount": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.nonceAuthority",
+            "current": "accounts.nonceAccount"
+        }
+    },
+    "system.transferSol": {
+        "class": "transfer",
+        "alert": null,
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.destination",
+            "label": "收款地址"
+        }
+    },
+    "system.transferSolWithSeed": {
+        "class": "recognized",
+        "alert": "这条指令从派生账户转出 SOL,请核对来源和收款方",
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.destination",
+            "label": "收款地址"
+        }
+    },
+    "system.upgradeNonceAccount": {
+        "class": "recognized",
+        "alert": null
+    },
+    "system.withdrawNonceAccount": {
+        "class": "recognized",
+        "alert": "这条指令从 nonce 账户提取 SOL,请核对收款方",
+        "summary": {
+            "amount": "data.withdrawAmount",
+            "party": "accounts.recipientAccount",
+            "label": "收款地址"
+        }
+    },
+    "token-2022-undeclared": {
+        "class": "unknown",
+        "alert": "Token-2022 的转账费用和 hook 在链上,本机看不到,实际效果可能和显示的不同"
+    },
+    "token-accounts-many": {
+        "class": "transfer",
+        "alert": "这笔交易创建 {0} 个代币账户,每个都要付租金"
+    },
+    "token-decimals-mismatch": {
+        "class": "unknown",
+        "alert": "小数位和内置清单不符,节点会拒绝这条指令"
+    },
+    "token-unlisted": {
+        "class": "recognized",
+        "alert": "代币不在内置清单,或者账户数不符,金额显示原始整数"
+    },
+    "token.amountToUiAmount": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token.approve": {
+        "class": "approval",
+        "alert": null,
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.delegate",
+            "label": "被授权方",
+            "unlimited": true
+        }
+    },
+    "token.approveChecked": {
+        "class": "approval",
+        "alert": null,
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.delegate",
+            "label": "被授权方",
+            "unlimited": true,
+            "asset": "accounts.mint",
+            "decimals": "data.decimals"
+        }
+    },
+    "token.batch": {
+        "class": "recognized",
+        "alert": null,
+        "passive": true
+    },
+    "token.burn": {
+        "class": "recognized",
+        "alert": "销毁代币,不可恢复",
+        "summary": {
+            "amount": "data.amount"
+        }
+    },
+    "token.burnChecked": {
+        "class": "recognized",
+        "alert": "销毁代币,不可恢复",
+        "summary": {
+            "amount": "data.amount",
+            "asset": "accounts.mint",
+            "decimals": "data.decimals"
+        }
+    },
+    "token.closeAccount": {
+        "class": "recognized",
+        "alert": "关闭代币账户,账户里的 SOL 转给目标账户",
+        "summary": {
+            "party": "accounts.destination",
+            "label": "收款账户"
+        }
+    },
+    "token.freezeAccount": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token.getAccountDataSize": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token.initializeAccount": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "accounts.owner",
+            "current": "accounts.account"
+        }
+    },
+    "token.initializeAccount2": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.owner",
+            "current": "accounts.account"
+        }
+    },
+    "token.initializeAccount3": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.owner",
+            "current": "accounts.account"
+        }
+    },
+    "token.initializeImmutableOwner": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token.initializeMint": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.mintAuthority",
+            "current": "accounts.mint"
+        }
+    },
+    "token.initializeMint2": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.mintAuthority",
+            "current": "accounts.mint"
+        }
+    },
+    "token.initializeMultisig": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token.initializeMultisig2": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token.mintTo": {
+        "class": "recognized",
+        "alert": "这条指令增发代币,请核对目标账户",
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.token",
+            "label": "目标代币账户"
+        }
+    },
+    "token.mintToChecked": {
+        "class": "recognized",
+        "alert": "这条指令增发代币,请核对目标账户",
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.token",
+            "label": "目标代币账户",
+            "asset": "accounts.mint",
+            "decimals": "data.decimals"
+        }
+    },
+    "token.revoke": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token.setAuthority": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.newAuthority",
+            "current": "accounts.owner",
+            "none": "无,权限被永久移除"
+        }
+    },
+    "token.syncNative": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token.thawAccount": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token.transfer": {
+        "class": "recognized",
+        "alert": "这条指令不校验 mint 和小数位,金额显示原始整数,请核对目标账户",
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.destination",
+            "label": "目标代币账户"
+        }
+    },
+    "token.transferChecked": {
+        "class": "transfer",
+        "alert": null,
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.destination",
+            "label": "收款地址",
+            "owner": "data.recipient_owner",
+            "asset": "accounts.mint",
+            "decimals": "data.decimals"
+        }
+    },
+    "token.uiAmountToAmount": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token.unwrapLamports": {
+        "class": "recognized",
+        "alert": "从代币账户提取 SOL,请核对收款方",
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.destination",
+            "label": "收款账户"
+        }
+    },
+    "token.withdrawExcessLamports": {
+        "class": "recognized",
+        "alert": "提取账户多余的 SOL,请核对收款方",
+        "summary": {
+            "party": "accounts.destination",
+            "label": "收款账户"
+        }
+    },
+    "token2022.amountToUiAmount": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.applyConfidentialPendingBalance": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.applyConfidentialPendingBurn": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.approve": {
+        "class": "approval",
+        "alert": null,
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.delegate",
+            "label": "被授权方",
+            "unlimited": true
+        }
+    },
+    "token2022.approveChecked": {
+        "class": "approval",
+        "alert": null,
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.delegate",
+            "label": "被授权方",
+            "unlimited": true,
+            "asset": "accounts.mint",
+            "decimals": "data.decimals"
+        }
+    },
+    "token2022.approveConfidentialTransferAccount": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.batch": {
+        "class": "recognized",
+        "alert": null,
+        "passive": true
+    },
+    "token2022.burn": {
+        "class": "recognized",
+        "alert": "销毁代币,不可恢复",
+        "summary": {
+            "amount": "data.amount"
+        }
+    },
+    "token2022.burnChecked": {
+        "class": "recognized",
+        "alert": "销毁代币,不可恢复",
+        "summary": {
+            "amount": "data.amount",
+            "asset": "accounts.mint",
+            "decimals": "data.decimals"
+        }
+    },
+    "token2022.closeAccount": {
+        "class": "recognized",
+        "alert": "关闭代币账户,账户里的 SOL 转给目标账户",
+        "summary": {
+            "party": "accounts.destination",
+            "label": "收款账户"
+        }
+    },
+    "token2022.confidentialBurn": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.confidentialDeposit": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容",
+        "summary": {
+            "amount": "data.amount",
+            "asset": "accounts.mint",
+            "decimals": "data.decimals"
+        }
+    },
+    "token2022.confidentialMint": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.confidentialTransfer": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容",
+        "summary": {
+            "party": "accounts.destinationToken",
+            "label": "目标代币账户"
+        }
+    },
+    "token2022.confidentialTransferWithFee": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容",
+        "summary": {
+            "party": "accounts.destinationToken",
+            "label": "目标代币账户"
+        }
+    },
+    "token2022.confidentialWithdraw": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容",
+        "summary": {
+            "amount": "data.amount",
+            "asset": "accounts.mint",
+            "decimals": "data.decimals"
+        }
+    },
+    "token2022.configureConfidentialTransferAccount": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.configureConfidentialTransferAccountWithRegistry": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.createNativeMint": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.disableConfidentialCredits": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.disableCpiGuard": {
+        "class": "recognized",
+        "alert": "关闭 CPI 保护后,其他程序可以在调用里动用这个账户"
+    },
+    "token2022.disableHarvestToMint": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.disableMemoTransfers": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.disableNonConfidentialCredits": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.emitTokenMetadata": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.emptyConfidentialTransferAccount": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.enableConfidentialCredits": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.enableCpiGuard": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.enableHarvestToMint": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.enableMemoTransfers": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.enableNonConfidentialCredits": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.freezeAccount": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.getAccountDataSize": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.harvestWithheldTokensToMint": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.harvestWithheldTokensToMintForConfidentialTransferFee": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.initializeAccount": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "accounts.owner",
+            "current": "accounts.account"
+        }
+    },
+    "token2022.initializeAccount2": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.owner",
+            "current": "accounts.account"
+        }
+    },
+    "token2022.initializeAccount3": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.owner",
+            "current": "accounts.account"
+        }
+    },
+    "token2022.initializeConfidentialMintBurn": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.initializeConfidentialTransferFee": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容",
+        "summary": {
+            "next": "data.authority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeConfidentialTransferMint": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容",
+        "summary": {
+            "next": "data.authority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeDefaultAccountState": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.initializeGroupMemberPointer": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.authority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeGroupPointer": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.authority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeImmutableOwner": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.initializeInterestBearingMint": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.rateAuthority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeMetadataPointer": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.authority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeMint": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.mintAuthority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeMint2": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.mintAuthority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeMintCloseAuthority": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.closeAuthority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeMultisig": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.initializeMultisig2": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.initializeNonTransferableMint": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.initializePausableConfig": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.authority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializePermanentDelegate": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.delegate",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializePermissionedBurn": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.authority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeScaledUiAmountMint": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.authority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeTokenGroup": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.updateAuthority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeTokenGroupMember": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.initializeTokenMetadata": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "accounts.updateAuthority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeTransferFeeConfig": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.transferFeeConfigAuthority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.initializeTransferHook": {
+        "class": "recognized",
+        "alert": null,
+        "summary": {
+            "next": "data.authority",
+            "current": "accounts.mint"
+        }
+    },
+    "token2022.mintTo": {
+        "class": "recognized",
+        "alert": "这条指令增发代币,请核对目标账户",
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.token",
+            "label": "目标代币账户"
+        }
+    },
+    "token2022.mintToChecked": {
+        "class": "recognized",
+        "alert": "这条指令增发代币,请核对目标账户",
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.token",
+            "label": "目标代币账户",
+            "asset": "accounts.mint",
+            "decimals": "data.decimals"
+        }
+    },
+    "token2022.pause": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.permissionedBurn": {
+        "class": "recognized",
+        "alert": "销毁代币,不可恢复",
+        "summary": {
+            "amount": "data.amount"
+        }
+    },
+    "token2022.permissionedBurnChecked": {
+        "class": "recognized",
+        "alert": "销毁代币,不可恢复",
+        "summary": {
+            "amount": "data.amount",
+            "asset": "accounts.mint",
+            "decimals": "data.decimals"
+        }
+    },
+    "token2022.permissionedConfidentialBurn": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.reallocate": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.removeTokenMetadataKey": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.resume": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.revoke": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.rotateSupplyElgamalPubkey": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.setAuthority": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.newAuthority",
+            "current": "accounts.owner",
+            "none": "无,权限被永久移除"
+        }
+    },
+    "token2022.setTransferFee": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.syncNative": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.thawAccount": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.transfer": {
+        "class": "recognized",
+        "alert": "这条指令不校验 mint 和小数位,金额显示原始整数,请核对目标账户",
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.destination",
+            "label": "目标代币账户"
+        }
+    },
+    "token2022.transferChecked": {
+        "class": "transfer",
+        "alert": null,
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.destination",
+            "label": "收款地址",
+            "owner": "data.recipient_owner",
+            "asset": "accounts.mint",
+            "decimals": "data.decimals"
+        }
+    },
+    "token2022.transferCheckedWithFee": {
+        "class": "transfer",
+        "alert": null,
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.destination",
+            "label": "收款地址",
+            "owner": "data.recipient_owner",
+            "asset": "accounts.mint",
+            "decimals": "data.decimals"
+        }
+    },
+    "token2022.uiAmountToAmount": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.unwrapLamports": {
+        "class": "recognized",
+        "alert": "从代币账户提取 SOL,请核对收款方",
+        "summary": {
+            "amount": "data.amount",
+            "party": "accounts.destination",
+            "label": "收款账户"
+        }
+    },
+    "token2022.updateConfidentialMintBurnDecryptableSupply": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.updateConfidentialTransferMint": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容"
+    },
+    "token2022.updateDefaultAccountState": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.updateGroupMemberPointer": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.updateGroupPointer": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.updateMetadataPointer": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.updateMultiplierScaledUiMint": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.updateRateInterestBearingMint": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.updateTokenGroupMaxSize": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.updateTokenGroupUpdateAuthority": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.newUpdateAuthority",
+            "current": "accounts.updateAuthority",
+            "none": "无,权限被永久移除"
+        }
+    },
+    "token2022.updateTokenMetadataField": {
+        "class": "recognized",
+        "alert": null
+    },
+    "token2022.updateTokenMetadataUpdateAuthority": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.newUpdateAuthority",
+            "current": "accounts.updateAuthority",
+            "none": "无,权限被永久移除"
+        }
+    },
+    "token2022.updateTransferHook": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.programId",
+            "current": "accounts.authority"
+        }
+    },
+    "token2022.withdrawExcessLamports": {
+        "class": "recognized",
+        "alert": "提取账户多余的 SOL,请核对收款方",
+        "summary": {
+            "party": "accounts.destination",
+            "label": "收款账户"
+        }
+    },
+    "token2022.withdrawWithheldTokensFromAccounts": {
+        "class": "recognized",
+        "alert": "这条指令提取代币的转账费用,请核对接收账户",
+        "summary": {
+            "party": "accounts.feeReceiver",
+            "label": "费用接收账户"
+        }
+    },
+    "token2022.withdrawWithheldTokensFromAccountsForConfidentialTransferFee": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容",
+        "summary": {
+            "party": "accounts.destination",
+            "label": "费用接收账户"
+        }
+    },
+    "token2022.withdrawWithheldTokensFromMint": {
+        "class": "recognized",
+        "alert": "这条指令提取代币的转账费用,请核对接收账户",
+        "summary": {
+            "party": "accounts.feeReceiver",
+            "label": "费用接收账户"
+        }
+    },
+    "token2022.withdrawWithheldTokensFromMintForConfidentialTransferFee": {
+        "class": "unknown",
+        "alert": "机密转账的金额是密文,本机看不到内容",
+        "summary": {
+            "party": "accounts.destination",
+            "label": "费用接收账户"
+        }
+    },
+    "v1-addresses": {
+        "class": "transfer",
+        "alert": "v1 交易超过 64 个地址,节点目前不接受"
+    },
+    "v1-config-unknown": {
+        "class": "unknown",
+        "alert": "交易配置有本机不认识的位,配置和指令都无法解码,看不到这笔交易的内容",
+        "second": true
+    },
+    "v1-heap-size": {
+        "class": "transfer",
+        "alert": "请求的堆内存不在节点接受的范围内"
+    },
+    "v1-instructions": {
+        "class": "transfer",
+        "alert": "v1 交易超过 64 条指令,节点目前不接受"
+    },
+    "v1-signatures": {
+        "class": "transfer",
+        "alert": "v1 交易超过 12 个签名,节点目前不接受"
+    },
+    "v1-transaction-size": {
+        "class": "transfer",
+        "alert": "v1 交易超过 4096 字节,节点目前不接受"
+    },
+    "vote.Authorize": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.Authorize.0",
+            "current": "accounts.2"
+        }
+    },
+    "vote.AuthorizeChecked": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "accounts.3",
+            "current": "accounts.2"
+        }
+    },
+    "vote.AuthorizeCheckedWithSeed": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "accounts.3",
+            "current": "accounts.2"
+        }
+    },
+    "vote.AuthorizeWithSeed": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "data.AuthorizeWithSeed.0.new_authority",
+            "current": "accounts.2"
+        }
+    },
+    "vote.CompactUpdateVoteState": {
+        "class": "recognized",
+        "alert": "这是验证者的共识投票,请确认你在操作验证者"
+    },
+    "vote.CompactUpdateVoteStateSwitch": {
+        "class": "recognized",
+        "alert": "这是验证者的共识投票,请确认你在操作验证者"
+    },
+    "vote.DepositDelegatorRewards": {
+        "class": "recognized",
+        "alert": "这条指令把 SOL 存入投票账户,请核对投票账户",
+        "summary": {
+            "amount": "data.DepositDelegatorRewards.deposit",
+            "party": "accounts.0",
+            "label": "投票账户",
+            "native": true
+        }
+    },
+    "vote.InitializeAccount": {
+        "class": "recognized",
+        "alert": "这条指令指定投票账户的提款权限,请核对新控制方",
+        "summary": {
+            "next": "data.InitializeAccount.0.authorized_withdrawer",
+            "current": "accounts.0"
+        }
+    },
+    "vote.InitializeAccountV2": {
+        "class": "recognized",
+        "alert": "这条指令指定投票账户的提款权限,请核对新控制方",
+        "summary": {
+            "next": "data.InitializeAccountV2.0.authorized_withdrawer",
+            "current": "accounts.0"
+        }
+    },
+    "vote.TowerSync": {
+        "class": "recognized",
+        "alert": "这是验证者的共识投票,请确认你在操作验证者"
+    },
+    "vote.TowerSyncSwitch": {
+        "class": "recognized",
+        "alert": "这是验证者的共识投票,请确认你在操作验证者"
+    },
+    "vote.UpdateCommission": {
+        "class": "recognized",
+        "alert": null
+    },
+    "vote.UpdateCommissionBps": {
+        "class": "recognized",
+        "alert": null
+    },
+    "vote.UpdateCommissionCollector": {
+        "class": "recognized",
+        "alert": "这条指令改变佣金的接收账户,请核对新接收账户",
+        "summary": {
+            "party": "accounts.1",
+            "label": "新接收账户"
+        }
+    },
+    "vote.UpdateValidatorIdentity": {
+        "class": "permission-change",
+        "alert": null,
+        "summary": {
+            "next": "accounts.1",
+            "current": "accounts.2"
+        }
+    },
+    "vote.UpdateVoteState": {
+        "class": "recognized",
+        "alert": "这是验证者的共识投票,请确认你在操作验证者"
+    },
+    "vote.UpdateVoteStateSwitch": {
+        "class": "recognized",
+        "alert": "这是验证者的共识投票,请确认你在操作验证者"
+    },
+    "vote.Vote": {
+        "class": "recognized",
+        "alert": "这是验证者的共识投票,请确认你在操作验证者"
+    },
+    "vote.VoteSwitch": {
+        "class": "recognized",
+        "alert": "这是验证者的共识投票,请确认你在操作验证者"
+    },
+    "vote.Withdraw": {
+        "class": "recognized",
+        "alert": "从账户提取 SOL,请核对收款方",
+        "summary": {
+            "amount": "data.Withdraw.0",
+            "party": "accounts.1",
+            "label": "收款账户",
+            "native": true
+        }
+    },
+    "zk_elgamal_proof_program.CloseContextState": {
+        "class": "recognized",
+        "alert": "这条指令关闭证明账户,租金转给目标账户,请核对目标账户",
+        "summary": {
+            "party": "accounts.1",
+            "label": "目标账户"
+        }
+    },
+    "zk_elgamal_proof_program.VerifyBatchedGroupedCiphertext2HandlesValidity": {
+        "class": "recognized",
+        "alert": null
+    },
+    "zk_elgamal_proof_program.VerifyBatchedGroupedCiphertext3HandlesValidity": {
+        "class": "recognized",
+        "alert": null
+    },
+    "zk_elgamal_proof_program.VerifyBatchedRangeProofU128": {
+        "class": "recognized",
+        "alert": null
+    },
+    "zk_elgamal_proof_program.VerifyBatchedRangeProofU256": {
+        "class": "recognized",
+        "alert": null
+    },
+    "zk_elgamal_proof_program.VerifyBatchedRangeProofU64": {
+        "class": "recognized",
+        "alert": null
+    },
+    "zk_elgamal_proof_program.VerifyCiphertextCiphertextEquality": {
+        "class": "recognized",
+        "alert": null
+    },
+    "zk_elgamal_proof_program.VerifyCiphertextCommitmentEquality": {
+        "class": "recognized",
+        "alert": null
+    },
+    "zk_elgamal_proof_program.VerifyGroupedCiphertext2HandlesValidity": {
+        "class": "recognized",
+        "alert": null
+    },
+    "zk_elgamal_proof_program.VerifyGroupedCiphertext3HandlesValidity": {
+        "class": "recognized",
+        "alert": null
+    },
+    "zk_elgamal_proof_program.VerifyPercentageWithCap": {
+        "class": "recognized",
+        "alert": null
+    },
+    "zk_elgamal_proof_program.VerifyPubkeyValidity": {
+        "class": "recognized",
+        "alert": null
+    },
+    "zk_elgamal_proof_program.VerifyZeroCiphertext": {
+        "class": "recognized",
+        "alert": null
+    }
+}

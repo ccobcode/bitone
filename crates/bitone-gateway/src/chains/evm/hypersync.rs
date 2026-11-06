@@ -26,7 +26,7 @@ fn hex_amount(value: Option<&Value>) -> Result<String, Failed> {
 
 impl Evm {
     /// HyperSync 的一页,一个请求算一页.它只能从旧到新扫,所以游标是下一个要扫的区块.
-    /// 免费额度是每分钟 15 次,跟块不用它,只用来补历史.
+    /// 免费额度是每分钟 15 次,跟踪新区块时不用它,只用来补历史.
     // ponytail: 记录多到一个请求扫不完时,最早的在前,中间的要翻页才看得到.
     // 这类地址多了以后改成从最新的区块往回分段扫.
     pub(super) async fn hypersync_page(
@@ -120,7 +120,7 @@ impl Evm {
             items,
         };
         Ok(HistoryPage {
-            // 它可能比节点慢几个块,水位不能超过它扫到的位置.
+            // 它可能比节点慢几个块,`checkpoint` 不能超过它扫到的位置.
             checkpoint: tips.finalized.min(archive),
             ..merge_pages(vec![page])
         })

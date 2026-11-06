@@ -4,8 +4,8 @@
 //! C2 是 alloy 的 `Resolver` 重新计算 `hashStruct`.树和摘要都来自 `TypedMessage` 里同一份值.
 
 use super::abi::{AddressText, abi_node};
-use super::evm::{absent_text, whole};
-use super::{Decoder, Extent, Input, Node, Reject, RoundTrip, Source, Value, Walked};
+use super::format::ABSENT_TEXT;
+use super::{Decoder, Extent, Field, Input, Node, Reject, RoundTrip, Source, Value, Walked};
 use crate::hex::FromHex;
 use alloy_dyn_abi::{DynSolType, DynSolValue, PropertyDef, Resolver, TypeDef};
 use alloy_primitives::{Address, B256, U256, keccak256};
@@ -390,7 +390,6 @@ pub struct TypedMessage {
     check: RoundTrip,
 }
 
-/// 结构体的一个成员.
 pub fn typed_member<'a>(value: &'a DynSolValue, name: &str) -> Option<&'a DynSolValue> {
     let DynSolValue::CustomStruct {
         name: _name,
@@ -516,7 +515,9 @@ impl TypedWalker<'_> {
     fn domain(&self) -> Node {
         let source = Source::Signed(Extent::Inherited);
         let mut node = abi_node(DOMAIN.to_string(), &self.parsed.domain, source, self.format);
-        let absent = |name: &str, kind: &str| Node::new(name, Value::Enum(absent_text()), Source::Derived).action(kind);
+        let absent = |name: &str, kind: &str| {
+            Node::new(name, Value::Enum(ABSENT_TEXT.to_string()), Source::Derived).action(kind)
+        };
         match (self.parsed.chain_id(), self.chain_id) {
             (None, _) => node.children.push(absent(CHAIN_ID, "eip712-no-chain-id")),
             (Some(found), Some(expected)) if found != U256::from(expected) => {
@@ -568,7 +569,7 @@ impl Decoder for TypedWalker<'_> {
         let root = Node::new(
             "typed_data",
             Value::Struct,
-            Source::Signed(Extent::Own(whole(input.payload).span)),
+            Source::Signed(Extent::Own(Field::whole(input.payload).span)),
         );
         Ok(Some(Walked {
             root: root.children(children).action(self.action()),

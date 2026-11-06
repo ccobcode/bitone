@@ -1,4 +1,4 @@
-//! Solana 的跟块.
+//! 跟踪 Solana 的新区块和地址变化.
 
 use super::adapter::Solana;
 use crate::upstream::{Failed, Signal, Socket, next_message, open_socket, send_call};
@@ -108,7 +108,7 @@ async fn finish(lookup: &mut Option<Lookup<'_>>) -> (String, Result<Vec<String>,
 }
 
 impl Solana {
-    /// 跟块.`slotSubscribe` 给高度,账户和日志订阅由节点推送变化,不用查询.
+    /// 跟踪新区块.`slotSubscribe` 给高度,账户和日志订阅由节点推送变化,不用查询.
     /// 新的代币账户创建时会提到所有者,所以收到日志时重新看一次它的代币账户.这个查询在后台一次
     /// 跑一个,既不能挡住读推送,失败了也只影响这个地址,下一拍再试.
     pub(super) async fn follow(

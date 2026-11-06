@@ -2,10 +2,9 @@
 //! 不按指令或合约类型写代码.
 
 use crate::Chain;
-use crate::decode::solana::is_absent;
-use crate::decode::{Amount, Node, NodeId, Value, display};
+use crate::decode::{Amount, Node, NodeId, Value, display, is_absent};
 use crate::manifest::Asset;
-use crate::policy::{self, SummaryFields};
+use crate::policy::SummaryFields;
 use crate::review::{AmountView, Controller, Party, Risk, Summary};
 use crate::units::{decimal_from_be, format_units};
 
@@ -96,7 +95,7 @@ fn amount_view<'a>(
     let raw = integer_text(&node.value)?;
     let decimals = first(scope, fields.decimals.as_ref()).and_then(|row| number_of(&row.value));
     let token = first(scope, fields.asset.as_ref()).and_then(|row| listed(&display(&row.value), decimals));
-    let asset = token.or(native.filter(|_| is_coin(&node.value)));
+    let asset = token.or(native.filter(|_| fields.native || is_coin(&node.value)));
     Some(AmountView {
         text: asset.map_or_else(|| raw.clone(), |asset| format_units(&raw, asset.decimals)),
         symbol: asset.map(|asset| asset.symbol.clone()),
@@ -161,7 +160,7 @@ pub(crate) fn effect<'a>(
         node,
         ..Effect::default()
     };
-    if let Some(fields) = policy::summary_fields(chain, kind) {
+    if let Some(fields) = crate::chains::rules(chain).summary_fields(kind) {
         effect.amount = amount_view(fields, scope, native, &listed);
         read_party(fields, scope, &mut effect);
         read_control(fields, scope, &mut effect);

@@ -1,11 +1,7 @@
 package com.ccobcode.bitone.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,11 +9,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,8 +23,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import com.ccobcode.bitone.flow.CURRENT_CONTROLLER
@@ -137,30 +138,33 @@ fun ReviewScreen(flow: WalletFlow) {
     }
 }
 
-/** 通用字段列表,不按链,不按字段名分支.全部行都在滚动内容里,滚到底才能确认.画出的行数报给 [flow],签名时核心库要核对. */
+/** 通用字段列表,不按链,不按字段名分支.每一行由 [FieldLine] 画出时报给 [flow],签名时核心库核对行数.收起的附加字段也在组合里. */
 @Composable
 private fun FieldList(flow: WalletFlow, fields: List<FieldRow>, style: ReviewStyle) {
     val blocks = remember(fields) { fieldBlocks(fields) }
-    LaunchedEffect(blocks) { flow.scan.fieldsRendered(blocks.sumOf { it.rows.size }) }
+    val shown = flow.scan::rowShown
     blocks.forEach { block ->
         if (block.foldable) {
-            Disclosure("附加字段", initiallyOpen = style != ReviewStyle.Plain) { block.rows.forEach { FieldLine(it) } }
+            Disclosure("附加字段", initiallyOpen = style != ReviewStyle.Plain) {
+                block.rows.forEach { FieldLine(it, shown) }
+            }
         } else {
             Card {
                 Column(
                     Modifier.fillMaxWidth().padding(Space.s4),
                     verticalArrangement = Arrangement.spacedBy(Space.s3),
                 ) {
-                    block.rows.forEach { FieldLine(it) }
+                    block.rows.forEach { FieldLine(it, shown) }
                 }
             }
         }
     }
 }
 
-/** 值是链上的内容,不翻译. */
+/** 值是链上的内容,不翻译.画行的代码只有这一处,行数在这里数. */
 @Composable
-private fun FieldLine(row: FieldRow) {
+private fun FieldLine(row: FieldRow, shown: (UInt) -> Unit) {
+    SideEffect { shown(row.id) }
     val c = BitOneTheme.colors
     Column(
         Modifier.fillMaxWidth().padding(start = Space.s3 * minOf(row.depth.toInt(), MAX_INDENT)),
@@ -404,17 +408,18 @@ private fun Disclosure(title: String, initiallyOpen: Boolean, content: @Composab
             Txt(title, Modifier.weight(1f))
             LineIcon(Icons.Chevron, 16.dp, c.text3, Modifier.rotate(turn))
         }
-        AnimatedVisibility(
-            open,
-            enter = fadeIn(stateSpec()) + expandVertically(stateSpec()),
-            exit = fadeOut(exitSpec()) + shrinkVertically(exitSpec()),
-        ) {
-            Column(
-                Modifier.padding(start = Space.s4, end = Space.s4, bottom = Space.s4),
-                verticalArrangement = Arrangement.spacedBy(Space.s3),
-                content = content,
-            )
-        }
+        // 收起时内容仍在组合里,高度为 0,也不进无障碍树.每一行都要经过画行的代码,核心库才能核对行数.
+        val alpha by animateFloatAsState(if (open) 1f else 0f, if (open) stateSpec() else exitSpec(), label = "fold")
+        val folded = if (open) Modifier else Modifier.height(0.dp).clearAndSetSemantics {}
+        Column(
+            Modifier.animateContentSize(if (open) stateSpec() else exitSpec())
+                .then(folded)
+                .clipToBounds()
+                .alpha(alpha)
+                .padding(start = Space.s4, end = Space.s4, bottom = Space.s4),
+            verticalArrangement = Arrangement.spacedBy(Space.s3),
+            content = content,
+        )
     }
 }
 

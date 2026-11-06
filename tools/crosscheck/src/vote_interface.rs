@@ -1,10 +1,9 @@
-//! schemas/solana/vote.json 是手写的,这里和 `solana-vote-interface` 比较.
-//! 指令由官方的构建函数生成,字节和账户标记都来自 interface crate.
+//! Vote 没有官方 IDL,核心库按 `solana-vote-interface` 的官方枚举解码.这里用同一个 crate 的构建函数生成指令,
+//! 走完整的 Solana 消息遍历,核对种类名,账户数,字段和第一屏.
 
-use bitone_core::decode::solana::{Instruction, Message, SolanaWalker, Version};
+use bitone_core::chains::solana::decode::{Instruction, Message, SolanaWalker, Version};
 use bitone_core::decode::{Coin, Decoded, Input, Node, Value, decode, display};
 use bitone_core::{Chain, Mode};
-use serde_json::Value as Json;
 use solana_hash::Hash;
 use solana_instruction::Instruction as VoteCall;
 use solana_pubkey::Pubkey;
@@ -16,7 +15,6 @@ use solana_vote_interface::instruction::{
 };
 use solana_vote_interface::state::{TowerSync, Vote, VoteAuthorize, VoteInit, VoteInitV2};
 
-const SCHEMA: &str = include_str!("../../../schemas/solana/vote.json");
 const VOTE_PROGRAM: &str = "Vote111111111111111111111111111111111111111";
 const PAYER: [u8; 32] = [0x77; 32];
 const WALKER: SolanaWalker = SolanaWalker {
@@ -95,56 +93,37 @@ fn run(instruction: &VoteCall) -> Decoded {
     .unwrap()
 }
 
-fn shown(decoded: &Decoded, name: &str) -> Vec<String> {
+/// 名字是 `path` 的节点,`path` 从指令数据的分支节点算起.
+fn shown(decoded: &Decoded, path: &[&str]) -> String {
     let visits = decoded.visits();
-    let rows = visits.iter().filter(|visit| visit.node.name == name);
-    rows.map(|visit| display(&visit.node.value)).collect()
-}
-
-fn accounts_of(decoded: &Decoded) -> Vec<&Node> {
-    let visits = decoded.visits();
-    let list = visits
+    let data = visits
         .iter()
-        .find(|visit| visit.node.name == "accounts")
-        .expect("有账户列表");
-    list.node.children.iter().collect()
-}
-
-/// IDL 里这条指令的账户标记,和官方构建函数给出的逐个相同.
-fn idl_accounts(name: &str) -> Vec<(String, bool, bool)> {
-    let root: Json = serde_json::from_str(SCHEMA).unwrap();
-    let instructions = root["program"]["instructions"].as_array().unwrap();
-    let found = instructions.iter().find(|item| item["name"] == name).unwrap();
-    let accounts = found["accounts"].as_array().unwrap();
-    accounts
-        .iter()
-        .map(|account| {
-            (
-                account["name"].as_str().unwrap().to_string(),
-                account["isSigner"] == Json::Bool(true),
-                account["isWritable"] == Json::Bool(true),
-            )
-        })
-        .collect()
+        .find(|visit| visit.node.name == "data" && visit.node.children.len() == 1)
+        .expect("有指令数据");
+    let mut node: &Node = &data.node.children[0];
+    for name in path {
+        node = node
+            .children
+            .iter()
+            .find(|child| child.name == *name)
+            .unwrap_or_else(|| panic!("{path:?}"));
+    }
+    display(&node.value)
 }
 
 fn check(name: &str, instruction: &VoteCall) -> Decoded {
+    assert_eq!(instruction.program_id.to_string(), VOTE_PROGRAM);
     let decoded = run(instruction);
-    assert_eq!(shown(&decoded, "instruction_name"), [name]);
     let kinds: Vec<&str> = decoded.actions().iter().map(|(_, _, kind)| *kind).collect();
     assert_eq!(kinds, [["vote.", name].concat()], "{name}");
     let visits = decoded.visits();
     let opaque = visits.iter().find(|visit| matches!(visit.node.value, Value::Opaque(_)));
     assert!(opaque.is_none(), "{name} 有 opaque 节点");
-    let expected = idl_accounts(name);
-    let rows = accounts_of(&decoded);
-    assert_eq!(rows.len(), expected.len(), "{name}");
-    assert_eq!(instruction.accounts.len(), expected.len(), "{name}");
-    for ((row, meta), (account, signer, writable)) in rows.iter().zip(&instruction.accounts).zip(&expected) {
-        assert_eq!(&row.name, account, "{name}");
-        assert_eq!(meta.is_signer, *signer, "{name} 的 {account}");
-        assert_eq!(meta.is_writable, *writable, "{name} 的 {account}");
-    }
+    let accounts = visits
+        .iter()
+        .find(|visit| visit.node.name == "accounts")
+        .expect("有账户列表");
+    assert_eq!(accounts.node.children.len(), instruction.accounts.len(), "{name}");
     decoded
 }
 
@@ -162,70 +141,73 @@ fn bls() -> VoteAuthorize {
 #[test]
 fn authorize_matches_the_interface() {
     for (kind, label) in [
-        (VoteAuthorize::Voter, "voter"),
-        (VoteAuthorize::Withdrawer, "withdrawer"),
+        (VoteAuthorize::Voter, "Voter"),
+        (VoteAuthorize::Withdrawer, "Withdrawer"),
     ] {
-        let decoded = check("authorize", &authorize(&key(1), &key(2), &key(3), kind));
-        assert_eq!(shown(&decoded, "newAuthority"), [address(3)]);
-        assert_eq!(shown(&decoded, "authorizationType"), [label]);
+        let decoded = check("Authorize", &authorize(&key(1), &key(2), &key(3), kind));
+        assert_eq!(shown(&decoded, &["0"]), address(3));
+        assert_eq!(shown(&decoded, &["1"]), label);
     }
-    let decoded = check("authorize", &authorize(&key(1), &key(2), &key(3), bls()));
-    assert_eq!(shown(&decoded, "blsPubkey"), ["05".repeat(48)]);
-    assert_eq!(shown(&decoded, "blsProofOfPossession"), ["06".repeat(96)]);
+    let decoded = check("Authorize", &authorize(&key(1), &key(2), &key(3), bls()));
+    assert_eq!(shown(&decoded, &["1", "0", "bls_pubkey"]), "05".repeat(48));
+    assert_eq!(shown(&decoded, &["1", "0", "bls_proof_of_possession"]), "06".repeat(96));
 }
 
 #[test]
 fn authorize_checked_matches_the_interface() {
     let decoded = check(
-        "authorizeChecked",
+        "AuthorizeChecked",
         &authorize_checked(&key(1), &key(2), &key(3), VoteAuthorize::Withdrawer),
     );
-    assert_eq!(shown(&decoded, "authorizationType"), ["withdrawer"]);
+    assert_eq!(shown(&decoded, &["0"]), "Withdrawer");
 }
 
 #[test]
 fn seeded_authorizations_match_the_interface() {
     let seeded = authorize_with_seed(&key(1), &key(2), &key(3), "seed", &key(4), VoteAuthorize::Voter);
-    let decoded = check("authorizeWithSeed", &seeded);
-    assert_eq!(shown(&decoded, "authorizationType"), ["voter"]);
-    assert_eq!(shown(&decoded, "currentAuthorityDerivedKeyOwner"), [address(3)]);
-    assert_eq!(shown(&decoded, "currentAuthorityDerivedKeySeed"), ["seed"]);
-    assert_eq!(shown(&decoded, "newAuthority"), [address(4)]);
+    let decoded = check("AuthorizeWithSeed", &seeded);
+    assert_eq!(shown(&decoded, &["0", "authorization_type"]), "Voter");
+    assert_eq!(
+        shown(&decoded, &["0", "current_authority_derived_key_owner"]),
+        address(3)
+    );
+    assert_eq!(shown(&decoded, &["0", "current_authority_derived_key_seed"]), "seed");
+    assert_eq!(shown(&decoded, &["0", "new_authority"]), address(4));
     let checked = authorize_checked_with_seed(&key(1), &key(2), &key(3), "seed", &key(4), VoteAuthorize::Withdrawer);
-    let decoded = check("authorizeCheckedWithSeed", &checked);
-    assert_eq!(shown(&decoded, "currentAuthorityDerivedKeySeed"), ["seed"]);
+    let decoded = check("AuthorizeCheckedWithSeed", &checked);
+    assert_eq!(shown(&decoded, &["0", "current_authority_derived_key_seed"]), "seed");
 }
 
 #[test]
 fn the_identity_and_the_commission_match_the_interface() {
     check(
-        "updateValidatorIdentity",
+        "UpdateValidatorIdentity",
         &update_validator_identity(&key(1), &key(2), &key(3)),
     );
-    let decoded = check("updateCommission", &update_commission(&key(1), &key(2), 42));
-    assert_eq!(shown(&decoded, "commission"), ["42"]);
+    let decoded = check("UpdateCommission", &update_commission(&key(1), &key(2), 42));
+    assert_eq!(shown(&decoded, &["0"]), "42");
     let decoded = check(
-        "updateCommissionCollector",
+        "UpdateCommissionCollector",
         &update_commission_collector(&key(1), &key(2), &key(3), CommissionKind::BlockRevenue),
     );
-    assert_eq!(shown(&decoded, "commissionKind"), ["blockRevenue"]);
+    assert_eq!(shown(&decoded, &["0"]), "BlockRevenue");
     let decoded = check(
-        "updateCommissionBps",
+        "UpdateCommissionBps",
         &update_commission_bps(&key(1), &key(2), CommissionKind::InflationRewards, 750),
     );
-    assert_eq!(shown(&decoded, "commissionBps"), ["750"]);
-    assert_eq!(shown(&decoded, "commissionKind"), ["inflationRewards"]);
+    assert_eq!(shown(&decoded, &["commission_bps"]), "750");
+    assert_eq!(shown(&decoded, &["kind"]), "InflationRewards");
 }
 
 #[test]
 fn withdrawals_and_deposits_match_the_interface() {
-    let decoded = check("withdraw", &withdraw(&key(1), &key(2), 1_500_000_000, &key(3)));
-    assert_eq!(shown(&decoded, "lamports"), ["1.5 SOL"]);
+    let decoded = check("Withdraw", &withdraw(&key(1), &key(2), 1_500_000_000, &key(3)));
+    assert_eq!(shown(&decoded, &["0"]), "1500000000");
     let decoded = check(
-        "depositDelegatorRewards",
+        "DepositDelegatorRewards",
         &deposit_delegator_rewards(&key(1), &key(2), 2_000_000_000),
     );
-    assert_eq!(shown(&decoded, "deposit"), ["2 SOL"]);
+    assert_eq!(shown(&decoded, &["deposit"]), "2000000000");
 }
 
 #[test]
@@ -237,10 +219,10 @@ fn initialize_account_matches_the_interface() {
         commission: 9,
     };
     let instructions = create_account_with_config(&key(1), &key(2), &init, 1, CreateVoteAccountConfig::default());
-    let decoded = check("initializeAccount", instructions.last().unwrap());
-    assert_eq!(shown(&decoded, "nodePubkey"), [address(4)]);
-    assert_eq!(shown(&decoded, "authorizedWithdrawer"), [address(6)]);
-    assert_eq!(shown(&decoded, "commission"), ["9"]);
+    let decoded = check("InitializeAccount", instructions.last().unwrap());
+    assert_eq!(shown(&decoded, &["0", "node_pubkey"]), address(4));
+    assert_eq!(shown(&decoded, &["0", "authorized_withdrawer"]), address(6));
+    assert_eq!(shown(&decoded, &["0", "commission"]), "9");
 }
 
 #[test]
@@ -267,27 +249,24 @@ fn initialize_account_v2_matches_the_interface() {
         .iter()
         .find(|instruction| instruction.program_id.to_string() == VOTE_PROGRAM)
         .unwrap();
-    let decoded = check("initializeAccountV2", initialize);
-    assert_eq!(shown(&decoded, "authorizedVoterBlsPubkey"), ["07".repeat(48)]);
-    assert_eq!(
-        shown(&decoded, "authorizedVoterBlsProofOfPossession"),
-        ["08".repeat(96)]
-    );
-    assert_eq!(shown(&decoded, "inflationRewardsCommissionBps"), ["100"]);
-    assert_eq!(shown(&decoded, "blockRevenueCommissionBps"), ["200"]);
+    let decoded = check("InitializeAccountV2", initialize);
+    assert_eq!(shown(&decoded, &["0", "authorized_voter_bls_pubkey"]), "07".repeat(48));
+    assert_eq!(shown(&decoded, &["0", "inflation_rewards_commission_bps"]), "100");
+    assert_eq!(shown(&decoded, &["0", "block_revenue_commission_bps"]), "200");
 }
 
-/// 8 条共识投票指令不进 IDL,命中时按 `opaque` 显示.
+/// 共识投票的紧凑编码按官方类型读出,不是 `opaque`.
 #[test]
-fn consensus_votes_are_outside_the_idl() {
-    let cases = [
-        vote(&key(1), &key(2), Vote::new(vec![1], Hash::default())),
-        tower_sync(&key(1), &key(2), TowerSync::new_from_slot(5, Hash::default())),
-    ];
-    for instruction in cases {
-        assert_eq!(instruction.program_id.to_string(), VOTE_PROGRAM);
-        let decoded = run(&instruction);
-        let kinds: Vec<&str> = decoded.actions().iter().map(|(_, _, kind)| *kind).collect();
-        assert_eq!(kinds, ["instruction-unknown"]);
-    }
+fn consensus_votes_decode_by_the_official_types() {
+    let decoded = check("Vote", &vote(&key(1), &key(2), Vote::new(vec![1], Hash::default())));
+    assert_eq!(shown(&decoded, &["0", "slots", "item"]), "1");
+    let decoded = check(
+        "TowerSync",
+        &tower_sync(
+            &key(1),
+            &key(2),
+            TowerSync::new_from_slot(5, Hash::new_from_array([4; 32])),
+        ),
+    );
+    assert_eq!(shown(&decoded, &["0", "hash"]), "04".repeat(32));
 }

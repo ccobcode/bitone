@@ -1,5 +1,5 @@
-//! 跟块和快照的集成测试,上游都是本地模拟服务.
-//! 重点是没有索引服务时也能解析交易,一部分失败不影响其余,以及水位分组.
+//! 跟踪新区块和快照的集成测试,上游都是本地模拟服务.
+//! 重点是没有索引服务时也能解析交易,一部分失败不影响其余,以及按 `since` 分组.
 
 mod common;
 
@@ -361,7 +361,7 @@ async fn snapshot_validates_before_it_reaches_the_upstream() {
     }
 }
 
-// ---- 长连接:没有动静的地址不发余额请求 ----
+// ---- 长连接:没有变化的地址不发余额请求 ----
 
 /// 同一个地址上提供 HTTP 和 WebSocket 的模拟节点.
 #[derive(Clone)]
@@ -793,7 +793,7 @@ fn token_log(block: u64) -> Value {
     })
 }
 
-/// 跟块先进入长连接状态,之后高度只靠推送,节点不再被轮询.
+/// 跟踪任务先进入长连接状态,之后高度只靠推送,节点不再被轮询.
 async fn live_evm_gateway(chain: &Chain, node: &SocketNode, extra: &str) -> (Gateway, common::Ws) {
     let gateway = Gateway::start(&format!("{extra}{}", evm_config(&node.url))).await;
     let mut ws = gateway.ws().await;
@@ -805,7 +805,7 @@ async fn live_evm_gateway(chain: &Chain, node: &SocketNode, extra: &str) -> (Gat
     (gateway, ws)
 }
 
-/// 余额查询失败时这轮的动静要留着,否则节点恢复后余额一直是旧值.
+/// 余额查询失败时这轮的变化要留着,否则节点恢复后余额一直是旧值.
 #[tokio::test]
 async fn a_failed_balance_query_keeps_the_touched_address() {
     let (chain, _) = evm_chain().await;
@@ -963,9 +963,9 @@ async fn snapshot_limits_how_many_groups_run_at_once() {
     assert!(peak <= 17, "同时查询 {peak} 组");
 }
 
-/// 令牌按组扣,一个请求不能用一个令牌打出几十组上游查询.
+/// 令牌按每组的地址数扣,同一个地址在几组里就查几次,一个请求不能用一个令牌打出几十组上游查询.
 #[tokio::test]
-async fn snapshot_is_charged_by_group() {
+async fn snapshot_is_charged_by_address() {
     let (_, url) = evm_chain().await;
     let extra = "rate_limit_burst = 10\nrate_limit_per_second = 0.001\n";
     let gateway = Gateway::start(&format!("{extra}{}", evm_config(&url))).await;

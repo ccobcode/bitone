@@ -142,15 +142,15 @@ pub struct HistoryPage {
     pub unchanged: bool,
 }
 
-/// 上游发给跟块任务的信号.
+/// 上游发给跟踪任务的信号.
 pub enum Signal {
     Head(u64),
-    /// 解析完一批区块:新高度,以及这批区块里有动静的地址.两者要在同一轮处理,
+    /// 解析完一批区块:新高度,以及这批区块涉及的地址.两者要在同一轮处理,
     /// 否则客户端先收到一条没有内容的高度.
     Block(u64, Vec<String>),
-    /// 这些地址有新动静,包括还在内存池的交易.
+    /// 这些地址有变化,包括还在内存池的交易.
     Touched(Vec<String>),
-    /// 查一次全部地址的余额,有变化才算地址有动静.推送覆盖不到的变化靠它补上.
+    /// 查一次全部地址的余额,余额变了才算地址有变化.推送覆盖不到的变化靠它补上.
     Reconcile,
     /// 长连接断了,改回轮询高度.
     Lost,
@@ -228,12 +228,12 @@ pub trait Upstream: Any + Send + Sync {
     -> Query<'a, HistoryPage>;
     fn broadcast<'a>(&'a self, raw: &'a RawTx) -> BoxFuture<'a, Broadcast>;
 
-    /// 跟块.发来新高度和有动静的地址,出错时返回,网关换下一个上游.
+    /// 跟踪新区块.发来新高度和有变化的地址,出错时返回,网关换下一个上游.
     /// 不支持时立刻返回,网关改为轮询高度,每个新高度查一次全部地址.
     fn watch(&self, _addresses: watch::Receiver<Vec<String>>, _signals: mpsc::Sender<Signal>) -> BoxFuture<'_, ()> {
         Box::pin(async {})
     }
-    /// 跟块时取这批地址最近的交易,`previous` 是上一轮的高度.默认取最新一页.
+    /// 跟踪时取这批地址最近的交易,`previous` 是上一轮的高度.默认取最新一页.
     fn recent<'a>(&'a self, addresses: &'a [String], _previous: u64) -> Query<'a, Vec<HistoryItem>> {
         Box::pin(async move {
             let cursor = Cursor::new();

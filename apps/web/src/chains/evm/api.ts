@@ -1,4 +1,3 @@
-// EVM 的网关接口.
 import { addressKey, isRecord } from "../../core/text";
 import { malformed, post, requireAmount, requireCount, type FeeTier } from "../../gateway/client";
 

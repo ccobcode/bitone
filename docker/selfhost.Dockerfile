@@ -1,4 +1,4 @@
-# 自部署:网页端和网关同域,一个容器.
+# 自部署:网页端和网关同域,一个容器.同域时 CSP 的 connect-src 不用放宽.
 # 构建:docker build -f docker/selfhost.Dockerfile -t bitone .
 # 运行:docker run -p 127.0.0.1:8787:8787 bitone
 # 镜像自带示例配置.要填 API key 时挂载自己的配置:-v ./gateway.toml:/etc/bitone/gateway.toml

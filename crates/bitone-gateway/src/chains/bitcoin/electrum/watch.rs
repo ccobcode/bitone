@@ -1,4 +1,4 @@
-//! Electrum 的跟块.
+//! 用 Electrum 跟踪新区块和地址变化.
 
 use super::{Electrum, address_hash, by_address};
 use crate::upstream::{Failed, Signal};
@@ -15,7 +15,7 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(15);
 /// 一批订阅的地址数.公共服务器处理得慢,时限按批算.
 const SUBSCRIBE_BATCH: usize = 100;
 
-/// 把一条推送转给跟块任务.没有 id 的消息只有这两种.
+/// 把一条推送转给跟踪任务.没有 id 的消息只有这两种.
 async fn forward(
     message: &Value,
     owners: &HashMap<String, String>,
@@ -43,7 +43,7 @@ async fn forward(
 }
 
 impl Electrum {
-    /// 一条长连接:订阅区块头和全部地址,把推送转给跟块任务.推送包含内存池里的交易.
+    /// 一条长连接:订阅区块头和全部地址,把推送转给跟踪任务.推送包含内存池里的交易.
     pub(super) async fn follow(
         &self,
         mut addresses: watch::Receiver<Vec<String>>,

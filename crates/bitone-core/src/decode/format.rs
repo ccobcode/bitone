@@ -7,6 +7,14 @@ use bitcoin::Script;
 
 const MILLIS_PER_DAY: i64 = 86_400_000;
 
+/// 不存在的字段显示的文字.
+pub const ABSENT_TEXT: &str = "无";
+
+/// 这个值写明不存在.
+pub fn is_absent(value: &Value) -> bool {
+    matches!(value, Value::Enum(text) if text == ABSENT_TEXT)
+}
+
 pub fn display(value: &Value) -> String {
     match value {
         Value::Bool(flag) => flag.to_string(),

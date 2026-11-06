@@ -1,6 +1,6 @@
 package com.ccobcode.bitone.flow
 
-/** 页面编号与原型一致. */
+/** 注释里是页面编号,其他代码和测试也用编号指代页面. */
 enum class Screen {
     /** 启动时等待第一次自检. */
     Booting,
@@ -12,11 +12,13 @@ enum class Screen {
     Backup,
     /** A2b */
     Verify,
+    /** A2d,启用 BIP39 密码时在 A2c 之前. */
+    Passphrase,
     /** A2c */
     SetPin,
     /** A3 */
     Home,
-    /** A7,按 [UnlockPurpose] 用于签名,导出,读公钥,查看助记词和修改 PIN. */
+    /** A7,按 [UnlockPurpose] 用于签名,导出,读公钥,查看助记词和修改 PIN.旧格式的 BIP39 密码钱包先在这里输两遍密码. */
     Unlock,
     /** A4 */
     Export,

@@ -9,14 +9,22 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getNodeCodec } from "@codama/dynamic-codecs";
 import { parseInstructionData } from "@codama/dynamic-parsers";
-import { createFromJson } from "codama";
+import { rootNodeFromAnchor } from "@codama/nodes-from-anchor";
+import {
+    assertIsNode,
+    bottomUpTransformerVisitor,
+    createFromJson,
+    numberTypeNode,
+    updateProgramsVisitor,
+    visit,
+} from "codama";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..", "..");
 const SCHEMAS = join(ROOT, "schemas");
 const SOLANA_PREFIX = "solana/";
 const PROGRAMS = JSON.parse(readFileSync(join(HERE, "programs.json"), "utf8"));
-const ASSET = join(ROOT, "crates", "bitone-core", "assets", "solana-idl.json");
+const ASSET = join(ROOT, "crates", "bitone-core", "assets", "solana", "idl.json");
 const VECTORS = join(HERE, "..", "vectors", "solana.json");
 const VECTORS_LOCK = join(HERE, "..", "vectors", "vectors.lock");
 const VECTORS_NAME = "solana.json";
@@ -41,20 +49,53 @@ function lockEntries(text) {
     return entries;
 }
 
+/** 固定的上游文件.哈希和 lock.toml 不符时失败. */
+function pinned(lock, name) {
+    const file = SOLANA_PREFIX + name;
+    const locked = lock.find((item) => item.file === file);
+    if (!locked) throw new Error(`lock.toml 没有 ${file}`);
+    const bytes = readFileSync(join(SCHEMAS, file));
+    if (sha256(bytes) !== locked.sha256) throw new Error(`${file} 的哈希和 lock.toml 不符`);
+    return { path: file, sha256: locked.sha256, bytes };
+}
+
+/**
+ * shank 和 Anchor 格式的 IDL 由 Codama 官方的转换器读,再套用官方仓库 codama.mjs 里的改动.
+ * 改动的每个参数都要原样出现在固定的 codama.mjs 里,这里不自己定改动.
+ */
+function anchorRoot(lock, entry, json) {
+    const { config, program, prefixes } = entry.anchor;
+    const official = pinned(lock, config).bytes.toString("utf8");
+    const expected = [program.name, program.publicKey, ...Object.entries(prefixes).flat()].filter(Boolean);
+    for (const text of expected) {
+        if (!official.includes(text)) throw new Error(`${config} 里没有 ${text}`);
+    }
+    let root = rootNodeFromAnchor(json);
+    root = visit(root, updateProgramsVisitor({ [root.program.name]: program }));
+    for (const [select, format] of Object.entries(prefixes)) {
+        const transform = (node) => {
+            assertIsNode(node, "instructionArgumentNode");
+            assertIsNode(node.type, "sizePrefixTypeNode");
+            return { ...node, type: { ...node.type, prefix: numberTypeNode(format) } };
+        };
+        root = visit(root, bottomUpTransformerVisitor([{ select, transform }]));
+    }
+    return JSON.parse(JSON.stringify(root));
+}
+
 function loadSchemas() {
     const lock = lockEntries(readFileSync(join(SCHEMAS, "lock.toml"), "utf8"));
-    const load = (name) => {
-        const file = SOLANA_PREFIX + name;
-        const locked = lock.find((item) => item.file === file);
-        if (!locked) throw new Error(`lock.toml 没有 ${file}`);
-        const bytes = readFileSync(join(SCHEMAS, file));
-        if (sha256(bytes) !== locked.sha256) throw new Error(`${file} 的哈希和 lock.toml 不符`);
-        return { path: file, sha256: locked.sha256, root: JSON.parse(bytes) };
+    const load = (entry, name) => {
+        const { path, sha256: hash, bytes } = pinned(lock, name);
+        const json = JSON.parse(bytes);
+        const root = entry?.anchor ? anchorRoot(lock, entry, json) : json;
+        return { path, sha256: hash, root };
     };
     return PROGRAMS.map((entry) => ({
         ...entry,
-        ...load(entry.file),
-        older: entry.older ? load(entry.older) : undefined,
+        ...load(entry, entry.file),
+        older: entry.older ? load(undefined, entry.older) : undefined,
+        config: entry.anchor ? pinned(lock, entry.anchor.config) : undefined,
     }));
 }
 
@@ -260,7 +301,9 @@ function compactProgram(entry) {
 function writeAsset(schemas) {
     const asset = {
         sources: Object.fromEntries(
-            schemas.flatMap((entry) => [entry, entry.older ?? entry]).map((file) => [file.path, file.sha256]),
+            schemas
+                .flatMap((entry) => [entry, entry.older ?? entry, entry.config ?? entry])
+                .map((file) => [file.path, file.sha256]),
         ),
         programs: schemas.map(compactProgram),
     };
@@ -304,6 +347,7 @@ const NUMBER_SAMPLES = {
     i128: (seed) => -((1n << 100n) + BigInt(seed)),
     f32: (seed) => 1.5 + seed,
     f64: (seed) => 2.25 + seed,
+    shortU16: (seed) => 100 + seed,
 };
 
 /** 按类型节点给出样本值,形状是 `@codama/dynamic-codecs` 的输入. */

@@ -21,7 +21,7 @@ pub struct Config {
     pub upstream_timeout_ms: u64,
     /// 交易,高度,价格这几个单值频道轮询上游的间隔.
     pub ws_poll_interval_ms: u64,
-    /// 跟块退回轮询时查高度的间隔.
+    /// 上游没有长连接时轮询区块高度的间隔.
     pub follow_poll_interval_ms: u64,
     pub ws_heartbeat_ms: u64,
     pub rate_limit_burst: f64,

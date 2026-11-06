@@ -1,30 +1,21 @@
 package com.ccobcode.bitone.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import com.ccobcode.bitone.flow.PIN_LENGTH
+import com.ccobcode.bitone.flow.PassphraseEntry
 import com.ccobcode.bitone.flow.UnlockPurpose
 import com.ccobcode.bitone.flow.WalletFlow
 import com.ccobcode.bitone.ui.components.Card
-import com.ccobcode.bitone.ui.components.Chip
 import com.ccobcode.bitone.ui.components.FadeText
-import com.ccobcode.bitone.ui.components.Icons
-import com.ccobcode.bitone.ui.components.LineIcon
-import com.ccobcode.bitone.ui.components.ListRow
 import com.ccobcode.bitone.ui.components.Page
 import com.ccobcode.bitone.ui.components.PassphraseKeyboard
 import com.ccobcode.bitone.ui.components.PinPad
@@ -36,6 +27,7 @@ import com.ccobcode.bitone.ui.components.Txt
 import com.ccobcode.bitone.ui.components.rememberLatest
 import com.ccobcode.bitone.ui.theme.BitOneTheme
 import com.ccobcode.bitone.ui.theme.FontSize
+import com.ccobcode.bitone.ui.theme.Size
 import com.ccobcode.bitone.ui.theme.Space
 import kotlinx.coroutines.delay
 
@@ -48,7 +40,6 @@ private fun PinPage(
     hint: String,
     hintColor: Color,
     header: @Composable ColumnScope.() -> Unit,
-    above: @Composable (() -> Unit)? = null,
     below: @Composable (() -> Unit)? = null,
     keyboard: @Composable ColumnScope.() -> Unit,
 ) {
@@ -59,7 +50,6 @@ private fun PinPage(
         contentGap = Space.s3,
         bottom = keyboard,
     ) {
-        above?.invoke()
         Txt(prompt, size = FontSize.t5, weight = SemiBold)
         PinDots(length, errors)
         FadeText(hint, hintColor)
@@ -128,11 +118,10 @@ private fun unlockCopy(purpose: UnlockPurpose) =
         else -> UnlockCopy("解锁钱包", "输入 PIN", "解锁", "正在解锁")
     }
 
-/** A7.每次签名都输 PIN,导出,读公钥,查看助记词,修改 PIN,抹除和更新清单也走这页. */
+/** A7.每次签名都输 PIN,导出,读公钥,查看助记词,修改 PIN,抹除和更新清单也走这页.旧格式的 BIP39 密码钱包先输两遍密码. */
 @Composable
 fun UnlockScreen(flow: WalletFlow) {
     val c = BitOneTheme.colors
-    var editing by remember { mutableStateOf(false) }
     val waiting = flow.unlock.waitMs > 0
     val copy = unlockCopy(flow.unlock.purpose)
     // 只有签名时显示交易摘要.退场动画期间流程可能已经清掉请求,这时继续显示离开时的内容.
@@ -144,6 +133,16 @@ fun UnlockScreen(flow: WalletFlow) {
             delay(1_000)
             flow.unlock.refreshStatus()
         }
+    }
+
+    if (flow.unlock.asksPassphrase) {
+        PassphrasePage(
+            entry = flow.passphrase,
+            hint = if (flow.unlock.passphraseOptional) "没有设置过就留空" else "密码会存进本机,以后只输 PIN",
+            header = { TitleBar(copy.title, onBack = { flow.back() }) },
+            onDone = flow.unlock::passphraseDone,
+        )
+        return
     }
 
     val (hint, hintColor) =
@@ -163,29 +162,17 @@ fun UnlockScreen(flow: WalletFlow) {
             TitleBar(copy.title, onBack = { flow.back() })
             if (review != null) SignSummary(review)
         },
-        above =
-            if (flow.unlock.needsPassphrase) {
-                { PassphraseField(flow.unlock.passphrase, editing) { editing = !editing } }
-            } else {
-                null
-            },
         // 延时中也能点:这时最需要这条路.硬件报错或密文损坏时重试永远不会成功,靠它出去.
         below = { TextButton("忘记 PIN,用助记词恢复", enabled = !flow.busy, onClick = flow::forgotPin) },
         keyboard = {
-            if (editing) {
-                Box(Modifier.fillMaxWidth().padding(top = Space.s3, bottom = Space.s4)) {
-                    PassphraseKeyboard(flow.unlock::passphraseInput, flow.unlock::passphraseDelete) { editing = false }
-                }
-            } else {
-                PinPad(
-                    enabled = !waiting && !flow.busy,
-                    onDigit = flow.unlock::digit,
-                    onDelete = flow.unlock::delete,
-                    action = copy.action.takeIf { flow.unlock.pin.length == PIN_LENGTH },
-                    actionEnabled = flow.unlock.canSubmit,
-                    onAction = flow.unlock::submit,
-                )
-            }
+            PinPad(
+                enabled = !waiting && !flow.busy,
+                onDigit = flow.unlock::digit,
+                onDelete = flow.unlock::delete,
+                action = copy.action.takeIf { flow.unlock.pin.length == PIN_LENGTH },
+                actionEnabled = flow.unlock.canSubmit,
+                onAction = flow.unlock::submit,
+            )
         },
     )
 }
@@ -198,25 +185,50 @@ private fun waitText(ms: Long): String {
     return if (minutes > 0) "$minutes 分 $seconds 秒" else "$seconds 秒"
 }
 
-/** BIP39 密码输入行.键盘打开时明文显示,输错不会报错,只会得到另一个钱包,所以要让人看见. */
+/** A2d 建钱包和导入时的 BIP39 密码. */
 @Composable
-private fun PassphraseField(value: String, editing: Boolean, onToggle: () -> Unit) {
+fun PassphraseScreen(flow: WalletFlow) =
+    PassphrasePage(
+        entry = flow.passphrase,
+        hint = "",
+        header = { TitleBar("BIP39 密码", onBack = { flow.back() }) },
+        onDone = flow.setup::passphraseDone,
+    )
+
+/**
+ * BIP39 密码输两次,A2d 和 A7 的迁移共用.键盘的"完成"交一遍.
+ *
+ * 明文显示:输错不会报错,只会得到另一个钱包,要看得见才能和纸上的备份对上.密码不是文案,不翻译.
+ */
+@Composable
+private fun PassphrasePage(
+    entry: PassphraseEntry,
+    hint: String,
+    header: @Composable ColumnScope.() -> Unit,
+    onDone: () -> Unit,
+) {
     val c = BitOneTheme.colors
-    Card {
-        ListRow(onClick = onToggle) {
-            Txt("BIP39 密码")
-            Row(
-                Modifier.weight(1f),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                when {
-                    editing -> Txt(value, size = FontSize.t2, color = c.text2, mono = true)
-                    value.isEmpty() -> Chip("未输入", c.warnSoft, c.warn)
-                    else -> Chip("${value.length} 位", c.surface2, c.text2)
-                }
+    Page(
+        header = header,
+        contentAlignment = Alignment.CenterHorizontally,
+        contentAnchor = Alignment.Bottom,
+        contentGap = Space.s3,
+        bottom = {
+            Box(Modifier.fillMaxWidth().padding(top = Space.s3, bottom = Space.s4)) {
+                PassphraseKeyboard(entry::type, entry::delete, onDone)
             }
-            LineIcon(Icons.Keyboard, 20.dp, c.text3)
+        },
+    ) {
+        Txt(if (entry.confirming) "再输一次" else "输入 BIP39 密码", size = FontSize.t5, weight = SemiBold)
+        Card {
+            Box(
+                Modifier.fillMaxWidth().heightIn(min = Size.hInput).padding(horizontal = Space.s4),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Txt(entry.input, mono = true, translated = false)
+            }
         }
+        val (note, noteColor) = if (entry.mismatch) "两次不一致,请重新输入" to c.danger else hint to c.text3
+        FadeText(note, noteColor)
     }
 }

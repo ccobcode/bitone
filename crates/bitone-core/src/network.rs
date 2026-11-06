@@ -1,5 +1,3 @@
-//! 网络定义.
-
 use minicbor::{Decode, Encode};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]

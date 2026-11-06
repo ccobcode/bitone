@@ -10,13 +10,13 @@ use bitcoin::taproot::{TapTree, TaprootBuilder};
 use bitcoin::{
     Amount, NetworkKind, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness, absolute, transaction,
 };
+use bitone_core::chains::bitcoin::{self as btc, Payment, Utxo, build_psbt, script_for};
 use bitone_core::keys::PublicKeys;
 use bitone_core::manifest::Manifest;
 use bitone_core::path::classify;
 use bitone_core::protocol::VERSION;
 use bitone_core::request::{KIND_TRANSACTION, SignRequest, SignResponse};
 use bitone_core::review::{Confirm, Forbid, Review, Risk};
-use bitone_core::tx::bitcoin::{self as btc, Payment, Utxo, build_psbt, script_for};
 use bitone_core::tx::{self, HighestChange, ReviewContext};
 use bitone_core::{AccountKind, DerivationPath, Error as CoreError, Network};
 use bitone_signer::Error;
@@ -628,8 +628,8 @@ mod ownership {
 
     /// 用户有两个 SegWit 币.每一轮把其中一个说成本钱包的 Taproot 输入,金额压低,
     /// 另一个币的 ECDSA 签名照样有效.两轮的签名拼起来,用户看到的手续费是假的.
-    /// 在按"混合交易只要求非 Taproot 带前序交易"写的代码上,这笔交易被 regtest 节点接受了.
-    /// 手续费不再拦截签名,所以这里必须是无法识别,告警写明手续费无法确认.
+    /// 混合交易里只有非 Taproot 输入带前序交易时,这样拼出的交易能被 regtest 节点接受.
+    /// 手续费确认不了时照样能签,所以这里必须是无法识别,告警写明手续费无法确认.
     #[test]
     fn segwit_coin_disguised_as_my_taproot_input_cannot_pass_as_plain() {
         let s = setup();
@@ -691,7 +691,7 @@ mod ownership {
         assert_eq!(review(&s, payload).confirm, Confirm::Hold);
     }
 
-    /// 其他钱包的输入把自己声明成 Taproot,本钱包全是 SegWit,同样没有签名能替它作证.
+    /// 其他钱包的输入把自己声明成 Taproot,本钱包全是 SegWit,同样没有哪个签名承诺它的金额.
     #[test]
     fn foreign_input_cannot_claim_to_be_taproot_next_to_segwit() {
         let s = setup();
@@ -1805,7 +1805,7 @@ mod unknown_networks {
         let s = setup();
         let bitcoin = local(&s, segwit_send(&s), Some(0));
         assert_eq!(reviewed(&s, &bitcoin).risk, Risk::Unknown);
-        // 编号 1 是 EVM,PSBT 没有路径可以签.200 这个版本不认识.
+        // 编号 1 是 EVM,PSBT 没有路径可以签.200 这个编号本机不认识.
         for (chain, reason) in [(1, Forbid::PathNotAllowed), (200, Forbid::UnknownNetwork)] {
             let other = local(&s, segwit_send(&s), Some(chain));
             assert_eq!(forbidden(reviewed(&s, &other)), Some(reason), "{chain}");

@@ -25,8 +25,13 @@ enum class ChecksumState {
     Invalid,
 }
 
-/** A1 到 A2c,新建或导入钱包,设好 PIN 后落盘. */
-class SetupFlow internal constructor(private val host: FlowHost, private val pin: PinEntry) {
+/** A1 到 A2c,新建或导入钱包,设好 PIN 后落盘.启用 BIP39 密码时在 A2c 之前经过 A2d. */
+class SetupFlow
+internal constructor(
+    private val host: FlowHost,
+    private val pin: PinEntry,
+    private val passphrase: PassphraseEntry,
+) {
     private val core = host.platform.core
     private val store = host.platform.store
     private val hardwareKey = host.platform.hardwareKey
@@ -151,6 +156,7 @@ class SetupFlow internal constructor(private val host: FlowHost, private val pin
         verifyState = VerifyState.Pending
         backupWords = emptyList()
         pin.reset()
+        passphrase.reset()
         replaceDraft(null, 12)
         host.stack = listOf(Screen.Welcome)
     }
@@ -203,8 +209,7 @@ class SetupFlow internal constructor(private val host: FlowHost, private val pin
     fun continueAfterVerify() {
         if (verifyState != VerifyState.Passed) return
         verified = true
-        pin.reset()
-        host.push(Screen.SetPin)
+        continueAfterWords()
     }
 
     // A1b
@@ -293,8 +298,37 @@ class SetupFlow internal constructor(private val host: FlowHost, private val pin
     /** 校验和错误时阻止. */
     fun continueAfterImport() {
         if (checksum != ChecksumState.Valid || draft?.imported != true) return
+        continueAfterWords()
+    }
+
+    /** 开关关着时清掉草稿里的密码:可能是从 A2d 退回来后关掉的. */
+    private fun continueAfterWords() {
+        val current = draft ?: return
+        if (passphraseEnabled) {
+            passphrase.reset()
+            host.push(Screen.Passphrase)
+        } else {
+            current.setPassphrase("")
+            pin.reset()
+            host.push(Screen.SetPin)
+        }
+    }
+
+    // A2d
+
+    /** 键盘的"完成".空的不算,两遍一致后密码交给草稿,再设 PIN. */
+    fun passphraseDone() {
+        val current = draft
+        if (host.busy || current == null || host.screen != Screen.Passphrase) return
+        val confirmed = passphrase.next(allowEmpty = false) ?: return
+        current.setPassphrase(confirmed)
         pin.reset()
         host.push(Screen.SetPin)
+    }
+
+    internal fun leavePassphrase() {
+        passphrase.reset()
+        host.pop()
     }
 
     private fun resetImport() {
@@ -319,12 +353,11 @@ class SetupFlow internal constructor(private val host: FlowHost, private val pin
         return current.imported || verified
     }
 
-    /** 建钱包的最后一步:硬件算出这个 PIN 的结果,Rust 用两者一起加密,落盘后才进首页. */
+    /** 建钱包的最后一步:硬件算出这个 PIN 的结果,Rust 用两者一起加密助记词和 BIP39 密码,落盘后才进首页. */
     fun finishSetup() {
         if (!pin.done || !mayFinishSetup()) return
         val current = draft ?: return
         val entered = pin.input
-        val passphrase = passphraseEnabled
         host.guarded {
             pin.error = null
             // 抄写和设 PIN 可能停留很久,加密落盘之前再自检一次.
@@ -336,21 +369,15 @@ class SetupFlow internal constructor(private val host: FlowHost, private val pin
                         hardwareKey.delete()
                         val tag = hardwareKey.enroll(entered)
                         val vault = current.seal(entered, tag)
-                        // 启用 BIP39 密码时不算指纹和公钥:这里算出的不是用户真正的钱包,也不把密码派生的结果写盘.
-                        var fingerprint: String? = null
-                        var keys: ByteArray? = null
-                        if (!passphrase) {
-                            val wallet = core.open(vault, entered, tag, "")
-                            try {
-                                fingerprint = wallet.fingerprint()
-                                keys = wallet.publicKeys(current.imported)
-                            } finally {
-                                wallet.close()
-                            }
+                        // BIP39 密码在密文里,解开就是真正的钱包,指纹和公钥照常算.
+                        val wallet = core.open(vault, entered, tag)
+                        try {
+                            val next = WalletMeta(current.imported, wallet.hasPassphrase(), wallet.fingerprint())
+                            store.saveWallet(vault, next, wallet.publicKeys(current.imported))
+                            next
+                        } finally {
+                            wallet.close()
                         }
-                        val next = WalletMeta(current.imported, passphrase, fingerprint)
-                        store.saveWallet(vault, next, keys)
-                        next
                     }
                 host.walletSaved(saved)
                 pin.reset()

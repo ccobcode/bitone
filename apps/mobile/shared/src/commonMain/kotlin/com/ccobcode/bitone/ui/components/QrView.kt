@@ -51,7 +51,7 @@ private val QrChrome = TokenSize.hRow * 3 + Space.s8
 private val FullscreenChrome = TokenSize.hRow * 2
 
 /**
- * 动态二维码.任何主题下都是白底深色码点,所以固定用浅色令牌.
+ * 动态二维码.换帧不做过渡,半透明的中间帧扫不出来.任何主题下都是白底深色码点,所以固定用浅色令牌.
  *
  * [total] 不超过 1 时是静态码,不显示帧进度.
  */

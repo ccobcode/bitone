@@ -1,6 +1,7 @@
 //! 对外接口:路由,中间件,HTTP 处理函数和 WebSocket.
 
 use crate::chains;
+use crate::chains::request::Budget;
 use crate::config::Config;
 use crate::error::ApiError;
 use crate::follow::Follower;
@@ -43,7 +44,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 /// CoinGecko 拒绝没有 User-Agent 的请求.这里只有网关版本,没有用户信息.
 const USER_AGENT: &str = concat!("bitone-gateway/", env!("CARGO_PKG_VERSION"));
 
-/// 响应头里的内容安全策略.
+/// 网页端的 CSP.`'wasm-unsafe-eval'` 只允许编译核心库的 WASM,不允许 `eval`.
 const CSP: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; \
     img-src 'self'; manifest-src 'self'; font-src 'self'; connect-src 'self'; \
     frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
@@ -74,7 +75,7 @@ impl AppState {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(CONNECT_TIMEOUT.min(upstream_timeout))
-            // 跟块的长连接里也有 HTTP 查询,那里没有 `Pool` 的总时限,节点不回应时会一直卡住.
+            // 跟踪新区块的长连接里也有 HTTP 查询,那里没有 `Pool` 的总时限,节点不回应时会一直卡住.
             .timeout(upstream_timeout)
             .user_agent(USER_AGENT)
             .build()
@@ -103,6 +104,14 @@ impl AppState {
     }
 }
 
+impl AppState {
+    /// 这个 IP 的上游成本,HTTP 请求和 WebSocket 消息扣的是同一个令牌桶.
+    fn budget(self: &Arc<Self>, ip: IpAddr) -> Budget {
+        let state = self.clone();
+        Budget::new(move |extra| state.limiter.charge(ip, extra))
+    }
+}
+
 async fn version(State(state): State<Arc<AppState>>) -> Json<Value> {
     let networks: Vec<&str> = Network::ALL
         .into_iter()
@@ -126,6 +135,7 @@ async fn rate_limit(
     let ip = limit::client_ip(peer.ip(), &state.trusted_proxies, request.headers());
     if state.limiter.allow(ip) {
         request.extensions_mut().insert(ClientIp(ip));
+        request.extensions_mut().insert(state.budget(ip));
         next.run(request).await
     } else {
         ApiError::RateLimited.into_response()

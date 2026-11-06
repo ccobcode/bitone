@@ -1,7 +1,7 @@
 // 链上状态的本地缓存:余额,交易记录和同步游标.
 // 网页端是一个有状态的小客户端:先订阅,再取快照,两边的结果都按同样的规则写入本地,谁先到都一样.
 // 余额带高度,不低于本地才覆盖.交易记录按标识写入,重复收到没有影响.
-// 水位是已经不可回滚的位置,水位之后的记录每次都以链上结果为准,这样被重组掉的交易会消失.
+// checkpoint 是已经不可回滚的位置,它之后的记录每次都以链上结果为准,这样被重组掉的交易会消失.
 import { chainOf } from "../chains";
 import { networkList } from "../core";
 import {
@@ -27,7 +27,7 @@ const INDEX_LAG = 10 * 60_000;
 
 const wholeTx = (network: string) => networkList().some((n) => n.id === network && chainOf(n.chain).wholeTxEntries);
 
-/** 这些状态还可能被重组改变.`failed` 不算:它可能已经在水位之前,删掉就拉不回来了. */
+/** 这些状态还可能被重组改变.`failed` 不算:它可能已经在 checkpoint 之前,删掉就拉不回来了. */
 const OPEN: ReadonlySet<ChainEntry["status"]> = new Set(["unknown", "pending", "included"]);
 
 export function streamId(walletId: string, { network, addresses }: HistoryStream): string {
@@ -136,9 +136,9 @@ async function saveFirstPage(id: string, walletId: string, stream: HistoryStream
 }
 
 /**
- * 取水位之后的变化,全部拿到后才写入,中途失败时什么都不改.未定论的记录以这次结果为准,
- * 但刚看到的记录可能只是索引还没跟上,要等一段时间.等待期间水位不动,否则水位越过它之后,
- * 增量再也取不到这笔交易.
+ * 取 checkpoint 之后的变化,全部拿到后才写入,中途失败时什么都不改.还没有最终结果的记录以这次结果为准,
+ * 但刚看到的记录可能只是索引还没跟上,要等一段时间.等待期间 checkpoint 不动,否则越过这笔之后,
+ * 增量再也取不到它.
  */
 async function saveChanges(
     id: string,
@@ -201,7 +201,7 @@ function batches(groups: readonly SnapshotItem[][]): SnapshotItem[][] {
     return packed;
 }
 
-/** 没有索引服务的网络收不到增量结果,未定论的记录逐笔查状态. */
+/** 没有索引服务的网络收不到增量结果,还没有最终结果的记录逐笔查状态. */
 async function settleUnindexed(walletId: string, networks: readonly string[]): Promise<void> {
     const open = db.chainTxs.where("walletId").equals(walletId);
     const rows = await open.filter((row) => networks.includes(row.network) && OPEN.has(row.status)).toArray();
@@ -283,7 +283,7 @@ export async function syncFeed(
     return { failures: [...failures].map(([network, code]) => ({ network, code })), failed: [...failed], missed };
 }
 
-/** 把一条跟块推送写入本地,返回本地原来没有的记录. */
+/** 把一条新区块推送写入本地,返回本地原来没有的记录. */
 export async function applyChainUpdate(
     walletId: string,
     stream: HistoryStream,
@@ -324,7 +324,7 @@ export async function loadOlder(walletId: string, streams: readonly HistoryStrea
     );
 }
 
-/** 还有未定论的记录时要继续同步,否则它们的状态不会更新. */
+/** 有记录还没有最终结果时要继续同步,否则它们的状态不会更新. */
 export async function hasOpenEntries(walletId: string, stream: HistoryStream): Promise<boolean> {
     const id = streamId(walletId, stream);
     const open = db.chainTxs.where("walletId").equals(walletId);

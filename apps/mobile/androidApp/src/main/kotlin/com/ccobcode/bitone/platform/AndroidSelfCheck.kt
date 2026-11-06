@@ -57,7 +57,7 @@ private inline fun <T> probe(read: () -> T): T? =
         null
     }
 
-/** 用系统 API 采集 7 项状态.判定规则在共享层. */
+/** 用系统 API 采集自检的 7 项状态.判定规则在共享层. */
 class AndroidSelfCheck(private val context: Context) : SelfCheck {
 
     // 这两项探测要生成密钥,比较慢,确定的结果一次开机内不会变.

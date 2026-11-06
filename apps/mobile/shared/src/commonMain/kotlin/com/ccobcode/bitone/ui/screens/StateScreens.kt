@@ -120,8 +120,8 @@ fun SelfCheckFailedScreen(flow: WalletFlow) {
         flow = flow,
         title = "离线自检",
         icon = Icons.Alert,
-        heading = if (mayContinue) "这台手机可能不再隔离" else "不能创建钱包",
-        body = if (mayContinue) "气隙可能已不成立.继续只放行这一次操作." else "处理下面的问题后重新检测.",
+        heading = if (mayContinue) "这台手机可能不安全" else "不能创建钱包",
+        body = if (mayContinue) "屏幕内容,PIN 和签名可能被带出手机.继续只放行这一次操作." else "处理下面的问题后重新检测.",
         rows = rows,
         action = "重新检测",
         onAction = flow::retryCheck,
@@ -130,24 +130,23 @@ fun SelfCheckFailedScreen(flow: WalletFlow) {
     )
 }
 
-/** AS 指纹不匹配.只有启用 BIP39 密码的钱包才能重新输入,其他钱包只能换一个二维码. */
+/** AS 指纹不匹配.BIP39 密码在密文里,输不错,只能换一个二维码. */
 @Composable
 fun FingerprintMismatchScreen(flow: WalletFlow) {
     val c = BitOneTheme.colors
-    val passphrase = flow.session.passphraseRequired
     StatePage(
         flow = flow,
         title = "扫描",
         icon = Icons.Key,
         heading = "这笔请求不属于本钱包",
-        body = if (passphrase) "启用了 BIP39 密码时,请检查是否输错." else "请在网页端换成本钱包再发起.",
+        body = "请在网页端换成本钱包再发起.",
         rows =
             listOfNotNull(
                 flow.session.fingerprint?.let { StateRow("本机指纹", it, c.text, mono = true) },
                 flow.scan.mismatchFingerprint?.let { StateRow("请求指纹", it, c.danger, mono = true) },
             ),
-        action = if (passphrase) "重新输入" else "重新扫描",
-        onAction = if (passphrase) flow.scan::retryPassphrase else flow.scan::rescan,
+        action = "重新扫描",
+        onAction = flow.scan::rescan,
         secondary = "退出",
         onSecondary = flow.scan::exitRequest,
     )

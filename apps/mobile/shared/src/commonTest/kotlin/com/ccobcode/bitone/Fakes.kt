@@ -96,6 +96,10 @@ fun facts(
 
 const val MAIN_FINGERPRINT = "73C5DA0A"
 const val PASSPHRASE_FINGERPRINT = "9E21B4C7"
+const val PASSPHRASE = "Pass 1!"
+
+/** 假钱包的指纹只看有没有 BIP39 密码. */
+fun fingerprintFor(passphrase: String) = if (passphrase.isEmpty()) MAIN_FINGERPRINT else PASSPHRASE_FINGERPRINT
 
 fun keysFor(fingerprint: String) = "keys:$fingerprint".encodeToByteArray()
 
@@ -110,24 +114,28 @@ fun reviewOf(
     payer: String? = null,
     counterparty: String = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
     fields: List<FieldRow> = emptyList(),
+    network: String = "ethereum",
+    mainnet: Boolean = true,
+    amount: ReviewAmount? = ReviewAmount("1", "ETH", "ethereum:native", "eth", false),
+    counterpartyLabel: String = "收款地址",
 ) =
     ReviewResult(
         risk = risk,
         confirm = confirm,
-        network = "ethereum",
-        mainnet = true,
+        network = network,
+        mainnet = mainnet,
         summary =
             ReviewSummary(
                 title = "普通转账",
-                amount = ReviewAmount("1", "ETH", "ethereum:native", "eth", false),
-                counterpartyLabel = "收款地址",
+                amount = amount,
+                counterpartyLabel = counterpartyLabel,
                 counterparty = counterparty,
                 controllers = controllers,
                 parties = parties,
                 payer = payer,
             ),
         alerts = alerts,
-        fields = fields,
+        fields = numbered(fields),
         reviewDigest = REVIEW_DIGEST,
         fingerprintMismatch = mismatch,
         requestFingerprint = requestFingerprint,
@@ -135,15 +143,40 @@ fun reviewOf(
 
 val REVIEW_DIGEST = "digest".encodeToByteArray()
 
-fun fieldOf(name: String, source: FieldSource = FieldSource.Signed, depth: UInt = 1u) =
+/** 核心库按前序遍历给每一行编号,假数据也一样. */
+private fun numbered(fields: List<FieldRow>) = fields.mapIndexed { index, row ->
+    FieldRow(
+        id = index.toUInt(),
+        parent = row.parent,
+        depth = row.depth,
+        name = row.name,
+        label = row.label,
+        kind = row.kind,
+        value = row.value,
+        source = row.source,
+        offset = row.offset,
+        len = row.len,
+        risk = row.risk,
+        note = row.note,
+        own = row.own,
+    )
+}
+
+fun fieldOf(
+    name: String,
+    source: FieldSource = FieldSource.Signed,
+    depth: UInt = 1u,
+    label: String = name,
+    value: String = name,
+) =
     FieldRow(
         id = 0u,
         parent = null,
         depth = depth,
         name = name,
-        label = name,
+        label = label,
         kind = FieldKind.Text,
-        value = name,
+        value = value,
         source = source,
         offset = null,
         len = null,
@@ -154,10 +187,16 @@ fun fieldOf(name: String, source: FieldSource = FieldSource.Signed, depth: UInt 
 
 fun tagFor(pin: String) = "tag:$pin".encodeToByteArray()
 
-/** 当前格式的密文:解开要 PIN 和硬件对这个 PIN 的结果. */
-fun boundVault(pin: String) = "sealed:$pin:tag:$pin".encodeToByteArray()
+private fun sealed(pin: String, tag: ByteArray, passphrase: String) =
+    "v3:$pin:${tag.decodeToString()}:$passphrase".encodeToByteArray()
 
-/** 旧格式的文件:外面包着硬件加密,里面只靠 PIN. */
+/** 当前格式的密文:解开要 PIN 和硬件对这个 PIN 的结果,BIP39 密码在里面. */
+fun boundVault(pin: String, passphrase: String = "") = sealed(pin, tagFor(pin), passphrase)
+
+/** 只存熵的格式:绑定了硬件,BIP39 密码不在里面. */
+fun entropyOnlyVault(pin: String) = "sealed:$pin:tag:$pin".encodeToByteArray()
+
+/** 最早的格式:外面包着硬件加密,里面只靠 PIN. */
 fun legacyVault(pin: String) = "hw:sealed:$pin".encodeToByteArray()
 
 val Words12 = List(12) { "word$it" }
@@ -165,6 +204,9 @@ val Words24 = List(24) { "word$it" }
 
 class FakeDraft(private val list: List<String>, override val imported: Boolean) : WalletDraft {
     var closed = false
+
+    /** 交给草稿的 BIP39 密码,封进密文. */
+    var given = ""
 
     override fun words() = list
 
@@ -177,7 +219,11 @@ class FakeDraft(private val list: List<String>, override val imported: Boolean) 
 
     override fun checkWord(index: Int, word: String) = list[index] == word
 
-    override fun seal(pin: String, tag: ByteArray) = "sealed:$pin:${tag.decodeToString()}".encodeToByteArray()
+    override fun setPassphrase(passphrase: String) {
+        given = passphrase
+    }
+
+    override fun seal(pin: String, tag: ByteArray) = sealed(pin, tag, given)
 
     override fun close() {
         closed = true
@@ -224,7 +270,7 @@ class SignCall(
 class FakeWallet(private val passphrase: String, private val core: FakeCore) : UnlockedWallet {
     var closed = false
 
-    override fun fingerprint() = if (passphrase.isEmpty()) MAIN_FINGERPRINT else PASSPHRASE_FINGERPRINT
+    override fun fingerprint() = fingerprintFor(passphrase)
 
     override fun exportAccounts(imported: Boolean): FrameStream {
         core.exportedImported = imported
@@ -236,7 +282,14 @@ class FakeWallet(private val passphrase: String, private val core: FakeCore) : U
         return core.walletWords
     }
 
-    override fun seal(pin: String, tag: ByteArray) = "sealed:$pin:${tag.decodeToString()}".encodeToByteArray()
+    override fun passphrase(): String {
+        core.passphraseRead++
+        return passphrase
+    }
+
+    override fun hasPassphrase() = passphrase.isNotEmpty()
+
+    override fun seal(pin: String, tag: ByteArray) = sealed(pin, tag, passphrase)
 
     override fun publicKeys(imported: Boolean) = keysFor(fingerprint())
 
@@ -337,6 +390,7 @@ class FakeCore : WalletCore {
     var opens = 0
     var walletWords = Words12
     var wordsRead = 0
+    var passphraseRead = 0
 
     /** 模拟 Argon2 途中被杀进程. */
     var killDuringOpen = false
@@ -381,22 +435,40 @@ class FakeCore : WalletCore {
         return FakeDraft(words, imported = true).also { lastDraft = it }
     }
 
-    override fun open(sealed: ByteArray, pin: String, tag: ByteArray, passphrase: String): UnlockedWallet {
+    /** 最近一次解开时用的格式和 BIP39 密码. */
+    var lastOpened: String? = null
+
+    override fun open(sealed: ByteArray, pin: String, tag: ByteArray): UnlockedWallet {
         opens++
         onOpen()
         if (killDuringOpen) error("进程被杀")
-        if (vaultDamaged) throw WalletCoreException.Other("密文格式不支持")
+        val text = sealed.decodeToString()
+        if (vaultDamaged || !isCurrentVault(sealed)) throw WalletCoreException.Other("密文格式不支持")
+        val prefix = "v3:$pin:${tag.decodeToString()}:"
+        if (!text.startsWith(prefix)) throw WalletCoreException.WrongPin()
+        lastOpened = "current"
+        return FakeWallet(text.removePrefix(prefix), this).also { lastWallet = it }
+    }
+
+    override fun openEntropyOnly(sealed: ByteArray, pin: String, tag: ByteArray, passphrase: String): UnlockedWallet {
+        opens++
+        onOpen()
         if (sealed.decodeToString() != "sealed:$pin:${tag.decodeToString()}") throw WalletCoreException.WrongPin()
+        lastOpened = "entropy:$passphrase"
         return FakeWallet(passphrase, this).also { lastWallet = it }
     }
 
     override fun openLegacy(sealed: ByteArray, pin: String, passphrase: String): UnlockedWallet {
         opens++
         if (sealed.decodeToString() != "sealed:$pin") throw WalletCoreException.WrongPin()
+        lastOpened = "legacy:$passphrase"
         return FakeWallet(passphrase, this).also { lastWallet = it }
     }
 
-    override fun isBoundVault(vault: ByteArray) = vault.decodeToString().startsWith("sealed:")
+    override fun isBoundVault(vault: ByteArray) =
+        vault.decodeToString().let { it.startsWith("v3:") || it.startsWith("sealed:") }
+
+    override fun isCurrentVault(vault: ByteArray) = vault.decodeToString().startsWith("v3:")
 
     override fun qrMatrix(part: String) = QrMatrix(2, BooleanArray(4))
 
@@ -549,7 +621,7 @@ class FakeStore : SecureStore {
 
     override fun readMeta() = meta
 
-    override fun saveWallet(vault: ByteArray, meta: WalletMeta, publicKeys: ByteArray?) {
+    override fun saveWallet(vault: ByteArray, meta: WalletMeta, publicKeys: ByteArray) {
         this.vault = vault
         this.meta = meta
         this.publicKeys = publicKeys
@@ -561,6 +633,10 @@ class FakeStore : SecureStore {
 
     override fun replaceVault(vault: ByteArray) {
         this.vault = vault
+    }
+
+    override fun writeMeta(meta: WalletMeta) {
+        this.meta = meta
     }
 
     override fun readPublicKeys() = publicKeys
@@ -686,18 +762,18 @@ fun TestScope.newRig(): Rig {
     return Rig(scope, dispatcher)
 }
 
-/** 已有钱包的状态,不走一遍创建流程. */
+/** 已有钱包的状态,不走一遍创建流程.[passphrase] 是密文里的 BIP39 密码. */
 @OptIn(ExperimentalCoroutinesApi::class)
 fun TestScope.readyRig(
     pin: String,
-    passphrase: Boolean = false,
+    passphrase: String = "",
     cached: Boolean = true,
     setup: (Rig) -> Unit = {},
 ): Rig {
     val rig = newRig()
-    rig.store.meta = WalletMeta(false, passphrase, if (passphrase) null else MAIN_FINGERPRINT)
-    rig.store.vault = boundVault(pin)
-    if (!passphrase && cached) rig.store.publicKeys = keysFor(MAIN_FINGERPRINT)
+    rig.store.meta = WalletMeta(false, passphrase.isNotEmpty(), fingerprintFor(passphrase))
+    rig.store.vault = boundVault(pin, passphrase)
+    if (cached) rig.store.publicKeys = keysFor(fingerprintFor(passphrase))
     setup(rig)
     rig.flow.onResume()
     advanceUntilIdle()
@@ -717,12 +793,24 @@ fun TestScope.feed(flow: WalletFlow, parts: List<String>) = parts.forEach {
     advanceUntilIdle()
 }
 
+/** 升级之前的 BIP39 密码钱包:密文里没有密码,元数据里没有指纹,公钥也不在本机. */
+fun Rig.hasOutdatedPassphraseWallet(vault: ByteArray) {
+    store.meta = WalletMeta(imported = false, passphrase = true, fingerprint = null)
+    store.vault = vault
+    store.publicKeys = null
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
-fun TestScope.submit(flow: WalletFlow, pin: String, passphrase: String = "") {
+fun TestScope.submit(flow: WalletFlow, pin: String) {
     pin.forEach(flow.unlock::digit)
-    passphrase.forEach(flow.unlock::passphraseInput)
     flow.unlock.submit()
     advanceUntilIdle()
+}
+
+/** 在 A2d 或 A7 的密码页输一遍,按"完成". */
+fun typePassphrase(flow: WalletFlow, text: String, done: () -> Unit) {
+    text.forEach(flow.passphrase::type)
+    done()
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

@@ -1,6 +1,7 @@
 package com.ccobcode.bitone.platform
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.AtomicFile
 import java.io.DataOutputStream
 import java.io.File
@@ -43,23 +44,26 @@ class FileSecureStore(context: Context) : SecureStore {
     }
 
     /** 旧公钥最先删,中途断电时最多少一份缓存,不会留下别的钱包的公钥. */
-    override fun saveWallet(vault: ByteArray, meta: WalletMeta, publicKeys: ByteArray?) {
+    override fun saveWallet(vault: ByteArray, meta: WalletMeta, publicKeys: ByteArray) {
         this.publicKeys.delete()
         write(this.vault) { it.write(vault) }
-        if (publicKeys != null) writePublicKeys(publicKeys)
+        writePublicKeys(publicKeys)
         writePinRecord(PinRecord.Clean)
         val edit = prefs.edit()
         prefs.all.keys.filter { it.startsWith(KEY_RECEIVE_INDEX) }.forEach(edit::remove)
-        edit
-            .remove(KEY_HIGHEST_CHANGE)
-            .remove(KEY_HIGHEST_CHANGE_TESTNET)
-            .putBoolean(KEY_IMPORTED, meta.imported)
-            .putBoolean(KEY_PASSPHRASE, meta.passphrase)
-            .putString(KEY_FINGERPRINT, meta.fingerprint)
-            .commit()
+        edit.remove(KEY_HIGHEST_CHANGE).remove(KEY_HIGHEST_CHANGE_TESTNET).putMeta(meta).commit()
     }
 
     override fun replaceVault(vault: ByteArray) = write(this.vault) { it.write(vault) }
+
+    override fun writeMeta(meta: WalletMeta) {
+        prefs.edit().putMeta(meta).commit()
+    }
+
+    private fun SharedPreferences.Editor.putMeta(meta: WalletMeta) =
+        putBoolean(KEY_IMPORTED, meta.imported)
+            .putBoolean(KEY_PASSPHRASE, meta.passphrase)
+            .putString(KEY_FINGERPRINT, meta.fingerprint)
 
     override fun readPublicKeys(): ByteArray? = readBytes(publicKeys)
 

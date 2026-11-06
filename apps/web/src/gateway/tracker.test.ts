@@ -8,14 +8,13 @@ import {
     initCore,
     stubOffline,
     pairWallet,
-    must,
     stubGateway,
     type Fixture,
     type Route,
 } from "../testing";
-import { clearLocalData, db, type TxRecord } from "../data/db";
+import { clearLocalData, db, planOf, type TxRecord } from "../data/db";
 import { broadcastTx, createReplacement, createTransfer } from "../data/transfer";
-import { cancelTx, markSigned } from "../data/txs";
+import { cancelTx, deleteRequest, markSigned, releaseAbandoned } from "../data/txs";
 import { applyPush, pollOpenTxs } from "./tracker";
 
 let fixture: Fixture;
@@ -61,6 +60,12 @@ async function sent(): Promise<TxRecord> {
     const tx = await createTransfer(draft());
     await markSigned(tx.id, { raw: "02aa", hash: HASH });
     return broadcastTx(tx.id);
+}
+
+async function abandoned(): Promise<TxRecord> {
+    const tx = await createTransfer(draft());
+    await markSigned(tx.id, { raw: "02aa", hash: HASH });
+    return cancelTx(tx.id, "用户取消");
 }
 
 const state = async (id: string) => (await db.txs.get(id))?.state;
@@ -178,29 +183,51 @@ describe("轮询", () => {
         expect(calls).toEqual([]);
     });
 
-    it("已放弃但已签名的交易,nonce 被用掉后释放占用", async () => {
+    it("网关一直谎报 nonce 被用掉,占用不释放,新交易被挡住,用户确认后才放开", async () => {
         chain({ nonce: 7 });
-        const tx = await createTransfer(draft());
-        await markSigned(tx.id, { raw: "02aa", hash: HASH });
-        await cancelTx(tx.id, "用户取消");
-        expect(await db.reservations.count()).toBe(1);
-        await pollOpenTxs(["ethereum"]);
-        expect(await db.reservations.count()).toBe(1);
+        const tx = await abandoned();
         chain({ nonce: 8 });
         const now = Date.now();
-        await pollOpenTxs(["ethereum"], now);
-        expect(await db.reservations.count()).toBe(1);
-        await pollOpenTxs(["ethereum"], now + 15_000);
+        for (let round = 0; round < 12; round++) await pollOpenTxs(["ethereum"], now + round * 60_000);
+        expect(await db.txs.get(tx.id)).toMatchObject({ state: "abandoned", conflicts: 12 });
+        expect(await db.reservations.toArray()).toMatchObject([{ value: "7", txIds: [tx.id] }]);
+
+        // 网关报高的 nonce 绕不过去,报回原来的 nonce 也不会复用.
+        await expect(createTransfer(draft())).rejects.toMatchObject({ code: "nonce-held" });
+        chain({ nonce: 7 });
+        await expect(createTransfer(draft())).rejects.toMatchObject({ code: "nonce-held" });
+        await expect(deleteRequest(tx.id)).rejects.toThrow("不能删除");
+        expect(await db.txs.count()).toBe(1);
+
+        await releaseAbandoned(tx.id);
         expect(await db.reservations.count()).toBe(0);
+        expect(planOf(await createTransfer(draft()), "evm").nonce).toBe(7);
     });
 
-    it("已放弃的交易释放占用时,在途的替换交易继续占着", async () => {
+    it("网关改口说 nonce 没用掉时,记下的证据清零", async () => {
         chain({ nonce: 7 });
-        const tx = await createTransfer(draft());
-        await markSigned(tx.id, { raw: "02aa", hash: HASH });
-        await cancelTx(tx.id, "用户取消");
+        const tx = await abandoned();
+        chain({ nonce: 8 });
+        await pollOpenTxs(["ethereum"]);
+        expect(await db.txs.get(tx.id)).toMatchObject({ conflicts: 1 });
+        chain({ nonce: 7 });
+        await pollOpenTxs(["ethereum"]);
+        expect(await db.txs.get(tx.id)).toMatchObject({ conflicts: 0 });
+        expect(await db.reservations.count()).toBe(1);
+    });
+
+    it("确认释放只对已放弃的交易生效", async () => {
+        chain({ nonce: 7 });
+        const tx = await sent();
+        await releaseAbandoned(tx.id);
+        expect(await db.reservations.toArray()).toMatchObject([{ txIds: [tx.id] }]);
+    });
+
+    it("已放弃的交易确认释放时,在途的替换交易继续占着", async () => {
+        chain({ nonce: 7 });
+        const tx = await abandoned();
         const account = fixture.account(PATHS.evm);
-        const next = await createReplacement(must(await db.txs.get(tx.id)), "cancel", {
+        const next = await createReplacement(tx, "cancel", {
             wallet: fixture.wallet,
             accounts: fixture.accounts,
             account,
@@ -209,6 +236,8 @@ describe("轮询", () => {
         const now = Date.now();
         await pollOpenTxs(["ethereum"], now);
         await pollOpenTxs(["ethereum"], now + 15_000);
+        expect(await db.reservations.toArray()).toMatchObject([{ txIds: [tx.id, next.id] }]);
+        await releaseAbandoned(tx.id);
         expect(await db.reservations.toArray()).toMatchObject([{ txIds: [next.id] }]);
     });
 

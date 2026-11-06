@@ -1,4 +1,4 @@
-# 计划使用的运行时依赖,这里只检查 wasm 和 Android 能否构建.
+# 解码用到的运行时依赖,这里只检查 wasm 和 Android 能否构建.
 [package]
 name = "dependency-builds"
 version = "0.0.0"

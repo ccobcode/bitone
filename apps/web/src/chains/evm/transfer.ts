@@ -78,8 +78,13 @@ async function claimNonce({ account, network, from }: RawDraft): Promise<number>
     const chain = (await fetchNonces(network, [from])).get(from);
     if (!chain) throw new TransferError("invalid", t("链上数据不完整,请稍后重试."));
     const floor = Math.max(chain.pending, chain.latest);
-    const held = abandonedHolder(await reservationsOf(account.id, network), await db.txs.toArray(), floor);
-    if (held) throw new TransferError("nonce-held", t("交易 {0} 已取消但签名仍然有效,先发替换交易.", held.id));
+    const held = abandonedHolder(await reservationsOf(account.id, network), await db.txs.toArray());
+    if (held) {
+        throw new TransferError(
+            "nonce-held",
+            t("交易 {0} 已取消但签名仍然有效,先发替换交易或确认序号已用掉.", held.id),
+        );
+    }
     return nextNonce(account.id, network, floor);
 }
 

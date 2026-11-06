@@ -1,7 +1,7 @@
 use crate::Error;
 use crate::keys::Wallet;
 use bitone_core::DerivationPath;
-use bitone_core::decode::solana::parse_solana;
+use bitone_core::chains::solana::decode::parse_solana;
 use bitone_core::request::SignRequest;
 use ed25519_dalek::{Signer, SigningKey};
 
@@ -27,18 +27,18 @@ mod tests {
     use crate::Error;
     use crate::keys::Wallet;
     use bitone_core::address::parse_solana_address;
+    use bitone_core::chains::solana::decode::{SolanaPayload, V1Config, parse_solana};
+    use bitone_core::chains::solana::{
+        ASSOCIATED_TOKEN_PROGRAM, COMPUTE_BUDGET_PROGRAM, Instruction, Lookup, Message, RECENT_BLOCKHASHES_SYSVAR,
+        RENT_SYSVAR, SYSTEM_PROGRAM, TOKEN_2022_PROGRAM, TOKEN_PROGRAM, TransferParams, Version,
+        associated_token_address, build_advance_nonce, build_create_nonce, build_transfer, nonce_account_address,
+    };
     use bitone_core::decode::Kind;
-    use bitone_core::decode::solana::{SolanaPayload, V1Config, parse_solana};
     use bitone_core::keys::PublicKeys;
     use bitone_core::manifest::Manifest;
     use bitone_core::protocol::VERSION;
     use bitone_core::request::{KIND_TRANSACTION, KIND_TYPED_DATA, SignRequest, SignResponse};
     use bitone_core::review::{Confirm, Forbid, Review, Risk, Summary};
-    use bitone_core::tx::solana::{
-        ASSOCIATED_TOKEN_PROGRAM, COMPUTE_BUDGET_PROGRAM, Instruction, Lookup, Message, RECENT_BLOCKHASHES_SYSVAR,
-        RENT_SYSVAR, SYSTEM_PROGRAM, TOKEN_2022_PROGRAM, TOKEN_PROGRAM, TransferParams, Version,
-        associated_token_address, build_advance_nonce, build_create_nonce, build_transfer, nonce_account_address,
-    };
     use bitone_core::tx::{self, HighestChange, ReviewContext};
     use bitone_core::{DerivationPath, Network};
 
@@ -576,7 +576,7 @@ mod tests {
         );
     }
 
-    /// CreateAccountWithSeed 会被预存款挡住,所以这种写法不再算本钱包的 nonce 创建.
+    /// 别人先往地址里转钱,CreateAccountWithSeed 就会失败,所以这种写法不算本钱包的 nonce 创建.
     #[test]
     fn old_create_account_flow_is_not_recognized() {
         let s = setup();
@@ -766,7 +766,7 @@ mod tests {
     }
 
     /// 链上程序解码时忽略尾部字节,这几条指令带上尾部字节一样执行,不能因此降级.
-    /// 尾部字节是 `opaque`,无法识别排在权限变更之上,权限类的字段照常解码.
+    /// 尾部字节是 `opaque`,无法识别的类别高于权限变更,权限类的字段照常解码.
     #[test]
     fn trailing_bytes_do_not_downgrade_dangerous_instructions() {
         let s = setup();
@@ -1861,7 +1861,7 @@ mod tests {
         let statics = message.keys.len() as u8;
         message.instructions[1].accounts[1] = statics;
         let review = check(&s, &message);
-        // 无法识别排在授权之上,消息含查找表时是无法识别.
+        // 无法识别的类别高于授权,消息含查找表时整笔是无法识别.
         assert_eq!(review.risk, Risk::Unknown);
         assert_eq!(review.confirm, Confirm::Hold);
         assert_eq!(review.summary.counterparty.as_deref(), Some("查找表地址"));

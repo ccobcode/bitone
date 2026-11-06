@@ -4,11 +4,12 @@
 
 use bitcoin::secp256k1::{Message, Secp256k1, SecretKey};
 use bitone_core::address::{parse_solana_address, parse_tron_address, solana_address, tron_address};
+use bitone_core::chains::{solana, tron};
 use bitone_core::keys::PublicKeys;
 use bitone_core::manifest::{Asset, Manifest};
 use bitone_core::protocol::VERSION;
 use bitone_core::request::{KIND_TRANSACTION, SignRequest};
-use bitone_core::tx::{self, HighestChange, solana, tron};
+use bitone_core::tx::{self, HighestChange};
 use bitone_core::{Chain, DerivationPath, Network};
 use bitone_signer::keys::Wallet;
 use sha2::{Digest, Sha256};

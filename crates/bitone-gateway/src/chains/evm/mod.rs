@@ -5,7 +5,7 @@ mod etherscan;
 mod hypersync;
 mod watch;
 
-use super::request::{Body, Reply, Shared, addresses_from, checked_address, is_hex, parse, present};
+use super::request::{Body, Budget, Reply, Shared, addresses_from, checked_address, is_hex, parse, present};
 use super::{ChainSpec, NetworkConfig, check_url, estimated, is_hex64};
 use crate::error::ApiError;
 use crate::upstream::{Http, Networks, Pool, Upstream, adapter, decimal_to_hex};
@@ -14,9 +14,9 @@ use axum::extract::Path;
 use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, HeaderValue};
 use axum::routing::post;
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use bitcoin::hex::DisplayHex;
-use bitone_core::tx::evm::keccak;
+use bitone_core::chains::evm::keccak;
 use bitone_core::{Chain, Network};
 use futures_util::future::BoxFuture;
 use reqwest::Client;
@@ -51,9 +51,15 @@ fn estimate_call(network: Network, body: Body) -> Result<Value, ApiError> {
     }))
 }
 
-async fn nonce(networks: Shared, Path(network): Path<String>, body: Body) -> Reply {
+async fn nonce(
+    networks: Shared,
+    Path(network): Path<String>,
+    Extension(budget): Extension<Budget>,
+    body: Body,
+) -> Reply {
     let (network, pool) = networks.on_chain(&network, Chain::Evm)?;
     let addresses = addresses_from(network, body)?;
+    budget.spend(addresses.len())?;
     let nonces = pool.special(adapter::<Evm>, |evm| evm.nonces(&addresses)).await?;
     Ok(Json(json!({"nonces": nonces})))
 }

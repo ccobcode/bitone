@@ -1,12 +1,13 @@
-//! 派生路径.
-//!
-//! 路径决定链和私钥类型.Bitcoin,EVM,Solana 路径不设白名单,任意路径都可以花费,页面显示路径并告警.
+//! 派生路径决定链和私钥类型.路径不设白名单,不是本机导出的账户时页面显示路径并告警.
 
 use crate::{Chain, Error, Mode, Network};
 use minicbor::{Decode, Encode};
 use std::fmt;
 
 const HARDENED: u32 = 0x8000_0000;
+
+/// 派生路径的层数上限,BIP-32 的深度只有一个字节.
+pub const MAX_PATH_DEPTH: usize = 255;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DerivationPath(pub Vec<u32>);

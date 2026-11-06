@@ -1,7 +1,7 @@
 use crate::Error;
 use crate::keys::Wallet;
+use bitone_core::chains::evm;
 use bitone_core::request::SignRequest;
-use bitone_core::tx::evm;
 use bitone_core::{DerivationPath, Mode};
 
 impl Wallet {
@@ -19,17 +19,17 @@ impl Wallet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bitone_core::chains::evm::types::{
+        AccessList, AccessListItem, Address, Authorization, B256, Bytes, Signature, SignedAuthorization, TxEip1559,
+        TxEip2930, TxEip4844, TxEip7702, TxKind, U256, rlp_encode,
+    };
+    use bitone_core::chains::evm::{TransferParams, UnsignedTx, build_transfer, keccak};
     use bitone_core::keys::PublicKeys;
     use bitone_core::manifest::Manifest;
     use bitone_core::path::all_account_specs;
     use bitone_core::protocol::VERSION;
     use bitone_core::request::{KIND_PERSONAL_SIGN, KIND_RAW_HASH, KIND_TRANSACTION, KIND_TYPED_DATA};
     use bitone_core::review::{Confirm, FieldRow, Forbid, Review, Risk};
-    use bitone_core::tx::evm::types::{
-        AccessList, AccessListItem, Address, Authorization, B256, Bytes, Signature, SignedAuthorization, TxEip1559,
-        TxEip2930, TxEip4844, TxEip7702, TxKind, U256, rlp_encode,
-    };
-    use bitone_core::tx::evm::{TransferParams, UnsignedTx, build_transfer, keccak};
     use bitone_core::tx::{self, HighestChange, ReviewContext};
     use bitone_core::{Chain, Network};
 
@@ -1046,7 +1046,7 @@ mod tests {
         assert!(sign(&s, &req).is_ok());
     }
 
-    /// 域说别的链时不能确认是测试网,测试网的名字也不能去掉主网提示.
+    /// 域里写的是别的链时不能确认是测试网,测试网的名字也不能去掉主网提示.
     #[test]
     fn a_chain_that_differs_keeps_the_mainnet_prompt() {
         let s = setup();
@@ -1283,7 +1283,7 @@ mod tests {
         assert!(sign(&s, &req).is_ok());
     }
 
-    /// `value` 不进哈希时曾经显示额度 1,实际签下无限授权.这种成员是矛盾,拒绝.
+    /// `value` 不进哈希时页面显示额度 1,实际签下的是无限授权.这种成员是矛盾,拒绝.
     #[test]
     fn a_hidden_member_in_a_dai_style_permit_is_refused() {
         let s = setup();

@@ -140,7 +140,7 @@ export function observe(tx: TxRecord, seen: ChainObservation, { now, conflict }:
             if (next.conflicts >= CONFLICT_ROUNDS) {
                 if (expired) fire("expired", "超过过期时间,未上链");
                 // 证据只来自网关,可能是假的.这笔继续占着序号,同样的转账也发不出去.
-                // 只有这个浏览器发出的交易上链才算被替换,见 txs.ts 的 retireSiblings.
+                // 只有这个浏览器发出的交易上链才标成已替换,见 txs.ts 的 retireSiblings.
                 else if (next.state === "broadcast") {
                     fire("conflict", SEQUENCE_USED);
                     next = { ...next, lastError: SEQUENCE_USED };
@@ -183,9 +183,12 @@ export function holdsReservation(tx: Pick<TxRecord, "state" | "raw">): boolean {
     }
 }
 
-/** 这笔还可能上链.已替换要有这个浏览器发出的交易上链才算定论. */
-export function mayStillLand(tx: Pick<TxRecord, "state" | "replacedBy">): boolean {
-    return tx.state === "uncertain" || (tx.state === "replaced" && tx.replacedBy === undefined);
+/**
+ * 这笔还可能上链.替换交易上链的说法只来自网关,可能是假的,原来的签名一直有效.
+ * 用户看过证据确认之后才算定论,见 txs.ts 的 confirmReplaced.
+ */
+export function mayStillLand(tx: Pick<TxRecord, "state" | "replacedConfirmedAt">): boolean {
+    return tx.state === "uncertain" || (tx.state === "replaced" && tx.replacedConfirmedAt === undefined);
 }
 
 /** 已广播超时,提示加速或取消. */

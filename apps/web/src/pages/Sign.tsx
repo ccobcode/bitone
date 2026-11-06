@@ -48,7 +48,7 @@ import { t, translate } from "../core/i18n";
 
 const ASSETS = { to: "/", label: t("资产") };
 
-/** 561 是 33 的整数倍. */
+/** 561 是 33 的整数倍,码元取整数像素时不留白边. */
 const QR_SIZE = 561;
 
 function remaining(expiresAt: number, now: number): string {

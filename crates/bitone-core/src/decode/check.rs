@@ -1,4 +1,4 @@
-//! 全覆盖检查 C1,C2,C4.C3 在编译时成立,见 `tests/architecture.rs`.
+//! 全覆盖检查 C1 划分,C2 往返,C4 展示.C3 穷尽在编译时成立:官方类型的解构不写 `..`,`match` 不写 `_`,写法由 `tests/architecture.rs` 检查.
 
 use super::model::{Extent, Node, Span};
 use crate::hex::DisplayHex;
@@ -13,6 +13,9 @@ pub const MAX_DEPTH: u32 = 32;
 pub enum Reject {
     #[error("载荷无法解码")]
     Malformed,
+    /// 字段乱序,不该重复的字段重复,或者数字的编码不是最短形式.官方解析器接受,但重新编码回不到原文.
+    #[error("字段的编码不是规范形式")]
+    NonCanonical,
     #[error("文本不是合法的 UTF-8")]
     InvalidText,
     #[error("载荷有未归属的字节,偏移 {offset}")]

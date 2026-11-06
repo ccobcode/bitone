@@ -1,7 +1,7 @@
 import type { CameraFailure } from "./Camera";
 import { t } from "../core/i18n";
 
-/** 摄像头异常的文案,W2 和 W4 共用,对应原型的 WS-States. */
+/** 摄像头异常的文案,W2 和 W4 共用. */
 export const CAMERA_FAILURES: Record<
     CameraFailure,
     { title: string; body: string; facts: { label: string; value: string }[]; retry: string }

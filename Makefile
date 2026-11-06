@@ -81,7 +81,7 @@ test-web: apps/web/node_modules wasm
 	pnpm -C apps/web build
 
 test-android: android-core
-	$(GRADLE) :androidApp:assembleDebug :androidApp:assembleRelease :shared:testAndroidHostTest \
+	$(GRADLE) :androidApp:assembleDebug :androidApp:assembleRelease :shared:testAndroidHostTest :shared:jvmTest \
 		:androidApp:testDebugUnitTest $(IOS_CHECK)
 
 test-punct:
@@ -136,7 +136,7 @@ android-core:
 	$(CARGO) run -p bitone-ffi --bin uniffi-bindgen -- generate --library \
 		target/aarch64-linux-android/release/libbitone_ffi.so --language kotlin --out-dir $(MOBILE)/java
 
-# 计划使用的运行时依赖还没进产物,先单独验证能在 wasm 和 Android 上构建.
+# 解码用的运行时依赖单独检查能否在 wasm 和 Android 上构建.
 check-deps-wasm:
 	cd tools/crosscheck/deps && CC_wasm32_unknown_unknown=$(LLVM)/clang AR_wasm32_unknown_unknown=$(LLVM)/llvm-ar \
 		$(CARGO) build --locked --target wasm32-unknown-unknown

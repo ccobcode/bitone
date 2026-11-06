@@ -1,6 +1,7 @@
 //! 金额格式化.金额全程是字节或十进制字符串,不经过浮点.
 
-/// 大端字节转十进制字符串.
+use crate::Error;
+
 pub fn decimal_from_be(bytes: &[u8]) -> String {
     let mut digits = vec![0u8];
     for &byte in bytes {
@@ -30,6 +31,30 @@ pub fn format_units(raw: &str, decimals: u8) -> String {
     } else {
         format!("{whole}.{fraction}")
     }
+}
+
+/// 十进制字符串转大端字节,去掉前导 0.
+pub fn be_from_decimal(text: &str) -> Result<Vec<u8>, Error> {
+    if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(Error::InvalidParams);
+    }
+    let mut bytes: Vec<u8> = vec![];
+    for digit in text.bytes().map(|b| (b - b'0') as u32) {
+        let mut carry = digit;
+        for byte in bytes.iter_mut().rev() {
+            let value = *byte as u32 * 10 + carry;
+            *byte = value as u8;
+            carry = value >> 8;
+        }
+        while carry > 0 {
+            bytes.insert(0, carry as u8);
+            carry >>= 8;
+        }
+    }
+    if bytes.len() > 32 {
+        return Err(Error::InvalidParams);
+    }
+    Ok(bytes)
 }
 
 #[cfg(test)]

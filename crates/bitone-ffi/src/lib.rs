@@ -92,7 +92,7 @@ pub struct ReviewAmount {
     pub unlimited: bool,
 }
 
-/// A6d 的一组控制方.`current` 为空时当前控制方就是付款账户,`next` 为空时这笔权限变更没有新控制方.
+/// 权限变更核对页的一组控制方.`current` 为空时当前控制方就是付款账户,`next` 为空时这笔权限变更没有新控制方.
 #[derive(uniffi::Record)]
 pub struct ReviewController {
     pub current: Option<String>,
@@ -106,7 +106,7 @@ pub struct ReviewParty {
     pub value: String,
 }
 
-/// 页面顶部,在字段列表上方.每个值都引用 `field_ids` 里的行.见 docs/10-tx-decoding.md 第 4.1 节.
+/// 页面顶部的摘要,在字段列表上方.每个值都引用 `field_ids` 里的行,所以摘要显示不了树里没有的内容.
 #[derive(uniffi::Record)]
 pub struct ReviewSummary {
     pub title: String,
@@ -147,7 +147,7 @@ pub enum FieldSource {
     Hint,
 }
 
-/// 解码树的一个节点,前序排列.见 docs/10-tx-decoding.md 第 4 节.
+/// 解码树的一个节点.整棵树按前序排成扁平列表.
 #[derive(uniffi::Record)]
 pub struct FieldRow {
     pub id: u32,
@@ -316,7 +316,7 @@ fn kind_name(kind: AccountKind) -> &'static str {
     }
 }
 
-/// A9 的内容.
+/// 地址核对页的内容.
 #[derive(uniffi::Record)]
 pub struct AddressReview {
     pub belongs: bool,
@@ -331,7 +331,7 @@ pub struct AddressReview {
     pub request_fingerprint: String,
 }
 
-/// A3 的一行账户.
+/// 首页的一行账户.
 #[derive(uniffi::Record)]
 pub struct AccountRow {
     pub kind: String,
@@ -368,10 +368,12 @@ fn load_manifest(package: Option<Vec<u8>>) -> std::borrow::Cow<'static, Manifest
     Manifest::active(package.as_deref(), &VENDOR_KEY)
 }
 
-/// 建钱包过程中的助记词.设置 PIN 之后就不再需要这个对象.
+/// 建钱包过程中的助记词和 BIP39 密码.设置 PIN 之后就不再需要这个对象.
 #[derive(uniffi::Object)]
 pub struct WalletDraft {
     entropy: Zeroizing<Vec<u8>>,
+    /// 两遍输入一致的 BIP39 密码,没有启用时是空串.
+    passphrase: Mutex<Zeroizing<String>>,
     imported: bool,
 }
 
@@ -381,6 +383,7 @@ impl WalletDraft {
     pub fn generate(word_count: u32) -> Result<Self, WalletError> {
         Ok(Self {
             entropy: mnemonic::generate_entropy(word_count as usize)?,
+            passphrase: Mutex::default(),
             imported: false,
         })
     }
@@ -389,11 +392,12 @@ impl WalletDraft {
     pub fn import_words(words: Vec<String>) -> Result<Self, WalletError> {
         Ok(Self {
             entropy: mnemonic::entropy_from_words(&words)?,
+            passphrase: Mutex::default(),
             imported: true,
         })
     }
 
-    /// 只在 A2 显示时调用.字符串经过 JVM 后无法清除,不要长期持有.
+    /// 只在备份助记词页显示时调用.字符串经过 JVM 后无法清除,不要长期持有.
     pub fn words(&self) -> Result<Vec<String>, WalletError> {
         Ok(mnemonic::words(&self.entropy)?)
     }
@@ -429,38 +433,68 @@ impl WalletDraft {
         Ok(mnemonic::words(&self.entropy)?.get(index as usize) == Some(&word))
     }
 
+    /// 用户把 BIP39 密码输了两遍,两遍一致之后调用.没有启用时传空串.密码和熵一起留在这里,封进密文.
+    pub fn set_passphrase(&self, passphrase: String) {
+        *self.passphrase.lock().expect("锁未中毒") = Zeroizing::new(passphrase);
+    }
+
     /// `tag` 是硬件对这个 PIN 算出的 HMAC.
     pub fn seal(&self, pin: String, tag: Vec<u8>) -> Result<Vec<u8>, WalletError> {
-        Ok(vault::seal(&self.entropy, &pin, &tag, vault::KdfParams::DEFAULT)?)
+        let passphrase = self.passphrase.lock().expect("锁未中毒");
+        Ok(vault::seal(
+            &self.entropy,
+            &passphrase,
+            &pin,
+            &tag,
+            vault::KdfParams::DEFAULT,
+        )?)
     }
 }
 
-/// 解锁后的钱包,随对象销毁清除种子.
+/// 解锁后的钱包,随对象销毁清除种子,熵和 BIP39 密码.
 #[derive(uniffi::Object)]
 pub struct UnlockedWallet {
     wallet: Wallet,
     entropy: Zeroizing<Vec<u8>>,
+    passphrase: Zeroizing<String>,
+}
+
+impl UnlockedWallet {
+    fn from_secret(entropy: Zeroizing<Vec<u8>>, passphrase: Zeroizing<String>) -> Result<Self, WalletError> {
+        Ok(Self {
+            wallet: Wallet::new(&entropy, &passphrase)?,
+            entropy,
+            passphrase,
+        })
+    }
 }
 
 #[uniffi::export]
 impl UnlockedWallet {
+    /// BIP39 密码在密文里,解开就是真正的钱包.
     #[uniffi::constructor]
-    pub fn open(sealed: Vec<u8>, pin: String, tag: Vec<u8>, passphrase: String) -> Result<Self, WalletError> {
-        let entropy = vault::open(&sealed, &pin, &tag)?;
-        Ok(Self {
-            wallet: Wallet::new(&entropy, &passphrase)?,
-            entropy,
-        })
+    pub fn open(sealed: Vec<u8>, pin: String, tag: Vec<u8>) -> Result<Self, WalletError> {
+        let secret = vault::open(&sealed, &pin, &tag)?;
+        Self::from_secret(secret.entropy, secret.passphrase)
     }
 
-    /// 解开旧格式,只用于迁移.`sealed` 是去掉硬件那层之后的内容.
+    /// 解开只存熵的格式,只用于迁移.`passphrase` 是用户这次输两遍确认的,没有启用时是空串.
+    #[uniffi::constructor]
+    pub fn open_entropy_only(
+        sealed: Vec<u8>,
+        pin: String,
+        tag: Vec<u8>,
+        passphrase: String,
+    ) -> Result<Self, WalletError> {
+        let passphrase = Zeroizing::new(passphrase);
+        Self::from_secret(vault::open_entropy_only(&sealed, &pin, &tag)?, passphrase)
+    }
+
+    /// 解开最早的格式,只用于迁移.`sealed` 是去掉硬件那层之后的内容.
     #[uniffi::constructor]
     pub fn open_legacy(sealed: Vec<u8>, pin: String, passphrase: String) -> Result<Self, WalletError> {
-        let entropy = vault::open_legacy(&sealed, &pin)?;
-        Ok(Self {
-            wallet: Wallet::new(&entropy, &passphrase)?,
-            entropy,
-        })
+        let passphrase = Zeroizing::new(passphrase);
+        Self::from_secret(vault::open_legacy(&sealed, &pin)?, passphrase)
     }
 
     pub fn fingerprint(&self) -> Result<String, WalletError> {
@@ -472,12 +506,27 @@ impl UnlockedWallet {
         Ok(mnemonic::words(&self.entropy)?)
     }
 
-    /// 修改 PIN 和迁移用.助记词留在 Rust 里,不经过 JVM.
-    pub fn seal(&self, pin: String, tag: Vec<u8>) -> Result<Vec<u8>, WalletError> {
-        Ok(vault::seal(&self.entropy, &pin, &tag, vault::KdfParams::DEFAULT)?)
+    /// 只在查看助记词页调用,没有启用时是空串.字符串经过 JVM 后无法清除,不要长期持有.
+    pub fn passphrase(&self) -> String {
+        self.passphrase.to_string()
     }
 
-    /// 公钥写入本机,之后核对交易不用解锁.BIP39 密码钱包不要落盘,只放内存.
+    pub fn has_passphrase(&self) -> bool {
+        !self.passphrase.is_empty()
+    }
+
+    /// 修改 PIN 和迁移用.助记词和 BIP39 密码留在 Rust 里,不经过 JVM.
+    pub fn seal(&self, pin: String, tag: Vec<u8>) -> Result<Vec<u8>, WalletError> {
+        Ok(vault::seal(
+            &self.entropy,
+            &self.passphrase,
+            &pin,
+            &tag,
+            vault::KdfParams::DEFAULT,
+        )?)
+    }
+
+    /// 公钥写入本机,之后核对交易不用解锁.
     pub fn public_keys(&self, imported: bool) -> Result<Vec<u8>, WalletError> {
         Ok(self.wallet.public_keys(imported)?)
     }
@@ -607,7 +656,7 @@ pub fn review_request(
     Ok(review_result(tx::review(&request, &ctx), &manifest, Some(fingerprint)))
 }
 
-/// A3 的账户和地址.不需要 PIN.
+/// 首页的账户和地址.不需要 PIN.
 #[uniffi::export]
 pub fn account_rows(public_keys: Vec<u8>) -> Result<Vec<AccountRow>, WalletError> {
     let keys = PublicKeys::decode(&public_keys)?;
@@ -691,10 +740,16 @@ pub fn receive_address(public_keys: Vec<u8>, account_path: String, index: u32) -
     Ok(keys.receive_address(&account_path, index)?)
 }
 
-/// 本机保存的密文是不是当前格式.不是时要先走迁移.
+/// 本机保存的密文绑定了硬件.不是时是最早的格式,外面还有一层硬件加密.
 #[uniffi::export]
 pub fn is_bound_vault(sealed: Vec<u8>) -> bool {
     vault::is_bound(&sealed)
+}
+
+/// 本机保存的密文是不是当前格式.不是时解开之后要换成当前格式.
+#[uniffi::export]
+pub fn is_current_vault(sealed: Vec<u8>) -> bool {
+    vault::is_current(&sealed)
 }
 
 /// 设置 PIN 时拒绝太容易猜的.
@@ -703,7 +758,6 @@ pub fn is_weak_pin(pin: String) -> bool {
     vault::is_weak_pin(&pin)
 }
 
-/// 内置清单的一项.
 #[derive(uniffi::Record)]
 pub struct ManifestEntry {
     pub network: String,
@@ -713,7 +767,7 @@ pub struct ManifestEntry {
     pub icon: String,
 }
 
-/// 内置清单的全部代币,用于 A12 展示.原生币也在里面.
+/// 内置清单的全部代币,给内置清单页展示.原生币也在里面.
 #[uniffi::export]
 pub fn manifest_entries(package: Option<Vec<u8>>) -> Result<Vec<ManifestEntry>, WalletError> {
     let manifest = load_manifest(package);
@@ -756,7 +810,7 @@ mod tests {
     fn create_seal_unlock_export() {
         let draft = WalletDraft::generate(12).unwrap();
         let sealed = draft.seal(PIN.into(), TAG.to_vec()).unwrap();
-        let wallet = UnlockedWallet::open(sealed, PIN.into(), TAG.to_vec(), String::new()).unwrap();
+        let wallet = UnlockedWallet::open(sealed, PIN.into(), TAG.to_vec()).unwrap();
         assert_eq!(wallet.words().unwrap(), draft.words().unwrap());
         assert_eq!(wallet.fingerprint().unwrap().len(), 8);
 
@@ -769,11 +823,64 @@ mod tests {
         assert_eq!(export.accounts.len(), 9);
     }
 
+    /// 解开之后只要 PIN:BIP39 密码在密文里,指纹和公钥就是真正的钱包的.
+    #[test]
+    fn the_passphrase_is_sealed_with_the_words() {
+        let draft = WalletDraft::import_words(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+                .split(' ')
+                .map(String::from)
+                .collect(),
+        )
+        .unwrap();
+        let open = |sealed| UnlockedWallet::open(sealed, PIN.into(), TAG.to_vec()).unwrap();
+        let plain = open(draft.seal(PIN.into(), TAG.to_vec()).unwrap());
+        assert_eq!(plain.fingerprint().unwrap(), "73C5DA0A");
+        assert!(!plain.has_passphrase());
+        assert_eq!(plain.passphrase(), "");
+
+        draft.set_passphrase("TREZOR".into());
+        let hidden = open(draft.seal(PIN.into(), TAG.to_vec()).unwrap());
+        assert!(hidden.has_passphrase());
+        assert_eq!(hidden.passphrase(), "TREZOR");
+        assert_eq!(hidden.words().unwrap(), plain.words().unwrap());
+        assert_ne!(hidden.fingerprint().unwrap(), plain.fingerprint().unwrap());
+        assert_ne!(hidden.public_keys(false).unwrap(), plain.public_keys(false).unwrap());
+
+        // 修改 PIN 时密码跟着进新密文.
+        let resealed = hidden.seal("739264".into(), [6; 32].to_vec()).unwrap();
+        let again = UnlockedWallet::open(resealed, "739264".into(), [6; 32].to_vec()).unwrap();
+        assert_eq!(again.passphrase(), "TREZOR");
+        assert_eq!(again.fingerprint().unwrap(), hidden.fingerprint().unwrap());
+
+        // 关掉开关时草稿里的密码清空.
+        draft.set_passphrase(String::new());
+        assert_eq!(open(draft.seal(PIN.into(), TAG.to_vec()).unwrap()).passphrase(), "");
+    }
+
+    #[test]
+    fn each_format_opens_only_with_its_own_constructor() {
+        let sealed = WalletDraft::generate(12)
+            .unwrap()
+            .seal(PIN.into(), TAG.to_vec())
+            .unwrap();
+        assert!(is_bound_vault(sealed.clone()));
+        assert!(is_current_vault(sealed.clone()));
+        assert!(matches!(
+            UnlockedWallet::open_entropy_only(sealed.clone(), PIN.into(), TAG.to_vec(), String::new()),
+            Err(WalletError::Other { .. })
+        ));
+        assert!(matches!(
+            UnlockedWallet::open_legacy(sealed, PIN.into(), String::new()),
+            Err(WalletError::Other { .. })
+        ));
+    }
+
     #[test]
     fn review_needs_no_pin_and_sign_rechecks() {
         use bitone_core::Network;
+        use bitone_core::chains::evm::{TransferParams, build_transfer};
         use bitone_core::request::{KIND_TRANSACTION, SignRequest};
-        use bitone_core::tx::evm::{TransferParams, build_transfer};
 
         let draft = WalletDraft::import_words(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
@@ -783,7 +890,7 @@ mod tests {
         )
         .unwrap();
         let sealed = draft.seal(PIN.into(), TAG.to_vec()).unwrap();
-        let wallet = UnlockedWallet::open(sealed, PIN.into(), TAG.to_vec(), String::new()).unwrap();
+        let wallet = UnlockedWallet::open(sealed, PIN.into(), TAG.to_vec()).unwrap();
         let keys = wallet.public_keys(false).unwrap();
         let payload = build_transfer(&TransferParams {
             network: Network::Ethereum,
@@ -849,7 +956,7 @@ mod tests {
             .unwrap()
             .seal(PIN.into(), TAG.to_vec())
             .unwrap();
-        let wallet = UnlockedWallet::open(sealed, PIN.into(), TAG.to_vec(), String::new()).unwrap();
+        let wallet = UnlockedWallet::open(sealed, PIN.into(), TAG.to_vec()).unwrap();
         let keys = wallet.public_keys(false).unwrap();
         let fingerprint = PublicKeys::decode(&keys).unwrap().fingerprint;
         let request = SignRequest {
@@ -887,7 +994,7 @@ mod tests {
                 .unwrap()
                 .seal(PIN.into(), TAG.to_vec())
                 .unwrap();
-            UnlockedWallet::open(sealed, PIN.into(), TAG.to_vec(), String::new())
+            UnlockedWallet::open(sealed, PIN.into(), TAG.to_vec())
                 .unwrap()
                 .public_keys(false)
                 .unwrap()
@@ -927,7 +1034,7 @@ mod tests {
             .seal(PIN.into(), TAG.to_vec())
             .unwrap();
         assert!(matches!(
-            UnlockedWallet::open(sealed, "000000".into(), TAG.to_vec(), String::new()),
+            UnlockedWallet::open(sealed, "000000".into(), TAG.to_vec()),
             Err(WalletError::WrongPin)
         ));
     }

@@ -16,7 +16,7 @@ const TONES = {
     warn: { block: "bg-warn-soft", text: "text-warn" },
 };
 
-/** 异常态,对应原型的 WS-States. */
+/** 异常态. */
 export function StateCard({ tone, icon, title, body, facts, actions }: StateCardProps) {
     const { block, text } = TONES[tone];
     return (

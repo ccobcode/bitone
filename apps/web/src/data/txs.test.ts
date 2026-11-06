@@ -26,9 +26,11 @@ describe("isDeletable", () => {
         expect(isDeletable(tx("abandoned", { raw: "aa" }), 0, NOW)).toBe(true);
     });
 
-    it("刚被替换的还在观察期,过了才能删", () => {
-        expect(isDeletable(tx("replaced"), 0, NOW + 1)).toBe(false);
-        expect(isDeletable(tx("replaced"), 0, NOW + REPLACED_WATCH)).toBe(true);
+    it("刚被替换的还在观察期,过了而且用户确认过替换才能删", () => {
+        const confirmed = tx("replaced", { replacedConfirmedAt: NOW });
+        expect(isDeletable(confirmed, 0, NOW + 1)).toBe(false);
+        expect(isDeletable(confirmed, 0, NOW + REPLACED_WATCH)).toBe(true);
+        expect(isDeletable(tx("replaced"), 0, NOW + REPLACED_WATCH)).toBe(false);
     });
 
     it("其他状态都不能删", () => {

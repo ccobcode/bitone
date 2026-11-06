@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- 气隙的前提:应用不能联网.tools:node="remove" 防止依赖合并进来,CheckManifestPermissions 再查一遍. -->
+    <!-- 应用不能联网,数据只靠二维码进出.tools:node="remove" 防止依赖把这个权限合并进来,CheckManifestPermissions 再查一遍. -->
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
 
     <!-- 扫码是冷钱包唯一的输入方式. -->

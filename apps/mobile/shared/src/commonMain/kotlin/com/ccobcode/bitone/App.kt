@@ -26,6 +26,7 @@ import com.ccobcode.bitone.ui.screens.MainTabs
 import com.ccobcode.bitone.ui.screens.ManifestScreen
 import com.ccobcode.bitone.ui.screens.NeedsRecoveryScreen
 import com.ccobcode.bitone.ui.screens.ParseFailedScreen
+import com.ccobcode.bitone.ui.screens.PassphraseScreen
 import com.ccobcode.bitone.ui.screens.ReceiveAddressesScreen
 import com.ccobcode.bitone.ui.screens.ReviewScreen
 import com.ccobcode.bitone.ui.screens.ScanScreen
@@ -66,6 +67,7 @@ fun App(flow: WalletFlow, brightness: Brightness, fonts: BitOneFonts = BitOneFon
                     Screen.ImportWords -> ImportScreen(flow)
                     Screen.Backup -> BackupScreen(flow)
                     Screen.Verify -> VerifyScreen(flow)
+                    Screen.Passphrase -> PassphraseScreen(flow)
                     Screen.SetPin -> SetPinScreen(flow)
                     Screen.Home,
                     Screen.Receive,

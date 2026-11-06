@@ -7,6 +7,9 @@ import com.ccobcode.bitone.i18n.I18n
 import com.ccobcode.bitone.i18n.Lang
 import kotlinx.coroutines.withContext
 
+/** 查看助记词页的内容.故意不用 data class,防止 toString 打出词. */
+private class Backup(val words: List<String>, val passphrase: String)
+
 /** A10 的偏好,以及从这里发起的查看助记词,修改 PIN 和抹除. */
 class SettingsFlow internal constructor(private val host: FlowHost, private val pin: PinEntry) {
     private val platform = host.platform
@@ -48,15 +51,20 @@ class SettingsFlow internal constructor(private val host: FlowHost, private val 
     var viewWords by mutableStateOf(emptyList<String>())
         private set
 
+    /** 保存的 BIP39 密码,没有启用时是空串.和助记词一样要抄在纸上. */
+    var viewPassphrase by mutableStateOf("")
+        private set
+
     fun startViewWords() = host.operation {
         host.unlock(
             UnlockRequest(UnlockPurpose.ViewWords) {
                 UnlockTask(
-                    use = { wallet, _ -> wallet.words() },
-                    finish = { words ->
+                    use = { wallet, _ -> Backup(wallet.words(), wallet.passphrase()) },
+                    finish = { backup ->
                         // 解开钱包要几秒,这期间新出现的失败要先确认.助记词丢掉,确认后回到 A7 重来.
                         if (host.recheck() && host.screen == Screen.Unlock) {
-                            viewWords = words
+                            viewWords = backup.words
+                            viewPassphrase = backup.passphrase
                             host.showOnly(Screen.ViewWords)
                         }
                     },
@@ -67,6 +75,7 @@ class SettingsFlow internal constructor(private val host: FlowHost, private val 
 
     fun leaveViewWords() {
         viewWords = emptyList()
+        viewPassphrase = ""
         host.stack = host.stack.filterNot { it == Screen.ViewWords }
     }
 
@@ -126,6 +135,7 @@ class SettingsFlow internal constructor(private val host: FlowHost, private val 
 
     internal fun clear() {
         viewWords = emptyList()
+        viewPassphrase = ""
         changingPin = false
     }
 }

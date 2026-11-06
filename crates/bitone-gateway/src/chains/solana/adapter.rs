@@ -18,7 +18,7 @@ const MEDIUM_FLOOR: u64 = 1000;
 const FAST_FLOOR: u64 = 100_000;
 /// 一次历史查询里每条记录流的条数.getTransaction 要逐笔调用,这个值不能大.
 const PAGE_SIZE: usize = 25;
-/// 跟块时往回看的 slot 数,约两分钟.
+/// 跟踪时往回看的 slot 数,约两分钟.
 const RECENT_SLOTS: u64 = 300;
 
 pub struct Solana {
@@ -351,7 +351,7 @@ impl Solana {
         }
         let reply = self.result("getSignaturesForAddress", json!([target, options])).await?;
         let rows = reply.as_array().ok_or(Failed)?;
-        // 新的在前,碰到水位之前的签名就不用再往后翻,也不用逐笔取交易详情.
+        // 新的在前,碰到 `since` 之前的签名就不用再往后翻,也不用逐笔取交易详情.
         let slot = |row: &Value| row.get("slot").and_then(Value::as_u64);
         let fresh: Vec<&Value> = rows
             .iter()

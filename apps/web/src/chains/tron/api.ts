@@ -1,4 +1,3 @@
-// TRON 的网关接口.
 import { isRecord } from "../../core/text";
 import { get, malformed, post, requireAmount, requireCount, requireHex } from "../../gateway/client";
 

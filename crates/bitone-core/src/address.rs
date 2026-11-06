@@ -62,7 +62,6 @@ pub fn bitcoin_address(
     bitcoin_address_from_key(&key.public_key.serialize(), kind, network)
 }
 
-/// 从压缩公钥算 Bitcoin 地址.
 pub fn bitcoin_address_from_key(compressed: &[u8], kind: AccountKind, network: Network) -> Result<String, Error> {
     let secp = Secp256k1::verification_only();
     let key = PublicKey::from_slice(compressed).map_err(|_| Error::InvalidKey)?;

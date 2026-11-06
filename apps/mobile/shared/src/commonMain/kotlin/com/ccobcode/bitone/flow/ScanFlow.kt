@@ -58,7 +58,7 @@ private class Scanned(val type: String, val message: ByteArray)
 
 /** 签名这一步带回来的结果,里面没有钱包对象. */
 private sealed interface SignOutcome {
-    class Signed(val stream: FrameStream, val fingerprint: String, val keys: ByteArray) : SignOutcome
+    class Signed(val stream: FrameStream) : SignOutcome
 
     class Mismatch(val requestFingerprint: String?) : SignOutcome
 
@@ -113,11 +113,12 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         if (!canScrollForward) reviewRead = true
     }
 
-    /** 通用列表实际画出的行数.签名时传回核心库,和节点数不同就拒绝. */
-    private var renderedFields = 0u
+    /** 通用列表里真正经过画行代码的行.签名时把行数传回核心库,和节点数不同就拒绝,所以列表漏画一行就签不了. */
+    private val shownRows = mutableSetOf<UInt>()
 
-    fun fieldsRendered(count: Int) {
-        renderedFields = count.toUInt()
+    /** 画出一行时调用.同一行画多次只算一次. */
+    fun rowShown(id: UInt) {
+        shownRows += id
     }
 
     // AS
@@ -176,7 +177,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         frames = 0
         progress = 0f
         mismatchFingerprint = null
-        renderedFields = 0u
+        shownRows.clear()
         awaitingSecondConfirm = false
         confirmedTwice = false
         holdCancel()
@@ -263,7 +264,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
             reviewed.refused -> refuse(reviewed.alerts.firstOrNull() ?: "这笔交易包含禁止的动作")
             else -> {
                 reviewRead = false
-                renderedFields = 0u
+                shownRows.clear()
                 awaitingSecondConfirm = false
                 confirmedTwice = false
                 result = ScanResult.Request(reviewed)
@@ -292,9 +293,6 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
     }
 
     fun openCameraSettings() = scanner.openSettings()
-
-    /** 重新输入 BIP39 密码后重新核对. */
-    fun retryPassphrase() = host.guarded { host.loadKeys() }
 
     /** 拒绝和 AS 的"退出". */
     fun exitRequest() {
@@ -352,7 +350,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
     private fun signTask(): UnlockTask<SignOutcome> {
         val message = scanned?.message
         val shown = review
-        val rendered = renderedFields
+        val rendered = shownRows.size.toUInt()
         val twice = confirmedTwice
         return UnlockTask(
             use = { wallet, saved ->
@@ -362,7 +360,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
         )
     }
 
-    /** 用刚解开的钱包算出的公钥重新核对,不用缓存:BIP39 密码这次可能输错,核对页用的公钥不一定对应这个钱包.找零索引在返回之前落盘,屏幕上出现签名时本机已经记下. */
+    /** 用刚解开的钱包算出的公钥重新核对,不用缓存:核对页用的是本机文件里的公钥,不一定对应解开的这个钱包.找零索引在返回之前落盘,屏幕上出现签名时本机已经记下. */
     private fun sign(
         wallet: UnlockedWallet,
         saved: WalletMeta,
@@ -382,7 +380,7 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
             val slot = if (outcome.changeIsTestnet) highest.testnet else highest.mainnet
             if (index > slot) store.writeHighestChange(outcome.changeIsTestnet, index)
         }
-        return SignOutcome.Signed(outcome.frames, wallet.fingerprint(), keys)
+        return SignOutcome.Signed(outcome.frames)
     }
 
     private suspend fun applySigned(outcome: SignOutcome) {
@@ -393,7 +391,6 @@ class ScanFlow internal constructor(private val host: FlowHost, private val play
                     outcome.stream.close()
                     return
                 }
-                session.remember(outcome.keys, outcome.fingerprint)
                 player.show(outcome.stream)
                 scanned = null
                 host.stack = listOf(Screen.Home, Screen.Signed)

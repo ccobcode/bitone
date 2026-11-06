@@ -1,5 +1,6 @@
 //! 网页端的 WASM 绑定.这里不依赖 `bitone-signer`,构建产物里没有任何签名代码.
 
+use bitone_core::chains::{bitcoin, evm, solana, tron};
 use bitone_core::hex::{DisplayHex, FromHex};
 use bitone_core::keys::PublicKeys;
 use bitone_core::manifest::{Manifest, VENDOR_KEY};
@@ -9,7 +10,7 @@ use bitone_core::protocol::{
     UR_ACCOUNTS, UR_MANIFEST, UR_REQUEST,
 };
 use bitone_core::request::{KIND_TRANSACTION, SignRequest, SignResponse};
-use bitone_core::tx::{self, HighestChange, ReviewContext, bitcoin, evm, solana, tron};
+use bitone_core::tx::{self, HighestChange, ReviewContext};
 use bitone_core::{AccountKind, Chain, Mode, Network, address, qr};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -39,7 +40,7 @@ struct NetworkInfo {
     chain_id: Option<u64>,
 }
 
-/// 网络表内置在网页端,不从网关获取.
+/// 网络表内置在网页端,不从网关获取,Chain ID 不能由网关决定.
 #[wasm_bindgen]
 pub fn networks() -> Result<JsValue, JsError> {
     let list: Vec<NetworkInfo> = Network::ALL
@@ -586,7 +587,7 @@ pub fn bitcoin_replacement(
 #[wasm_bindgen(js_name = evmApproveData)]
 pub fn evm_approve_data(spender: &str, amount: &str) -> Result<String, JsError> {
     let spender = address::parse_evm_address(spender).map_err(js_error)?;
-    let amount = evm::be_from_decimal(amount).map_err(js_error)?;
+    let amount = bitone_core::units::be_from_decimal(amount).map_err(js_error)?;
     Ok(format!(
         "0x{}",
         evm::approve_data(&spender, &amount).to_lower_hex_string()
@@ -597,7 +598,7 @@ pub fn evm_approve_data(spender: &str, amount: &str) -> Result<String, JsError> 
 #[wasm_bindgen(js_name = evmTransferData)]
 pub fn evm_transfer_data(to: &str, amount: &str) -> Result<String, JsError> {
     let recipient = address::parse_evm_address(to).map_err(js_error)?;
-    let amount = evm::be_from_decimal(amount).map_err(js_error)?;
+    let amount = bitone_core::units::be_from_decimal(amount).map_err(js_error)?;
     let data = evm::transfer_data(&recipient, &amount);
     Ok(format!("0x{}", data.to_lower_hex_string()))
 }
@@ -711,7 +712,7 @@ struct Checked {
     signature_only: bool,
 }
 
-/// 广播前核验.用公钥验证签名,并装回构建记录.
+/// 广播前核验.用公钥验证签名,再装回构建记录,所以签名改变不了交易内容.
 #[wasm_bindgen(js_name = verifyResponse)]
 pub fn verify_response(request: &[u8], response: &[u8], signer: &[u8]) -> Result<JsValue, JsError> {
     let request = SignRequest::decode(request).map_err(js_error)?;

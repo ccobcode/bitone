@@ -55,12 +55,6 @@ fun ExportScreen(flow: WalletFlow, brightness: Brightness) {
         QrPlayer(flow, LABEL, fullscreen) { fullscreen = it }
         Card {
             Column(Modifier.padding(Space.s5), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-                // 启用 BIP39 密码时只有这里能核对是否输错,输错不会报错.
-                if (flow.session.passphraseRequired) {
-                    LabelRow("主密钥指纹") {
-                        Txt(flow.session.fingerprint.orEmpty(), size = FontSize.t2, color = c.text2, mono = true)
-                    }
-                }
                 LabelRow("包含的账户") { Chip("只含公钥", c.okSoft, c.ok, icon = Icons.Shield) }
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                     Network.entries.forEach { NetworkIcon(it, 28.dp) }

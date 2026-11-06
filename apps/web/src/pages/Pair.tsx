@@ -19,7 +19,7 @@ function shortKey(key: Uint8Array): string {
     return `${hex.slice(0, 6)}…${hex.slice(-6)}`;
 }
 
-/** 连接冷钱包:扫码,选账户.保存后接着核对第一个收款地址. */
+/** 连接冷钱包:扫码,选账户.保存后接着核对第一个收款地址,收款前由冷钱包确认地址属于本钱包. */
 export default function PairDialog() {
     const { mode, wallet, wallets, selectWallet, refreshPersisted } = useApp();
     const navigate = useNavigate();

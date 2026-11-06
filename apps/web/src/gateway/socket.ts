@@ -16,7 +16,7 @@ export type SocketStatus = "connecting" | "live" | "retrying" | "degraded";
 
 export interface SocketEvents {
     onStatus(status: SocketStatus, retryAt: number | null): void;
-    /** 收到这批地址的跟块推送,内容还没校验. */
+    /** 收到这批地址的新区块推送,内容还没校验. */
     onUpdate(network: string, addresses: readonly string[], update: unknown): void;
     /** 收到交易的最终性变化,内容还没校验. */
     onTx?(network: string, tx: unknown): void;

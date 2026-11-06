@@ -79,7 +79,7 @@ impl Pool {
         self.height.get(self.attempt(|upstream| upstream.height())).await
     }
 
-    /// 跟块用的高度,不走缓存.
+    /// 跟踪任务用的高度,不走缓存.
     pub async fn head(&self) -> Result<u64, ApiError> {
         self.attempt(|upstream| upstream.height()).await
     }
@@ -106,7 +106,7 @@ impl Pool {
         self.attempt(|upstream| upstream.recent(addresses, previous)).await
     }
 
-    /// 依次用每个上游保持长连接,断开就换下一个,直到跟块任务结束.
+    /// 依次用每个上游保持长连接,断开就换下一个,直到跟踪任务结束.
     pub async fn watch(&self, addresses: watch::Receiver<Vec<String>>, signals: mpsc::Sender<Signal>) {
         while !signals.is_closed() {
             for upstream in &self.upstreams {

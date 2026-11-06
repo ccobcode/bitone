@@ -300,7 +300,8 @@ function unknownVectors() {
     ];
 }
 
-function refusedVectors() {
+/** 合约参数不是规范编码.链接受,节点保存的是 `Any.value` 的原文,所以只按原始数据显示,可以签. */
+function rawValueVectors() {
     const name = "TransferContract";
     const number = contractNumber(name);
     const url = `${PREFIX}${name}`;
@@ -310,6 +311,26 @@ function refusedVectors() {
         value,
         writer((output) => output.writeInt64(3, 1)),
     );
+    const asset = new pb.AssetIssueContract();
+    asset.setId("1002000");
+    asset.setOwnerAddress(OWNER);
+    const issued = asset.serializeBinary();
+    return [
+        ["varint 不是最短编码", rawMessage(number, url, nonMinimal), nonMinimal],
+        ["标量字段写了两次", rawMessage(number, url, repeated), repeated],
+        [
+            "tronweb 把编号 41 写在最前面",
+            rawMessage(contractNumber("AssetIssueContract"), `${PREFIX}AssetIssueContract`, issued),
+            issued,
+        ],
+    ].map(([label, raw, inner]) => ({ case: label, raw: hex(raw.serializeBinary()), value: hex(inner) }));
+}
+
+function refusedVectors() {
+    const name = "TransferContract";
+    const number = contractNumber(name);
+    const url = `${PREFIX}${name}`;
+    const { bytes: value } = contractValue(name);
     const explicit = concat(rawMessage(number, url, value).serializeBinary(), Uint8Array.of(0x90, 0x01, 0x00));
     const swapped = (() => {
         const raw = rawMessage(number, url, value);
@@ -324,23 +345,12 @@ function refusedVectors() {
     })();
     const twice = rawMessage(number, url, value);
     twice.addContract(twice.getContractList()[0]);
-    const asset = new pb.AssetIssueContract();
-    asset.setId("1002000");
-    asset.setOwnerAddress(OWNER);
-    const issued = rawMessage(
-        contractNumber("AssetIssueContract"),
-        `${PREFIX}AssetIssueContract`,
-        asset.serializeBinary(),
-    );
     return [
-        ["varint 不是最短编码", rawMessage(number, url, nonMinimal)],
-        ["标量字段写了两次", rawMessage(number, url, repeated)],
         ["显式写默认值", explicit],
         ["字段乱序", swapped],
         ["type_url 和 type 不符", rawMessage(number, `${PREFIX}TriggerSmartContract`, value)],
         ["未知编号声明已知合约", rawMessage(99, url, value)],
         ["两个合约", twice],
-        ["tronweb 把编号 41 写在最前面,节点按编号重新序列化", issued],
     ].map(([label, raw]) => ({ case: label, raw: hex(raw.serializeBinary?.() ?? raw) }));
 }
 
@@ -380,7 +390,10 @@ const vectors = {
         }),
         ...unknownVectors(),
     ],
+    raw: rawValueVectors(),
     refused: refusedVectors(),
 };
 writeFileSync(new URL("../vectors/tron.json", import.meta.url), `${JSON.stringify(vectors, null, 4)}\n`);
-console.log(`${vectors.transactions.length} 笔交易,${vectors.refused.length} 个拒绝`);
+console.log(
+    `${vectors.transactions.length} 笔交易,${vectors.raw.length} 个按原始数据显示,${vectors.refused.length} 个拒绝`,
+);

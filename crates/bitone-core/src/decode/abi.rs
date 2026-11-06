@@ -1,4 +1,4 @@
-//! ABI 值到节点.按描述文件解码的调用数据和 EIP-712 共用,值都来自 `alloy-dyn-abi`.
+//! ABI 值到节点.合约调用数据和 EIP-712 共用,值都来自 `alloy-dyn-abi`.
 
 use super::{Node, Source, Value};
 use alloy_dyn_abi::DynSolValue;

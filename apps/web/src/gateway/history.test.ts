@@ -226,12 +226,14 @@ describe("unsentRows", () => {
         });
     });
 
-    it("没有本地的替换交易时不说已被替换,要警告", () => {
-        expect(unsentRows([local({ state: "replaced" })], [])[0]).toMatchObject({
+    it("用户确认之前不说已被替换,要警告", () => {
+        expect(unsentRows([local({ state: "replaced", replacedBy: "TX-2" })], [])[0]).toMatchObject({
             note: "替换没有定论,这笔仍可能上链",
             noteTone: "warn",
         });
-        expect(unsentRows([local({ state: "replaced", replacedBy: "TX-2" })], [])[0]).toMatchObject({
+        expect(
+            unsentRows([local({ state: "replaced", replacedBy: "TX-2", replacedConfirmedAt: 1 })], [])[0],
+        ).toMatchObject({
             note: "被同一序号的交易替换",
             noteTone: "muted",
         });

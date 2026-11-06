@@ -70,8 +70,11 @@ for (const path of [...rust, "crates/bitone-gateway/src/error.rs"]) {
 for (const label of Object.values(JSON.parse(readFileSync("crates/bitone-core/assets/field-labels.json", "utf8")))) {
     need(label);
 }
-const rules = JSON.parse(readFileSync("crates/bitone-core/assets/rules.json", "utf8"));
-for (const rule of Object.values(rules).flatMap(Object.values)) {
+const chains = readdirSync("crates/bitone-core/assets", { withFileTypes: true }).filter((entry) => entry.isDirectory());
+const rules = chains.flatMap((chain) =>
+    Object.values(JSON.parse(readFileSync(`crates/bitone-core/assets/${chain.name}/rules.json`, "utf8"))),
+);
+for (const rule of rules) {
     if (rule.alert) need(rule.alert);
     if (rule.note) need(rule.note);
     if (rule.summary?.label) need(rule.summary.label);

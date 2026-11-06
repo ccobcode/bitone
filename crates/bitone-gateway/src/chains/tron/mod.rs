@@ -3,7 +3,7 @@
 mod adapter;
 mod watch;
 
-use super::request::{Body, Reply, Shared, addresses_from, checked_address, is_hex, parse, present};
+use super::request::{Body, Budget, Reply, Shared, addresses_from, checked_address, is_hex, parse, present};
 use super::{ChainSpec, NetworkConfig, estimated, is_hex64};
 use crate::error::ApiError;
 use crate::upstream::{Http, Networks, Pool, Upstream, adapter};
@@ -11,11 +11,11 @@ use adapter::{Estimate, Tron};
 use axum::extract::Path;
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use bitcoin::base58;
 use bitcoin::hashes::{Hash, sha256};
 use bitcoin::hex::DisplayHex;
-use bitone_core::tx::tron::read_varint;
+use bitone_core::chains::tron::read_varint;
 use bitone_core::{Chain, Network};
 use futures_util::future::BoxFuture;
 use reqwest::Client;
@@ -56,9 +56,15 @@ fn estimate_call(network: Network, body: Body) -> Result<Estimate, ApiError> {
     })
 }
 
-async fn resources(networks: Shared, Path(network): Path<String>, body: Body) -> Reply {
+async fn resources(
+    networks: Shared,
+    Path(network): Path<String>,
+    Extension(budget): Extension<Budget>,
+    body: Body,
+) -> Reply {
     let (network, pool) = networks.on_chain(&network, Chain::Tron)?;
     let addresses = addresses_from(network, body)?;
+    budget.spend(addresses.len())?;
     let resources = pool.special(adapter::<Tron>, |tron| tron.resources(&addresses)).await?;
     Ok(Json(json!({"resources": resources})))
 }

@@ -1,4 +1,4 @@
-//! EVM 的跟块.
+//! 跟踪 EVM 的新区块和地址变化.
 
 use super::adapter::{BATCH_SIZE, Evm, TRANSFER, evm_call, item_status, log_topic, topic_address};
 use crate::upstream::{
@@ -10,9 +10,9 @@ use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 
-/// 跟块时最多回看的区块数.这里要取完整区块,只在地址有变化时才查.
+/// 跟踪时最多回看的区块数.这里要取完整区块,只在地址有变化时才查.
 const MAX_SCAN: u64 = 32;
-/// 跟块时往回多看的区块数.原生币隔几秒才查一次,发现变化时已经过了好几个块,
+/// 跟踪时往回多看的区块数.原生币隔几秒才查一次,发现变化时已经过了好几个块,
 /// BSC 一秒两个块.重复的记录由客户端按标识合并.
 const SCAN_BACK: u64 = 16;
 /// 查原生币余额的最短间隔.
@@ -44,8 +44,8 @@ impl Evm {
         Ok(replies.into_iter().flatten().flatten().collect())
     }
 
-    /// 跟块.`newHeads` 给高度.代币转账用 `logs` 订阅,由节点按地址过滤,内部转账也在里面,
-    /// `removed` 的日志同样算动静.原生币转账没有日志,内部转账也不在区块的交易列表里,
+    /// 跟踪新区块.`newHeads` 给高度.代币转账用 `logs` 订阅,由节点按地址过滤,内部转账也在里面,
+    /// `removed` 的日志同样算地址有变化.原生币转账没有日志,内部转账也不在区块的交易列表里,
     /// 免费节点又没有 trace,所以出块时批量查一次原生币余额.
     pub(super) async fn follow(
         &self,
@@ -139,7 +139,7 @@ impl Evm {
         }
     }
 
-    /// 直接从节点取最近的交易.索引服务有延迟,BSC 和 Polygon 也没有免费的,所以跟块不用它.
+    /// 直接从节点取最近的交易.索引服务有延迟,BSC 和 Polygon 也没有免费的,所以跟踪时不用它.
     // ponytail: 合约内部转入的原生币在区块里看不到,只更新余额,交易记录要等索引服务.
     // 没有索引服务的网络要显示这部分时接 trace 接口.
     pub(super) async fn scan(&self, addresses: &[String], previous: u64) -> Result<Vec<HistoryItem>, Failed> {

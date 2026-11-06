@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.Dp
 
 private const val STROKE_WIDTH = 1.8f
 
-/** 线宽按 24 网格计算. */
+/** 线宽按 24 网格计算,随图标尺寸缩放. */
 @Composable
 fun LineIcon(path: String, size: Dp, color: Color, modifier: Modifier = Modifier) {
     val parsed = remember(path) { PathParser().parsePathString(path).toPath() }

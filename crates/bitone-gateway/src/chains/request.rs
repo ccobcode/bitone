@@ -23,6 +23,26 @@ pub type Shared = State<Arc<Networks>>;
 pub type Body = Result<Bytes, BytesRejection>;
 pub type Reply = Result<Json<Value>, ApiError>;
 
+/// 这个请求的上游成本.限流中间件放进请求扩展,里面是这个 IP 的令牌桶.
+#[derive(Clone)]
+pub struct Budget(Arc<dyn Fn(usize) -> bool + Send + Sync>);
+
+impl Budget {
+    /// `take` 扣掉给定数量的令牌,不够时返回 false.
+    pub fn new(take: impl Fn(usize) -> bool + Send + Sync + 'static) -> Self {
+        Self(Arc::new(take))
+    }
+
+    /// 校验通过后,在调用上游之前扣令牌,一个地址或哈希一个.请求本身的一个已经扣过.
+    pub fn spend(&self, units: usize) -> Result<(), ApiError> {
+        if (self.0)(units.saturating_sub(1)) {
+            Ok(())
+        } else {
+            Err(ApiError::RateLimited)
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct AddressesRequest {
     addresses: Vec<String>,
@@ -108,5 +128,19 @@ mod tests {
             vec![EVM.to_string()]
         );
         assert_eq!(checked(Network::Ethereum, same, 2), Err(ApiError::TooManyAddresses));
+    }
+
+    #[test]
+    fn spend_takes_one_token_less_than_the_units() {
+        let taken = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = taken.clone();
+        let budget = Budget::new(move |extra| {
+            log.lock().unwrap().push(extra);
+            extra < 5
+        });
+        assert_eq!(budget.spend(0), Ok(()));
+        assert_eq!(budget.spend(3), Ok(()));
+        assert_eq!(budget.spend(6), Err(ApiError::RateLimited));
+        assert_eq!(*taken.lock().unwrap(), vec![0, 2, 5]);
     }
 }

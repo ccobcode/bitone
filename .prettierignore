@@ -8,10 +8,10 @@ apps/mobile/*
 apps/mobile/gradle/*
 !apps/mobile/gradle/libs.versions.toml
 schemas/solana/
-crates/bitone-core/assets/solana-idl.json
+crates/bitone-core/assets/solana/idl.json
 tools/crosscheck/vectors/solana.json
 # 生成物,内容的哈希和格式由生成器决定.
-crates/bitone-core/assets/tron-schema.json
+crates/bitone-core/assets/tron/schema.json
 tools/crosscheck/vectors/tron.json
 tools/crosscheck/vectors/stake.json
 tools/crosscheck/vectors/evm-messages.json

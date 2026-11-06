@@ -1,7 +1,7 @@
 use crate::Error;
 use crate::keys::Wallet;
+use bitone_core::chains::tron;
 use bitone_core::request::{KIND_TRANSACTION, SignRequest};
-use bitone_core::tx::tron;
 use bitone_core::{DerivationPath, Mode};
 
 impl Wallet {
@@ -27,6 +27,11 @@ impl Wallet {
 mod tests {
     use crate::Error;
     use crate::keys::Wallet;
+    use bitone_core::chains::tron::types::{
+        Any, Contract, ContractType, Raw, TransferAssetContract, TransferContract, TriggerSmartContract,
+        VoteWitnessContract, vote_witness_contract,
+    };
+    use bitone_core::chains::tron::{TransferParams, UnsignedTx, build_transfer};
     use bitone_core::keys::PublicKeys;
     use bitone_core::manifest::{Asset, Manifest};
     use bitone_core::protocol::VERSION;
@@ -34,11 +39,6 @@ mod tests {
         KIND_PERSONAL_SIGN, KIND_RAW_HASH, KIND_TRANSACTION, KIND_TYPED_DATA, SignRequest, SignResponse,
     };
     use bitone_core::review::{Confirm, Forbid, Review, Risk};
-    use bitone_core::tx::tron::types::{
-        Any, Contract, ContractType, Raw, TransferAssetContract, TransferContract, TriggerSmartContract,
-        VoteWitnessContract, vote_witness_contract,
-    };
-    use bitone_core::tx::tron::{TransferParams, UnsignedTx, build_transfer};
     use bitone_core::tx::{self, HighestChange, ReviewContext};
     use bitone_core::{DerivationPath, Mode, Network};
     use hex_literal::hex;
@@ -421,7 +421,7 @@ mod tests {
             forbidden(review(&s, &main_request(&s, trigger))),
             Some(Forbid::AddressMismatch)
         );
-        let asset = bitone_core::tx::tron::types::TransferAssetContract {
+        let asset = bitone_core::chains::tron::types::TransferAssetContract {
             asset_name: b"1002000".to_vec(),
             owner_address: stranger.to_vec(),
             to_address: OWNER_BYTES.to_vec(),
@@ -596,6 +596,29 @@ mod tests {
         assert!(hex_text(&verified.raw).contains("d80405"));
     }
 
+    /// 合约参数里的重复字段官方解析器接受,值却因解析器而异.页面只显示原始数据,长按后可以签,签的是原文.
+    #[test]
+    fn a_noncanonical_contract_value_signs_as_raw_data() {
+        let s = setup();
+        let value = TransferContract {
+            owner_address: OWNER_BYTES.to_vec(),
+            to_address: PEER_BYTES.to_vec(),
+            amount: 5,
+        }
+        .encode_to_vec();
+        let duplicated = [value, vec![0x18, 0x09]].concat();
+        let payload = wrap(ContractType::TransferContract, duplicated.clone()).encode_to_vec();
+        let req = main_request(&s, payload.clone());
+        let reviewed = review(&s, &req);
+        assert_eq!((reviewed.risk, reviewed.confirm), (Risk::Unknown, Confirm::Hold));
+        assert!(alerted(&reviewed, "不是规范编码"));
+        assert_eq!(field(&reviewed, "value"), hex_text(&duplicated));
+        assert!(reviewed.summary.amount.is_none());
+        let (response, _) = sign(&s, &req);
+        let verified = tx::verify(&req, &response, &public_key(&s)).unwrap();
+        assert!(hex_text(&verified.raw).contains(&hex_text(&payload)));
+    }
+
     /// 离线设备没有时钟,节点比较的是区块时间,所以这里只能告警.
     #[test]
     fn an_odd_expiration_is_an_alert_not_a_refusal() {
@@ -748,7 +771,7 @@ mod tests {
         assert!(shown(&review, PEER));
     }
 
-    /// 每种合约类型的类别.样本写了 `receiver_address` 和 `call_value`,所以这两种合约要长按.
+    /// 每个合约类型的类别和确认方式.样本写了 `receiver_address` 和 `call_value`,所以这两种合约要长按.
     fn expected_class(name: &str) -> (Risk, Confirm) {
         match name {
             "TransferAssetContract"

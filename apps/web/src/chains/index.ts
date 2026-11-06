@@ -50,7 +50,7 @@ const EXPLORERS: Record<string, (hash: string) => string> = Object.assign(
     ...CHAIN_LIST.map((spec) => spec.explorers),
 );
 
-/** 区块浏览器链接内置在网页端,不从网关获取. */
+/** 区块浏览器链接内置在网页端,不从网关获取,网关不能决定把用户带去哪个网站. */
 export function explorerLink(network: string, hash: string): string | null {
     return EXPLORERS[network]?.(encodeURIComponent(hash)) ?? null;
 }

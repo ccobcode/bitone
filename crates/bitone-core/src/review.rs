@@ -15,7 +15,7 @@ pub use crate::policy::{Confirm, Risk};
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Forbid {
-    #[error("这个请求不属于本钱包,如果用了 BIP39 密码,请检查是否输错")]
+    #[error("这个请求不属于本钱包")]
     FingerprintMismatch,
     #[error("网络不支持")]
     UnknownNetwork,
@@ -52,7 +52,7 @@ pub struct AmountView {
     pub unlimited: bool,
 }
 
-/// A6d 的一组控制方.`current` 为空时当前控制方就是付款账户,`next` 为空时这笔权限变更没有新控制方.
+/// 权限变更页的一组控制方.`current` 为空时当前控制方就是付款账户,`next` 为空时这笔权限变更没有新控制方.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Controller {
@@ -69,7 +69,7 @@ pub struct Party {
 }
 
 /// 页面顶部,在字段列表上方,不能代替列表.每个值都引用 `field_ids` 里的行.
-/// `controllers`,`parties`,`payer` 给 A6d,通用列表不按字段名分支,表达不了"谁是当前控制方".
+/// `controllers`,`parties`,`payer` 给权限变更页,通用列表不按字段名分支,表达不了"谁是当前控制方".
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Summary {

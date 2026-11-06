@@ -12,7 +12,7 @@ import type { AssetEntry } from "../core/manifest";
 import type { Account, NewTx, TxKind, TxPlan, Wallet } from "../data/db";
 import { GatewayError, type FeeTier } from "../gateway/client";
 
-/** 网页端的 30 分钟只是手续费报价的有效期. */
+/** 网页端的 30 分钟只是手续费报价的有效期.冷钱包没有可信时钟,签名的有效期由交易本身决定. */
 export const QUOTE_LIFETIME = 30 * 60_000;
 
 export type TransferErrorCode =

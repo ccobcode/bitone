@@ -33,8 +33,8 @@ fn every_chain_signs_in_its_own_file() {
             "sign.rs 不能实现 {chain}"
         );
         assert!(
-            !shared.contains(&format!("tx::{chain}")),
-            "sign.rs 不能引用 tx::{chain}"
+            !shared.contains(&format!("chains::{chain}")),
+            "sign.rs 不能引用 chains::{chain}"
         );
     }
 }
@@ -52,7 +52,7 @@ fn chains_do_not_reach_into_each_other() {
     let all = chains();
     for (chain, text) in &all {
         for (other, _) in all.iter().filter(|(other, _)| other != chain) {
-            for pattern in [format!("super::{other}"), format!("tx::{other}")] {
+            for pattern in [format!("super::{other}"), format!("chains::{other}")] {
                 assert!(!text.contains(&pattern), "{chain} 不能引用 {pattern}");
             }
         }

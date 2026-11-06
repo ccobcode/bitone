@@ -1077,50 +1077,248 @@ class WalletFlowTest {
 
     // BIP39 密码
 
-    @Test
-    fun passphraseWalletHasNoStoredFingerprint() = runTest {
-        val rig = rig()
-        val flow = boot(rig)
-        passVerify(flow)
-        finishWithPin(flow)
-        assertEquals("73C5DA0A", rig.store.meta?.fingerprint)
-
-        val second = rig()
-        val secondFlow = boot(second)
-        secondFlow.setup.startCreate()
+    private fun TestScope.toPassphrase(flow: WalletFlow) {
+        flow.setup.startCreate()
         advanceUntilIdle()
-        secondFlow.setup.togglePassphrase()
-        secondFlow.setup.startVerify()
+        flow.setup.togglePassphrase()
+        flow.setup.startVerify()
         advanceUntilIdle()
-        answerAll(secondFlow, correct = true)
-        secondFlow.setup.continueAfterVerify()
-        finishWithPin(secondFlow)
-        assertNull(second.store.meta?.fingerprint)
-        assertEquals(true, second.store.meta?.passphrase)
-        assertNull(secondFlow.session.fingerprint)
+        answerAll(flow, correct = true)
+        flow.setup.continueAfterVerify()
+        assertEquals(Screen.Passphrase, flow.screen)
     }
 
     @Test
-    fun passphraseIsRequiredAtUnlockAndNotStored() = runTest {
-        val rig =
-            rig({
-                it.store.meta = WalletMeta(imported = false, passphrase = true, fingerprint = null)
-                it.store.vault = boundVault(PIN)
-            })
+    fun thePassphraseIsEnteredTwiceAndSealedWithTheWords() = runTest {
+        val rig = rig()
+        val flow = boot(rig)
+        toPassphrase(flow)
+        typePassphrase(flow, PASSPHRASE, flow.setup::passphraseDone)
+        assertTrue(flow.passphrase.confirming)
+        assertEquals("", flow.passphrase.input)
+        assertEquals(Screen.Passphrase, flow.screen)
+        typePassphrase(flow, PASSPHRASE, flow.setup::passphraseDone)
+        assertEquals(Screen.SetPin, flow.screen)
+        assertFalse(flow.passphrase.confirming)
+        assertEquals(PASSPHRASE, rig.core.lastDraft?.given)
+
+        finishWithPin(flow)
+        assertEquals(Screen.Home, flow.screen)
+        assertContentEquals(boundVault(PIN, PASSPHRASE), rig.store.vault)
+        // 指纹和公钥和没有密码的钱包一样算出来写盘.
+        assertEquals(PASSPHRASE_FINGERPRINT, rig.store.meta?.fingerprint)
+        assertEquals(true, rig.store.meta?.passphrase)
+        assertContentEquals(keysFor(PASSPHRASE_FINGERPRINT), rig.store.publicKeys)
+        assertEquals(PASSPHRASE_FINGERPRINT, flow.session.fingerprint)
+        assertTrue(rig.core.lastWallet!!.closed)
+    }
+
+    @Test
+    fun aPassphraseMismatchStartsOver() = runTest {
+        val flow = boot(rig())
+        toPassphrase(flow)
+        typePassphrase(flow, PASSPHRASE, flow.setup::passphraseDone)
+        typePassphrase(flow, "Pass 1?", flow.setup::passphraseDone)
+        assertEquals(Screen.Passphrase, flow.screen)
+        assertTrue(flow.passphrase.mismatch)
+        assertFalse(flow.passphrase.confirming)
+
+        flow.passphrase.type('x')
+        assertFalse(flow.passphrase.mismatch)
+        flow.passphrase.delete()
+        repeat(2) { typePassphrase(flow, PASSPHRASE, flow.setup::passphraseDone) }
+        assertEquals(Screen.SetPin, flow.screen)
+    }
+
+    @Test
+    fun anEmptyPassphraseIsRefusedWhileTheSwitchIsOn() = runTest {
+        val flow = boot(rig())
+        toPassphrase(flow)
+        flow.setup.passphraseDone()
+        assertFalse(flow.passphrase.confirming)
+        typePassphrase(flow, PASSPHRASE, flow.setup::passphraseDone)
+        flow.setup.passphraseDone()
+        assertTrue(flow.passphrase.confirming)
+        assertEquals(Screen.Passphrase, flow.screen)
+    }
+
+    @Test
+    fun turningTheSwitchOffAfterwardsSealsNoPassphrase() = runTest {
+        val rig = rig()
+        val flow = boot(rig)
+        toPassphrase(flow)
+        repeat(2) { typePassphrase(flow, PASSPHRASE, flow.setup::passphraseDone) }
+        assertEquals(Screen.SetPin, flow.screen)
+        flow.back()
+        flow.back()
+        assertEquals(Screen.Verify, flow.screen)
+        flow.back()
+        advanceUntilIdle()
+        assertEquals(Screen.Backup, flow.screen)
+
+        flow.setup.togglePassphrase()
+        flow.setup.startVerify()
+        advanceUntilIdle()
+        answerAll(flow, correct = true)
+        flow.setup.continueAfterVerify()
+        assertEquals(Screen.SetPin, flow.screen)
+        finishWithPin(flow)
+        assertContentEquals(boundVault(PIN), rig.store.vault)
+        assertEquals(false, rig.store.meta?.passphrase)
+        assertEquals(MAIN_FINGERPRINT, rig.store.meta?.fingerprint)
+    }
+
+    @Test
+    fun backgroundClearsThePassphraseBeingTyped() = runTest {
+        val flow = boot(rig())
+        toPassphrase(flow)
+        typePassphrase(flow, PASSPHRASE, flow.setup::passphraseDone)
+        "Pa".forEach(flow.passphrase::type)
+        flow.onBackground()
+        assertEquals("", flow.passphrase.input)
+        assertFalse(flow.passphrase.confirming)
+        assertEquals(Screen.Passphrase, flow.screen)
+    }
+
+    @Test
+    fun aPassphraseWalletUnlocksWithThePinAlone() = runTest {
+        val rig = readyRig(PIN, PASSPHRASE)
+        val flow = rig.flow
+        openUnlock(flow)
+        assertFalse(flow.unlock.asksPassphrase)
+        submit(flow, PIN)
+        assertEquals(Screen.Export, flow.screen)
+        assertEquals("current", rig.core.lastOpened)
+        assertEquals(PASSPHRASE_FINGERPRINT, flow.session.fingerprint)
+        assertContentEquals(boundVault(PIN, PASSPHRASE), rig.store.vault)
+        // 密码只在查看助记词时才经过 JVM.
+        assertEquals(0, rig.core.passphraseRead)
+    }
+
+    // 旧格式的 BIP39 密码钱包
+
+    @Test
+    fun anOutdatedPassphraseWalletAsksThePassphraseOnce() = runTest {
+        val rig = rig({ it.hasOutdatedPassphraseWallet(entropyOnlyVault(PIN)) })
         val flow = boot(rig)
         openUnlock(flow)
-        assertTrue(flow.session.passphraseRequired)
+        assertTrue(flow.unlock.asksPassphrase)
+        // 两遍一致之前 PIN 交不上去.
         PIN.forEach(flow.unlock::digit)
         assertFalse(flow.unlock.canSubmit)
-
-        "Pass 1!".forEach(flow.unlock::passphraseInput)
-        assertTrue(flow.unlock.canSubmit)
+        typePassphrase(flow, PASSPHRASE, flow.unlock::passphraseDone)
+        assertTrue(flow.unlock.asksPassphrase)
+        typePassphrase(flow, PASSPHRASE, flow.unlock::passphraseDone)
+        assertFalse(flow.unlock.asksPassphrase)
+        val binds = rig.key.binds
         flow.unlock.submit()
         advanceUntilIdle()
         assertEquals(Screen.Export, flow.screen)
-        assertEquals("9E21B4C7", flow.session.fingerprint)
-        assertEquals("", flow.unlock.passphrase)
+        assertEquals("entropy:$PASSPHRASE", rig.core.lastOpened)
+        // 换成当前格式,密码封进去.同一个 PIN 的硬件结果不变,只确认一次屏幕锁.
+        assertContentEquals(boundVault(PIN, PASSPHRASE), rig.store.vault)
+        assertEquals(binds + 1, rig.key.binds)
+        assertEquals(PASSPHRASE_FINGERPRINT, rig.store.meta?.fingerprint)
+        assertEquals(true, rig.store.meta?.passphrase)
+        assertContentEquals(keysFor(PASSPHRASE_FINGERPRINT), rig.store.publicKeys)
+        assertEquals(PASSPHRASE_FINGERPRINT, flow.session.fingerprint)
+
+        flow.export.finish()
+        openUnlock(flow)
+        assertFalse(flow.unlock.asksPassphrase)
+        submit(flow, PIN)
+        assertEquals(Screen.Export, flow.screen)
+        assertEquals("current", rig.core.lastOpened)
+    }
+
+    @Test
+    fun anOutdatedWalletWithoutAPassphraseMigratesSilently() = runTest {
+        val rig = rig({ it.hasWallet(entropyOnlyVault(PIN)) })
+        val flow = boot(rig)
+        openUnlock(flow)
+        assertFalse(flow.unlock.asksPassphrase)
+        submit(flow, PIN)
+        assertEquals(Screen.Export, flow.screen)
+        assertEquals("entropy:", rig.core.lastOpened)
+        assertContentEquals(boundVault(PIN), rig.store.vault)
+        assertEquals(MAIN_FINGERPRINT, rig.store.meta?.fingerprint)
+    }
+
+    @Test
+    fun aLegacyPassphraseWalletMigratesWithThePassphrase() = runTest {
+        val rig = rig({ it.hasOutdatedPassphraseWallet(legacyVault(PIN)) })
+        val flow = boot(rig)
+        openUnlock(flow)
+        assertTrue(flow.unlock.asksPassphrase)
+        repeat(2) { typePassphrase(flow, PASSPHRASE, flow.unlock::passphraseDone) }
+        submit(flow, PIN)
+        assertEquals(Screen.Export, flow.screen)
+        assertEquals("legacy:$PASSPHRASE", rig.core.lastOpened)
+        assertContentEquals(boundVault(PIN, PASSPHRASE), rig.store.vault)
+        assertEquals(1, rig.key.legacyDropped)
+        assertEquals(PASSPHRASE_FINGERPRINT, rig.store.meta?.fingerprint)
+    }
+
+    @Test
+    fun aWrongPinKeepsTheConfirmedPassphraseAndTheOldVault() = runTest {
+        val rig = rig({ it.hasOutdatedPassphraseWallet(entropyOnlyVault(PIN)) })
+        val flow = boot(rig)
+        openUnlock(flow)
+        repeat(2) { typePassphrase(flow, PASSPHRASE, flow.unlock::passphraseDone) }
+        submit(flow, BAD_PIN)
+        assertEquals(Screen.Unlock, flow.screen)
+        assertEquals(1, rig.store.pin.failures)
+        assertContentEquals(entropyOnlyVault(PIN), rig.store.vault)
         assertNull(rig.store.meta?.fingerprint)
+        assertFalse(flow.unlock.asksPassphrase)
+        submit(flow, PIN)
+        assertEquals(Screen.Export, flow.screen)
+        assertContentEquals(boundVault(PIN, PASSPHRASE), rig.store.vault)
+    }
+
+    @Test
+    fun backgroundForgetsTheConfirmedPassphrase() = runTest {
+        val rig = rig({ it.hasOutdatedPassphraseWallet(entropyOnlyVault(PIN)) })
+        val flow = boot(rig)
+        openUnlock(flow)
+        typePassphrase(flow, PASSPHRASE, flow.unlock::passphraseDone)
+        "Pa".forEach(flow.passphrase::type)
+        flow.onBackground()
+        assertEquals("", flow.passphrase.input)
+        assertFalse(flow.passphrase.confirming)
+
+        repeat(2) { typePassphrase(flow, PASSPHRASE, flow.unlock::passphraseDone) }
+        assertFalse(flow.unlock.asksPassphrase)
+        flow.onBackground()
+        assertEquals(Screen.Unlock, flow.screen)
+        assertTrue(flow.unlock.asksPassphrase)
+    }
+
+    /** 元数据丢了,密文是旧格式:不知道有没有设置过密码,可以留空. */
+    @Test
+    fun lostPreferencesWithAnOutdatedVaultMayLeaveThePassphraseBlank() = runTest {
+        val rig =
+            rig({
+                it.store.vault = entropyOnlyVault(PIN)
+                it.store.meta = null
+            })
+        val flow = boot(rig)
+        assertEquals(Screen.Home, flow.screen)
+        openUnlock(flow)
+        assertTrue(flow.unlock.asksPassphrase)
+        assertTrue(flow.unlock.passphraseOptional)
+        repeat(2) { flow.unlock.passphraseDone() }
+        assertFalse(flow.unlock.asksPassphrase)
+        submit(flow, PIN)
+        assertEquals(Screen.Export, flow.screen)
+        assertEquals("entropy:", rig.core.lastOpened)
+        assertContentEquals(boundVault(PIN), rig.store.vault)
+        // 解开之后写回真正的指纹,导出带上旧路径账户.
+        assertEquals(MAIN_FINGERPRINT, rig.store.meta?.fingerprint)
+        assertEquals(true, rig.store.meta?.imported)
+        assertEquals(false, rig.store.meta?.passphrase)
+        assertEquals(true, rig.core.exportedImported)
+        assertContentEquals(keysFor(MAIN_FINGERPRINT), rig.store.publicKeys)
     }
 
     // 设置
@@ -1354,19 +1552,22 @@ class LockoutTest {
     @Test
     fun lostPreferencesNeverHideARealVault() = runTest {
         val rig = boot {
-            it.store.vault = boundVault(PIN)
+            it.store.vault = boundVault(PIN, PASSPHRASE)
             it.store.meta = null
         }
         val flow = rig.flow
         assertEquals(Screen.Home, flow.screen)
 
-        // 不知道有没有 BIP39 密码,可以留空也可以填.
+        // 当前格式的密文里有 BIP39 密码,只要 PIN.解开之后写回指纹和公钥.
         flow.export.open()
         advanceUntilIdle()
-        assertTrue(flow.unlock.needsPassphrase)
+        assertFalse(flow.unlock.asksPassphrase)
         submit(flow, PIN)
         assertEquals(Screen.Export, flow.screen)
-        assertNull(rig.store.publicKeys)
+        assertEquals(PASSPHRASE_FINGERPRINT, rig.store.meta?.fingerprint)
+        assertEquals(true, rig.store.meta?.imported)
+        assertContentEquals(keysFor(PASSPHRASE_FINGERPRINT), rig.store.publicKeys)
+        assertEquals(PASSPHRASE_FINGERPRINT, flow.session.fingerprint)
     }
 
     @Test

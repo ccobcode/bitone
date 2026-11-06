@@ -30,7 +30,7 @@ async function spentFlags(network: string, txs: readonly TxRecord[]): Promise<Ma
     }
 }
 
-/** 已放弃但签名仍然有效的交易,序号确定被用掉后释放占用. */
+/** 已放弃但签名仍然有效的交易,记下这一轮的证据.释放占用要用户确认. */
 async function reconcileAbandoned(supported: readonly string[], now: number): Promise<void> {
     const held = (await heldByAbandoned()).filter((tx) => supported.includes(tx.network));
     await Promise.all(

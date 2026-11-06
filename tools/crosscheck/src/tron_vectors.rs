@@ -7,12 +7,11 @@ use crate::{locked, sha256};
 use bitcoin::hex::{DisplayHex, FromHex};
 use bitcoin::secp256k1::{Message, Secp256k1, ecdsa};
 use bitone_core::address::{parse_tron_address, tron_address};
-use bitone_core::decode::{
-    Decoded, Input, Node, TronWalker, Value as Field, decode, display, tron_contracts, tron_owner, tron_signed,
-};
-use bitone_core::policy::{TronFacts, assess_tron};
+use bitone_core::chains::tron::UnsignedTx;
+use bitone_core::chains::tron::decode::{TronWalker, tron_contract, tron_contracts, tron_owner, tron_signed};
+use bitone_core::chains::tron::policy::{TronFacts, assess_tron};
+use bitone_core::decode::{Decoded, Input, Node, Value as Field, decode, display};
 use bitone_core::review::{Forbid, Review};
-use bitone_core::tx::tron::UnsignedTx;
 use bitone_core::units::decimal_from_be;
 use bitone_core::{Chain, Mode};
 use serde::Deserialize;
@@ -40,16 +39,28 @@ struct Transaction {
     fields: Value,
 }
 
+/// 核心库给不规范的合约参数的种类名.
+const VALUE_NONCANONICAL: &str = "value-noncanonical";
+
 #[derive(Deserialize)]
 struct Refused {
     case: String,
     raw: String,
 }
 
+/// 合约参数不是规范编码.链接受,所以解码成功,参数整段按原始数据显示.
+#[derive(Deserialize)]
+struct RawValue {
+    case: String,
+    raw: String,
+    value: String,
+}
+
 #[derive(Deserialize)]
 struct Vectors {
     owner: String,
     transactions: Vec<Transaction>,
+    raw: Vec<RawValue>,
     refused: Vec<Refused>,
 }
 
@@ -57,6 +68,7 @@ struct Vectors {
 pub struct Report {
     pub transactions: usize,
     pub contracts: usize,
+    pub raw: usize,
     pub refused: usize,
 }
 
@@ -201,6 +213,18 @@ fn check_transaction(vector: &Transaction, owner: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn check_raw(vector: &RawValue) -> Result<(), String> {
+    let payload = bytes(&vector.raw)?;
+    let decoded = run(&payload).map_err(|failure| format!("{}:{failure}", vector.case))?;
+    let (_, value) = tron_contract(decoded.root()).ok_or_else(|| format!("{} 没有合约", vector.case))?;
+    let shown_raw = value.value == Field::Opaque(bytes(&vector.value)?) && value.children.is_empty();
+    let flagged = value.action.as_deref() == Some(VALUE_NONCANONICAL);
+    if !shown_raw || !flagged || UnsignedTx::decode(&payload).is_err() {
+        return Err(format!("{} 应该按原始数据显示", vector.case));
+    }
+    Ok(())
+}
+
 fn check_refused(vector: &Refused) -> Result<(), String> {
     let payload = bytes(&vector.raw)?;
     if run(&payload).is_ok() || UnsignedTx::decode(&payload) != Err(Forbid::ParseFailed) {
@@ -236,10 +260,12 @@ pub fn check(dir: &Path) -> Result<Report, String> {
         .transactions
         .iter()
         .try_for_each(|tx| check_transaction(tx, owner))?;
+    vectors.raw.iter().try_for_each(check_raw)?;
     vectors.refused.iter().try_for_each(check_refused)?;
     Ok(Report {
         transactions: vectors.transactions.len(),
         contracts: check_coverage(&vectors)?,
+        raw: vectors.raw.len(),
         refused: vectors.refused.len(),
     })
 }

@@ -1,4 +1,4 @@
-//! 解码树.
+//! 解码树.四条链解码成同一种树.
 
 use serde::Serialize;
 
@@ -196,4 +196,11 @@ impl Node {
         self.children = children;
         self
     }
+}
+
+/// 原生币.本机不认识的网络没有这一项,金额显示原始整数.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Coin {
+    pub unit: &'static str,
+    pub decimals: u8,
 }
